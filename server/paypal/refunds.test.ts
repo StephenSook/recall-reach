@@ -458,6 +458,79 @@ describe("refunds", () => {
       expect(await refusal(execute(a.approvalId, fakePayPal({ status: "PARTIALLY_REFUNDED" }).client))).toBe("REMAINING_UNKNOWN");
     });
 
+    describe("the payment matching identified", () => {
+      const addPayment = (orderNumber: string | null, captureId = "CAP-2", orderId = "ORDER-2") =>
+        db.query(
+          `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency)
+           values ($1, $2, $3, $4, 'COMPLETED', '2026-11-06T14:00:00Z', 10000, 'USD')`,
+          [shopId, orderId, orderNumber, captureId],
+        );
+
+      it("refuses when a second payment with the same order number has appeared", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        await addPayment("r1"); // normalizes to the same number as "#R1"
+        const pp = fakePayPal({ amountCents: 10000 });
+        expect(await refusal(execute(a.approvalId, pp.client))).toBe("PAYMENT_CHANGED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("refuses when a different payment has taken its place", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        await db.query("delete from paypal_payments where shop_id = $1", [shopId]);
+        await addPayment("#R1");
+        const pp = fakePayPal({ amountCents: 10000 });
+        expect(await refusal(execute(a.approvalId, pp.client))).toBe("PAYPAL_FACTS_AGED_OUT");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("refuses to approve once a second payment has appeared", async () => {
+        const m = await setUp();
+        await addPayment("r1");
+        expect(await refusal(approve(m.id))).toBe("PAYMENT_CHANGED");
+      });
+
+      it("refunds a line that was linked by SKU, on that payment's capture", async () => {
+        await storeOrderLines(db, shopId, [line({ orderNumber: "#S1", sku: "PAPA-SKU" })], createContactCipher("k".repeat(32), shopId), "test");
+        await db.query(
+          `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+           values ($1, 'ORDER-S', null, 'CAP-S', 'COMPLETED', '2026-11-06T14:00:00Z', 9000, 'USD', $2::jsonb)`,
+          [shopId, JSON.stringify([{ name: "sleeper", sku: "PAPA-SKU" }])],
+        );
+        await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+        const { rows } = await db.query<{ id: string; join_state: string }>(
+          `select m.id, m.join_state from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27027'`,
+          [shopId],
+        );
+        expect(rows[0].join_state).toBe("IDENTIFIED");
+        const a = await approve(rows[0].id);
+        const pp = fakePayPal();
+        expect((await execute(a.approvalId, pp.client)).status).toBe("refunded");
+        expect(pp.posts()[0].path).toBe("/v2/payments/captures/CAP-S/refund");
+      });
+
+      it("records which payment the match identified, as our own id and never PayPal's", async () => {
+        const m = await setUp();
+        const { rows } = await db.query<{ paypal_payment_id: string; own_id: string }>(
+          `select m.paypal_payment_id, p.id as own_id from recall_matches m join paypal_payments p on p.shop_id = m.shop_id where m.id = $1`,
+          [m.id],
+        );
+        expect(rows[0].paypal_payment_id).toBe(rows[0].own_id);
+      });
+
+      it("forgets the link when the purge removes the payment", async () => {
+        const m = await setUp();
+        await db.query("delete from paypal_payments where shop_id = $1", [shopId]);
+        const { rows } = await db.query<{ paypal_payment_id: string | null; join_state: string }>(
+          "select paypal_payment_id, join_state from recall_matches where id = $1",
+          [m.id],
+        );
+        expect(rows[0]).toEqual({ paypal_payment_id: null, join_state: "IDENTIFIED" });
+        expect(await refusal(approve(m.id))).toBe("PAYPAL_FACTS_AGED_OUT");
+      });
+    });
+
     it("refuses when PayPal's facts aged out, rather than guessing", async () => {
       const m = await setUp();
       const a = await approve(m.id);

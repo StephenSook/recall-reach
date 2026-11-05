@@ -11,7 +11,7 @@
 // Raw PayPal ids stay in paypal_refund_refs (46-hour purge); the ledger holds only an HMAC.
 import { z } from "zod";
 import type { Db, Queryable } from "../db/types";
-import { normalizeOrderNumber } from "../match/join";
+import { joinShop } from "../match/run";
 import type { RecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./orders";
@@ -30,6 +30,7 @@ export type RefusalCode =
   | "APPROVAL_NOT_VALID"
   | "RECALL_CHANGED"
   | "PAYPAL_FACTS_AGED_OUT"
+  | "PAYMENT_CHANGED"
   | "PAYPAL_FACTS_CHANGED"
   | "PAYPAL_UNREACHABLE"
   | "REFUND_WINDOW_CLOSED"
@@ -60,6 +61,23 @@ export function refundAmountCents(line: { unitPriceCents: number; quantity: numb
 
 export const refundedAmount = (cents: number, currency: string) => `${centsToValue(cents)} ${currency}`;
 
+/**
+ * The capture for the payment matching identified, after joining again with what is held now. The line
+ * must still link to exactly that payment, so a new or replaced payment can never receive the refund.
+ */
+async function identifiedCapture(q: Queryable, shopId: string, orderLineId: string, paymentId: string | null, today: string): Promise<string> {
+  const agedOut = () => new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Read it from PayPal again.");
+  if (!paymentId) throw agedOut();
+  const { joined, captureIds } = await joinShop(q, shopId, { today });
+  const link = joined.lines[orderLineId];
+  if (link?.state !== "IDENTIFIED" || link.paymentKey !== paymentId) {
+    throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
+  }
+  const captureId = captureIds.get(paymentId);
+  if (!captureId) throw agedOut();
+  return captureId;
+}
+
 export interface Approval {
   approvalId: string;
   amountCents: number;
@@ -80,12 +98,13 @@ export async function approveRefund(
     recall_id: number;
     recall_sha256: string;
     order_line_id: string | null;
+    paypal_payment_id: string | null;
     unit_price_cents: number;
     quantity: number;
     discount_cents: number;
     currency: string;
   }>(
-    `select m.verdict, m.sale_path, m.join_state, m.recall_id, m.recall_sha256, m.order_line_id,
+    `select m.verdict, m.sale_path, m.join_state, m.recall_id, m.recall_sha256, m.order_line_id, m.paypal_payment_id,
             l.unit_price_cents, l.quantity, l.discount_cents, l.currency
      from recall_matches m join order_lines l on l.id = m.order_line_id
      where m.id = $1 and m.shop_id = $2`,
@@ -100,6 +119,7 @@ export async function approveRefund(
   if (m.join_state !== "IDENTIFIED") {
     throw new RefundRefused("JOIN_NOT_IDENTIFIED", "This order line is not linked to exactly one PayPal payment.");
   }
+  await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, now.toISOString().slice(0, 10));
   const open = await db.query("select 1 from refunds where order_line_id = $1 and status <> 'failed'", [m.order_line_id]);
   if (open.rows.length > 0) {
     throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
@@ -113,9 +133,9 @@ export async function approveRefund(
 
   const expiresAt = new Date(now.getTime() + APPROVAL_MS).toISOString();
   const inserted = await db.query<{ id: string }>(
-    `insert into approvals (shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz) returning id`,
-    [input.shopId, input.sessionId, m.recall_id, m.recall_sha256, m.order_line_id, amountCents, m.currency, expiresAt],
+    `insert into approvals (shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at, paypal_payment_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9) returning id`,
+    [input.shopId, input.sessionId, m.recall_id, m.recall_sha256, m.order_line_id, amountCents, m.currency, expiresAt, m.paypal_payment_id],
   );
   return { approvalId: inserted.rows[0].id, amountCents, currency: m.currency, expiresAt };
 }
@@ -150,10 +170,11 @@ export async function executeRefund(
     recall_id: number;
     recall_sha256: string;
     order_line_id: string;
+    paypal_payment_id: string | null;
     amount_cents: number;
     currency: string;
   }>(
-    `select recall_id, recall_sha256, order_line_id, amount_cents, currency from approvals
+    `select recall_id, recall_sha256, order_line_id, paypal_payment_id, amount_cents, currency from approvals
      where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz`,
     [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
   );
@@ -170,7 +191,7 @@ export async function executeRefund(
   }
 
   const line = (
-    await db.query<{ order_number: string; ordered_on: string }>("select order_number, ordered_on from order_lines where id = $1", [
+    await db.query<{ ordered_on: string }>("select ordered_on from order_lines where id = $1", [
       approval.order_line_id,
     ])
   ).rows[0];
@@ -178,20 +199,12 @@ export async function executeRefund(
     throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
   }
 
-  const payments = await db.query<{ order_number: string | null; capture_id: string | null }>(
-    "select order_number, capture_id from paypal_payments where shop_id = $1",
-    [input.shopId],
-  );
-  const payment = payments.rows.find(
-    (p) => p.order_number !== null && normalizeOrderNumber(p.order_number) === normalizeOrderNumber(line.order_number),
-  );
-  if (!payment?.capture_id) {
-    throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Read it from PayPal again.");
-  }
+  const today = now.toISOString().slice(0, 10);
+  const captureId = await identifiedCapture(db, input.shopId, approval.order_line_id, approval.paypal_payment_id, today);
 
   let capture: CaptureFacts;
   try {
-    capture = await getCapture(client, payment.capture_id);
+    capture = await getCapture(client, captureId);
   } catch {
     throw new RefundRefused("PAYPAL_UNREACHABLE", "PayPal did not answer, so nothing was refunded. Please try again.");
   }
@@ -218,7 +231,7 @@ export async function executeRefund(
       `select coalesce(sum(r.amount_cents), 0)::text as total
        from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
        where p.capture_id = $1 and r.status <> 'failed'`,
-      [payment.capture_id],
+      [captureId],
     );
     const known = Number(ledger.rows[0].total);
     if (known === 0) {
@@ -233,12 +246,15 @@ export async function executeRefund(
   // Spending the approval, reserving the line and recording the intent happen together or not at all.
   // The lock serializes reservations on one capture, so two lines cannot both claim the same balance.
   const row = await db.transaction(async (tx) => {
-    await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [payment.capture_id]);
+    if ((await identifiedCapture(tx, input.shopId, approval.order_line_id, approval.paypal_payment_id, today)) !== captureId) {
+      throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
+    }
+    await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [captureId]);
     const reservedOnCapture = await tx.query<{ total: string }>(
       `select coalesce(sum(r.amount_cents), 0)::text as total
        from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
        where p.capture_id = $1 and r.status <> 'failed'`,
-      [payment.capture_id],
+      [captureId],
     );
     if (Number(reservedOnCapture.rows[0].total) + approval.amount_cents > capture.amountCents) {
       throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
@@ -259,7 +275,7 @@ export async function executeRefund(
     );
     const reserved = inserted.rows[0];
     if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
-    await tx.query("insert into paypal_refund_refs (refund_row_id, capture_id) values ($1, $2)", [reserved.id, payment.capture_id]);
+    await tx.query("insert into paypal_refund_refs (refund_row_id, capture_id) values ($1, $2)", [reserved.id, captureId]);
     return reserved;
   });
 
@@ -273,7 +289,7 @@ export async function executeRefund(
   };
 
   try {
-    const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${payment.capture_id}/refund`, {
+    const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${captureId}/refund`, {
       requestId: row.request_id,
       body: { amount: { currency_code: approval.currency, value: centsToValue(approval.amount_cents) } },
     });

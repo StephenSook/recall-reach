@@ -1,8 +1,8 @@
 // Checks one shop's records against the stored recalls and saves a decision per candidate.
 // Local tier only: no third party sees anything here. See server/match/verdict.ts for the rules.
 import type { Recall, RecallProduct } from "../cpsc/schema";
-import type { Db } from "../db/types";
-import { joinOrderLines, type JoinPayment } from "./join";
+import type { Db, Queryable } from "../db/types";
+import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
@@ -68,6 +68,34 @@ const CANDIDATES_SQL = `
   )
   select recall_id, kind, id, title, description, ordered_on, rank <= $3 as within_cap from ranked`;
 
+/** One shop's order lines joined to the PayPal payments held right now, with each payment's capture. */
+export async function joinShop(
+  db: Queryable,
+  shopId: string,
+  opts: { today: string; failedMonths?: string[] },
+): Promise<{ joined: JoinResult; lines: { ordered_on: string }[]; captureIds: Map<string, string | null> }> {
+  const { rows: lines } = await db.query<{ id: string; order_number: string; title: string; sku: string | null; ordered_on: string }>(
+    "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
+    [shopId],
+  );
+  const { rows: payments } = await db.query<{
+    id: string;
+    order_number: string | null;
+    items: JoinPayment["items"];
+    paid_on: string | null;
+    capture_id: string | null;
+  }>(
+    "select id, order_number, items, (captured_at at time zone 'UTC')::date::text as paid_on, capture_id from paypal_payments where shop_id = $1",
+    [shopId],
+  );
+  const joined = joinOrderLines(
+    lines.map((l) => ({ id: l.id, orderNumber: l.order_number, title: l.title, sku: l.sku, orderedOn: l.ordered_on })),
+    payments.map((p) => ({ key: p.id, orderNumber: p.order_number, items: p.items, paidOn: p.paid_on })),
+    { today: opts.today, failedMonths: opts.failedMonths },
+  );
+  return { joined, lines, captureIds: new Map(payments.map((p) => [p.id, p.capture_id])) };
+}
+
 export async function runShopCheck(
   db: Db,
   shopId: string,
@@ -96,19 +124,7 @@ export async function runShopCheck(
   const candidates = allCandidates.filter((c) => c.within_cap);
   const candidatesNotChecked = allCandidates.length - candidates.length;
 
-  const { rows: lines } = await db.query<{ id: string; order_number: string; title: string; sku: string | null; ordered_on: string }>(
-    "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
-    [shopId],
-  );
-  const { rows: paymentRows } = await db.query<{ id: string; order_number: string | null; items: JoinPayment["items"]; paid_on: string | null }>(
-    "select id, order_number, items, (captured_at at time zone 'UTC')::date::text as paid_on from paypal_payments where shop_id = $1",
-    [shopId],
-  );
-  const joined = joinOrderLines(
-    lines.map((l) => ({ id: l.id, orderNumber: l.order_number, title: l.title, sku: l.sku, orderedOn: l.ordered_on })),
-    paymentRows.map((p) => ({ key: p.id, orderNumber: p.order_number, items: p.items, paidOn: p.paid_on })),
-    { today: opts.today, failedMonths: opts.failedMonths },
-  );
+  const { joined, lines } = await joinShop(db, shopId, { today: opts.today, failedMonths: opts.failedMonths });
 
   const recallIds = [...new Set(candidates.map((c) => c.recall_id))];
   const { rows: recallRows } = await db.query<{
@@ -142,8 +158,8 @@ export async function runShopCheck(
       const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
       const join = computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
-        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
+        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13)
          on conflict (shop_id, recall_id, coalesce(order_line_id, shop_item_id)) do update set
            recall_sha256 = excluded.recall_sha256, verdict = excluded.verdict, matched = excluded.matched,
            missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path,
@@ -151,6 +167,8 @@ export async function runShopCheck(
            -- after 46 hours, and that must not turn an IDENTIFIED or AMBIGUOUS_JOIN into something else.
            join_state = case when $12::boolean then excluded.join_state
                              else coalesce(recall_matches.join_state, excluded.join_state) end,
+           paypal_payment_id = case when $12::boolean then excluded.paypal_payment_id
+                                    else coalesce(recall_matches.paypal_payment_id, excluded.paypal_payment_id) end,
            checked_at = now()`,
         [
           shopId,
@@ -165,6 +183,7 @@ export async function runShopCheck(
           path,
           join,
           paypalSearched,
+          c.kind === "order_line" ? joined.lines[c.id]?.paymentKey ?? null : null,
         ],
       );
     }
