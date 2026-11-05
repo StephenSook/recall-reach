@@ -11,6 +11,7 @@
 // The CRC must be computed over the exact bytes received; re-serialized JSON will not match.
 import { createPublicKey, verify } from "node:crypto";
 import { crc32 } from "node:zlib";
+import { readCappedBody } from "../http/body";
 
 export interface TransmissionHeaders {
   transmissionId?: string;
@@ -34,7 +35,10 @@ export type VerifyResult = { verified: true; event: WebhookEvent } | { verified:
 export type CertFetcher = (certUrl: string) => Promise<string>;
 
 const SANDBOX_CERT_HOSTS = new Set(["api.sandbox.paypal.com", "api-m.sandbox.paypal.com"]);
-const CERT_PATH_PREFIX = "/v1/notifications/certs/";
+// One path segment of letters, digits and hyphens, as in CERT-360caa42-fca2a594-1d93a270: no
+// encoded slashes, no dots, so the path cannot be walked to some other endpoint on the host.
+const CERT_PATH = /^\/v1\/notifications\/certs\/[A-Za-z0-9-]+$/;
+const MAX_CERT_BYTES = 64 * 1024;
 const AUTH_ALGO = "SHA256withRSA";
 
 /** The paypal-cert-url header is attacker-controlled: only PayPal sandbox certificate URLs pass. */
@@ -50,8 +54,10 @@ export function isTrustedCertUrl(certUrl: string): boolean {
     url.port === "" &&
     url.username === "" &&
     url.password === "" &&
+    !certUrl.includes("?") &&
+    !certUrl.includes("#") &&
     SANDBOX_CERT_HOSTS.has(url.hostname) &&
-    url.pathname.startsWith(CERT_PATH_PREFIX)
+    CERT_PATH.test(url.pathname)
   );
 }
 
@@ -75,19 +81,31 @@ export function signedMessage(
   return `${transmissionId}|${transmissionTime}|${webhookId}|${crc32(rawBody)}`;
 }
 
-/** Downloads signing certificates from trusted URLs and keeps them in memory (they are stable). */
+/**
+ * Downloads signing certificates from trusted URLs and keeps them in memory (they are stable). A
+ * redirect is an error, not followed: only the URL that passed the check may supply the key. Only a
+ * certificate that parses as a public key is cached.
+ */
 export function createCertFetcher(fetchImpl: typeof fetch = fetch, maxEntries = 16): CertFetcher {
   const cache = new Map<string, string>();
   return async (certUrl) => {
     if (!isTrustedCertUrl(certUrl)) throw new Error(`untrusted certificate URL: ${certUrl}`);
-    const cached = cache.get(certUrl);
+    const { origin, pathname } = new URL(certUrl);
+    const key = origin + pathname;
+    const cached = cache.get(key);
     if (cached) return cached;
-    const res = await fetchImpl(certUrl, { signal: AbortSignal.timeout(10_000), cache: "no-store" });
+    const res = await fetchImpl(certUrl, { signal: AbortSignal.timeout(10_000), cache: "no-store", redirect: "error" });
     if (!res.ok) throw new Error(`could not download signing certificate: HTTP ${res.status}`);
-    const pem = await res.text();
-    if (!pem.includes("-----BEGIN")) throw new Error("signing certificate download was not PEM");
+    const read = await readCappedBody(res, MAX_CERT_BYTES);
+    if (!read.ok) throw new Error("signing certificate download is too large");
+    const pem = Buffer.from(read.body).toString("utf8");
+    try {
+      createPublicKey(pem);
+    } catch {
+      throw new Error("signing certificate download is not a usable public key");
+    }
     if (cache.size >= maxEntries) cache.delete(cache.keys().next().value as string);
-    cache.set(certUrl, pem);
+    cache.set(key, pem);
     return pem;
   };
 }

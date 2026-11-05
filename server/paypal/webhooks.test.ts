@@ -67,6 +67,12 @@ describe("isTrustedCertUrl", () => {
       "https://api.sandbox.paypal.com/v1/other/CERT-1",
       "https://api.sandbox.paypal.com:8443/v1/notifications/certs/CERT-1",
       "https://user@api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1?x=1",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1?",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1#frag",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/..%2f..%2f..%2fv1%2foauth2%2ftoken",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1/extra",
+      "https://api.sandbox.paypal.com/v1/notifications/certs/",
       "not a url",
     ]) {
       expect(isTrustedCertUrl(url), url).toBe(false);
@@ -175,6 +181,36 @@ describe("createCertFetcher", () => {
     const fetchCert = createCertFetcher(fetchImpl as typeof fetch);
     await expect(fetchCert(CERT_URL)).rejects.toThrow(/HTTP 503/);
     expect(await fetchCert(CERT_URL)).toBe(PUBLIC_PEM);
+  });
+
+  it("refuses a redirect instead of following it", async () => {
+    let redirectMode: RequestRedirect | undefined;
+    const fetchImpl = async (_url: unknown, init?: RequestInit) => {
+      redirectMode = init?.redirect;
+      return new Response(PUBLIC_PEM, { status: 200 });
+    };
+    await createCertFetcher(fetchImpl as unknown as typeof fetch)(CERT_URL);
+    expect(redirectMode).toBe("error");
+  });
+
+  it("does not cache a download that is not a usable public key", async () => {
+    let downloads = 0;
+    const fetchImpl = async () => {
+      downloads++;
+      return downloads === 1
+        ? new Response("-----BEGIN NONSENSE-----\nabc\n-----END NONSENSE-----", { status: 200 })
+        : new Response(PUBLIC_PEM, { status: 200 });
+    };
+    const fetchCert = createCertFetcher(fetchImpl as typeof fetch);
+    await expect(fetchCert(CERT_URL)).rejects.toThrow(/not a usable/);
+    expect(await fetchCert(CERT_URL)).toBe(PUBLIC_PEM);
+    expect(downloads).toBe(2);
+  });
+
+  it("refuses an oversized certificate download", async () => {
+    const huge = "-----BEGIN PUBLIC KEY-----\n" + "A".repeat(200_000);
+    const fetchCert = createCertFetcher((async () => new Response(huge, { status: 200 })) as unknown as typeof fetch);
+    await expect(fetchCert(CERT_URL)).rejects.toThrow(/too large/);
   });
 
   it("refuses to download from an untrusted URL", async () => {

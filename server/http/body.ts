@@ -1,10 +1,13 @@
 export type CappedBody = { ok: true; body: Uint8Array } | { ok: false };
 
 /**
- * Reads a request body but never holds more than maxBytes: a declared Content-Length over the
+ * Reads a request or response body but never holds more than maxBytes: a declared Content-Length over the
  * limit is refused before reading, and a streamed body is cancelled as soon as it passes the limit.
  */
-export async function readCappedBody(request: Request, maxBytes: number): Promise<CappedBody> {
+export async function readCappedBody(
+  request: { headers: Headers; body: ReadableStream<Uint8Array> | null },
+  maxBytes: number,
+): Promise<CappedBody> {
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) {
     await request.body?.cancel().catch(() => {});
