@@ -18,5 +18,15 @@ services:
         sync: false # set in Render, never in git
       - key: PAYPAL_WEBHOOK_ID
         sync: false # set in Render after the sandbox webhook is registered
+      - key: PAYPAL_CLIENT_ID
+        sync: false # sandbox app credentials, set in Render
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: DEMO_BUYER_EMAIL
+        sync: false # a test inbox for the demo notice; the demo works without it
       - key: RECORD_HMAC_SECRET
-        generateValue: true # Render generates it; it never exists outside Render
+        generateValue: true # Render generates these; they never exist outside Render
+      - key: SHOP_DATA_KEY
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
