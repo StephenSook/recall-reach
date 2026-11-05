@@ -1,0 +1,64 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# env files: real values never get committed; the template does
+.env*
+!.env.example
+
+# keys and credentials
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+.npmrc
+.pypirc
+
+# python (ml/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# OS and editors
+.DS_Store
+.AppleDouble
+._*
+.vscode/
+.idea/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+.pnpm-debug.log*
+
+# hosting CLIs
+.vercel
+.render
+
+# local-only agent notes and build briefs (never public)
+CLAUDE.local.md
+BUILD-BRIEF*.md
+.claude/settings.local.json
