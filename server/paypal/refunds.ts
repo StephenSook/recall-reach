@@ -215,23 +215,38 @@ export async function executeRefund(
     throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
   }
 
-  // One statement, so two callers cannot both spend the same approval.
-  const consumed = await db.query(
-    `update approvals set consumed_at = $4::timestamptz
-     where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
-     returning id`,
-    [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
-  );
-  if (consumed.rows.length === 0) throw invalid();
-
-  const row = (
-    await db.query<{ id: string; request_id: string }>(
+  // Spending the approval, reserving the line and recording the intent happen together or not at all.
+  // The lock serializes reservations on one capture, so two lines cannot both claim the same balance.
+  const row = await db.transaction(async (tx) => {
+    await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [payment.capture_id]);
+    const reservedOnCapture = await tx.query<{ total: string }>(
+      `select coalesce(sum(r.amount_cents), 0)::text as total
+       from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
+       where p.capture_id = $1 and r.status <> 'failed'`,
+      [payment.capture_id],
+    );
+    if (Number(reservedOnCapture.rows[0].total) + approval.amount_cents > capture.amountCents) {
+      throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
+    }
+    const consumed = await tx.query(
+      `update approvals set consumed_at = $4::timestamptz
+       where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
+       returning id`,
+      [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
+    );
+    if (consumed.rows.length === 0) throw invalid();
+    const inserted = await tx.query<{ id: string; request_id: string }>(
       `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status)
-       values ($1, $2, $3, $4, $5, 'pending') returning id, request_id`,
+       values ($1, $2, $3, $4, $5, 'pending')
+       on conflict (order_line_id) where status <> 'failed' do nothing
+       returning id, request_id`,
       [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency],
-    )
-  ).rows[0];
-  await db.query("insert into paypal_refund_refs (refund_row_id, capture_id) values ($1, $2)", [row.id, payment.capture_id]);
+    );
+    const reserved = inserted.rows[0];
+    if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
+    await tx.query("insert into paypal_refund_refs (refund_row_id, capture_id) values ($1, $2)", [reserved.id, payment.capture_id]);
+    return reserved;
+  });
 
   const settle = async (status: RefundOutcome["status"], failure: string | null, refundId?: string) => {
     if (refundId) await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [row.id, refundId]);

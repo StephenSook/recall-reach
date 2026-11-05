@@ -302,6 +302,99 @@ describe("refunds", () => {
       expect(second.calls).toEqual([]);
     });
 
+    describe("one refund per order line", () => {
+      // A $30 line on a $100 capture: PayPal alone would happily refund it twice.
+      const roomy = () => fakePayPal({ amountCents: 10000 });
+      const thirty = () => setUp(line({ unitPriceCents: 3000 }), { amountCents: 10000 });
+
+      it("refuses a second approval once the first has made a refund", async () => {
+        const m = await thirty();
+        const first = await approve(m.id);
+        const second = await approve(m.id);
+        const pp = roomy();
+        expect((await execute(first.approvalId, pp.client)).status).toBe("refunded");
+        expect(await refusal(execute(second.approvalId, pp.client))).toBe("REFUND_ALREADY_IN_PROGRESS");
+        expect(pp.posts()).toHaveLength(1);
+        expect(pp.made()).toHaveLength(1);
+      });
+
+      it("lets only one of two approvals through when both run at once", async () => {
+        const m = await thirty();
+        const first = await approve(m.id);
+        const second = await approve(m.id);
+        const pp = roomy();
+        const results = await Promise.allSettled([execute(first.approvalId, pp.client), execute(second.approvalId, pp.client)]);
+        expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+        expect(pp.made()).toHaveLength(1);
+        const { rows } = await db.query("select 1 from refunds");
+        expect(rows).toHaveLength(1);
+      });
+
+      it("lets one approval through once when it runs twice at the same moment", async () => {
+        const m = await thirty();
+        const a = await approve(m.id);
+        const pp = roomy();
+        const results = await Promise.allSettled([execute(a.approvalId, pp.client), execute(a.approvalId, pp.client)]);
+        expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+        expect(pp.made()).toHaveLength(1);
+      });
+
+      it("leaves the second approval unspent when it is refused for the line", async () => {
+        const m = await thirty();
+        const first = await approve(m.id);
+        const second = await approve(m.id);
+        await execute(first.approvalId, roomy().client);
+        await refusal(execute(second.approvalId, roomy().client));
+        const { rows } = await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [second.approvalId]);
+        expect(rows[0].consumed_at).toBeNull();
+      });
+
+      it("allows a new refund after PayPal clearly refused the last one", async () => {
+        const m = await thirty();
+        const first = await approve(m.id);
+        await execute(first.approvalId, fakePayPal({ amountCents: 10000, refundSteps: [422] }).client);
+        const second = await approve(m.id);
+        const pp = roomy();
+        expect((await execute(second.approvalId, pp.client)).status).toBe("refunded");
+      });
+
+      it("does not let two lines of one payment claim the same balance at once", async () => {
+        await storeOrderLines(db, shopId, [line({ lineNo: 2, sku: "PAPA-2", unitPriceCents: 6000 })], createContactCipher("k".repeat(32), shopId), "test");
+        await setUp(line({ unitPriceCents: 6000 }), { amountCents: 10000 });
+        const { rows: matches } = await db.query<{ id: string }>(
+          `select m.id from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27027' order by m.id`,
+          [shopId],
+        );
+        expect(matches).toHaveLength(2);
+        const [a, b] = [await approve(matches[0].id), await approve(matches[1].id)];
+        const pp = roomy();
+        const results = await Promise.allSettled([execute(a.approvalId, pp.client), execute(b.approvalId, pp.client)]);
+        expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+        expect(pp.made()).toHaveLength(1);
+      });
+
+      it("the database itself refuses a second open refund for a line", async () => {
+        const m = await thirty();
+        const a = await approve(m.id);
+        await execute(a.approvalId, roomy().client);
+        const second = await approve(m.id).catch(() => null);
+        expect(second).toBeNull();
+        const { rows } = await db.query<{ approval_id: string; order_line_id: string }>("select approval_id, order_line_id from refunds");
+        const fresh = await db.query<{ id: string }>(
+          `insert into approvals (shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at)
+           select shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at from approvals limit 1
+           returning id`,
+        );
+        await expect(
+          db.query("insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status) values ($1, $2, $3, 3000, 'USD', 'unconfirmed')", [
+            fresh.rows[0].id,
+            shopId,
+            rows[0].order_line_id,
+          ]),
+        ).rejects.toThrow(/refunds_one_open_per_line/);
+      });
+    });
+
     it("refuses an approval from another session", async () => {
       const m = await setUp();
       const a = await approve(m.id);
