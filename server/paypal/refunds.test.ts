@@ -419,6 +419,45 @@ describe("refunds", () => {
       expect(pp.calls).toEqual([]);
     });
 
+    describe("a line corrected after the approval", () => {
+      const reimport = (over: Partial<ImportedOrderLine>) => storeOrderLines(db, shopId, [line(over)], createContactCipher("k".repeat(32), shopId), "test");
+      const changes: [string, Partial<ImportedOrderLine>][] = [
+        ["the price", { unitPriceCents: 3000 }],
+        ["the quantity", { quantity: 2 }],
+        ["the discount", { discountCents: 500 }],
+        ["the title", { title: `${PAPABLIC} XL` }],
+        ["the SKU", { sku: "PAPA-2" }],
+        ["the currency", { currency: "CAD" }],
+        ["the order date", { orderedOn: "2026-11-05" }],
+      ];
+      it.each(changes)("refuses when %s changed, and moves no money", async (_field, over) => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        await reimport(over);
+        const pp = fakePayPal();
+        expect(await refusal(execute(a.approvalId, pp.client))).toBe("LINE_CHANGED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("accepts a re-import that changed nothing the refund rests on", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        await reimport({});
+        expect((await execute(a.approvalId, fakePayPal().client)).status).toBe("refunded");
+      });
+
+      it("accepts a fresh approval of the corrected line, for the corrected amount", async () => {
+        const m = await setUp();
+        await approve(m.id);
+        await reimport({ unitPriceCents: 3000 });
+        const a = await approve(m.id);
+        expect(a.amountCents).toBe(3000);
+        const pp = fakePayPal();
+        expect((await execute(a.approvalId, pp.client)).amountCents).toBe(3000);
+        expect(pp.posts()[0].opts.body).toEqual({ amount: { currency_code: "USD", value: "30.00" } });
+      });
+    });
+
     it("refuses past 180 days from the payment", async () => {
       const m = await setUp();
       const a = await approve(m.id);

@@ -9,6 +9,7 @@
 // of the payment date" (paypal.com help, how-do-i-issue-a-refund).
 //
 // Raw PayPal ids stay in paypal_refund_refs (46-hour purge); the ledger holds only an HMAC.
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db, Queryable } from "../db/types";
 import { joinShop } from "../match/run";
@@ -29,6 +30,7 @@ export type RefusalCode =
   | "REFUND_ALREADY_IN_PROGRESS"
   | "APPROVAL_NOT_VALID"
   | "RECALL_CHANGED"
+  | "LINE_CHANGED"
   | "PAYPAL_FACTS_AGED_OUT"
   | "PAYMENT_CHANGED"
   | "PAYPAL_FACTS_CHANGED"
@@ -61,6 +63,44 @@ export function refundAmountCents(line: { unitPriceCents: number; quantity: numb
 
 export const refundedAmount = (cents: number, currency: string) => `${centsToValue(cents)} ${currency}`;
 
+const LINE_COLUMNS = "order_number, line_no, title, sku, quantity, unit_price_cents, discount_cents, currency, ordered_on";
+
+interface LineFacts {
+  order_number: string;
+  line_no: number;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  unit_price_cents: number;
+  discount_cents: number;
+  currency: string;
+  ordered_on: string;
+}
+
+/** Everything a refund amount or decision rests on. JSON, so no field can run into the next. */
+const lineVersion = (l: LineFacts) =>
+  createHash("sha256")
+    .update(JSON.stringify([l.order_number, l.line_no, l.title, l.sku, l.quantity, l.unit_price_cents, l.discount_cents, l.currency, l.ordered_on]))
+    .digest("hex");
+
+/** Refuses unless the recall and the line are still what the person approved. Returns the dates that decide eligibility. */
+async function approvedFactsHold(
+  q: Queryable,
+  approval: { recall_id: number; recall_sha256: string; order_line_id: string; line_sha256: string | null },
+): Promise<{ recallDate: string; orderedOn: string }> {
+  const recall = (
+    await q.query<{ raw_sha256: string; recall_date: string }>("select raw_sha256, recall_date from recalls where recall_id = $1", [approval.recall_id])
+  ).rows[0];
+  if (recall.raw_sha256 !== approval.recall_sha256) {
+    throw new RefundRefused("RECALL_CHANGED", "CPSC changed this recall after the approval. Please review it again.");
+  }
+  const line = (await q.query<LineFacts>(`select ${LINE_COLUMNS} from order_lines where id = $1`, [approval.order_line_id])).rows[0];
+  if (lineVersion(line) !== approval.line_sha256) {
+    throw new RefundRefused("LINE_CHANGED", "This order line changed after the approval. Please review it again.");
+  }
+  return { recallDate: recall.recall_date, orderedOn: line.ordered_on };
+}
+
 /**
  * The capture for the payment matching identified, after joining again with what is held now. The line
  * must still link to exactly that payment, so a new or replaced payment can never receive the refund.
@@ -91,21 +131,21 @@ export async function approveRefund(
 ): Promise<Approval> {
   const now = input.now ?? new Date();
   if (!UUID.test(input.matchId)) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop.");
-  const { rows } = await db.query<{
-    verdict: string;
-    sale_path: string | null;
-    join_state: string | null;
-    recall_id: number;
-    recall_sha256: string;
-    order_line_id: string | null;
-    paypal_payment_id: string | null;
-    unit_price_cents: number;
-    quantity: number;
-    discount_cents: number;
-    currency: string;
-  }>(
+  const { rows } = await db.query<
+    LineFacts & {
+      verdict: string;
+      sale_path: string | null;
+      join_state: string | null;
+      recall_id: number;
+      recall_sha256: string;
+      order_line_id: string | null;
+      paypal_payment_id: string | null;
+    }
+  >(
     `select m.verdict, m.sale_path, m.join_state, m.recall_id, m.recall_sha256, m.order_line_id, m.paypal_payment_id,
-            l.unit_price_cents, l.quantity, l.discount_cents, l.currency
+            ${LINE_COLUMNS.split(", ")
+              .map((c) => `l.${c}`)
+              .join(", ")}
      from recall_matches m join order_lines l on l.id = m.order_line_id
      where m.id = $1 and m.shop_id = $2`,
     [input.matchId, input.shopId],
@@ -133,9 +173,9 @@ export async function approveRefund(
 
   const expiresAt = new Date(now.getTime() + APPROVAL_MS).toISOString();
   const inserted = await db.query<{ id: string }>(
-    `insert into approvals (shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at, paypal_payment_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9) returning id`,
-    [input.shopId, input.sessionId, m.recall_id, m.recall_sha256, m.order_line_id, amountCents, m.currency, expiresAt, m.paypal_payment_id],
+    `insert into approvals (shop_id, session_id, recall_id, recall_sha256, order_line_id, amount_cents, currency, expires_at, paypal_payment_id, line_sha256)
+     values ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9, $10) returning id`,
+    [input.shopId, input.sessionId, m.recall_id, m.recall_sha256, m.order_line_id, amountCents, m.currency, expiresAt, m.paypal_payment_id, lineVersion(m)],
   );
   return { approvalId: inserted.rows[0].id, amountCents, currency: m.currency, expiresAt };
 }
@@ -171,31 +211,19 @@ export async function executeRefund(
     recall_sha256: string;
     order_line_id: string;
     paypal_payment_id: string | null;
+    line_sha256: string | null;
     amount_cents: number;
     currency: string;
   }>(
-    `select recall_id, recall_sha256, order_line_id, paypal_payment_id, amount_cents, currency from approvals
+    `select recall_id, recall_sha256, order_line_id, paypal_payment_id, line_sha256, amount_cents, currency from approvals
      where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz`,
     [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
   );
   const approval = found.rows[0];
   if (!approval) throw invalid();
 
-  const recall = (
-    await db.query<{ raw_sha256: string; recall_date: string }>("select raw_sha256, recall_date from recalls where recall_id = $1", [
-      approval.recall_id,
-    ])
-  ).rows[0];
-  if (recall.raw_sha256 !== approval.recall_sha256) {
-    throw new RefundRefused("RECALL_CHANGED", "CPSC changed this recall after the approval. Please review it again.");
-  }
-
-  const line = (
-    await db.query<{ ordered_on: string }>("select ordered_on from order_lines where id = $1", [
-      approval.order_line_id,
-    ])
-  ).rows[0];
-  if (line.ordered_on <= recall.recall_date) {
+  const { recallDate, orderedOn } = await approvedFactsHold(db, approval);
+  if (orderedOn <= recallDate) {
     throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
   }
 
@@ -221,7 +249,7 @@ export async function executeRefund(
   if (now.getTime() - Date.parse(`${paidOn}T00:00:00Z`) > REFUND_WINDOW_DAYS * 86_400_000) {
     throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed.");
   }
-  if (paidOn <= recall.recall_date) {
+  if (paidOn <= recallDate) {
     throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
   }
 
@@ -246,6 +274,7 @@ export async function executeRefund(
   // Spending the approval, reserving the line and recording the intent happen together or not at all.
   // The lock serializes reservations on one capture, so two lines cannot both claim the same balance.
   const row = await db.transaction(async (tx) => {
+    await approvedFactsHold(tx, approval);
     if ((await identifiedCapture(tx, input.shopId, approval.order_line_id, approval.paypal_payment_id, today)) !== captureId) {
       throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
     }
