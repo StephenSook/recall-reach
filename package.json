@@ -13,6 +13,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:live": "CPSC_LIVE=1 vitest run --config vitest.live.config.ts",
+    "test:golden": "playwright test",
     "db:migrate": "tsx scripts/migrate.ts",
     "load:recalls": "tsx scripts/load-recalls.ts"
   },
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^22",
     "@types/pg": "8.23.1",
