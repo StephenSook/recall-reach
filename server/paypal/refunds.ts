@@ -20,6 +20,12 @@ import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./ord
 const APPROVAL_MS = 15 * 60_000;
 const REFUND_WINDOW_DAYS = 180;
 const UNCONFIRMED_AFTER_MS = 10 * 60_000;
+/** A send is up to 3 attempts of up to 60 s each, with backoff. This covers all of it. */
+const SEND_LEASE_MS = 4 * 60_000;
+// PayPal stores a request id "for a period of time" and names no period for refunds (idempotency page and
+// refund reference, read 2026-11-05). Past it, a repeat could make a second refund, so asking again is
+// limited to a window short enough to trust. Widen it only on a measured replay.
+const ASK_AGAIN_MS = 6 * 3_600_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type RefusalCode =
@@ -40,7 +46,10 @@ export type RefusalCode =
   | "NOTHING_LEFT_TO_REFUND"
   | "REMAINING_UNKNOWN"
   | "AMOUNT_ABOVE_REMAINING"
-  | "NO_SUCH_REFUND";
+  | "NO_SUCH_REFUND"
+  | "NOTHING_TO_ASK"
+  | "REFUND_BEING_SENT"
+  | "TOO_OLD_TO_ASK_AGAIN";
 
 // PayPal judged the request and said no. 409 is not here: it means a previous call is still in progress.
 const CLEAR_REFUSALS = new Set([400, 401, 403, 404, 422]);
@@ -296,11 +305,11 @@ export async function executeRefund(
     );
     if (consumed.rows.length === 0) throw invalid();
     const inserted = await tx.query<{ id: string; request_id: string }>(
-      `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status)
-       values ($1, $2, $3, $4, $5, 'pending')
+      `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status, send_lease_until)
+       values ($1, $2, $3, $4, $5, 'pending', $6::timestamptz)
        on conflict (order_line_id) where status <> 'failed' do nothing
        returning id, request_id`,
-      [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency],
+      [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency, new Date(now.getTime() + SEND_LEASE_MS).toISOString()],
     );
     const reserved = inserted.rows[0];
     if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
@@ -308,19 +317,37 @@ export async function executeRefund(
     return reserved;
   });
 
+  return sendRefund(
+    db,
+    client,
+    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency },
+    input.recordKey,
+    now,
+  );
+}
+
+/** Sends one stored refund and records PayPal's answer. Repeating it with the same request id makes no second refund. */
+async function sendRefund(
+  db: Queryable,
+  client: PayPalClient,
+  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string },
+  recordKey: RecordKey,
+  now: Date,
+): Promise<RefundOutcome> {
   const settle = async (status: RefundOutcome["status"], failure: string | null, refundId?: string) => {
-    if (refundId) await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [row.id, refundId]);
+    if (refundId) await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [send.rowId, refundId]);
     await db.query(
-      `update refunds set status = $2, failure = $3, refund_ref_hmac = coalesce($4, refund_ref_hmac), updated_at = $5::timestamptz where id = $1`,
-      [row.id, status, failure, refundId ? input.recordKey("paypal-resource", refundId) : null, now.toISOString()],
+      `update refunds set status = $2, failure = $3, refund_ref_hmac = coalesce($4, refund_ref_hmac), send_lease_until = null, updated_at = $5::timestamptz
+       where id = $1`,
+      [send.rowId, status, failure, refundId ? recordKey("paypal-resource", refundId) : null, now.toISOString()],
     );
-    return { refundId: row.id, status, amountCents: approval.amount_cents, currency: approval.currency, failure };
+    return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure };
   };
 
   try {
-    const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${captureId}/refund`, {
-      requestId: row.request_id,
-      body: { amount: { currency_code: approval.currency, value: centsToValue(approval.amount_cents) } },
+    const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${send.captureId}/refund`, {
+      requestId: send.requestId,
+      body: { amount: { currency_code: send.currency, value: centsToValue(send.amountCents) } },
     });
     const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);
@@ -330,6 +357,66 @@ export async function executeRefund(
   }
 }
 
+/**
+ * Recovers a refund whose answer was lost: repeats the stored request, with the same capture, amount,
+ * currency and request id. Measured 2026-11-05: PayPal answers a repeated id with the original refund, and
+ * it ignores a changed amount, so this always sends what the row holds. It is a person's explicit action.
+ */
+export async function askPayPalAgain(
+  db: Queryable,
+  client: PayPalClient,
+  input: { shopId: string; refundId: string; recordKey: RecordKey; now?: Date },
+): Promise<RefundOutcome> {
+  const now = input.now ?? new Date();
+  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
+  if (!UUID.test(input.refundId)) throw notFound();
+  const { rows } = await db.query<{
+    status: string;
+    amount_cents: number;
+    currency: string;
+    request_id: string;
+    created_at: Date;
+    capture_id: string | null;
+    paypal_refund_id: string | null;
+    recall_id: number;
+    recall_sha256: string;
+    order_line_id: string;
+    line_sha256: string | null;
+  }>(
+    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, p.capture_id, p.refund_id as paypal_refund_id,
+            a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256
+     from refunds r join approvals a on a.id = r.approval_id left join paypal_refund_refs p on p.refund_row_id = r.id
+     where r.id = $1 and r.shop_id = $2`,
+    [input.refundId, input.shopId],
+  );
+  const row = rows[0];
+  if (!row) throw notFound();
+  if (row.status !== "unconfirmed" || row.paypal_refund_id) {
+    throw new RefundRefused("NOTHING_TO_ASK", "PayPal already has a record of this refund. Check it against PayPal.");
+  }
+  if (!row.capture_id) throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Check PayPal directly.");
+  if (now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS) {
+    throw new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
+  }
+  await approvedFactsHold(db, row);
+
+  const claimed = await db.query(
+    `update refunds set send_lease_until = $2::timestamptz, updated_at = $3::timestamptz
+     where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $3::timestamptz)
+     returning id`,
+    [input.refundId, new Date(now.getTime() + SEND_LEASE_MS).toISOString(), now.toISOString()],
+  );
+  if (claimed.rows.length === 0) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
+
+  return sendRefund(
+    db,
+    client,
+    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency },
+    input.recordKey,
+    now,
+  );
+}
+
 const refundSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -337,6 +424,8 @@ const refundSchema = z.object({
 });
 
 export interface Reconciliation {
+  /** No clear answer, and it is still safe to repeat the stored request. */
+  canAskAgain: boolean;
   ledger: { status: string; amountCents: number; currency: string };
   capture: { status: string; amountCents: number; currency: string } | null;
   refund: { status: string; amountCents: number; currency: string } | null;
@@ -395,6 +484,9 @@ export async function reconcileRefund(
   }
 
   if (!row.capture_id) exceptions.push("PayPal's record of this refund has aged out here. Check PayPal directly.");
+  const unanswered = status === "unconfirmed" && !row.paypal_refund_id && row.capture_id !== null;
+  const canAskAgain = unanswered && now.getTime() - row.created_at.getTime() <= ASK_AGAIN_MS;
+  if (unanswered && !canAskAgain) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");
   if (refund && (refund.amountCents !== row.amount_cents || refund.currency !== row.currency)) {
     exceptions.push("PayPal's refund amount differs from the ledger.");
@@ -405,6 +497,7 @@ export async function reconcileRefund(
   if (!webhookSeen && status !== "failed") exceptions.push("PayPal's webhook has not arrived yet.");
 
   return {
+    canAskAgain,
     ledger: { status, amountCents: row.amount_cents, currency: row.currency },
     capture: captureFacts ? { status: captureFacts.status, amountCents: captureFacts.amountCents, currency: captureFacts.currency } : null,
     refund,

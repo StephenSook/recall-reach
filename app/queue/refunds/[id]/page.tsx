@@ -15,9 +15,10 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   if (!session) redirect("/");
   const recordKey = recordKeyFromEnv();
   if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
+  const { id } = await params;
   let rec: Reconciliation;
   try {
-    rec = await reconcileRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: (await params).id, recordKey });
+    rec = await reconcileRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: id, recordKey });
   } catch (err) {
     if (err instanceof RefundRefused) notFound();
     throw err;
@@ -65,6 +66,13 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       ) : (
         <p data-testid="no-exceptions">All four records agree.</p>
       )}
+      {rec.canAskAgain ? (
+        <form action="/api/queue/refunds/ask-again" method="post">
+          <input type="hidden" name="refundId" value={id} />
+          <p>This repeats the same request. If PayPal already made the refund, it answers with that refund and makes no second one.</p>
+          <button type="submit">Ask PayPal again</button>
+        </form>
+      ) : null}
       <p>
         <a href="/queue">Back to the queue</a>
       </p>

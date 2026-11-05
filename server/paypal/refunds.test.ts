@@ -10,7 +10,7 @@ import { createContactCipher } from "../privacy/contactCipher";
 import { createRecordKey } from "../privacy/recordKey";
 import { createPayPalClient, type PayPalClient } from "./client";
 import { valueToCents } from "./orders";
-import { approveRefund, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents } from "./refunds";
+import { approveRefund, askPayPalAgain, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents } from "./refunds";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -630,6 +630,139 @@ describe("refunds", () => {
     });
   });
 
+  describe("asking PayPal again about a refund with no clear answer", () => {
+    const again = (refundId: string, client: PayPalClient, now = NOW, shop = shopId) => askPayPalAgain(db, client, { shopId: shop, refundId, recordKey: key, now });
+    /** The send that got no answer is over, so its lease has run out. */
+    const LATER = new Date(NOW.getTime() + 5 * 60_000);
+
+    async function noClearAnswer(refundSteps: RefundStep[]) {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundSteps });
+      const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
+      expect(r.status).toBe("unconfirmed");
+      return { m, r, pp };
+    }
+
+    it("finds a refund that landed when every answer was lost, and makes no second refund", async () => {
+      const { r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
+      const first = pp.posts()[0];
+      const after = await again(r.refundId, pp.client, LATER);
+      expect(after.status).toBe("refunded");
+      expect(pp.made()).toHaveLength(1);
+      const last = pp.posts().at(-1);
+      expect(last?.opts.requestId).toBe(first.opts.requestId);
+      expect(last?.opts.body).toEqual(first.opts.body);
+      expect(last?.path).toBe(first.path);
+    });
+
+    it("records PayPal's refund id once it is known, so the webhook and reconciliation can find it", async () => {
+      const { r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
+      await again(r.refundId, pp.client, LATER);
+      const { rows } = await db.query<{ refund_ref_hmac: string; refund_id: string }>(
+        "select f.refund_ref_hmac, p.refund_id from refunds f join paypal_refund_refs p on p.refund_row_id = f.id where f.id = $1",
+        [r.refundId],
+      );
+      expect(rows[0]).toEqual({ refund_ref_hmac: key("paypal-resource", "REF-1"), refund_id: "REF-1" });
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: LATER });
+      expect(rec.refund?.status).toBe("COMPLETED");
+      expect(rec.ledger.status).toBe("refunded");
+    });
+
+    it("sends the refund if it never arrived, still only once", async () => {
+      const { r, pp } = await noClearAnswer(["down", "down", "down"]);
+      expect(pp.made()).toHaveLength(0);
+      expect((await again(r.refundId, pp.client, LATER)).status).toBe("refunded");
+      expect(pp.made()).toHaveLength(1);
+    });
+
+    it("settles as failed on a clear refusal, which frees the line for a new approval", async () => {
+      const { m, r } = await noClearAnswer(["down", "down", "down"]);
+      const refusing = fakePayPal({ refundSteps: [422] });
+      const after = await again(r.refundId, refusing.client, LATER);
+      expect(after).toMatchObject({ status: "failed", failure: "REFUND_AMOUNT_EXCEEDED" });
+      await expect(approve(m.id)).resolves.toBeDefined();
+    });
+
+    it("stays unconfirmed when PayPal still gives no clear answer", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      const after = await again(r.refundId, fakePayPal({ refundSteps: ["down", "down", "down"] }).client, LATER);
+      expect(after.status).toBe("unconfirmed");
+    });
+
+    it("does not send while the first send may still be running", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      await db.query("update refunds set send_lease_until = $2::timestamptz where id = $1", [r.refundId, new Date(NOW.getTime() + 60_000).toISOString()]);
+      const pp = fakePayPal();
+      expect(await refusal(again(r.refundId, pp.client))).toBe("REFUND_BEING_SENT");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("lets only one of two simultaneous requests send", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      const pp = fakePayPal();
+      const results = await Promise.allSettled([again(r.refundId, pp.client, LATER), again(r.refundId, pp.client, LATER)]);
+      expect(results.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);
+      expect(pp.posts()).toHaveLength(1);
+    });
+
+    it("refuses once the request is too old for PayPal's replay to be trusted", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      const pp = fakePayPal();
+      const tooLate = new Date(NOW.getTime() + 6 * 3_600_000 + 60_000);
+      expect(await refusal(again(r.refundId, pp.client, tooLate))).toBe("TOO_OLD_TO_ASK_AGAIN");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("refuses when the line changed since the approval, rather than sending the old amount", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      await storeOrderLines(db, shopId, [line({ unitPriceCents: 3000 })], createContactCipher("k".repeat(32), shopId), "test");
+      const pp = fakePayPal();
+      expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("LINE_CHANGED");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("refuses when the 46-hour purge removed the capture reference", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      await db.query("delete from paypal_refund_refs");
+      const pp = fakePayPal();
+      expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("PAYPAL_FACTS_AGED_OUT");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("refuses a refund that already has a clear answer, and sends nothing", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const r = await execute(a.approvalId, pp.client);
+      const posts = pp.posts().length;
+      expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("NOTHING_TO_ASK");
+      expect(pp.posts()).toHaveLength(posts);
+    });
+
+    it("refuses another shop's refund", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
+      expect(await refusal(again(r.refundId, fakePayPal().client, LATER, other))).toBe("NO_SUCH_REFUND");
+    });
+
+    it("recovers a send that crashed before any answer, once reconciliation has flagged it", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const r = await execute(a.approvalId, fakePayPal({ refundSteps: ["down", "down", "down"] }).client);
+      await agedFromNow(r.refundId);
+      // What a crash mid-send leaves behind: a row still pending, no refund id.
+      await db.query("update refunds set status = 'pending', send_lease_until = $2::timestamptz where id = $1", [r.refundId, new Date(NOW.getTime() + 240_000).toISOString()]);
+      const pp = fakePayPal();
+      const later = new Date(NOW.getTime() + 11 * 60_000);
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(rec.ledger.status).toBe("unconfirmed");
+      expect(rec.canAskAgain).toBe(true);
+      expect((await again(r.refundId, pp.client, later)).status).toBe("refunded");
+    });
+  });
+
   describe("reconciling", () => {
     it("shows capture, refund, webhook and ledger side by side, with no exceptions when they agree", async () => {
       const m = await setUp();
@@ -643,6 +776,7 @@ describe("refunds", () => {
       );
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(rec).toEqual({
+        canAskAgain: false,
         ledger: { status: "refunded", amountCents: 9000, currency: "USD" },
         capture: { status: "REFUNDED", amountCents: 9000, currency: "USD" },
         refund: { status: "COMPLETED", amountCents: 9000, currency: "USD" },
