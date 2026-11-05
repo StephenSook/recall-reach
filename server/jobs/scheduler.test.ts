@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cpscPollRange, startScheduler } from "./scheduler";
+import { cpscPollRange, MAX_CATCHUP_DAYS, startScheduler } from "./scheduler";
 
 describe("startScheduler", () => {
   beforeEach(() => {
@@ -137,11 +137,22 @@ describe("job deadlines", () => {
 });
 
 describe("cpscPollRange", () => {
+  const NOW = new Date("2026-11-06T02:30:00Z");
+
   it("asks for recalls published or republished yesterday and today (UTC days)", () => {
-    expect(cpscPollRange(new Date("2026-11-06T02:30:00Z"))).toEqual({
-      field: "LastPublishDate",
-      start: "2026-11-05",
-      end: "2026-11-06",
-    });
+    expect(cpscPollRange(NOW)).toEqual({ field: "LastPublishDate", start: "2026-11-05", end: "2026-11-06" });
+  });
+
+  it("reaches back to one day before the last pull that succeeded", () => {
+    expect(cpscPollRange(NOW, "2026-11-03").start).toBe("2026-11-02");
+  });
+
+  it("never starts later than yesterday, however recent the last pull", () => {
+    expect(cpscPollRange(NOW, "2026-11-06").start).toBe("2026-11-05");
+  });
+
+  it("caps how far back it reaches", () => {
+    expect(MAX_CATCHUP_DAYS).toBe(120);
+    expect(cpscPollRange(NOW, "2026-01-01").start).toBe("2026-07-09");
   });
 });

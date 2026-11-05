@@ -65,8 +65,20 @@ export function startScheduler(
 }
 
 const utcDay = (d: Date) => d.toISOString().slice(0, 10);
+const DAY_MS = 86_400_000;
 
-/** Recalls published or republished yesterday or today (UTC). CPSC's publish date has no time of day. */
-export function cpscPollRange(now: Date = new Date()): RecallRange {
-  return { field: "LastPublishDate", start: utcDay(new Date(now.getTime() - 86_400_000)), end: utcDay(now) };
+/** How far back a poll will reach to fill a gap. Older gaps are logged, for pnpm load:recalls. */
+export const MAX_CATCHUP_DAYS = 120;
+
+/**
+ * Recalls published or republished since the poll last succeeded: from one day before that pull's
+ * end (CPSC's publish date has no time of day), and never later than yesterday (UTC). Without the
+ * reach-back, an outage across a UTC day would silently miss whatever was published during it.
+ */
+export function cpscPollRange(now: Date = new Date(), polledThrough?: string | null): RecallRange {
+  const yesterday = now.getTime() - DAY_MS;
+  const fromLastPull = polledThrough ? Date.parse(`${polledThrough}T00:00:00Z`) - DAY_MS : yesterday;
+  const earliest = now.getTime() - MAX_CATCHUP_DAYS * DAY_MS;
+  const start = Math.max(Math.min(yesterday, fromLastPull), earliest);
+  return { field: "LastPublishDate", start: utcDay(new Date(start)), end: utcDay(now) };
 }

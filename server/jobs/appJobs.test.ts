@@ -74,6 +74,59 @@ describe("the recall poll job", () => {
     expect(params.get("LastPublishDateEnd")).toBe("2026-11-05");
   });
 
+  describe("catching up after an outage", () => {
+    const recordPullRow = (rangeEnd: string, field = "LastPublishDate", status = "ok") =>
+      db.query(
+        `insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at)
+         values ($1, $2::date - 1, $2::date, $3, now())`,
+        [field, rangeEnd, status],
+      );
+    const startOf = (url: string) => new URL(url).searchParams.get("LastPublishDateStart");
+
+    it("reaches back to before the last good pull when it is 3 days old", async () => {
+      await recordPullRow("2026-11-02");
+      const cpsc = cpscAnswering(() => nov5);
+      await appJobs(db, cpsc.deps)[0].run();
+      expect(startOf(cpsc.requested[0])).toBe("2026-11-01");
+    });
+
+    it("counts a partial pull as covered, but ignores failed pulls and whole-year loads", async () => {
+      await recordPullRow("2026-11-01", "LastPublishDate", "partial");
+      await recordPullRow("2026-11-04", "LastPublishDate", "failed");
+      await recordPullRow("2026-11-05", "RecallDate", "ok");
+      const cpsc = cpscAnswering(() => nov5);
+      await appJobs(db, cpsc.deps)[0].run();
+      expect(startOf(cpsc.requested[0])).toBe("2026-10-31");
+    });
+
+    it("keeps reaching back in memory while CPSC stays down, with no database call", async () => {
+      const { counted, calls } = counting(db);
+      let today = new Date("2026-11-05T22:00:00Z");
+      let down = false;
+      const cpsc = cpscAnswering(() => (down ? 503 : nov5));
+      const [poll] = appJobs(counted, { ...cpsc.deps, now: () => today });
+      await poll.run(); // good: covered through Nov 5
+      down = true;
+      today = new Date("2026-11-08T22:00:00Z");
+      calls.n = 0;
+      await poll.run().catch(() => {});
+      expect(calls.n).toBe(0);
+      down = false;
+      cpsc.requested.length = 0;
+      await poll.run();
+      expect(startOf(cpsc.requested[0])).toBe("2026-11-04");
+    });
+
+    it("warns when the gap is older than the cap", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await recordPullRow("2026-01-01");
+      await appJobs(db, cpscAnswering(() => nov5).deps)[0].run();
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        "cpsc-poll: the last good pull ended 2026-01-01, past the 120-day catch-up cap; run pnpm load:recalls to fill the gap",
+      ]);
+    });
+  });
+
   it("the first tick writes, then a quiet poll makes zero database calls", async () => {
     const { counted, calls } = counting(db);
     const cpsc = cpscAnswering(() => nov5);

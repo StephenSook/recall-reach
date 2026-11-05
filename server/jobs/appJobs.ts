@@ -2,7 +2,7 @@ import { fetchRecalls, type FetchDeps } from "../cpsc/fetch";
 import { recordPull, snapshotHash } from "../cpsc/pull";
 import type { Db } from "../db/types";
 import { purgePayPalData } from "../privacy/retention";
-import { cpscPollRange, type Job } from "./scheduler";
+import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
 
 export const POLL_MS = 15 * 60_000;
 /** Every 4th poll (hourly) is a heartbeat: it writes even if nothing changed, and purges PayPal data. */
@@ -22,6 +22,15 @@ export function recallPollStatus(): RecallPollStatus {
   return holder.__recallReachPoll ?? { lastPollAt: null, lastPollOk: null, dbTouched: null };
 }
 
+async function lastPolledThrough(db: Db): Promise<string | null> {
+  const { rows } = await db.query<{ range_end: string }>(
+    `select range_end from cpsc_pulls
+     where range_field = 'LastPublishDate' and status in ('ok', 'partial')
+     order by range_end desc limit 1`,
+  );
+  return rows[0]?.range_end ?? null;
+}
+
 /**
  * The one background job. Neon's free plan has 100 CU-hours a month and the compute stays awake 5
  * minutes after any activity, so a query every 15 minutes would keep it awake around the clock and
@@ -33,12 +42,25 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
+  // Where the last good poll reached. Read once from the database (the first tick writes anyway),
+  // then kept here so a CPSC outage can be caught up without waking the database.
+  let polledThrough: string | null | undefined;
 
   const poll = async () => {
     const heartbeat = ticks % HEARTBEAT_TICKS === 0;
     ticks++;
     const at = now();
-    const range = cpscPollRange(at);
+    if (polledThrough === undefined) {
+      polledThrough = await lastPolledThrough(db);
+      const covered = polledThrough ? Date.parse(`${polledThrough}T00:00:00Z`) : null;
+      if (covered !== null && at.getTime() - covered > MAX_CATCHUP_DAYS * 86_400_000) {
+        console.warn(
+          `cpsc-poll: the last good pull ended ${polledThrough}, past the ${MAX_CATCHUP_DAYS}-day catch-up cap; ` +
+            "run pnpm load:recalls to fill the gap",
+        );
+      }
+    }
+    const range = cpscPollRange(at, polledThrough);
 
     let payload: unknown[] | null = null;
     let fetchError: unknown = null;
@@ -47,6 +69,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
     } catch (err) {
       fetchError = err;
     }
+    if (payload) polledThrough = range.end;
     const hash = payload ? snapshotHash(payload) : null;
     const changed = hash !== null && hash !== lastHash;
     const touchDb = heartbeat || changed;
