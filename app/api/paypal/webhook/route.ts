@@ -1,15 +1,17 @@
 import { getDb } from "@/server/db/pg";
-import { handleWebhookDelivery } from "@/server/paypal/webhookHandler";
+import { readCappedBody } from "@/server/http/body";
+import { handleWebhookDelivery, MAX_WEBHOOK_BYTES } from "@/server/paypal/webhookHandler";
 
 export const dynamic = "force-dynamic";
 
 // PayPal posts webhook events here. The raw bytes are read before any parsing because the
-// signature covers the exact body PayPal sent.
+// signature covers the exact body PayPal sent; reading stops at MAX_WEBHOOK_BYTES.
 export async function POST(request: Request): Promise<Response> {
   try {
-    const rawBody = new Uint8Array(await request.arrayBuffer());
+    const read = await readCappedBody(request, MAX_WEBHOOK_BYTES);
+    if (!read.ok) return Response.json({ error: "payload too large" }, { status: 413 });
     const { status, body } = await handleWebhookDelivery({
-      rawBody,
+      rawBody: read.body,
       headers: request.headers,
       webhookId: process.env.PAYPAL_WEBHOOK_ID,
       db: getDb(),
