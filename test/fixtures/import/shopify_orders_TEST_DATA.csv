@@ -1,0 +1,7 @@
+Name,Email,Financial Status,Paid at,Currency,Subtotal,Total,Discount Code,Discount Amount,Created at,Lineitem quantity,Lineitem name,Lineitem price,Lineitem SKU,Lineitem discount,Billing Name,Billing Street,Payment Method,Payment ID,Payment References,Id
+#T1001,test-buyer-one@example.test,paid,2026-03-14 10:25:00 -0400,USD,40.00,30.00,SAVE10,10.00,2026-03-14 10:22:05 -0400,1,"TEST DATA stroller, gray",30.00,TEST-SKU-1,0.00,Testfirst Testlast,1 Test Street,PayPal Express Checkout,pyid-test-1,pyid-test-1,900001
+#T1001,,,,,,,,,,1,TEST DATA teether,10.00,TEST-SKU-2,0.00,,,,,,900001
+#T1002,,paid,2026-04-02 09:00:00 -0400,USD,30.00,27.00,,3.00,2026-04-02 08:59:00 -0400,2,TEST DATA crib sheet,15.00,,3.00,Testfirst Testlast,1 Test Street,PayPal Express Checkout,,pyref-test-2,900002
+#T1003,test-buyer-three@example.test,paid,,USD,5.00,5.00,,,2026-05-01 12:00:00 -0400,1,TEST DATA bad price,abc,,,,,,,,900003
+#T1004,,paid,,JPY,500,500,,,2026-05-01 12:00:00 +0900,1,TEST DATA yen item,500,,,,,,,,900004
+#T1005,,paid,,USD,5.00,5.00,,,not a date,1,TEST DATA bad date,5.00,,,,,,,,900005
