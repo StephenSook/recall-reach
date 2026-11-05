@@ -100,8 +100,44 @@ describe("verdictFor", () => {
     expect(v.reason).toMatch(/different product/);
   });
 
-  it("CLEARED: a different brand, with the same kind of product", () => {
-    expect(verdictFor(BREZZA, { title: "Papablic Sterilizer Dryer" }).verdict).toBe("CLEARED");
+  it("MATCH: a recalled model number wins even when the title never names the brand", () => {
+    const v = verdictFor(BREZZA, { title: "SuperFast Sterilizer Dryer BRZ0083" });
+    expect(v.verdict).toBe("MATCH");
+    expect(v.matched).toContain("model: BRZ0083");
+  });
+
+  it("SCOPE_GAP, not CLEARED, when the brand is merely absent and the product words match", () => {
+    const v = verdictFor(BREZZA, { title: "Sterilizer Dryer, lightly used" });
+    expect(v.verdict).toBe("SCOPE_GAP");
+    expect(v.missing.join(" ")).toMatch(/Baby Brezza/);
+  });
+
+  it("CLEARED: no brand, and only one product word in common", () => {
+    expect(verdictFor(BREZZA, { title: "Bottle dryer rack" }).verdict).toBe("CLEARED");
+  });
+
+  it("an unrelated code in the title is not proof of a different model", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer X200" });
+    expect(v.verdict).toBe("SCOPE_GAP");
+  });
+
+  it("a variant of a listed model is a gap, not a clearance", () => {
+    expect(verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083A" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("never clears on model or product when CPSC says the full list is elsewhere", () => {
+    const partial = { ...BREZZA, description: `${BREZZA.description} Other affected models are listed below.` };
+    const otherModel = verdictFor(partial, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ00999" });
+    expect(otherModel.verdict).toBe("SCOPE_GAP");
+    expect(otherModel.missing.join(" ")).toMatch(/CPSC/);
+    expect(verdictFor(partial, { title: "Baby Brezza Formula Pro Advanced" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("stays fast on very long shop text", () => {
+    const started = performance.now();
+    verdictFor(BREZZA, { title: "A".repeat(200_000), description: "A-1".repeat(100_000) });
+    modelTokens("9-".repeat(200_000));
+    expect(performance.now() - started).toBeLessThan(1500);
   });
 
   it("the date filter clears a sale from before the product was first sold", () => {
