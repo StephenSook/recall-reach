@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createPayPalClient, PayPalApiError } from "./client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPayPalClient, PayPalApiError, payPalClientFromEnv } from "./client";
 import { PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
 
 type Reply = Response | Error;
@@ -125,5 +125,27 @@ describe("PayPal client", () => {
     const s = scripted([]);
     await expect(s.client.request("GET", "https://evil.example/x")).rejects.toThrow(/path/);
     expect(s.calls).toHaveLength(0);
+  });
+});
+
+describe("payPalClientFromEnv", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Measured 2026-11-05: `security ... -w | pbcopy` carries a newline, and PayPal answers 401 to it.
+  it("drops whitespace around pasted credentials before asking PayPal for a token", async () => {
+    const auth: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (_url: unknown, init?: RequestInit) => {
+      auth.push(new Headers(init?.headers).get("Authorization"));
+      return Response.json({ access_token: "t", expires_in: 3600 });
+    });
+    const client = payPalClientFromEnv({ PAYPAL_CLIENT_ID: "the-id\n", PAYPAL_CLIENT_SECRET: " the-secret \r\n" } as unknown as NodeJS.ProcessEnv);
+    await client.request("GET", "/v2/payments/captures/CAP-1");
+    expect(auth[0]).toBe(`Basic ${Buffer.from("the-id:the-secret").toString("base64")}`);
+  });
+
+  it("treats a value that is only whitespace as not set", () => {
+    expect(() => payPalClientFromEnv({ PAYPAL_CLIENT_ID: "\n", PAYPAL_CLIENT_SECRET: "x" } as unknown as NodeJS.ProcessEnv)).toThrow(/must be set/);
   });
 });

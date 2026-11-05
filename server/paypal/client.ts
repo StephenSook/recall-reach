@@ -127,8 +127,9 @@ export function createPayPalClient(opts: {
 
 /** The app's client, from PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (sandbox app credentials). */
 export function payPalClientFromEnv(env: NodeJS.ProcessEnv = process.env): PayPalClient {
-  const clientId = env.PAYPAL_CLIENT_ID;
-  const clientSecret = env.PAYPAL_CLIENT_SECRET;
+  // A pasted value can carry a newline, and PayPal answers 401 to it (measured 2026-11-05).
+  const clientId = env.PAYPAL_CLIENT_ID?.trim();
+  const clientSecret = env.PAYPAL_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) throw new Error("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be set (see .env.example)");
   return createPayPalClient({ tokens: createTokenProvider({ clientId, clientSecret }) });
 }
