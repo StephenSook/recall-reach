@@ -6,16 +6,31 @@
 // acting twice (measured 2026-11-05 on a refund: same id, same refund). Nothing here logs.
 import { createTokenProvider, PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
 
+/** A path safe to log: any segment carrying a digit (capture, order, refund ids) becomes ":id". */
+function pathTemplate(path: string): string {
+  return path
+    .split("/")
+    .map((segment, i) => (i > 1 && /\d/.test(segment) ? ":id" : segment))
+    .join("/");
+}
+
+/**
+ * Its message reaches logs, and logs outlive PayPal's 48-hour rule, so it names the endpoint
+ * template and PayPal's issue code only: no raw ids. debugId stays a field for live debugging.
+ */
 export class PayPalApiError extends Error {
+  readonly path: string;
   constructor(
     readonly status: number,
     readonly method: string,
-    readonly path: string,
+    path: string,
     readonly issue?: string,
     readonly debugId?: string,
   ) {
-    super(`PayPal ${status} on ${method} ${path}${issue ? `: ${issue}` : ""}${debugId ? ` (debug_id ${debugId})` : ""}`);
+    const template = pathTemplate(path);
+    super(`PayPal ${status} on ${method} ${template}${issue ? `: ${issue}` : ""}`);
     this.name = "PayPalApiError";
+    this.path = template;
   }
 }
 
@@ -63,7 +78,7 @@ export function createPayPalClient(opts: {
 
   return {
     async request<T>(method: Method, path: string, ro: RequestOptions = {}) {
-      if (!/^\/v\d+\/[\w\-/.]+$/.test(path)) throw new Error(`not a PayPal API path: ${path}`);
+      if (!/^\/v\d+\/[\w\-/.]+$/.test(path)) throw new Error("not a PayPal API path");
       const url = new URL(PAYPAL_SANDBOX_BASE + path);
       for (const [k, v] of Object.entries(ro.query ?? {})) url.searchParams.set(k, String(v));
       const retryable = method === "GET" || (method === "POST" && Boolean(ro.requestId));

@@ -112,6 +112,15 @@ describe("PayPal client", () => {
     expect(s.calls).toHaveLength(1);
   });
 
+  it("never puts a raw PayPal id or debug id in the error message, which ends up in logs", async () => {
+    const s = scripted([fail(422, { name: "UNPROCESSABLE_ENTITY", details: [{ issue: "REFUND_AMOUNT_EXCEEDED" }], debug_id: "debug-raw-99" })]);
+    const err = await s.client.request("POST", "/v2/payments/captures/6LJ47309WP1325443/refund", { body: {}, requestId: "r" }).catch((e) => e);
+    expect(err.message).toBe("PayPal 422 on POST /v2/payments/captures/:id/refund: REFUND_AMOUNT_EXCEEDED");
+    expect(err.path).toBe("/v2/payments/captures/:id/refund");
+    expect(JSON.stringify({ message: err.message, path: err.path })).not.toContain("6LJ47309WP1325443");
+    expect(err.message).not.toContain("debug-raw-99");
+  });
+
   it("refuses a path that is not a PayPal API path", async () => {
     const s = scripted([]);
     await expect(s.client.request("GET", "https://evil.example/x")).rejects.toThrow(/path/);
