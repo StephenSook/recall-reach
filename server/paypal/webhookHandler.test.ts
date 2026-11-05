@@ -50,6 +50,24 @@ describe("handleWebhookDelivery", () => {
     expect(await rows()).toHaveLength(1);
   });
 
+  it("treats a retry of the same event in a new transmission as a duplicate", async () => {
+    await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
+    const res = await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-2"));
+    expect(res).toEqual({ status: 200, body: { received: true, duplicate: true } });
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it("refuses a transmission id reused for a different event (CRC32 replay)", async () => {
+    // PayPal signs only a CRC32 of the body, so a captured transmission could be re-sent with a
+    // crafted body whose CRC matches. Signing the second body under the same transmission id
+    // stands in for that collision.
+    await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
+    const other = Buffer.from(JSON.stringify({ ...event, id: "WH-REPLAYED", event_type: "PAYMENT.CAPTURE.COMPLETED" }));
+    const res = await deliver(other, paypalHeaders(other, WEBHOOK_ID, "transmission-1"));
+    expect(res.status).toBe(401);
+    expect((await rows()).map((r) => r.event_id)).toEqual(["WH-TEST-1"]);
+  });
+
   it("answers 401 to a forged delivery and stores nothing", async () => {
     const forged = Buffer.from(JSON.stringify({ ...event, id: "WH-FORGED" }));
     const res = await deliver(forged, paypalHeaders(body, WEBHOOK_ID));

@@ -19,8 +19,10 @@ function eventCreateTime(event: WebhookEvent): string | null {
 
 /**
  * Handles one PayPal webhook delivery: verify the signature, then record the event once.
- * 503 when no webhook id is configured (PayPal retries later), 401 when verification fails,
- * 200 for a verified event, including a repeat delivery of one already recorded.
+ * 503 when no webhook id is configured (PayPal retries later), 401 when verification fails or
+ * the transmission was already used for another event, 200 for a verified event, including a
+ * repeat delivery of one already recorded. Recording an event changes no other state: anything
+ * that acts on an event must confirm the resource through the PayPal API first.
  */
 export async function handleWebhookDelivery(input: {
   rawBody: Uint8Array;
@@ -37,7 +39,8 @@ export async function handleWebhookDelivery(input: {
     return { status: 413, body: { error: "payload too large" } };
   }
 
-  const result = await verifyWebhook(input.rawBody, readTransmissionHeaders(input.headers), input.webhookId, {
+  const transmission = readTransmissionHeaders(input.headers);
+  const result = await verifyWebhook(input.rawBody, transmission, input.webhookId, {
     fetchCert: input.fetchCert,
   });
   if (!result.verified) {
@@ -46,6 +49,26 @@ export async function handleWebhookDelivery(input: {
   }
 
   const { event } = result;
+  // Verification guarantees the transmission id is present. A transmission already used for a
+  // different event is a replay of a captured signature over a CRC-matching body: refuse it.
+  const transmissionId = transmission.transmissionId!;
+  const claimed = await input.db.query(
+    `insert into paypal_webhook_transmissions (transmission_id, event_id) values ($1, $2)
+     on conflict (transmission_id) do nothing
+     returning event_id`,
+    [transmissionId, event.id],
+  );
+  if (claimed.rows.length === 0) {
+    const prior = await input.db.query<{ event_id: string }>(
+      "select event_id from paypal_webhook_transmissions where transmission_id = $1",
+      [transmissionId],
+    );
+    if (prior.rows[0]?.event_id !== event.id) {
+      console.warn(`PayPal webhook rejected: transmission ${transmissionId} was already used for another event`);
+      return { status: 401, body: { error: "signature not verified" } };
+    }
+  }
+
   const resourceId = typeof event.resource?.id === "string" ? event.resource.id : null;
   const { rows } = await input.db.query(
     `insert into paypal_webhook_events

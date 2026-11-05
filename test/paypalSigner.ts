@@ -10,8 +10,7 @@ export const TEST_CERT_URL = "https://api.sandbox.paypal.com/v1/notifications/ce
 export const fetchTestCert = async () => TEST_PUBLIC_PEM;
 
 /** HTTP headers exactly as PayPal would send them for this body and webhook id. */
-export function paypalHeaders(rawBody: Uint8Array, webhookId: string): Headers {
-  const transmissionId = "0f3c9b10-test";
+export function paypalHeaders(rawBody: Uint8Array, webhookId: string, transmissionId = "0f3c9b10-test"): Headers {
   const transmissionTime = "2026-11-05T20:00:00Z";
   const signer = createSign("sha256WithRSAEncryption");
   signer.update(signedMessage(transmissionId, transmissionTime, webhookId, rawBody));
