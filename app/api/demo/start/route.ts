@@ -12,7 +12,7 @@ const allow = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
 
 export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
-  if (!allow(clientIp(request.headers))) return refused(429, "Too many demo shops from here. Try again in an hour.");
+  if (!allow(clientIp(request.headers))) return seeOther(request, "/?demo=busy");
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { shopId } = await seedDemoShop(getDb(), payPalClientFromEnv(), {
@@ -27,6 +27,6 @@ export async function POST(request: Request): Promise<Response> {
     return response;
   } catch (err) {
     console.error("demo start failed:", err instanceof Error ? err.message : "unknown error");
-    return refused(502, "The demo shop could not be set up. Please try again.");
+    return seeOther(request, "/?demo=failed");
   }
 }
