@@ -90,7 +90,6 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
     } catch (err) {
       fetchError = err;
     }
-    if (payload) polledThrough = range.end;
     const changed = hash !== null && hash !== lastHash;
     const touchDb = heartbeat || changed;
 
@@ -101,11 +100,16 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
           if (payload) return payload;
           throw fetchError;
         });
-        if (hash) lastHash = hash;
+        if (hash) {
+          lastHash = hash;
+          polledThrough = range.end;
+        }
       } catch (err) {
         // A failed fetch is already recorded by recordPull and raised below.
         if (err !== fetchError) writeError = err;
       }
+    } else if (payload) {
+      polledThrough = range.end; // the same answer as the one already stored
     }
 
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb };

@@ -117,6 +117,29 @@ describe("the recall poll job", () => {
       expect(startOf(cpsc.requested[0])).toBe("2026-11-04");
     });
 
+    it("does not move past a gap until the data is stored: a failed write keeps the catch-up point", async () => {
+      await recordPullRow("2026-11-02");
+      let failWrite = true;
+      const flaky: Db = {
+        ...db,
+        transaction: (fn) => {
+          if (failWrite) {
+            failWrite = false;
+            throw new Error("write failed");
+          }
+          return db.transaction(fn);
+        },
+      };
+      const cpsc = cpscAnswering(() => nov5);
+      const [poll] = appJobs(flaky, cpsc.deps);
+      await expect(poll.run()).rejects.toThrow(/write failed/);
+      await poll.run();
+      expect(cpsc.requested.map(startOf)).toEqual(["2026-11-01", "2026-11-01"]);
+      expect(Number((await db.query<{ n: string }>("select count(*)::text as n from recalls")).rows[0].n)).toBe(nov5.length);
+      await poll.run(); // stored now, so the reach-back closes
+      expect(startOf(cpsc.requested[2])).toBe("2026-11-04");
+    });
+
     it("warns when the gap is older than the cap", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       await recordPullRow("2026-01-01");
