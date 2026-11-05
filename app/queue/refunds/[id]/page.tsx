@@ -1,0 +1,73 @@
+import { notFound, redirect } from "next/navigation";
+import { getDb } from "@/server/db/pg";
+import { payPalClientFromEnv } from "@/server/paypal/client";
+import { centsToValue } from "@/server/paypal/orders";
+import { reconcileRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
+import { recordKeyFromEnv } from "@/server/privacy/recordKey";
+import { currentSession } from "@/server/web/http";
+
+export const dynamic = "force-dynamic";
+
+const money = (x: { amountCents: number; currency: string } | null) => (x ? `${centsToValue(x.amountCents)} ${x.currency}` : "not held here");
+
+export default async function RefundPage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await currentSession();
+  if (!session) redirect("/");
+  const recordKey = recordKeyFromEnv();
+  if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
+  let rec: Reconciliation;
+  try {
+    rec = await reconcileRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: (await params).id, recordKey });
+  } catch (err) {
+    if (err instanceof RefundRefused) notFound();
+    throw err;
+  }
+  return (
+    <main>
+      <h1>Refund against PayPal</h1>
+      <table>
+        <thead>
+          <tr>
+            <th>Record</th>
+            <th>Status</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-testid="ledger">
+            <td>Our ledger</td>
+            <td>{rec.ledger.status}</td>
+            <td>{money(rec.ledger)}</td>
+          </tr>
+          <tr data-testid="refund">
+            <td>PayPal refund</td>
+            <td>{rec.refund?.status ?? "not held here"}</td>
+            <td>{money(rec.refund)}</td>
+          </tr>
+          <tr data-testid="capture">
+            <td>PayPal payment</td>
+            <td>{rec.capture?.status ?? "not held here"}</td>
+            <td>{money(rec.capture)}</td>
+          </tr>
+          <tr data-testid="webhook">
+            <td>PayPal webhook</td>
+            <td>{rec.webhook.seen ? "received and verified" : "not yet"}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      {rec.exceptions.length > 0 ? (
+        <ul data-testid="exceptions">
+          {rec.exceptions.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      ) : (
+        <p data-testid="no-exceptions">All four records agree.</p>
+      )}
+      <p>
+        <a href="/queue">Back to the queue</a>
+      </p>
+    </main>
+  );
+}
