@@ -38,7 +38,7 @@ const CANDIDATES_SQL = `
     from order_lines where shop_id = $1
     union all
     select 'shop_item', id, title, description, null
-    from shop_items where shop_id = $1 and listed
+    from shop_items where shop_id = $1 -- sold-out listings too; the queue shows which are still for sale
   ),
   recall_text as (
     select recall_id,

@@ -110,6 +110,21 @@ describe("runShopCheck", () => {
     expect(found).toEqual([{ verdict: "MATCH", sale_path: null, join_state: null }]);
   });
 
+  it("still matches a sold-out listing: some stores keep them up after the sale", async () => {
+    await db.query(
+      `insert into shop_items (shop_id, title, description, listed, source)
+       values ($1, 'Baby Brezza sterilizer', 'Model BRZ0156', false, 'test')`,
+      [shopId],
+    );
+    await runShopCheck(db, shopId, { today: TODAY });
+    const { rows: found } = await db.query<{ verdict: string }>(
+      `select verdict from recall_matches m join recalls r using (recall_id)
+       where m.shop_id = $1 and r.recall_number = '27072' and m.shop_item_id is not null`,
+      [shopId],
+    );
+    expect(found).toEqual([{ verdict: "MATCH" }]);
+  });
+
   it("ignores another shop's records", async () => {
     const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
     await storeOrderLines(db, other, [line("#X", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")], createContactCipher("k".repeat(32), other), "t");
