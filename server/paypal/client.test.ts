@@ -96,6 +96,12 @@ describe("PayPal client", () => {
     expect(s.calls).toHaveLength(1);
   });
 
+  it("never retries a PATCH, even with a PayPal-Request-Id: a repeated patch could apply twice", async () => {
+    const s = scripted([fail(503), ok({})]);
+    await expect(s.client.request("PATCH", "/v2/checkout/orders/O1", { body: [], requestId: "req-1" })).rejects.toThrow(/PayPal 503/);
+    expect(s.calls).toHaveLength(1);
+  });
+
   it("does not retry a 422 and reports PayPal's issue and debug id", async () => {
     const s = scripted([
       fail(422, { name: "UNPROCESSABLE_ENTITY", details: [{ issue: "CAPTURE_FULLY_REFUNDED" }], debug_id: "abc123" }),

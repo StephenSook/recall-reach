@@ -66,7 +66,7 @@ export function createPayPalClient(opts: {
       if (!/^\/v\d+\/[\w\-/.]+$/.test(path)) throw new Error(`not a PayPal API path: ${path}`);
       const url = new URL(PAYPAL_SANDBOX_BASE + path);
       for (const [k, v] of Object.entries(ro.query ?? {})) url.searchParams.set(k, String(v));
-      const retryable = method === "GET" || Boolean(ro.requestId);
+      const retryable = method === "GET" || (method === "POST" && Boolean(ro.requestId));
 
       let refreshedAfter401 = false;
       for (let attempt = 1; ; attempt++) {
