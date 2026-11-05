@@ -125,6 +125,21 @@ describe("runShopCheck", () => {
     expect(found).toEqual([{ verdict: "MATCH" }]);
   });
 
+  it("retrieves on a model number that appears only in the item's description, in any case", async () => {
+    await db.query(
+      `insert into shop_items (shop_id, title, description, listed, source)
+       values ($1, 'Kitchen appliance, gently used', 'Label says brz0154', true, 'test')`,
+      [shopId],
+    );
+    await runShopCheck(db, shopId, { today: TODAY });
+    const { rows: found } = await db.query<{ verdict: string }>(
+      `select verdict from recall_matches m join recalls r using (recall_id)
+       where m.shop_id = $1 and r.recall_number = '27072'`,
+      [shopId],
+    );
+    expect(found).toEqual([{ verdict: "MATCH" }]);
+  });
+
   it("ignores another shop's records", async () => {
     const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
     await storeOrderLines(db, other, [line("#X", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")], createContactCipher("k".repeat(32), other), "t");

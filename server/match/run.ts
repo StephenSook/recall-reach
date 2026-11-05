@@ -3,7 +3,7 @@
 import type { Recall, RecallProduct } from "../cpsc/schema";
 import type { Db } from "../db/types";
 import { joinOrderLines, type JoinPayment } from "./join";
-import { salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
+import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 
 /** Candidates kept per recall (brief: top 20). */
 const TOP_CANDIDATES = 20;
@@ -30,8 +30,9 @@ interface Candidate {
   ordered_on: string | null;
 }
 
-// Full text catches a model number or word the trigram score misses in a long recall title; trigrams
-// catch spelling and spacing. Both run over public CPSC text and the shop's own text.
+// Two ways in, and either is enough: the title resembles the recall's title and product names
+// (trigrams, which catch spelling and spacing), or the shop's text carries a model number that
+// appears anywhere in the recall's title or description. $4 maps each item to its model numbers.
 const CANDIDATES_SQL = `
   with items as (
     select 'order_line' as kind, id, title, '' as description, ordered_on::text as ordered_on
@@ -43,28 +44,40 @@ const CANDIDATES_SQL = `
   recall_text as (
     select recall_id,
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
-      to_tsvector('simple', title || ' ' || description) as doc
+      upper(title || ' ' || description) as doc
     from recalls
   ),
   scored as (
     select r.recall_id, i.kind, i.id, i.title, i.description, i.ordered_on,
-      greatest(
-        word_similarity(lower(i.title), r.name_text),
-        case when r.doc @@ replace(plainto_tsquery('simple', i.title || ' ' || i.description)::text, '&', '|')::tsquery
-             then ts_rank(r.doc, replace(plainto_tsquery('simple', i.title || ' ' || i.description)::text, '&', '|')::tsquery) else 0 end
-      ) as score,
-      word_similarity(lower(i.title), r.name_text) as similarity
+      word_similarity(lower(i.title), r.name_text) as similarity,
+      exists (
+        select 1 from jsonb_array_elements_text(coalesce($4::jsonb -> i.id::text, '[]'::jsonb)) as t(token)
+        where position(t.token in r.doc) > 0
+      ) as model_hit
     from recall_text r cross join items i
-    where word_similarity(lower(i.title), r.name_text) >= $2
   ),
   ranked as (
-    select *, row_number() over (partition by recall_id order by score desc, id) as rank from scored
+    select *, row_number() over (
+      partition by recall_id order by model_hit desc, similarity desc, id
+    ) as rank
+    from scored where model_hit or similarity >= $2
   )
   select recall_id, kind, id, title, description, ordered_on from ranked where rank <= $3`;
 
 export async function runShopCheck(db: Db, shopId: string, opts: { today: string; dateFilter?: boolean }): Promise<RunSummary> {
   const { rows: counted } = await db.query<{ n: string }>("select count(*)::text as n from recalls");
-  const { rows: candidates } = await db.query<Candidate>(CANDIDATES_SQL, [shopId, MIN_SIMILARITY, TOP_CANDIDATES]);
+  const { rows: shopText } = await db.query<{ id: string; text: string }>(
+    `select id, title as text from order_lines where shop_id = $1
+     union all select id, title || ' ' || description from shop_items where shop_id = $1`,
+    [shopId],
+  );
+  const tokens = Object.fromEntries(shopText.map((r) => [r.id, modelTokens(r.text.toUpperCase())]));
+  const { rows: candidates } = await db.query<Candidate>(CANDIDATES_SQL, [
+    shopId,
+    MIN_SIMILARITY,
+    TOP_CANDIDATES,
+    JSON.stringify(tokens),
+  ]);
 
   const { rows: lines } = await db.query<{ id: string; order_number: string; title: string; sku: string | null; ordered_on: string }>(
     "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
