@@ -7,6 +7,19 @@ const typeOverrides = new pg.TypeOverrides();
 typeOverrides.setTypeParser(pg.types.builtins.DATE, (value: string) => value);
 typeOverrides.setTypeParser(pg.types.builtins.TIMESTAMP, (value: string) => value);
 
+/**
+ * Without these, a query stalled across a Neon compute suspend would hang forever and take its job
+ * with it. Idle clients leave fast, and min stays 0, so nothing here keeps the free-tier compute awake.
+ */
+export const POOL_CONFIG = {
+  max: 5,
+  min: 0,
+  connectionTimeoutMillis: 15_000,
+  idleTimeoutMillis: 10_000,
+  query_timeout: 60_000, // the bound that holds on Neon's pooler, which ignores statement_timeout (migration 0007)
+  keepAlive: true,
+} satisfies pg.PoolConfig;
+
 type Cached = { pool: pg.Pool; db: Db };
 // Kept on globalThis so Next.js dev reloads reuse one pool instead of leaking connections.
 const holder = globalThis as typeof globalThis & { __recallReachDb?: Cached };
@@ -39,13 +52,7 @@ export function getDb(): Db {
     throw new Error(`DATABASE_URL must be a postgres URL, got ${protocol}//`);
   }
 
-  const pool = new pg.Pool({
-    connectionString: url,
-    types: typeOverrides,
-    max: 5,
-    connectionTimeoutMillis: 15_000,
-    idleTimeoutMillis: 30_000,
-  });
+  const pool = new pg.Pool({ connectionString: url, types: typeOverrides, ...POOL_CONFIG });
   // Neon closes idle connections when its compute suspends. Without a listener, that error
   // on an idle client would crash the process; the pool discards the client and reconnects.
   pool.on("error", (err) => {

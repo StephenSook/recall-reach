@@ -36,6 +36,7 @@ describe("startScheduler", () => {
         {
           name: "slow",
           everyMs: 1000,
+          deadlineMs: 60_000,
           run: () => {
             started++;
             return new Promise<void>((resolve) => (release = resolve));
@@ -71,6 +72,66 @@ describe("startScheduler", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(calls).toBe(2);
     expect(logs).toEqual(["job flaky failed: CPSC returned HTTP 503"]);
+    stop();
+  });
+});
+
+describe("job deadlines", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("releases a stalled run at its deadline, logs it, and lets the next tick run", async () => {
+    const logs: string[] = [];
+    let started = 0;
+    const stop = startScheduler(
+      [{ name: "stuck", everyMs: 1000, deadlineMs: 2500, run: () => (started++, new Promise<void>(() => {})) }],
+      { log: (line) => logs.push(line) },
+    );
+    await vi.advanceTimersByTimeAsync(2400);
+    expect(started).toBe(1);
+    await vi.advanceTimersByTimeAsync(700); // past the 2500 ms deadline, and tick 3000 fires
+    expect(logs).toContain("job stuck exceeded its 2500 ms deadline; released");
+    expect(started).toBe(2);
+    stop();
+  });
+
+  it("logs once when ticks are being skipped behind a long run", async () => {
+    const logs: string[] = [];
+    const stop = startScheduler(
+      [{ name: "slow", everyMs: 1000, deadlineMs: 60_000, run: () => new Promise<void>(() => {}) }],
+      { log: (line) => logs.push(line) },
+    );
+    await vi.advanceTimersByTimeAsync(5500);
+    expect(logs.filter((l) => l.includes("skipping ticks"))).toEqual(["job slow still running after 2 s; skipping ticks"]);
+    stop();
+  });
+
+  it("a stalled run finishing late does not release the run that replaced it", async () => {
+    let finishFirst: () => void = () => {};
+    let started = 0;
+    const stop = startScheduler(
+      [
+        {
+          name: "late",
+          everyMs: 1000,
+          deadlineMs: 1500,
+          run: () => {
+            started++;
+            return started === 1 ? new Promise<void>((resolve) => (finishFirst = resolve)) : new Promise<void>(() => {});
+          },
+        },
+      ],
+      { log: () => {} },
+    );
+    await vi.advanceTimersByTimeAsync(2100); // first run released at 1500, second started at 2000
+    expect(started).toBe(2);
+    finishFirst();
+    await vi.advanceTimersByTimeAsync(1000); // second is still inside its deadline: this tick must skip
+    expect(started).toBe(2);
     stop();
   });
 });

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { loadMigrations, migrate } from "./migrate";
+import { POOL_CONFIG } from "./pg";
 
 type TestDb = Awaited<ReturnType<typeof testDb>>;
 
@@ -32,6 +33,15 @@ describe("migrate", () => {
     expect(rows.map((r) => r.name)).toEqual(applied);
     expect(await tableExists("recalls")).toBe(true);
     expect(await tableExists("cpsc_pulls")).toBe(true);
+  });
+
+  it("sets a role default statement timeout, shorter than the client's timeout", async () => {
+    await migrate(db);
+    const { rows } = await db.query<{ rolconfig: string[] | null }>(
+      "select rolconfig from pg_roles where rolname = current_user",
+    );
+    expect(rows[0].rolconfig).toContain("statement_timeout=45s");
+    expect(45_000).toBeLessThan(POOL_CONFIG.query_timeout);
   });
 
   it("applies nothing when run a second time", async () => {
