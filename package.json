@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:live": "CPSC_LIVE=1 vitest run --config vitest.live.config.ts",
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
