@@ -8,7 +8,8 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { createRecordKey } from "../privacy/recordKey";
-import { PayPalApiError, type Method, type PayPalClient, type RequestOptions } from "./client";
+import { createPayPalClient, type PayPalClient } from "./client";
+import { valueToCents } from "./orders";
 import { approveRefund, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents } from "./refunds";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -33,37 +34,108 @@ const line = (over: Partial<ImportedOrderLine> = {}): ImportedOrderLine => ({
   ...over,
 });
 
-/** A PayPal stand-in with one capture and a refund endpoint. */
-function fakePayPal(over: { status?: string; amountCents?: number; createTime?: string; currency?: string; refundStatus?: string; refundError?: Error } = {}) {
-  const calls: { method: Method; path: string; opts: RequestOptions }[] = [];
-  let status = over.status ?? "COMPLETED";
+/** What PayPal does with one refund POST. A number answers with that status and moves no money. */
+type RefundStep = "land" | "lost" | "down" | number;
+
+/**
+ * PayPal at the HTTP level, behind the real client. It keeps PayPal's rules as measured on the sandbox
+ * (2026-11-05): a repeated PayPal-Request-Id returns the original refund and moves no more money, even
+ * if the amount differs; a refund above what is left gets 422 REFUND_AMOUNT_EXCEEDED; and a GET on any
+ * refund reports the capture's total refunded so far. "lost" means the refund landed and the answer
+ * never came back; "down" means it never arrived.
+ */
+function fakePayPal(
+  over: {
+    status?: string;
+    amountCents?: number;
+    createTime?: string;
+    currency?: string;
+    refundStatus?: string;
+    refundSteps?: RefundStep[];
+    captureReads?: (number | "down")[];
+    refundedElsewhereCents?: number;
+  } = {},
+) {
+  const calls: { method: string; path: string; opts: { body?: unknown; requestId?: string } }[] = [];
   const value = (c: number) => `${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`;
-  const client: PayPalClient = {
-    request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
-      calls.push({ method, path, opts });
-      if (method === "GET" && path === "/v2/payments/captures/CAP-1") {
-        return {
-          status: 200,
-          data: {
-            id: "CAP-1",
-            status,
-            create_time: over.createTime ?? "2026-11-06T14:00:00Z",
-            amount: { currency_code: over.currency ?? "USD", value: value(over.amountCents ?? 9000) },
-          },
-        };
-      }
-      if (method === "POST" && path === "/v2/payments/captures/CAP-1/refund") {
-        if (over.refundError) throw over.refundError;
-        status = "REFUNDED";
-        return { status: 201, data: { id: "REF-1", status: over.refundStatus ?? "COMPLETED" } };
-      }
-      if (method === "GET" && path === "/v2/payments/refunds/REF-1") {
-        return { status: 200, data: { id: "REF-1", status: "COMPLETED", amount: { currency_code: "USD", value: "90.00" } } };
-      }
-      throw new Error(`unexpected call ${method} ${path}`);
-    }) as PayPalClient["request"],
+  const refusal = (status: number, issue: string) => Response.json({ name: "REFUSED", details: [{ issue }] }, { status });
+  const amount = over.amountCents ?? 9000;
+  const currency = over.currency ?? "USD";
+  const steps = [...(over.refundSteps ?? [])];
+  const captureReads = [...(over.captureReads ?? [])];
+  const refunds = new Map<string, { id: string; captureId: string; status: string; cents: number }>();
+  const refundedOn = new Map<string, number>();
+  const statusOf = new Map<string, string>();
+  const total = (captureId: string) => (refundedOn.get(captureId) ?? over.refundedElsewhereCents ?? 0);
+
+  const land = (captureId: string, requestId: string, cents: number): { refund: { id: string; status: string }; replay: boolean } | Response => {
+    const known = refunds.get(requestId);
+    if (known) return { refund: known, replay: true };
+    if (total(captureId) + cents > amount) return refusal(422, "REFUND_AMOUNT_EXCEEDED");
+    const refund = { id: `REF-${refunds.size + 1}`, captureId, status: over.refundStatus ?? "COMPLETED", cents };
+    refunds.set(requestId, refund);
+    refundedOn.set(captureId, total(captureId) + cents);
+    statusOf.set(captureId, refundedOn.get(captureId) === amount ? "REFUNDED" : "PARTIALLY_REFUNDED");
+    return { refund, replay: false };
   };
-  return { client, calls };
+
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const requestId = new Headers(init?.headers).get("PayPal-Request-Id") ?? undefined;
+    const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
+    calls.push({ method, path: url.pathname, opts: { body, requestId } });
+
+    const capture = /^\/v2\/payments\/captures\/([\w-]+)(\/refund)?$/.exec(url.pathname);
+    if (capture && method === "GET") {
+      const read = captureReads.shift();
+      if (read === "down") throw new TypeError("network down");
+      if (read !== undefined) return refusal(read, "CAPTURE_READ_FAILED");
+      return Response.json({
+        id: capture[1],
+        status: statusOf.get(capture[1]) ?? over.status ?? "COMPLETED",
+        create_time: over.createTime ?? "2026-11-06T14:00:00Z",
+        amount: { currency_code: currency, value: value(amount) },
+      });
+    }
+    if (capture?.[2] && method === "POST") {
+      const step = steps.shift() ?? "land";
+      if (step === "down") throw new TypeError("network down");
+      if (typeof step === "number") return refusal(step, step === 422 ? "REFUND_AMOUNT_EXCEEDED" : "SOMETHING");
+      const landed = land(capture[1], requestId ?? "", valueToCents(body.amount.value));
+      if (step === "lost") throw new TypeError("network down");
+      if (landed instanceof Response) return landed;
+      return Response.json({ id: landed.refund.id, status: landed.refund.status }, { status: landed.replay ? 200 : 201 });
+    }
+    const refund = /^\/v2\/payments\/refunds\/([\w-]+)$/.exec(url.pathname);
+    const found = refund && method === "GET" ? [...refunds.values()].find((r) => r.id === refund[1]) : undefined;
+    if (found) {
+      return Response.json({
+        id: found.id,
+        status: found.status,
+        amount: { currency_code: currency, value: value(found.cents) },
+        seller_payable_breakdown: {
+          gross_amount: { currency_code: currency, value: value(found.cents) },
+          total_refunded_amount: { currency_code: currency, value: value(total(found.captureId)) },
+        },
+      });
+    }
+    throw new Error(`unexpected call ${method} ${url.pathname}`);
+  };
+
+  const client = createPayPalClient({
+    tokens: { get: async () => "token", invalidate: () => {} },
+    fetchImpl: fetchImpl as typeof fetch,
+    sleep: async () => {},
+  });
+  return {
+    client,
+    calls,
+    /** The refunds PayPal actually made, however many times it was asked. */
+    made: () => [...refunds.values()],
+    settle: (status: string) => refunds.forEach((r) => (r.status = status)),
+    posts: () => calls.filter((c) => c.method === "POST"),
+  };
 }
 
 describe("refunds", () => {
@@ -98,6 +170,8 @@ describe("refunds", () => {
   const approve = (matchId: string, sessionId = SESSION, now = NOW) => approveRefund(db, { shopId, sessionId, matchId, now });
   const execute = (approvalId: string, client: PayPalClient, sessionId = SESSION, now = NOW) =>
     executeRefund(db, client, { shopId, sessionId, approvalId, recordKey: key, now });
+  /** The ledger row's age is measured from the test's clock, not the real one. */
+  const agedFromNow = (refundId: string) => db.query("update refunds set created_at = $2::timestamptz where id = $1", [refundId, NOW.toISOString()]);
   const refusal = (p: Promise<unknown>) =>
     p.then(
       () => "no refusal",
@@ -161,7 +235,7 @@ describe("refunds", () => {
     it("refuses while an earlier refund for this line is not settled as failed", async () => {
       const m = await setUp();
       const a = await approve(m.id);
-      await execute(a.approvalId, fakePayPal({ refundError: new TypeError("network down") }).client);
+      await execute(a.approvalId, fakePayPal({ refundSteps: ["down", "down", "down"] }).client);
       expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
     });
   });
@@ -278,15 +352,18 @@ describe("refunds", () => {
     it("records PayPal's refusal as failed, with its issue code", async () => {
       const m = await setUp();
       const a = await approve(m.id);
-      const r = await execute(a.approvalId, fakePayPal({ refundError: new PayPalApiError(422, "POST", "/x", "REFUND_AMOUNT_EXCEEDED") }).client);
+      const r = await execute(a.approvalId, fakePayPal({ refundSteps: [422] }).client);
       expect(r).toMatchObject({ status: "failed", failure: "REFUND_AMOUNT_EXCEEDED" });
     });
 
     it("records a lost answer as unconfirmed, never as failed: the money may have moved", async () => {
       const m = await setUp();
       const a = await approve(m.id);
-      const r = await execute(a.approvalId, fakePayPal({ refundError: new TypeError("network down") }).client);
+      const pp = fakePayPal({ refundSteps: ["lost", "lost", "lost"] });
+      const r = await execute(a.approvalId, pp.client);
       expect(r.status).toBe("unconfirmed");
+      expect(pp.posts()).toHaveLength(3);
+      expect(pp.made()).toHaveLength(1); // every attempt carried one request id, so PayPal made one refund
     });
 
     it("records PayPal's PENDING as pending", async () => {
@@ -327,13 +404,37 @@ describe("refunds", () => {
       expect(rec.exceptions).toEqual(["PayPal's webhook has not arrived yet."]);
     });
 
-    it("marks a pending refund unconfirmed after 10 minutes with no webhook, and reads PayPal for the answer", async () => {
+    it("marks a pending refund unconfirmed after 10 minutes with no webhook and no answer from PayPal", async () => {
       const m = await setUp();
       const a = await approve(m.id);
-      const r = await execute(a.approvalId, fakePayPal({ refundStatus: "PENDING" }).client);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
       const later = new Date(NOW.getTime() + 11 * 60_000);
-      const rec = await reconcileRefund(db, fakePayPal({ status: "REFUNDED" }).client, { shopId, refundId: r.refundId, recordKey: key, now: later });
-      expect(rec.ledger.status).toBe("refunded"); // PayPal's GET says COMPLETED
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(rec.ledger.status).toBe("unconfirmed");
+      expect(rec.exceptions).toContain("No clear answer from PayPal yet. Check it before trying again.");
+    });
+
+    it("keeps a pending refund pending before those 10 minutes are up", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
+      const soon = new Date(NOW.getTime() + 9 * 60_000);
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: soon });
+      expect(rec.ledger.status).toBe("pending");
+    });
+
+    it("follows PayPal's answer when a pending refund completes", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      pp.settle("COMPLETED");
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      expect(rec.ledger.status).toBe("refunded");
     });
 
     it("refuses another shop's refund", async () => {
