@@ -14,7 +14,7 @@ import type { Db, Queryable } from "../db/types";
 import { normalizeOrderNumber } from "../match/join";
 import type { RecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
-import { centsToValue, getCapture, valueToCents } from "./orders";
+import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./orders";
 
 const APPROVAL_MS = 15 * 60_000;
 const REFUND_WINDOW_DAYS = 180;
@@ -31,6 +31,7 @@ export type RefusalCode =
   | "RECALL_CHANGED"
   | "PAYPAL_FACTS_AGED_OUT"
   | "PAYPAL_FACTS_CHANGED"
+  | "PAYPAL_UNREACHABLE"
   | "REFUND_WINDOW_CLOSED"
   | "PAYMENT_NOT_AFTER_RECALL"
   | "NOTHING_LEFT_TO_REFUND"
@@ -129,20 +130,19 @@ export async function executeRefund(
   const invalid = () => new RefundRefused("APPROVAL_NOT_VALID", "This approval is missing, expired, already used, or from another session.");
   if (!UUID.test(input.approvalId)) throw invalid();
 
-  // One statement, so two callers cannot both consume the same approval.
-  const consumed = await db.query<{
+  // Every check runs before the approval is spent, so a refused or failed attempt uses up nothing.
+  const found = await db.query<{
     recall_id: number;
     recall_sha256: string;
     order_line_id: string;
     amount_cents: number;
     currency: string;
   }>(
-    `update approvals set consumed_at = $4::timestamptz
-     where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
-     returning recall_id, recall_sha256, order_line_id, amount_cents, currency`,
+    `select recall_id, recall_sha256, order_line_id, amount_cents, currency from approvals
+     where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz`,
     [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
   );
-  const approval = consumed.rows[0];
+  const approval = found.rows[0];
   if (!approval) throw invalid();
 
   const recall = (
@@ -174,7 +174,12 @@ export async function executeRefund(
     throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Read it from PayPal again.");
   }
 
-  const capture = await getCapture(client, payment.capture_id);
+  let capture: CaptureFacts;
+  try {
+    capture = await getCapture(client, payment.capture_id);
+  } catch {
+    throw new RefundRefused("PAYPAL_UNREACHABLE", "PayPal did not answer, so nothing was refunded. Please try again.");
+  }
   if (capture.currency !== approval.currency) {
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
   }
@@ -209,6 +214,15 @@ export async function executeRefund(
   if (approval.amount_cents > remaining) {
     throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
   }
+
+  // One statement, so two callers cannot both spend the same approval.
+  const consumed = await db.query(
+    `update approvals set consumed_at = $4::timestamptz
+     where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
+     returning id`,
+    [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
+  );
+  if (consumed.rows.length === 0) throw invalid();
 
   const row = (
     await db.query<{ id: string; request_id: string }>(

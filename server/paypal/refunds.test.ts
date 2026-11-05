@@ -257,6 +257,29 @@ describe("refunds", () => {
       expect(JSON.stringify(rows[0])).not.toContain("CAP-1");
     });
 
+    it("keeps the approval when PayPal cannot be read first: nothing was sent, so the seller can try again", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const down = fakePayPal({ captureReads: ["down", "down", "down"] });
+      expect(await refusal(execute(a.approvalId, down.client))).toBe("PAYPAL_UNREACHABLE");
+      expect(down.posts()).toEqual([]);
+      const { rows: approvals } = await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [a.approvalId]);
+      expect(approvals[0].consumed_at).toBeNull();
+      expect((await db.query("select 1 from refunds")).rows).toEqual([]);
+      const healthy = fakePayPal();
+      expect((await execute(a.approvalId, healthy.client)).status).toBe("refunded");
+      expect(healthy.made()).toHaveLength(1);
+    });
+
+    it("keeps the approval when a check refuses, so a refused attempt uses up nothing", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      await db.query("update recalls set raw_sha256 = 'changed' where recall_number = '27027'");
+      expect(await refusal(execute(a.approvalId, fakePayPal().client))).toBe("RECALL_CHANGED");
+      const { rows } = await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [a.approvalId]);
+      expect(rows[0].consumed_at).toBeNull();
+    });
+
     it("refuses with no approval on record", async () => {
       await setUp();
       const pp = fakePayPal();
