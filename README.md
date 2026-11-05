@@ -8,8 +8,8 @@ Recall Reach helps a small resale shop that takes PayPal find out, the morning a
 
 - **CPSC recall loader.** Pulls recalls from the CPSC Recalls API by date range, validates every record, and upserts it into Postgres with a SHA-256 of the exact snapshot. Every pull is logged in `cpsc_pulls`. A record that fails validation is reported, never dropped. A response that is not a JSON array (such as a firewall page served with HTTP 200), or that contains recalls outside the requested dates, is refused.
 - **All 2025 and 2026 recalls loaded:** 420 for 2025 and 514 for 2026 through November 5, 2026 (`pnpm load:recalls`).
-- **PayPal webhook endpoint** (`POST /api/paypal/webhook`). Verifies PayPal's RSA signature against PayPal's own certificate, accepts certificates only from PayPal sandbox hosts, stores each verified event once (PayPal's resource id is kept only as a hash), refuses a transmission id reused for a different event, and caps the body size while reading.
-- **Health endpoint** (`GET /api/health`). Database reachability, recall counts by year, the last CPSC pull, and webhook status. No secrets.
+- **PayPal webhook endpoint** (`POST /api/paypal/webhook`). Verifies PayPal's RSA signature against PayPal's own certificate, accepts certificates only from PayPal sandbox hosts, stores each verified event once (PayPal's resource id is kept only as a hash), refuses a transmission id reused for a different event, and caps the body size while reading. It stores no event body, payer details or amounts, so no PayPal transaction data is kept (tests check every stored column).
+- **Health endpoints.** `GET /api/health`: database reachability, recall counts by year, the last CPSC pull, and webhook status, with no secrets. `GET /api/live`: liveness for the host's health checks, which never touches the database.
 - **CI** on every push: lint, typecheck, tests, build, and a gitleaks scan of the full history.
 
 ## Data sources
@@ -45,6 +45,14 @@ pnpm test:live   # optional: calls the real CPSC API
 |---|---|---|
 | `DATABASE_URL` | `server/db/pg.ts` | Postgres connection string |
 | `PAYPAL_WEBHOOK_ID` | `app/api/paypal/webhook/route.ts` | The sandbox app's webhook id, part of every signature PayPal sends |
+
+## Deploy
+
+The service is defined in `render.yaml` (a Render Blueprint): one Node web service, migrations run during the build, and Render's health check uses `/api/live`. `DATABASE_URL` and `PAYPAL_WEBHOOK_ID` are set in Render, never in git.
+
+### Maintainer checklist
+
+- [ ] **At the hackathon deadline, 2026-11-12T20:00Z:** turn auto-deploy OFF for `recall-reach-web` in the Render dashboard (and pause the Blueprint's auto-sync), and leave both off until winners are announced on 2026-12-21. The repo, video and linked materials must not change in that window, and the app must stay live.
 
 ## Credits
 
