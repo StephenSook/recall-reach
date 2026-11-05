@@ -18,3 +18,5 @@ services:
         sync: false # set in Render, never in git
       - key: PAYPAL_WEBHOOK_ID
         sync: false # set in Render after the sandbox webhook is registered
+      - key: RECORD_HMAC_SECRET
+        generateValue: true # Render generates it; it never exists outside Render
