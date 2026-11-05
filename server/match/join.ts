@@ -62,7 +62,7 @@ function nextMonth(month: string): string {
 }
 
 /** "#T-100a" and "t-100A" are one order: exports and checkouts differ on the # and on case. */
-const normalizeNumber = (n: string) => n.trim().replace(/^#/, "").toLowerCase();
+export const normalizeOrderNumber = (n: string) => n.trim().replace(/^#/, "").toLowerCase();
 
 export function joinOrderLines(
   lines: JoinLine[],
@@ -77,7 +77,7 @@ export function joinOrderLines(
   const claimed = new Set<string>();
 
   const byNumber = (l: JoinLine) =>
-    payments.filter((p) => p.orderNumber !== null && normalizeNumber(p.orderNumber) === normalizeNumber(l.orderNumber));
+    payments.filter((p) => p.orderNumber !== null && normalizeOrderNumber(p.orderNumber) === normalizeOrderNumber(l.orderNumber));
   const nearOrderDate = (l: JoinLine, p: JoinPayment) =>
     p.paidOn !== null && Math.abs(ms(p.paidOn) - ms(l.orderedOn)) <= ITEM_LINK_MAX_DAYS * DAY_MS;
   // Item-level links apply only to payments with no order number of their own, close to the order.

@@ -20,6 +20,7 @@ export const PAYPAL_PURGE_CUTOFF_HOURS = 46;
 export const PAYPAL_SOURCED: readonly { table: string; receivedAt: string }[] = [
   { table: "paypal_webhook_events", receivedAt: "received_at" },
   { table: "paypal_payments", receivedAt: "received_at" },
+  { table: "paypal_refund_refs", receivedAt: "received_at" },
 ];
 
 /** Deletes PayPal-sourced rows older than the cutoff at `now`. Returns rows deleted per table. */
