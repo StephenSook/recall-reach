@@ -1,4 +1,5 @@
 import { PGlite, types } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { afterAll } from "vitest";
 import type { Db, Queryable } from "../server/db/types";
 
@@ -9,6 +10,7 @@ let shared: Promise<PGlite> | undefined;
 
 function instance(): Promise<PGlite> {
   shared ??= PGlite.create({
+    extensions: { pg_trgm },
     parsers: {
       [types.DATE]: (value: string) => value,
       [types.TIMESTAMP]: (value: string) => value,
@@ -30,7 +32,7 @@ afterAll(async () => {
  */
 export async function testDb(): Promise<Db & { close(): Promise<void> }> {
   const pg = await instance();
-  await pg.exec("drop schema public cascade; create schema public;");
+  await pg.exec("drop extension if exists pg_trgm; drop schema public cascade; create schema public;");
   const wrap = (q: Pick<PGlite, "query" | "exec">): Queryable => ({
     query: async <T>(sql: string, params?: unknown[]) => {
       const res = await q.query<T>(sql, params);
