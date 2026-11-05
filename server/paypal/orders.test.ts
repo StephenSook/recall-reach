@@ -137,6 +137,38 @@ describe("createCardOrder", () => {
     expect(unit).toEqual({ amount: { currency_code: "USD", value: "42.00" } });
   });
 
+  it("can mark a payment with a custom id alone, so it carries no order number to link by", async () => {
+    const { client, calls } = fakeClient((method) => (method === "POST" ? { id: "ORDER-1", status: "COMPLETED" } : ORDER));
+    await createCardOrder(client, {
+      orderNumber: null,
+      customId: "POOL",
+      currency: "USD",
+      discountCents: 0,
+      lines: [],
+      amountCents: 4200,
+      requestId: "req-3",
+      card: { number: "4111111111111111", expiry: "2030-12", securityCode: "123" },
+    });
+    const unit = (calls[0].opts.body as { purchase_units: Record<string, unknown>[] }).purchase_units[0];
+    expect(unit).toEqual({ custom_id: "POOL", amount: { currency_code: "USD", value: "42.00" } });
+  });
+
+  it("keeps a custom id apart from the shop's order number when both are given", async () => {
+    const { client, calls } = fakeClient((method) => (method === "POST" ? { id: "ORDER-1", status: "COMPLETED" } : ORDER));
+    await createCardOrder(client, {
+      orderNumber: "#T9",
+      customId: "POOL",
+      currency: "USD",
+      discountCents: 0,
+      lines: [],
+      amountCents: 4200,
+      requestId: "req-4",
+      card: { number: "4111111111111111", expiry: "2030-12", securityCode: "123" },
+    });
+    const unit = (calls[0].opts.body as { purchase_units: Record<string, unknown>[] }).purchase_units[0];
+    expect(unit).toMatchObject({ invoice_id: "#T9", custom_id: "POOL" });
+  });
+
   it("refuses a real-card-shaped order with neither lines nor an amount", async () => {
     const { client } = fakeClient(() => ORDER);
     await expect(

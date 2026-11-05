@@ -109,6 +109,8 @@ export async function getCapture(client: PayPalClient, captureId: string): Promi
 export interface CardOrderInput {
   /** The shop's order number; null sends a bare payment with nothing to link it to. */
   orderNumber: string | null;
+  /** Sent as custom_id instead of the order number. Lets a payment be recognized without an order number to link by. */
+  customId?: string;
   currency: string;
   discountCents: number;
   lines: { title: string; sku: string | null; quantity: number; unitPriceCents: number }[];
@@ -149,7 +151,9 @@ export async function createCardOrder(client: PayPalClient, input: CardOrderInpu
       })),
     };
   }
-  if (input.orderNumber) unit = { invoice_id: input.orderNumber, custom_id: input.orderNumber, ...unit };
+  const customId = input.customId ?? input.orderNumber;
+  if (customId) unit = { custom_id: customId, ...unit };
+  if (input.orderNumber) unit = { invoice_id: input.orderNumber, ...unit };
 
   const { data } = await client.request<{ id: string }>("POST", "/v2/checkout/orders", {
     requestId: input.requestId,
