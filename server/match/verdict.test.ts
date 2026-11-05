@@ -121,6 +121,34 @@ describe("verdictFor", () => {
     expect(v.verdict).toBe("SCOPE_GAP");
   });
 
+  it("reads a model written with different punctuation or case as the same model", () => {
+    for (const title of ["Baby Brezza dryer BRZ-0083", "Baby Brezza dryer brz 0083 unit", "Baby Brezza dryer brz.0083", "Baby Brezza dryer BRZ_0083"]) {
+      const v = verdictFor(BREZZA, { title });
+      expect(["MATCH", "SCOPE_GAP"], title).toContain(v.verdict);
+    }
+    expect(verdictFor(BREZZA, { title: "Baby Brezza dryer BRZ-0083" }).verdict).toBe("MATCH");
+  });
+
+  it("a near-identical code may be a typo of a listed model, so it is a gap, not a clearance", () => {
+    expect(verdictFor(BREZZA, { title: "Baby Brezza Sterilizer Dryer BRZOO83" }).verdict).toBe("SCOPE_GAP"); // O for 0
+    expect(verdictFor(BREZZA, { title: "Baby Brezza Sterilizer Dryer BRZ0084" }).verdict).toBe("SCOPE_GAP"); // one digit off
+  });
+
+  it("a one-word product name can still relate when the title omits the brand", () => {
+    const oneWord = { ...BREZZA, products: [{ name: "Teethers", model: "", type: null, units: null }] };
+    expect(verdictFor(oneWord, { title: "Silicone teether" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("an unbranded recall with a one-word product name can still relate", () => {
+    const unbranded = { title: "Teethers Recalled Due to Choking Hazard", description: "Silicone teethers.", retailers: [], products: [{ name: "Teethers", model: "", type: null, units: null }] };
+    expect(verdictFor(unbranded, { title: "Silicone teether" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("never clears a title sharing product words when the record's list is elsewhere, even with no brand", () => {
+    const partial = { ...BREZZA, description: `${BREZZA.description} Other models are listed below.` };
+    expect(verdictFor(partial, { title: "Bottle dryer rack" }).verdict).toBe("SCOPE_GAP");
+  });
+
   it("a variant of a listed model is a gap, not a clearance", () => {
     expect(verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083A" }).verdict).toBe("SCOPE_GAP");
   });

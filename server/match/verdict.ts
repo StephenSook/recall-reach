@@ -57,13 +57,47 @@ export function modelTokens(text: string): string[] {
   return [...found].sort();
 }
 
+/** Punctuation does not separate models: BRZ-0083 and BRZ.0083 are BRZ0083. */
+const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
+/** Letters a typed model is easily mistaken for: BRZOO83 is probably BRZ0083. */
+const unconfuse = (t: string) => t.replace(/O/g, "0").replace(/[IL]/g, "1");
+
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = row;
+  }
+  return previous[b.length];
+}
+
+/** The model with only separators between its characters ("BRZ 0083"), and no extra character on either side. */
+function writtenApart(model: string): RegExp {
+  const body = [...normalizeModel(model)].join("[\\s._/-]*");
+  return new RegExp(`(?<![A-Z0-9])${body}(?![A-Z0-9])`);
+}
+
 /** Same letters up front and about the same length, so a code like X200 does not count as a sibling. */
 function isSiblingModel(token: string, listed: string[]): boolean {
   const prefix = (t: string) => /^[A-Z]*/.exec(t)?.[0] ?? "";
-  return listed.some((m) => prefix(m) !== "" && prefix(m) === prefix(token) && Math.abs(m.length - token.length) <= 2);
+  const t = normalizeModel(token);
+  return listed.some((m) => {
+    const n = normalizeModel(m);
+    return prefix(n) !== "" && prefix(n) === prefix(t) && Math.abs(n.length - t.length) <= 2;
+  });
 }
 
-const isVariantOf = (token: string, listed: string[]) => listed.some((m) => token.includes(m) || m.includes(token));
+/** Contains a listed model, is contained by one, or is one small slip from one. Possibly the same unit. */
+function isVariantOf(token: string, listed: string[]): boolean {
+  const t = unconfuse(normalizeModel(token));
+  return listed.some((m) => {
+    const n = unconfuse(normalizeModel(m));
+    return t.includes(n) || n.includes(t) || editDistance(t, n) <= 1;
+  });
+}
 
 /** Lower-case words, with a light plural strip, so "Dryers" and "dryer" meet. */
 function words(text: string): Set<string> {
@@ -110,7 +144,9 @@ export function verdictFor(
   // A recalled model number settles it, whatever else the text says or leaves out.
   const recallModels = modelTokens(`${recall.title} ${recall.description}`);
   const upper = itemText.toUpperCase();
-  const shown = recallModels.filter((m) => new RegExp(`(?<![A-Z0-9])${m.replace(/[.*+?^\${}()|[\]\\/]/g, "\\$&")}(?![A-Z0-9])`).test(upper));
+  const itemCodes = modelTokens(upper);
+  const shownCodes = new Set(itemCodes.map(normalizeModel));
+  const shown = recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
   if (shown.length > 0) {
     return {
       verdict: "MATCH",
@@ -128,14 +164,14 @@ export function verdictFor(
   // With the brand matched, one shared product word keeps it out of CLEARED: a wrong clearance is the
   // worst outcome. A title that merely omits the brand needs most of the product's words. There is no
   // vendor field to tell an absent brand from another brand, so that stays a gap for a person.
-  const related = hasBrand ? sharedLine.length >= 1 : sharedLine.length >= 2 && lineShare >= 0.5;
+  const related = hasBrand ? sharedLine.length >= 1 : sharedLine.length >= Math.min(2, lineWords.size) && lineShare >= 0.5;
   const unrelatedReason = hasBrand
     ? `The same brand, but a different product from ${recall.products[0]?.name ?? "the recalled one"}.`
     : brand
       ? `A different product, and it does not name ${brand}.`
       : "A different product.";
   if (!related) {
-    if (hasBrand && !fullScope) {
+    if ((hasBrand || sharedLine.length >= 1) && !fullScope) {
       return { verdict: "SCOPE_GAP", matched, missing: [seeCpsc], reason: unrelatedReason };
     }
     return cleared(unrelatedReason, matched);
@@ -143,8 +179,8 @@ export function verdictFor(
   if (sharedLine.length > 0) matched.push(`product: ${sharedLine.join(", ")}`);
 
   // A code only counts as a different model when it looks like one of CPSC's and is not a variant.
-  const otherModels = modelTokens(itemText).filter((t) => isSiblingModel(t, recallModels) && !isVariantOf(t, recallModels));
-  const variants = modelTokens(itemText).filter((t) => isVariantOf(t, recallModels));
+  const otherModels = itemCodes.filter((t) => isSiblingModel(t, recallModels) && !isVariantOf(t, recallModels));
+  const variants = itemCodes.filter((t) => isVariantOf(t, recallModels));
   if (hasBrand && otherModels.length > 0 && variants.length === 0) {
     const reason = `Model ${otherModels.join(", ")} is not one CPSC lists (${recallModels.join(", ")}).`;
     if (!fullScope) return { verdict: "SCOPE_GAP", matched, missing: [seeCpsc], reason };
