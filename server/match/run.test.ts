@@ -64,7 +64,7 @@ describe("runShopCheck", () => {
     ]);
     await addPayment("#N1");
     await addPayment("#R1");
-    const summary = await runShopCheck(db, shopId, { today: TODAY });
+    const summary = await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
     const byNumber = Object.fromEntries((await rows()).map((r) => [r.recall_number, r]));
 
     expect(byNumber["27072"]).toMatchObject({ verdict: "MATCH", sale_path: "NOTICE_ONLY", join_state: "IDENTIFIED" });
@@ -155,6 +155,52 @@ describe("runShopCheck", () => {
     expect(summary.candidatesNotChecked).toBe(3);
     const { rows } = await db.query<{ candidates_not_checked: number }>("select candidates_not_checked from shop_runs where id = $1", [summary.runId]);
     expect(rows[0].candidates_not_checked).toBe(3);
+  });
+
+  describe("when this run did not read PayPal", () => {
+    const brezzaJoin = async () => (await rows()).find((r) => r.recall_number === "27072")?.join_state;
+
+    it("says history is unavailable, never that PayPal has no record", async () => {
+      await store([line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      const summary = await runShopCheck(db, shopId, { today: TODAY });
+      expect(await brezzaJoin()).toBe("HISTORY_UNAVAILABLE");
+      const { rows: runs } = await db.query<{ paypal_searched: boolean }>("select paypal_searched from shop_runs where id = $1", [summary.runId]);
+      expect(runs[0].paypal_searched).toBe(false);
+    });
+
+    it("keeps a join an earlier run established after PayPal's data has aged out", async () => {
+      await store([line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      await addPayment("#N1");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      expect(await brezzaJoin()).toBe("IDENTIFIED");
+      await db.query("delete from paypal_payments where shop_id = $1", [shopId]); // the 46-hour purge
+      await runShopCheck(db, shopId, { today: TODAY });
+      expect(await brezzaJoin()).toBe("IDENTIFIED");
+    });
+
+    it("keeps an ambiguous join ambiguous, so outreach stays blocked", async () => {
+      await store([line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      await db.query("update recall_matches set join_state = 'AMBIGUOUS_JOIN' where shop_id = $1", [shopId]);
+      await runShopCheck(db, shopId, { today: TODAY });
+      await db.query("update recall_matches set join_state = 'AMBIGUOUS_JOIN' where shop_id = $1", [shopId]);
+      await runShopCheck(db, shopId, { today: TODAY });
+      expect(await brezzaJoin()).toBe("AMBIGUOUS_JOIN");
+    });
+
+    it("a run that did read PayPal replaces the state, and records that it searched", async () => {
+      await store([line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      await runShopCheck(db, shopId, { today: TODAY });
+      const summary = await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      expect(await brezzaJoin()).toBe("NO_PAYPAL_RECORD");
+      const { rows: runs } = await db.query<{ paypal_searched: boolean }>("select paypal_searched from shop_runs where id = $1", [summary.runId]);
+      expect(runs[0].paypal_searched).toBe(true);
+    });
+
+    it("passes failed search months through to the join", async () => {
+      await store([line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true, failedMonths: ["2026-09"] });
+      expect(await brezzaJoin()).toBe("HISTORY_UNAVAILABLE");
+    });
   });
 
   it("ignores another shop's records", async () => {

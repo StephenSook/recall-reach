@@ -68,7 +68,18 @@ const CANDIDATES_SQL = `
   )
   select recall_id, kind, id, title, description, ordered_on, rank <= $3 as within_cap from ranked`;
 
-export async function runShopCheck(db: Db, shopId: string, opts: { today: string; dateFilter?: boolean }): Promise<RunSummary> {
+export async function runShopCheck(
+  db: Db,
+  shopId: string,
+  opts: {
+    today: string;
+    dateFilter?: boolean;
+    /** True only if PayPal was read for this run. Otherwise an absent payment proves nothing. */
+    paypalSearched?: boolean;
+    failedMonths?: string[];
+  },
+): Promise<RunSummary> {
+  const paypalSearched = opts.paypalSearched ?? false;
   const { rows: counted } = await db.query<{ n: string }>("select count(*)::text as n from recalls");
   const { rows: shopText } = await db.query<{ id: string; text: string }>(
     `select id, title as text from order_lines where shop_id = $1
@@ -96,7 +107,7 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
   const joined = joinOrderLines(
     lines.map((l) => ({ id: l.id, orderNumber: l.order_number, title: l.title, sku: l.sku, orderedOn: l.ordered_on })),
     paymentRows.map((p) => ({ key: p.id, orderNumber: p.order_number, items: p.items, paidOn: p.paid_on })),
-    { today: opts.today },
+    { today: opts.today, failedMonths: opts.failedMonths },
   );
 
   const recallIds = [...new Set(candidates.map((c) => c.recall_id))];
@@ -128,14 +139,19 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
       );
       counts[v.verdict]++;
       const path: SalePath | null = c.ordered_on ? salePath(c.ordered_on, recall.recall_date) : null;
-      const join = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
+      const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
+      const join = computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
         `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state)
          values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
          on conflict (shop_id, recall_id, coalesce(order_line_id, shop_item_id)) do update set
            recall_sha256 = excluded.recall_sha256, verdict = excluded.verdict, matched = excluded.matched,
            missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path,
-           join_state = excluded.join_state, checked_at = now()`,
+           -- Without a fresh PayPal read, keep what an earlier run established: PayPal's data ages out
+           -- after 46 hours, and that must not turn an IDENTIFIED or AMBIGUOUS_JOIN into something else.
+           join_state = case when $12::boolean then excluded.join_state
+                             else coalesce(recall_matches.join_state, excluded.join_state) end,
+           checked_at = now()`,
         [
           shopId,
           c.recall_id,
@@ -148,15 +164,16 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
           v.reason,
           path,
           join,
+          paypalSearched,
         ],
       );
     }
     const dates = lines.map((l) => l.ordered_on).sort();
     const searchedFrom = dates[0] ?? null;
     const { rows } = await tx.query<{ id: string }>(
-      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked)
-       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9) returning id`,
-      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments, candidatesNotChecked],
+      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched)
+       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10) returning id`,
+      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched],
     );
     return {
       runId: rows[0].id,
