@@ -39,6 +39,15 @@ describe("createContactCipher", () => {
     expect(() => c.open(parts.join("."))).toThrow(/could not be opened/);
   });
 
+  it("refuses a truncated authentication tag or a wrong-size nonce", () => {
+    const c = createContactCipher(SECRET, SHOP_A);
+    const [v, iv, tag, body] = c.seal(EMAIL).split(".");
+    const shortTag = Buffer.from(tag, "base64").subarray(0, 4).toString("base64");
+    expect(() => c.open([v, iv, shortTag, body].join("."))).toThrow(/could not be opened/);
+    const shortIv = Buffer.from(iv, "base64").subarray(0, 8).toString("base64");
+    expect(() => c.open([v, shortIv, tag, body].join("."))).toThrow(/could not be opened/);
+  });
+
   it("the error never contains the value it was given", () => {
     const c = createContactCipher(SECRET, SHOP_A);
     expect(() => c.open("v1.not.a.secret-looking-value")).toThrow(/^contact value could not be opened$/);
