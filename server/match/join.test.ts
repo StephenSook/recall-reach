@@ -14,6 +14,7 @@ const payment = (key: string, over: Partial<JoinPayment> = {}): JoinPayment => (
   key,
   orderNumber: null,
   items: [],
+  paidOn: "2026-10-01",
   ...over,
 });
 const run = (lines: JoinLine[], payments: JoinPayment[], failedMonths?: string[]) =>
@@ -87,6 +88,59 @@ describe("joinOrderLines", () => {
   it("marks a recent line with no PayPal record as not paid through PayPal, which is not a clearance", () => {
     const r = run([line("a")], []);
     expect(r.lines.a).toEqual({ state: "NO_PAYPAL_RECORD", paymentKey: null, linkedBy: null });
+  });
+
+  it("never links by title across a conflicting SKU: that is two different things", () => {
+    const r = run([line("a", { sku: "S1", title: "Swing" })], [payment("P1", { items: [{ name: "Swing", sku: "S2" }] })]);
+    expect(r.lines.a.state).toBe("NO_PAYPAL_RECORD");
+  });
+
+  it("links by title when one side has no SKU to conflict", () => {
+    const r = run([line("a", { title: "Swing" })], [payment("P1", { items: [{ name: "Swing", sku: "S2" }] })]);
+    expect(r.lines.a.linkedBy).toBe("exact title");
+  });
+
+  it("does not link by SKU or title to a payment far from the order date", () => {
+    const r = run([line("a", { sku: "S1" })], [payment("P1", { items: [{ name: "x", sku: "S1" }], paidOn: "2025-02-01" })]);
+    expect(r.lines.a.state).toBe("NO_PAYPAL_RECORD");
+  });
+
+  it("links by SKU to a payment a few days from the order date", () => {
+    const r = run([line("a", { sku: "S1", orderedOn: "2026-10-01" })], [payment("P1", { items: [{ name: "x", sku: "S1" }], paidOn: "2026-10-04" })]);
+    expect(r.lines.a.state).toBe("IDENTIFIED");
+  });
+
+  it("does not trust an item-level link while that month's search failed: another payment may be missing", () => {
+    const r = run([line("a", { sku: "S1", orderedOn: "2026-06-15" })], [payment("P1", { items: [{ name: "x", sku: "S1" }], paidOn: "2026-06-15" })], ["2026-06"]);
+    expect(r.lines.a.state).toBe("HISTORY_UNAVAILABLE");
+  });
+
+  it("calls a line ambiguous when its order number lands on a payment whose items do not include it", () => {
+    const r = run(
+      [line("a", { orderNumber: "#o", sku: "S1", title: "Swing" })],
+      [payment("P1", { orderNumber: "#o", items: [{ name: "Stroller", sku: "S2" }] })],
+    );
+    expect(r.lines.a).toEqual({ state: "AMBIGUOUS_JOIN", paymentKey: null, linkedBy: null });
+  });
+
+  it("accepts an order number link when the payment lists no items at all", () => {
+    const r = run([line("a", { orderNumber: "#o" })], [payment("P1", { orderNumber: "#o", items: [] })]);
+    expect(r.lines.a.state).toBe("IDENTIFIED");
+  });
+
+  it("treats a failed following month as unavailable too: a capture can land after the order month", () => {
+    const r = run([line("a", { orderedOn: "2026-06-30" })], [], ["2026-07"]);
+    expect(r.lines.a.state).toBe("HISTORY_UNAVAILABLE");
+  });
+
+  it("treats a line right at the edge of PayPal's history as unavailable", () => {
+    expect(run([line("a", { orderedOn: "2023-11-06" })], []).lines.a.state).toBe("HISTORY_UNAVAILABLE");
+    expect(run([line("a", { orderedOn: "2023-11-08" })], []).lines.a.state).toBe("NO_PAYPAL_RECORD");
+  });
+
+  it("matches order numbers despite a leading # or different case", () => {
+    const r = run([line("a", { orderNumber: "#T-100a" })], [payment("P1", { orderNumber: "t-100A" })]);
+    expect(r.lines.a).toMatchObject({ state: "IDENTIFIED", linkedBy: "order number" });
   });
 
   it("an order number link wins over a failed window: the payment is in hand", () => {

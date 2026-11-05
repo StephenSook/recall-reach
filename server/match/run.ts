@@ -70,13 +70,13 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
     "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
     [shopId],
   );
-  const { rows: paymentRows } = await db.query<{ id: string; order_number: string | null; items: JoinPayment["items"] }>(
-    "select id, order_number, items from paypal_payments where shop_id = $1",
+  const { rows: paymentRows } = await db.query<{ id: string; order_number: string | null; items: JoinPayment["items"]; paid_on: string | null }>(
+    "select id, order_number, items, (captured_at at time zone 'UTC')::date::text as paid_on from paypal_payments where shop_id = $1",
     [shopId],
   );
   const joined = joinOrderLines(
     lines.map((l) => ({ id: l.id, orderNumber: l.order_number, title: l.title, sku: l.sku, orderedOn: l.ordered_on })),
-    paymentRows.map((p) => ({ key: p.id, orderNumber: p.order_number, items: p.items })),
+    paymentRows.map((p) => ({ key: p.id, orderNumber: p.order_number, items: p.items, paidOn: p.paid_on })),
     { today: opts.today },
   );
 
