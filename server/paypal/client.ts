@@ -20,6 +20,8 @@ function pathTemplate(path: string): string {
  */
 export class PayPalApiError extends Error {
   readonly path: string;
+  /** An earlier attempt of this same call got no clear answer, so it may have acted whatever this error says. */
+  uncertain = false;
   constructor(
     readonly status: number,
     readonly method: string,
@@ -84,6 +86,7 @@ export function createPayPalClient(opts: {
       const retryable = method === "GET" || (method === "POST" && Boolean(ro.requestId));
 
       let refreshedAfter401 = false;
+      let uncertain = false;
       for (let attempt = 1; ; attempt++) {
         try {
           const headers: Record<string, string> = { Authorization: `Bearer ${await opts.tokens.get()}` };
@@ -114,10 +117,15 @@ export function createPayPalClient(opts: {
           const text = await res.text();
           return { status: res.status, data: (text ? JSON.parse(text) : undefined) as T };
         } catch (err) {
-          if (!(err instanceof Retryable)) throw err;
+          if (!(err instanceof Retryable)) {
+            if (err instanceof PayPalApiError) err.uncertain = uncertain;
+            throw err;
+          }
           if (!retryable || attempt >= MAX_ATTEMPTS) {
+            if (err.cause instanceof PayPalApiError) err.cause.uncertain = true;
             throw err.cause instanceof Error ? err.cause : new Error(String(err.cause));
           }
+          uncertain = true;
           await sleep(500 * 2 ** (attempt - 1));
         }
       }

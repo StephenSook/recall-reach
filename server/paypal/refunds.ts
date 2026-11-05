@@ -39,6 +39,13 @@ export type RefusalCode =
   | "AMOUNT_ABOVE_REMAINING"
   | "NO_SUCH_REFUND";
 
+// PayPal judged the request and said no. 409 is not here: it means a previous call is still in progress.
+const CLEAR_REFUSALS = new Set([400, 401, 403, 404, 422]);
+
+/** Only a clear refusal proves no money moved. Anything else stays unconfirmed. */
+const clearlyRefused = (err: unknown): err is PayPalApiError =>
+  err instanceof PayPalApiError && !err.uncertain && CLEAR_REFUSALS.has(err.status);
+
 export class RefundRefused extends Error {
   constructor(readonly code: RefusalCode, message: string) {
     super(message);
@@ -119,6 +126,14 @@ export interface RefundOutcome {
   amountCents: number;
   currency: string;
   failure: string | null;
+}
+
+/** PayPal's refund statuses are COMPLETED, PENDING, FAILED and CANCELLED. A new one proves nothing yet. */
+function ledgerStatusFor(paypalStatus: string): RefundOutcome["status"] {
+  if (paypalStatus === "COMPLETED") return "refunded";
+  if (paypalStatus === "PENDING") return "pending";
+  if (paypalStatus === "FAILED" || paypalStatus === "CANCELLED") return "failed";
+  return "unconfirmed";
 }
 
 export async function executeRefund(
@@ -262,11 +277,10 @@ export async function executeRefund(
       requestId: row.request_id,
       body: { amount: { currency_code: approval.currency, value: centsToValue(approval.amount_cents) } },
     });
-    const status = data.status === "COMPLETED" ? "refunded" : data.status === "PENDING" ? "pending" : "failed";
+    const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);
   } catch (err) {
-    // A clear refusal from PayPal moved no money. Anything else may have: it stays unconfirmed.
-    if (err instanceof PayPalApiError && err.status < 500) return settle("failed", err.issue ?? `HTTP ${err.status}`);
+    if (clearlyRefused(err)) return settle("failed", err.issue ?? `HTTP ${err.status}`);
     return settle("unconfirmed", "No clear answer from PayPal. Check it before trying again.");
   }
 }

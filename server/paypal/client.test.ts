@@ -121,6 +121,26 @@ describe("PayPal client", () => {
     expect(err.message).not.toContain("debug-raw-99");
   });
 
+  it("marks a refusal that follows an unanswered attempt, because that attempt may have acted", async () => {
+    const s = scripted([new TypeError("network down"), fail(422)]);
+    const err = await s.client.request("POST", "/v2/x", { requestId: "r1" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PayPalApiError);
+    expect((err as PayPalApiError).uncertain).toBe(true);
+  });
+
+  it("does not mark a refusal on the first attempt", async () => {
+    const s = scripted([fail(422)]);
+    const err = await s.client.request("POST", "/v2/x", { requestId: "r1" }).catch((e: unknown) => e);
+    expect((err as PayPalApiError).uncertain).toBe(false);
+  });
+
+  it("does not count a token refresh as an unanswered attempt", async () => {
+    const s = scripted([fail(401), fail(422)]);
+    const err = await s.client.request("POST", "/v2/x", { requestId: "r1" }).catch((e: unknown) => e);
+    expect((err as PayPalApiError).status).toBe(422);
+    expect((err as PayPalApiError).uncertain).toBe(false);
+  });
+
   it("refuses a path that is not a PayPal API path", async () => {
     const s = scripted([]);
     await expect(s.client.request("GET", "https://evil.example/x")).rejects.toThrow(/path/);

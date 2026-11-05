@@ -482,6 +482,35 @@ describe("refunds", () => {
       expect(pp.made()).toHaveLength(1); // every attempt carried one request id, so PayPal made one refund
     });
 
+    describe("an answer that does not prove the money stayed put", () => {
+      const outcomes: [string, RefundStep[]][] = [
+        ["a lost answer, then 429 twice", ["lost", 429, 429]],
+        ["a lost answer, then a 422", ["lost", 422]],
+        ["a 500, then a 422", [500, 422]],
+        ["429 on every attempt", [429, 429, 429]],
+        ["409, a previous call still in progress", [409]],
+      ];
+      it.each(outcomes)("stays unconfirmed after %s", async (_name, refundSteps) => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const r = await execute(a.approvalId, fakePayPal({ refundSteps }).client);
+        expect(r.status).toBe("unconfirmed");
+        expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
+      });
+
+      it("stays unconfirmed on a refund status PayPal has not documented", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        expect((await execute(a.approvalId, fakePayPal({ refundStatus: "SOMETHING_NEW" }).client)).status).toBe("unconfirmed");
+      });
+
+      it("records a refund PayPal itself reports as failed, as failed", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        expect((await execute(a.approvalId, fakePayPal({ refundStatus: "FAILED" }).client)).status).toBe("failed");
+      });
+    });
+
     it("records PayPal's PENDING as pending", async () => {
       const m = await setUp();
       const a = await approve(m.id);
