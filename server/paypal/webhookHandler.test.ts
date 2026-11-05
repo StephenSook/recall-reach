@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchTestCert, paypalHeaders } from "../../test/paypalSigner";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
@@ -29,6 +29,21 @@ describe("handleWebhookDelivery", () => {
     handleWebhookDelivery({ rawBody: raw, headers, webhookId, db, fetchCert: fetchTestCert });
   const rows = async () =>
     (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id")).rows;
+
+  it("logs each accepted delivery's event, transmission id and transmission time", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-2"));
+      const lines = info.mock.calls.map((c) => String(c[0]));
+      expect(lines).toEqual([
+        "PayPal webhook accepted: event=WH-TEST-1 type=PAYMENT.CAPTURE.REFUNDED transmission=transmission-1 transmission_time=2026-11-05T20:00:00Z duplicate=false",
+        "PayPal webhook accepted: event=WH-TEST-1 type=PAYMENT.CAPTURE.REFUNDED transmission=transmission-2 transmission_time=2026-11-05T20:00:00Z duplicate=true",
+      ]);
+    } finally {
+      info.mockRestore();
+    }
+  });
 
   it("stores a verified event and answers 200", async () => {
     const res = await deliver(body, paypalHeaders(body, WEBHOOK_ID));

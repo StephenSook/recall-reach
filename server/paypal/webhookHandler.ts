@@ -84,5 +84,11 @@ export async function handleWebhookDelivery(input: {
       eventCreateTime(event),
     ],
   );
-  return { status: 200, body: { received: true, duplicate: rows.length === 0 } };
+  const duplicate = rows.length === 0;
+  // Delivery diagnostics only: ids and times, never the event body or payer data.
+  console.info(
+    `PayPal webhook accepted: event=${event.id} type=${event.event_type} transmission=${transmissionId} ` +
+      `transmission_time=${transmission.transmissionTime} duplicate=${duplicate}`,
+  );
+  return { status: 200, body: { received: true, duplicate } };
 }
