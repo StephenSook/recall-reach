@@ -140,6 +140,23 @@ describe("runShopCheck", () => {
     expect(found).toEqual([{ verdict: "MATCH" }]);
   });
 
+  it("checks every sale of a popular item: 25 families must not be cut to 20", async () => {
+    const sales = Array.from({ length: 25 }, (_, i) => line(`#P${i}`, "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15"));
+    await store(sales);
+    const summary = await runShopCheck(db, shopId, { today: TODAY });
+    expect(summary.matches).toBe(25);
+    expect(summary.candidatesNotChecked).toBe(0);
+  });
+
+  it("counts what the cap on distinct titles left unchecked, and records it on the run", async () => {
+    const lines = Array.from({ length: 23 }, (_, i) => line(`#D${i}`, `Baby Brezza Sterilizer Variant ${String.fromCharCode(65 + i)}`, "2026-09-15"));
+    await store(lines);
+    const summary = await runShopCheck(db, shopId, { today: TODAY });
+    expect(summary.candidatesNotChecked).toBe(3);
+    const { rows } = await db.query<{ candidates_not_checked: number }>("select candidates_not_checked from shop_runs where id = $1", [summary.runId]);
+    expect(rows[0].candidates_not_checked).toBe(3);
+  });
+
   it("ignores another shop's records", async () => {
     const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
     await storeOrderLines(db, other, [line("#X", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")], createContactCipher("k".repeat(32), other), "t");

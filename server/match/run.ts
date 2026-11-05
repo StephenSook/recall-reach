@@ -5,7 +5,7 @@ import type { Db } from "../db/types";
 import { joinOrderLines, type JoinPayment } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 
-/** Candidates kept per recall (brief: top 20). */
+/** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
 const TOP_CANDIDATES = 20;
 /** word_similarity of a shop title to the recall's title and product names. Low, because a miss here is silent. */
 const MIN_SIMILARITY = 0.3;
@@ -19,6 +19,8 @@ export interface RunSummary {
   searchedFrom: string | null;
   searchedTo: string;
   unidentifiedPayments: number;
+  /** Distinct-title candidates past the per-recall cap. Above zero, coverage is incomplete. */
+  candidatesNotChecked: number;
 }
 
 interface Candidate {
@@ -28,6 +30,7 @@ interface Candidate {
   title: string;
   description: string;
   ordered_on: string | null;
+  within_cap: boolean;
 }
 
 // Two ways in, and either is enough: the title resembles the recall's title and product names
@@ -57,12 +60,13 @@ const CANDIDATES_SQL = `
     from recall_text r cross join items i
   ),
   ranked as (
-    select *, row_number() over (
-      partition by recall_id order by model_hit desc, similarity desc, id
+    -- Ranks distinct titles, not records: every sale of a popular item is one family to reach.
+    select *, dense_rank() over (
+      partition by recall_id order by model_hit desc, similarity desc, lower(title)
     ) as rank
     from scored where model_hit or similarity >= $2
   )
-  select recall_id, kind, id, title, description, ordered_on from ranked where rank <= $3`;
+  select recall_id, kind, id, title, description, ordered_on, rank <= $3 as within_cap from ranked`;
 
 export async function runShopCheck(db: Db, shopId: string, opts: { today: string; dateFilter?: boolean }): Promise<RunSummary> {
   const { rows: counted } = await db.query<{ n: string }>("select count(*)::text as n from recalls");
@@ -72,12 +76,14 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
     [shopId],
   );
   const tokens = Object.fromEntries(shopText.map((r) => [r.id, modelTokens(r.text.toUpperCase())]));
-  const { rows: candidates } = await db.query<Candidate>(CANDIDATES_SQL, [
+  const { rows: allCandidates } = await db.query<Candidate>(CANDIDATES_SQL, [
     shopId,
     MIN_SIMILARITY,
     TOP_CANDIDATES,
     JSON.stringify(tokens),
   ]);
+  const candidates = allCandidates.filter((c) => c.within_cap);
+  const candidatesNotChecked = allCandidates.length - candidates.length;
 
   const { rows: lines } = await db.query<{ id: string; order_number: string; title: string; sku: string | null; ordered_on: string }>(
     "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
@@ -148,9 +154,9 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
     const dates = lines.map((l) => l.ordered_on).sort();
     const searchedFrom = dates[0] ?? null;
     const { rows } = await tx.query<{ id: string }>(
-      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments)
-       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8) returning id`,
-      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments],
+      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked)
+       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9) returning id`,
+      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments, candidatesNotChecked],
     );
     return {
       runId: rows[0].id,
@@ -161,6 +167,7 @@ export async function runShopCheck(db: Db, shopId: string, opts: { today: string
       searchedFrom,
       searchedTo: opts.today,
       unidentifiedPayments: joined.unidentifiedPayments,
+      candidatesNotChecked,
     };
   });
 }
