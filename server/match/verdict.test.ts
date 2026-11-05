@@ -1,0 +1,151 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { parseRecalls, type Recall } from "../cpsc/schema";
+import { brandOf, fullScopeInRecord, modelTokens, salePath, verdictFor } from "./verdict";
+
+// Real CPSC records (saved 2026-11-05). The matcher is tested on what CPSC actually wrote.
+const { valid } = parseRecalls(
+  JSON.parse(readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8")),
+);
+const recall = (n: string): Recall => {
+  const found = valid.find((v) => v.recall.recallNumber === n);
+  if (!found) throw new Error(`recall ${n} is not in the fixture`);
+  return found.recall;
+};
+const BREZZA = recall("27072");
+const PAPABLIC = recall("27027");
+const COSTWAY = recall("27040");
+
+describe("brandOf", () => {
+  it("reads the firm from CPSC's title, without company words", () => {
+    expect(brandOf(BREZZA.title)).toBe("Baby Brezza");
+    expect(brandOf(PAPABLIC.title)).toBe("Papablic");
+    expect(brandOf(COSTWAY.title)).toBe("Costway");
+  });
+
+  it("returns null when the title names no firm", () => {
+    expect(brandOf("Infant Swings Recalled Due to Fall Hazard")).toBeNull();
+  });
+});
+
+describe("modelTokens", () => {
+  it("finds the model numbers CPSC names", () => {
+    expect(modelTokens(BREZZA.description)).toEqual(["BRZ0083", "BRZ0154", "BRZ0156"]);
+    expect(modelTokens(PAPABLIC.description)).toEqual(["PAPA03001AI"]);
+  });
+
+  it("finds none where CPSC names none", () => {
+    expect(modelTokens(COSTWAY.description)).toEqual([]);
+  });
+
+  it("does not take units for model numbers", () => {
+    expect(modelTokens("A 20V drill and a 1500W heater, 30000MAH")).toEqual([]);
+  });
+});
+
+describe("verdictFor", () => {
+  it("MATCH: the title names a recalled model", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" });
+    expect(v.verdict).toBe("MATCH");
+    expect(v.matched).toEqual(expect.arrayContaining(["brand: Baby Brezza", "model: BRZ0083"]));
+    expect(v.missing).toEqual([]);
+  });
+
+  it("finds the model in the description too, in any case", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza sterilizer", description: "Model brz0154, used twice" });
+    expect(v.verdict).toBe("MATCH");
+  });
+
+  it("MATCH: a single-model recall, same line, and the title shows the printed look CPSC describes", () => {
+    const v = verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon" });
+    expect(v.verdict).toBe("MATCH");
+    expect(v.matched).toEqual(expect.arrayContaining(["brand: Papablic", "look: gray, moon, star"]));
+  });
+
+  it("SCOPE_GAP: same brand and line, and the title cannot show which unit", () => {
+    const v = verdictFor(COSTWAY, { title: "Costway high chair" });
+    expect(v.verdict).toBe("SCOPE_GAP");
+    expect(v.missing.length).toBeGreaterThan(0);
+  });
+
+  it("stays SCOPE_GAP on colors alone when CPSC gives no model to pin them to", () => {
+    expect(verdictFor(COSTWAY, { title: "Costway high chair purple and white" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("SCOPE_GAP names the models when CPSC lists several and the title shows none", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer" });
+    expect(v.verdict).toBe("SCOPE_GAP");
+    expect(v.missing).toEqual(["model number (CPSC lists BRZ0083, BRZ0154, BRZ0156)"]);
+  });
+
+  it("SCOPE_GAP, never CLEARED, when the brand matches and even one product word is shared", () => {
+    expect(verdictFor(BREZZA, { title: "Baby Brezza Sterilizer" }).verdict).toBe("SCOPE_GAP");
+  });
+
+  it("an unbranded recall needs most of its product words before it can gap", () => {
+    const unbranded = { ...COSTWAY, title: "Convertible High Chairs Recalled Due to Fall Hazard" };
+    expect(verdictFor(unbranded, { title: "wooden high chair, convertible" }).verdict).toBe("SCOPE_GAP");
+    expect(verdictFor(unbranded, { title: "armchair for adults, not high" }).verdict).toBe("CLEARED");
+  });
+
+  it("CLEARED: same brand, a model CPSC did not list", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ00999" });
+    expect(v.verdict).toBe("CLEARED");
+    expect(v.reason).toMatch(/BRZ00999/);
+  });
+
+  it("CLEARED: same brand, a different product", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza Formula Pro Advanced" });
+    expect(v.verdict).toBe("CLEARED");
+    expect(v.reason).toMatch(/different product/);
+  });
+
+  it("CLEARED: a different brand, with the same kind of product", () => {
+    expect(verdictFor(BREZZA, { title: "Papablic Sterilizer Dryer" }).verdict).toBe("CLEARED");
+  });
+
+  it("the date filter clears a sale from before the product was first sold", () => {
+    // CPSC: sold from January 2024.
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", orderedOn: "2023-12-31" });
+    expect(v.verdict).toBe("CLEARED");
+    expect(v.reason).toMatch(/2024-01/);
+  });
+
+  it("the date filter keeps a sale in the first-sale month", () => {
+    const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", orderedOn: "2024-01-01" });
+    expect(v.verdict).toBe("MATCH");
+  });
+
+  it("can be told to skip the date filter, for the eval's ablation row", () => {
+    const v = verdictFor(
+      BREZZA,
+      { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", orderedOn: "2023-12-31" },
+      { dateFilter: false },
+    );
+    expect(v.verdict).toBe("MATCH");
+  });
+});
+
+describe("fullScopeInRecord", () => {
+  it("is false when CPSC says the list is elsewhere", () => {
+    expect(fullScopeInRecord(recall("27051"))).toBe(false);
+  });
+
+  it("is true when the record holds the scope", () => {
+    expect(fullScopeInRecord(COSTWAY)).toBe(true);
+  });
+});
+
+describe("salePath", () => {
+  it("is notice only for a sale before the recall date", () => {
+    expect(salePath("2026-09-15", "2026-11-05")).toBe("NOTICE_ONLY");
+  });
+
+  it("goes to review for a sale on the recall's calendar date", () => {
+    expect(salePath("2026-11-05", "2026-11-05")).toBe("REVIEW");
+  });
+
+  it("is refund eligible only for a later date", () => {
+    expect(salePath("2026-11-06", "2026-11-05")).toBe("REFUND_ELIGIBLE");
+  });
+});
