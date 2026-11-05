@@ -7,6 +7,12 @@ export const DATA_SOURCES = ["cpsc-public", "own", "paypal", "paypal-hmac"] as c
 export const PAYPAL_RETENTION_HOURS = 48;
 
 /**
+ * The purge deletes at 47 hours because it runs on a schedule: a row just missed by one run waits
+ * for the next. Cutoff plus the 15-minute interval stays under the 48-hour limit (a test walks it).
+ */
+export const PAYPAL_PURGE_CUTOFF_HOURS = 47;
+
+/**
  * Every table labelled "data-source: paypal", with the column holding when this app received the
  * row. A test fails if this list and the labels ever disagree.
  */
@@ -14,13 +20,13 @@ export const PAYPAL_SOURCED: readonly { table: string; receivedAt: string }[] = 
   { table: "paypal_webhook_events", receivedAt: "received_at" },
 ];
 
-/** Deletes PayPal-sourced rows received more than 48 hours before `now`. Returns rows deleted per table. */
+/** Deletes PayPal-sourced rows older than the cutoff at `now`. Returns rows deleted per table. */
 export async function purgePayPalData(db: Queryable, now: Date = new Date()): Promise<Record<string, number>> {
   const deleted: Record<string, number> = {};
   for (const { table, receivedAt } of PAYPAL_SOURCED) {
     const { rows } = await db.query(
       `delete from ${table} where ${receivedAt} < $1::timestamptz - make_interval(hours => $2) returning 1`,
-      [now.toISOString(), PAYPAL_RETENTION_HOURS],
+      [now.toISOString(), PAYPAL_PURGE_CUTOFF_HOURS],
     );
     deleted[table] = rows.length;
   }

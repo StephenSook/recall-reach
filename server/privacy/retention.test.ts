@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
-import { DATA_SOURCES, PAYPAL_RETENTION_HOURS, PAYPAL_SOURCED, purgePayPalData } from "./retention";
+import { PURGE_MS } from "../jobs/appJobs";
+import {
+  DATA_SOURCES,
+  PAYPAL_PURGE_CUTOFF_HOURS,
+  PAYPAL_RETENTION_HOURS,
+  PAYPAL_SOURCED,
+  purgePayPalData,
+} from "./retention";
 
 describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
   let db: Awaited<ReturnType<typeof testDb>>;
@@ -39,27 +46,44 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
     expect(labelledPayPal.length).toBeGreaterThan(0);
   });
 
-  it("leaves no PayPal-sourced row older than 48 hours after a purge, and keeps newer rows", async () => {
+  it("deletes rows at the 47-hour cutoff and keeps newer ones", async () => {
     expect(PAYPAL_RETENTION_HOURS).toBe(48);
+    expect(PAYPAL_PURGE_CUTOFF_HOURS).toBe(47);
     const now = new Date("2026-11-10T12:00:00Z");
     const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
     await db.query(
       `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
-       values ('old', 'T', 'self', $1), ('edge', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
-      [hoursAgo(49), hoursAgo(47.9), hoursAgo(1)],
+       values ('old', 'T', 'self', $1), ('past-cutoff', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
+      [hoursAgo(49), hoursAgo(47.1), hoursAgo(46.9)],
     );
+    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2 });
+    const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
+    expect(kept.rows.map((r) => r.event_id_hmac)).toEqual(["new"]);
+  });
 
-    const purged = await purgePayPalData(db, now);
-    expect(purged).toEqual({ paypal_webhook_events: 1 });
-
-    for (const { table, receivedAt } of PAYPAL_SOURCED) {
-      const { rows } = await db.query<{ n: string }>(
-        `select count(*)::text as n from ${table} where ${receivedAt} < $1::timestamptz - interval '48 hours'`,
-        [now.toISOString()],
+  it("never lets a PayPal-sourced row reach 48 hours, at any moment on the real purge schedule", async () => {
+    // Walks a clock across 60 hours at the job's real interval, with rows arriving between runs.
+    // The hourly 48-hour purge this replaces failed here: a row could live about 49 hours.
+    const LIMIT_MS = PAYPAL_RETENTION_HOURS * 3_600_000;
+    const t0 = Date.parse("2026-11-10T00:00:00Z");
+    let arrivals = 0;
+    for (let tick = t0; tick <= t0 + 60 * 3_600_000; tick += PURGE_MS) {
+      const arrivedAt = new Date(tick + 1000).toISOString(); // just after a run: the longest wait
+      await db.query(
+        `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
+         values ($1, 'T', 'self', $2)`,
+        [`row-${arrivals++}`, arrivedAt],
       );
-      expect(Number(rows[0].n), table).toBe(0);
+      await purgePayPalData(db, new Date(tick));
+      for (const { table, receivedAt } of PAYPAL_SOURCED) {
+        const justBeforeNextRun = new Date(tick + PURGE_MS - 1).toISOString();
+        const { rows } = await db.query<{ oldest_ms: string | null }>(
+          `select (extract(epoch from ($1::timestamptz - min(${receivedAt}))) * 1000)::text as oldest_ms from ${table}`,
+          [justBeforeNextRun],
+        );
+        expect(Number(rows[0].oldest_ms ?? 0), table).toBeLessThan(LIMIT_MS);
+      }
     }
-    const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events order by 1");
-    expect(kept.rows.map((r) => r.event_id_hmac)).toEqual(["edge", "new"]);
+    expect(arrivals).toBe(241);
   });
 });

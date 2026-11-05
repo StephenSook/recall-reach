@@ -20,14 +20,14 @@ describe("appJobs", () => {
     await db.close();
   });
 
-  it("polls CPSC every 15 minutes and purges PayPal data every hour", () => {
+  it("polls CPSC and purges PayPal data every 15 minutes", () => {
     const jobs = appJobs(db);
     expect(jobs.map((j) => [j.name, j.everyMs])).toEqual([
       ["cpsc-poll", CPSC_POLL_MS],
       ["paypal-48h-purge", PURGE_MS],
     ]);
     expect(CPSC_POLL_MS).toBe(15 * 60_000);
-    expect(PURGE_MS).toBe(60 * 60_000);
+    expect(PURGE_MS).toBe(15 * 60_000);
   });
 
   it("cpsc-poll pulls recalls published yesterday and today, and logs the pull", async () => {

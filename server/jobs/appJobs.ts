@@ -5,7 +5,7 @@ import { purgePayPalData } from "../privacy/retention";
 import { cpscPollRange, type Job } from "./scheduler";
 
 export const CPSC_POLL_MS = 15 * 60_000;
-export const PURGE_MS = 60 * 60_000;
+export const PURGE_MS = 15 * 60_000;
 
 /** The background jobs the server runs: the CPSC poll and the PayPal 48-hour purge. */
 export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Job[] {
