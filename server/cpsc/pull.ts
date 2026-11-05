@@ -90,7 +90,12 @@ export async function upsertRecalls(
  * Invalid records are reported (status "partial"), never dropped silently. A failed fetch is
  * logged as "failed" and rethrown.
  */
-export async function pullRecalls(db: Db, range: RecallRange, deps: FetchDeps = {}): Promise<PullSummary> {
+export function pullRecalls(db: Db, range: RecallRange, deps: FetchDeps = {}): Promise<PullSummary> {
+  return recordPull(db, range, () => fetchRecalls(range, deps));
+}
+
+/** The same, for a caller that already holds the response (or a fetch that failed). */
+export async function recordPull(db: Db, range: RecallRange, getPayload: () => Promise<unknown[]>): Promise<PullSummary> {
   const { rows } = await db.query<{ id: number }>(
     `insert into cpsc_pulls (range_field, range_start, range_end, status)
      values ($1, $2, $3, 'running') returning id`,
@@ -99,7 +104,7 @@ export async function pullRecalls(db: Db, range: RecallRange, deps: FetchDeps = 
   const pullId = Number(rows[0].id);
 
   try {
-    const payload = await fetchRecalls(range, deps);
+    const payload = await getPayload();
     const { valid, invalid } = parseRecalls(payload);
     const counts = await db.transaction((tx) => upsertRecalls(tx, valid));
     const status = invalid.length > 0 ? "partial" : "ok";

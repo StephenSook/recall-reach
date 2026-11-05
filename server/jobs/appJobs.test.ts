@@ -2,59 +2,180 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
-import { appJobs, CPSC_POLL_MS, PURGE_MS } from "./appJobs";
+import type { Db } from "../db/types";
+import { appJobs, HEARTBEAT_TICKS, POLL_MS, recallPollStatus } from "./appJobs";
 
-const fixture: { RecallID: number; LastPublishDate: string }[] = JSON.parse(
+const fixture: Record<string, unknown>[] = JSON.parse(
   readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8"),
 );
+const nov5 = fixture.filter((r) => String(r.LastPublishDate).startsWith("2026-11-05"));
+const NOW = new Date("2026-11-05T22:00:00Z");
 
-describe("appJobs", () => {
+/** Counts every call that would wake the database. */
+function counting(db: Db) {
+  const calls = { n: 0 };
+  const counted: Db = {
+    query: (sql, params) => {
+      calls.n++;
+      return db.query(sql, params);
+    },
+    exec: (sql) => {
+      calls.n++;
+      return db.exec(sql);
+    },
+    transaction: (fn) => {
+      calls.n++;
+      return db.transaction(fn);
+    },
+  };
+  return { counted, calls };
+}
+
+function cpscAnswering(getBody: () => unknown[] | number) {
+  const requested: string[] = [];
+  const fetchImpl = async (url: string | URL | Request) => {
+    requested.push(String(url));
+    const body = getBody();
+    return typeof body === "number"
+      ? new Response("error", { status: body })
+      : new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  return { requested, deps: { fetchImpl: fetchImpl as typeof fetch, sleep: async () => {}, now: () => NOW } };
+}
+
+describe("the recall poll job", () => {
   let db: Awaited<ReturnType<typeof testDb>>;
+  const info: string[] = [];
   beforeEach(async () => {
     db = await testDb();
     await migrate(db);
-    vi.spyOn(console, "info").mockImplementation(() => {});
+    info.length = 0;
+    vi.spyOn(console, "info").mockImplementation((line: unknown) => void info.push(String(line)));
   });
   afterEach(async () => {
     vi.restoreAllMocks();
     await db.close();
   });
 
-  it("polls CPSC and purges PayPal data every 15 minutes", () => {
+  const pulls = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from cpsc_pulls")).rows[0].n);
+
+  it("polls every 15 minutes, with a heartbeat every hour", () => {
+    expect(POLL_MS).toBe(15 * 60_000);
+    expect(HEARTBEAT_TICKS).toBe(4);
     const jobs = appJobs(db);
-    expect(jobs.map((j) => [j.name, j.everyMs])).toEqual([
-      ["cpsc-poll", CPSC_POLL_MS],
-      ["paypal-48h-purge", PURGE_MS],
-    ]);
-    expect(CPSC_POLL_MS).toBe(15 * 60_000);
-    expect(PURGE_MS).toBe(15 * 60_000);
+    expect(jobs.map((j) => [j.name, j.everyMs])).toEqual([["cpsc-poll", POLL_MS]]);
   });
 
-  it("cpsc-poll pulls recalls published yesterday and today, and logs the pull", async () => {
-    const requested: string[] = [];
-    // CPSC answers with the recalls last published on Nov 5, 2026.
-    const nov5 = fixture.filter((r) => r.LastPublishDate.startsWith("2026-11-05"));
-    const fetchImpl = async (url: string | URL | Request) => {
-      requested.push(String(url));
-      return new Response(JSON.stringify(nov5), { status: 200, headers: { "content-type": "application/json" } });
-    };
-    const [poll] = appJobs(db, { fetchImpl: fetchImpl as typeof fetch, now: () => new Date("2026-11-05T22:00:00Z") });
+  it("asks CPSC for recalls published yesterday and today", async () => {
+    const cpsc = cpscAnswering(() => nov5);
+    await appJobs(db, cpsc.deps)[0].run();
+    const params = new URL(cpsc.requested[0]).searchParams;
+    expect(params.get("LastPublishDateStart")).toBe("2026-11-04");
+    expect(params.get("LastPublishDateEnd")).toBe("2026-11-05");
+  });
+
+  it("the first tick writes, then a quiet poll makes zero database calls", async () => {
+    const { counted, calls } = counting(db);
+    const cpsc = cpscAnswering(() => nov5);
+    const [poll] = appJobs(counted, cpsc.deps);
     await poll.run();
-    expect(new URL(requested[0]).searchParams.get("LastPublishDateStart")).toBe("2026-11-04");
-    expect(new URL(requested[0]).searchParams.get("LastPublishDateEnd")).toBe("2026-11-05");
-    const { rows } = await db.query<{ n: string }>("select count(*)::text as n from recalls");
-    expect(Number(rows[0].n)).toBe(nov5.length);
-    expect(nov5.length).toBeGreaterThan(0);
+    expect(calls.n).toBeGreaterThan(0);
+    expect(await pulls()).toBe(1);
+
+    calls.n = 0;
+    await poll.run();
+    expect(calls.n).toBe(0);
+    expect(cpsc.requested).toHaveLength(2); // it still asked CPSC
+    expect(await pulls()).toBe(1);
+    expect(info.at(-1)).toMatch(/db=untouched/);
   });
 
-  it("paypal-48h-purge deletes PayPal-sourced rows older than 48 hours", async () => {
+  it("writes as soon as the snapshot changes", async () => {
+    let body = nov5;
+    const cpsc = cpscAnswering(() => body);
+    const [poll] = appJobs(db, cpsc.deps);
+    await poll.run();
+    body = nov5.map((r, i) => (i === 0 ? { ...r, Title: "changed by CPSC" } : r));
+    await poll.run();
+    expect(await pulls()).toBe(2);
+    expect(info.at(-1)).toMatch(/db=touched/);
+    const { rows } = await db.query<{ n: string }>("select count(*)::text as n from recalls where title = 'changed by CPSC'");
+    expect(rows[0].n).toBe("1");
+  });
+
+  it("writes on the hourly heartbeat even when nothing changed, and only then", async () => {
+    const { counted, calls } = counting(db);
+    const [poll] = appJobs(counted, cpscAnswering(() => nov5).deps);
+    const wakes: boolean[] = [];
+    for (let tick = 0; tick < HEARTBEAT_TICKS * 2 + 1; tick++) {
+      calls.n = 0;
+      await poll.run();
+      wakes.push(calls.n > 0);
+    }
+    expect(wakes).toEqual([true, false, false, false, true, false, false, false, true]);
+  });
+
+  it("purges PayPal data on the heartbeat tick, and not on quiet ticks", async () => {
+    const [poll] = appJobs(db, cpscAnswering(() => nov5).deps);
+    const insertOld = () =>
+      db.query(
+        `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
+         values (gen_random_uuid()::text, 'T', 'self', $1::timestamptz - interval '3 days')`,
+        [NOW.toISOString()],
+      );
+    const count = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from paypal_webhook_events")).rows[0].n);
+    await insertOld();
+    await poll.run(); // heartbeat
+    expect(await count()).toBe(0);
+    await insertOld();
+    await poll.run(); // quiet
+    expect(await count()).toBe(1);
+  });
+
+  it("still purges on the heartbeat when CPSC is down, then reports the failure", async () => {
+    const [poll] = appJobs(db, cpscAnswering(() => 400).deps);
     await db.query(
       `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
-       values ('old', 'T', 'self', now() - interval '3 days'), ('new', 'T', 'self', now())`,
+       values ('old', 'T', 'self', $1::timestamptz - interval '3 days')`,
+      [NOW.toISOString()],
     );
-    const [, purge] = appJobs(db);
-    await purge.run();
-    const { rows } = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
-    expect(rows.map((r) => r.event_id_hmac)).toEqual(["new"]);
+    await expect(poll.run()).rejects.toThrow(/HTTP 400/);
+    expect((await db.query("select 1 from paypal_webhook_events")).rows).toEqual([]);
+    const { rows } = await db.query<{ status: string }>("select status from cpsc_pulls");
+    expect(rows.map((r) => r.status)).toEqual(["failed"]);
+  });
+
+  it("a CPSC failure on a quiet tick stays off the database", async () => {
+    let status: number | null = null;
+    const { counted, calls } = counting(db);
+    const [poll] = appJobs(counted, cpscAnswering(() => status ?? nov5).deps);
+    await poll.run();
+    status = 400;
+    calls.n = 0;
+    await expect(poll.run()).rejects.toThrow(/HTTP 400/);
+    expect(calls.n).toBe(0);
+  });
+
+  it("keeps the last poll time and result in memory for health, with no database call", async () => {
+    const { counted, calls } = counting(db);
+    let status: number | null = null;
+    const [poll] = appJobs(counted, cpscAnswering(() => status ?? nov5).deps);
+    await poll.run();
+    calls.n = 0;
+    await poll.run();
+    expect(recallPollStatus()).toEqual({ lastPollAt: NOW.toISOString(), lastPollOk: true, dbTouched: false });
+    status = 400;
+    await poll.run().catch(() => {});
+    expect(recallPollStatus()).toMatchObject({ lastPollOk: false });
+    expect(calls.n).toBe(0);
+  });
+
+  it("logs exactly one line per tick saying whether the database was touched", async () => {
+    const [poll] = appJobs(db, cpscAnswering(() => nov5).deps);
+    await poll.run();
+    await poll.run();
+    expect(info).toHaveLength(2);
+    expect(info[0]).toMatch(/^cpsc-poll 2026-11-04\.\.2026-11-05: fetched \d+, db=touched \(heartbeat\), .*purged \{/);
+    expect(info[1]).toMatch(/^cpsc-poll 2026-11-04\.\.2026-11-05: fetched \d+, db=untouched$/);
   });
 });

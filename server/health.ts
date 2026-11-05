@@ -1,5 +1,6 @@
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
+import type { RecallPollStatus } from "./jobs/appJobs";
 
 export interface Health {
   ok: boolean;
@@ -17,6 +18,8 @@ export interface Health {
       finishedAt: string;
     } | null;
   } | null;
+  /** The background poll's last run, held in memory: a quiet poll never touches the database. */
+  poll: RecallPollStatus;
   paypal: {
     /** Webhook certificates are accepted only from PayPal sandbox hosts (server/paypal/webhooks.ts). */
     environment: "sandbox";
@@ -29,7 +32,11 @@ const iso = (value: unknown): string | null =>
   value instanceof Date ? value.toISOString() : typeof value === "string" ? new Date(value).toISOString() : null;
 
 /** Public status for /api/health. Never includes secrets or database error text. */
-export async function getHealth(db: Queryable, env: { PAYPAL_WEBHOOK_ID?: string }): Promise<Health> {
+export async function getHealth(
+  db: Queryable,
+  env: { PAYPAL_WEBHOOK_ID?: string },
+  poll: RecallPollStatus = { lastPollAt: null, lastPollOk: null, dbTouched: null },
+): Promise<Health> {
   const checkedAt = new Date().toISOString();
   const paypalBase = { environment: "sandbox" as const, webhookConfigured: Boolean(env.PAYPAL_WEBHOOK_ID) };
   try {
@@ -58,6 +65,7 @@ export async function getHealth(db: Queryable, env: { PAYPAL_WEBHOOK_ID?: string
             }
           : null,
       },
+      poll,
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
   } catch (err) {
@@ -67,6 +75,7 @@ export async function getHealth(db: Queryable, env: { PAYPAL_WEBHOOK_ID?: string
       checkedAt,
       database: { ok: false },
       cpsc: null,
+      poll,
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
   }

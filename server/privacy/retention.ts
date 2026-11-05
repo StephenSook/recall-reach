@@ -7,10 +7,11 @@ export const DATA_SOURCES = ["cpsc-public", "own", "shop-owned", "paypal", "payp
 export const PAYPAL_RETENTION_HOURS = 48;
 
 /**
- * The purge deletes at 47 hours because it runs on a schedule: a row just missed by one run waits
- * for the next. Cutoff plus the 15-minute interval stays under the 48-hour limit (a test walks it).
+ * The purge deletes at 46 hours because it runs hourly: a row just missed by one run waits for the
+ * next, so the oldest a row can get is about 47 hours (a test walks the schedule). Hourly, not more
+ * often, because each run wakes the free-tier database, which has a monthly compute quota.
  */
-export const PAYPAL_PURGE_CUTOFF_HOURS = 47;
+export const PAYPAL_PURGE_CUTOFF_HOURS = 46;
 
 /**
  * Every table labelled "data-source: paypal", with the column holding when this app received the

@@ -63,6 +63,18 @@ describe("getHealth", () => {
     expect(health.paypal.lastVerifiedWebhookAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it("reports the in-memory recall poll, including when the database is unreachable", async () => {
+    const poll = { lastPollAt: "2026-11-05T22:00:00.000Z", lastPollOk: true, dbTouched: false };
+    expect((await getHealth(db, {}, poll)).poll).toEqual(poll);
+    const broken: Queryable = {
+      query: async () => {
+        throw new Error("down");
+      },
+      exec: async () => {},
+    };
+    expect((await getHealth(broken, {}, poll)).poll).toEqual(poll);
+  });
+
   it("never includes the webhook id itself", async () => {
     const health = await getHealth(db, { PAYPAL_WEBHOOK_ID: WEBHOOK_ID });
     expect(JSON.stringify(health)).not.toContain(WEBHOOK_ID);

@@ -13,5 +13,5 @@ export async function register(): Promise<void> {
     import("./server/jobs/scheduler"),
   ]);
   startScheduler(appJobs(getDb()));
-  console.info("background jobs started: cpsc-poll every 15 min, paypal-48h-purge every 15 min");
+  console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");
 }

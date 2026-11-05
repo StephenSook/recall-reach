@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
-import { PURGE_MS } from "../jobs/appJobs";
+import { HEARTBEAT_TICKS, POLL_MS } from "../jobs/appJobs";
 import {
   DATA_SOURCES,
   PAYPAL_PURGE_CUTOFF_HOURS,
@@ -46,15 +46,15 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
     expect(labelledPayPal.length).toBeGreaterThan(0);
   });
 
-  it("deletes rows at the 47-hour cutoff and keeps newer ones", async () => {
+  it("deletes rows at the 46-hour cutoff and keeps newer ones", async () => {
     expect(PAYPAL_RETENTION_HOURS).toBe(48);
-    expect(PAYPAL_PURGE_CUTOFF_HOURS).toBe(47);
+    expect(PAYPAL_PURGE_CUTOFF_HOURS).toBe(46);
     const now = new Date("2026-11-10T12:00:00Z");
     const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
     await db.query(
       `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
        values ('old', 'T', 'self', $1), ('past-cutoff', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
-      [hoursAgo(49), hoursAgo(47.1), hoursAgo(46.9)],
+      [hoursAgo(49), hoursAgo(46.1), hoursAgo(45.9)],
     );
     expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2 });
     const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
@@ -63,8 +63,9 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
 
   it("never lets a PayPal-sourced row reach 48 hours, at any moment on the real purge schedule", async () => {
     // Walks a clock across 60 hours at the job's real interval, with rows arriving between runs.
-    // The hourly 48-hour purge this replaces failed here: a row could live about 49 hours.
+    // An hourly purge at a 48-hour cutoff failed here: a row could live about 49 hours.
     const LIMIT_MS = PAYPAL_RETENTION_HOURS * 3_600_000;
+    const PURGE_MS = POLL_MS * HEARTBEAT_TICKS;
     const t0 = Date.parse("2026-11-10T00:00:00Z");
     let arrivals = 0;
     for (let tick = t0; tick <= t0 + 60 * 3_600_000; tick += PURGE_MS) {
@@ -84,6 +85,6 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
         expect(Number(rows[0].oldest_ms ?? 0), table).toBeLessThan(LIMIT_MS);
       }
     }
-    expect(arrivals).toBe(241);
+    expect(arrivals).toBe(61);
   });
 });

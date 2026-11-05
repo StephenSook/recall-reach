@@ -71,8 +71,8 @@ describe("PayPal values never reach logs", () => {
     const replay = Buffer.from(JSON.stringify({ ...event, id: "WH-REPLAY" }));
     expect((await deliver(replay, paypalHeaders(replay, webhookId, "t-1"))).status).toBe(401);
 
-    const purge = appJobs(db).find((j) => j.name === "paypal-48h-purge");
-    await purge?.run();
+    const cpsc = (async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
+    await appJobs(db, { fetchImpl: cpsc })[0].run(); // the first tick is a heartbeat, which purges
 
     expect(lines.length).toBeGreaterThanOrEqual(4); // the logging path really ran
     const everything = lines.join("\n");
