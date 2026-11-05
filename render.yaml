@@ -1,0 +1,20 @@
+# Render Blueprint for the live service. The service is created and kept in sync from this file,
+# so this file and the dashboard describe the same thing.
+services:
+  - type: web
+    name: recall-reach-web
+    runtime: node
+    plan: starter
+    region: virginia # next to the Neon database (aws-us-east-1)
+    branch: main
+    autoDeployTrigger: checksPass # deploy a commit only after its CI checks pass
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:migrate && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /api/live # never touches the database
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: DATABASE_URL
+        sync: false # set in Render, never in git
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false # set in Render after the sandbox webhook is registered
