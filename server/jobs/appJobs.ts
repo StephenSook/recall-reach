@@ -46,10 +46,28 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
   // then kept here so a CPSC outage can be caught up without waking the database.
   let polledThrough: string | null | undefined;
 
+  // Set by each heartbeat and cleared only by a purge that worked, so a failed purge is retried on
+  // the next tick instead of waiting an hour. Its margin under 48 hours is what that hour would use.
+  let purgeOwed = false;
+
   const poll = async () => {
     const heartbeat = ticks % HEARTBEAT_TICKS === 0;
     ticks++;
     const at = now();
+
+    // First, so nothing about CPSC's response or its latency can skip or delay it.
+    if (heartbeat) purgeOwed = true;
+    let purged: Record<string, number> | null = null;
+    let purgeError: unknown = null;
+    if (purgeOwed) {
+      try {
+        purged = await purgePayPalData(db, at);
+        purgeOwed = false;
+      } catch (err) {
+        purgeError = err;
+      }
+    }
+
     if (polledThrough === undefined) {
       polledThrough = await lastPolledThrough(db);
       const covered = polledThrough ? Date.parse(`${polledThrough}T00:00:00Z`) : null;
@@ -64,13 +82,15 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
 
     let payload: unknown[] | null = null;
     let fetchError: unknown = null;
+    let hash: string | null = null;
     try {
-      payload = await fetchRecalls(range, deps);
+      const fetched = await fetchRecalls(range, deps);
+      hash = snapshotHash(fetched);
+      payload = fetched;
     } catch (err) {
       fetchError = err;
     }
     if (payload) polledThrough = range.end;
-    const hash = payload ? snapshotHash(payload) : null;
     const changed = hash !== null && hash !== lastHash;
     const touchDb = heartbeat || changed;
 
@@ -85,17 +105,6 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
       } catch (err) {
         // A failed fetch is already recorded by recordPull and raised below.
         if (err !== fetchError) writeError = err;
-      }
-    }
-
-    // A CPSC or write failure must never stop the purge.
-    let purged: Record<string, number> | null = null;
-    let purgeError: unknown = null;
-    if (heartbeat) {
-      try {
-        purged = await purgePayPalData(db, at);
-      } catch (err) {
-        purgeError = err;
       }
     }
 

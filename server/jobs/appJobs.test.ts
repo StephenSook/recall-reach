@@ -185,6 +185,50 @@ describe("the recall poll job", () => {
     expect(await count()).toBe(1);
   });
 
+  it("purges before it asks CPSC, so nothing about the response can skip or delay the purge", async () => {
+    await db.query(
+      `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
+       values ('old', 'T', 'self', $1::timestamptz - interval '3 days')`,
+      [NOW.toISOString()],
+    );
+    let rowsWhenCpscAsked = -1;
+    const fetchImpl = async () => {
+      rowsWhenCpscAsked = (await db.query("select 1 from paypal_webhook_events")).rows.length;
+      return new Response("[]", { status: 200 });
+    };
+    await appJobs(db, { fetchImpl: fetchImpl as unknown as typeof fetch, now: () => NOW })[0].run();
+    expect(rowsWhenCpscAsked).toBe(0);
+  });
+
+  it("retries a failed purge on the very next tick, not an hour later, then goes quiet again", async () => {
+    await db.query(
+      `insert into paypal_webhook_events (event_id_hmac, event_type, verification_method, received_at)
+       values ('old', 'T', 'self', $1::timestamptz - interval '3 days')`,
+      [NOW.toISOString()],
+    );
+    let failNext = true;
+    const { counted, calls } = counting({
+      ...db,
+      query: (sql, params) => {
+        if (failNext && sql.startsWith("delete from paypal_webhook_events")) {
+          failNext = false;
+          throw new Error("purge stalled");
+        }
+        return db.query(sql, params);
+      },
+    } as Db);
+    const [poll] = appJobs(counted, cpscAnswering(() => nov5).deps);
+    await expect(poll.run()).rejects.toThrow(/purge stalled/); // heartbeat tick: the purge fails
+    expect((await db.query("select 1 from paypal_webhook_events")).rows).toHaveLength(1);
+
+    await poll.run(); // the next 15-minute tick is not a heartbeat, but the purge is still owed
+    expect((await db.query("select 1 from paypal_webhook_events")).rows).toHaveLength(0);
+
+    calls.n = 0;
+    await poll.run(); // paid: this tick is quiet again
+    expect(calls.n).toBe(0);
+  });
+
   it("still purges on the heartbeat when CPSC is down, then reports the failure", async () => {
     const [poll] = appJobs(db, cpscAnswering(() => 400).deps);
     await db.query(
