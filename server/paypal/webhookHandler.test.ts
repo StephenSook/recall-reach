@@ -119,4 +119,67 @@ describe("handleWebhookDelivery", () => {
     expect(row.resource_id_sha256).toBe(createHash("sha256").update("TEST-REFUND-1").digest("hex"));
     expect(JSON.stringify(row)).not.toContain("TEST-REFUND-1");
   });
+
+  // PayPal Developer Agreement: PayPal transaction data is not kept beyond 48 hours. The handler
+  // meets that by never storing it at all: these tests fail if a payer field, an amount or a raw
+  // PayPal id reaches any stored column, or if a column is added without review.
+  it("stores no payer details, amounts or raw PayPal ids from a capture event", async () => {
+    const capture = {
+      id: "WH-CAPTURE-1",
+      event_type: "PAYMENT.CAPTURE.COMPLETED",
+      create_time: "2026-11-05T21:00:00Z",
+      resource_type: "capture",
+      resource: {
+        id: "TEST-CAPTURE-9",
+        amount: { currency_code: "USD", value: "73.19" },
+        invoice_id: "TEST-INVOICE-77",
+        payee: { email_address: "test-seller@example.com", merchant_id: "TESTMERCHANT1" },
+        supplementary_data: { related_ids: { order_id: "TEST-ORDER-5" } },
+      },
+      payer: { email_address: "test-buyer@example.com", name: { given_name: "Testgiven", surname: "Testsurname" }, payer_id: "TESTPAYER1" },
+    };
+    const raw = Buffer.from(JSON.stringify(capture));
+    expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID))).status).toBe(200);
+
+    const stored = await db.query<{ row: string }>(
+      `select row_to_json(e)::text as row from paypal_webhook_events e
+       union all select row_to_json(t)::text from paypal_webhook_transmissions t`,
+    );
+    const everything = stored.rows.map((r) => r.row).join("\n");
+    expect(stored.rows).toHaveLength(2);
+    for (const value of [
+      "test-buyer@example.com",
+      "test-seller@example.com",
+      "Testgiven",
+      "Testsurname",
+      "TESTPAYER1",
+      "TESTMERCHANT1",
+      "73.19",
+      "TEST-CAPTURE-9",
+      "TEST-INVOICE-77",
+      "TEST-ORDER-5",
+    ]) {
+      expect(everything, value).not.toContain(value);
+    }
+  });
+
+  it("has exactly the reviewed columns in the webhook tables", async () => {
+    const { rows: cols } = await db.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+       where table_name in ('paypal_webhook_events', 'paypal_webhook_transmissions')
+       order by table_name, ordinal_position`,
+    );
+    expect(cols.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([
+      "paypal_webhook_events.event_id",
+      "paypal_webhook_events.event_type",
+      "paypal_webhook_events.resource_type",
+      "paypal_webhook_events.resource_id_sha256",
+      "paypal_webhook_events.event_create_time",
+      "paypal_webhook_events.verification_method",
+      "paypal_webhook_events.received_at",
+      "paypal_webhook_transmissions.transmission_id",
+      "paypal_webhook_transmissions.event_id",
+      "paypal_webhook_transmissions.received_at",
+    ]);
+  });
 });
