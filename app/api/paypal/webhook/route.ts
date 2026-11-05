@@ -1,6 +1,7 @@
 import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
 import { handleWebhookDelivery, MAX_WEBHOOK_BYTES } from "@/server/paypal/webhookHandler";
+import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export async function POST(request: Request): Promise<Response> {
       headers: request.headers,
       webhookId: process.env.PAYPAL_WEBHOOK_ID,
       db: getDb(),
+      recordKey: recordKeyFromEnv(),
     });
     return Response.json(body, { status });
   } catch (err) {

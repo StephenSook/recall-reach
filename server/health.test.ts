@@ -7,6 +7,7 @@ import { migrate } from "./db/migrate";
 import type { Queryable } from "./db/types";
 import { getHealth } from "./health";
 import { handleWebhookDelivery } from "./paypal/webhookHandler";
+import { createRecordKey } from "./privacy/recordKey";
 
 const fixtureText = readFileSync(
   new URL("../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url),
@@ -46,6 +47,7 @@ describe("getHealth", () => {
       headers: paypalHeaders(body, WEBHOOK_ID),
       webhookId: WEBHOOK_ID,
       db,
+      recordKey: createRecordKey("test-record-key-secret-0123456789abcdef"),
       fetchCert: fetchTestCert,
     });
 

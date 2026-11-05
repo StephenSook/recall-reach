@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchTestCert, paypalHeaders } from "../../test/paypalSigner";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
+import { createRecordKey } from "../privacy/recordKey";
 import { handleWebhookDelivery } from "./webhookHandler";
 
 const WEBHOOK_ID = "TEST-WEBHOOK-ID";
+const key = createRecordKey("test-record-key-secret-0123456789abcdef");
 const event = {
   id: "WH-TEST-1",
   event_type: "PAYMENT.CAPTURE.REFUNDED",
@@ -26,9 +28,9 @@ describe("handleWebhookDelivery", () => {
   });
 
   const deliver = (raw: Uint8Array, headers: Headers, webhookId: string | undefined = WEBHOOK_ID) =>
-    handleWebhookDelivery({ rawBody: raw, headers, webhookId, db, fetchCert: fetchTestCert });
+    handleWebhookDelivery({ rawBody: raw, headers, webhookId, db, recordKey: key, fetchCert: fetchTestCert });
   const rows = async () =>
-    (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id")).rows;
+    (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id_hmac")).rows;
 
   it("logs each accepted delivery's event, transmission id and transmission time", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -45,12 +47,12 @@ describe("handleWebhookDelivery", () => {
     }
   });
 
-  it("stores a verified event and answers 200", async () => {
+  it("stores a verified event under an HMAC of its id and answers 200", async () => {
     const res = await deliver(body, paypalHeaders(body, WEBHOOK_ID));
     expect(res).toEqual({ status: 200, body: { received: true, duplicate: false } });
     expect(await rows()).toMatchObject([
       {
-        event_id: "WH-TEST-1",
+        event_id_hmac: key("paypal-event", "WH-TEST-1"),
         event_type: "PAYMENT.CAPTURE.REFUNDED",
         resource_type: "refund",
         verification_method: "self",
@@ -80,7 +82,7 @@ describe("handleWebhookDelivery", () => {
     const other = Buffer.from(JSON.stringify({ ...event, id: "WH-REPLAYED", event_type: "PAYMENT.CAPTURE.COMPLETED" }));
     const res = await deliver(other, paypalHeaders(other, WEBHOOK_ID, "transmission-1"));
     expect(res.status).toBe(401);
-    expect((await rows()).map((r) => r.event_id)).toEqual(["WH-TEST-1"]);
+    expect((await rows()).map((r) => r.event_id_hmac)).toEqual([key("paypal-event", "WH-TEST-1")]);
   });
 
   it("answers 401 to a forged delivery and stores nothing", async () => {
@@ -97,6 +99,25 @@ describe("handleWebhookDelivery", () => {
       headers: paypalHeaders(body, WEBHOOK_ID),
       webhookId: undefined,
       db,
+      recordKey: key,
+      fetchCert: async () => {
+        certFetches++;
+        return fetchTestCert();
+      },
+    });
+    expect(res.status).toBe(503);
+    expect(certFetches).toBe(0);
+    expect(await rows()).toEqual([]);
+  });
+
+  it("answers 503 without verifying when no record key secret is configured", async () => {
+    let certFetches = 0;
+    const res = await handleWebhookDelivery({
+      rawBody: body,
+      headers: paypalHeaders(body, WEBHOOK_ID),
+      webhookId: WEBHOOK_ID,
+      db,
+      recordKey: null,
       fetchCert: async () => {
         certFetches++;
         return fetchTestCert();
@@ -113,16 +134,18 @@ describe("handleWebhookDelivery", () => {
     expect(res.status).toBe(413);
   });
 
-  it("keeps only a hash of the PayPal resource id", async () => {
+  it("keeps only an HMAC of the PayPal resource id, never the id or a plain hash of it", async () => {
     await deliver(body, paypalHeaders(body, WEBHOOK_ID));
     const [row] = await rows();
-    expect(row.resource_id_sha256).toBe(createHash("sha256").update("TEST-REFUND-1").digest("hex"));
-    expect(JSON.stringify(row)).not.toContain("TEST-REFUND-1");
+    expect(row.resource_id_hmac).toBe(key("paypal-resource", "TEST-REFUND-1"));
+    const stored = JSON.stringify(row);
+    expect(stored).not.toContain("TEST-REFUND-1");
+    expect(stored).not.toContain(createHash("sha256").update("TEST-REFUND-1").digest("hex"));
   });
 
-  // PayPal Developer Agreement: PayPal transaction data is not kept beyond 48 hours. The handler
-  // meets that by never storing it at all: these tests fail if a payer field, an amount or a raw
-  // PayPal id reaches any stored column, or if a column is added without review.
+  // PayPal Developer Agreement 10.1.3 and 11.2: these tests fail if a payer field, an amount, or a
+  // raw PayPal id (event, transmission or resource) reaches any stored column, or if a column is
+  // added without review.
   it("stores no payer details, amounts or raw PayPal ids from a capture event", async () => {
     const capture = {
       id: "WH-CAPTURE-1",
@@ -139,7 +162,7 @@ describe("handleWebhookDelivery", () => {
       payer: { email_address: "test-buyer@example.com", name: { given_name: "Testgiven", surname: "Testsurname" }, payer_id: "TESTPAYER1" },
     };
     const raw = Buffer.from(JSON.stringify(capture));
-    expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID))).status).toBe(200);
+    expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID, "TRANSMISSION-RAW-7"))).status).toBe(200);
 
     const stored = await db.query<{ row: string }>(
       `select row_to_json(e)::text as row from paypal_webhook_events e
@@ -155,6 +178,8 @@ describe("handleWebhookDelivery", () => {
       "TESTPAYER1",
       "TESTMERCHANT1",
       "73.19",
+      "WH-CAPTURE-1",
+      "TRANSMISSION-RAW-7",
       "TEST-CAPTURE-9",
       "TEST-INVOICE-77",
       "TEST-ORDER-5",
@@ -170,15 +195,15 @@ describe("handleWebhookDelivery", () => {
        order by table_name, ordinal_position`,
     );
     expect(cols.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([
-      "paypal_webhook_events.event_id",
+      "paypal_webhook_events.event_id_hmac",
       "paypal_webhook_events.event_type",
       "paypal_webhook_events.resource_type",
-      "paypal_webhook_events.resource_id_sha256",
+      "paypal_webhook_events.resource_id_hmac",
       "paypal_webhook_events.event_create_time",
       "paypal_webhook_events.verification_method",
       "paypal_webhook_events.received_at",
-      "paypal_webhook_transmissions.transmission_id",
-      "paypal_webhook_transmissions.event_id",
+      "paypal_webhook_transmissions.transmission_id_hmac",
+      "paypal_webhook_transmissions.event_id_hmac",
       "paypal_webhook_transmissions.received_at",
     ]);
   });
