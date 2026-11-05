@@ -30,6 +30,7 @@ export async function handleWebhookDelivery(input: {
   db: Queryable;
   recordKey: RecordKey | null;
   fetchCert?: CertFetcher;
+  now?: () => number;
 }): Promise<WebhookResponse> {
   if (!input.webhookId || !input.recordKey) {
     console.error("PayPal webhook received but PAYPAL_WEBHOOK_ID or RECORD_HMAC_SECRET is not set");
@@ -67,10 +68,11 @@ export async function handleWebhookDelivery(input: {
       [transmissionKey],
     );
     if (prior.rows[0]?.event_id_hmac !== eventKey) {
-      console.warn(`PayPal webhook rejected: transmission ${transmissionId} was already used for another event`);
+      console.warn("PayPal webhook rejected: the transmission was already used for another event");
       return { status: 401, body: { error: "signature not verified" } };
     }
   }
+  const transmissionNew = claimed.rows.length > 0;
 
   const resourceId = typeof event.resource?.id === "string" ? event.resource.id : null;
   const { rows } = await input.db.query(
@@ -88,10 +90,13 @@ export async function handleWebhookDelivery(input: {
     ],
   );
   const duplicate = rows.length === 0;
-  // Delivery diagnostics only: ids and times, never the event body or payer data.
+  // Delivery diagnostics without PayPal data: logs outlive the 48-hour rule, so they carry derived
+  // facts only. A redelivery's age shows whether PayPal re-signs it with a new transmission time.
+  const sentAt = Date.parse(transmission.transmissionTime ?? "");
+  const age = Number.isNaN(sentAt) ? "unknown" : String(Math.round(((input.now ?? Date.now)() - sentAt) / 1000));
   console.info(
-    `PayPal webhook accepted: event=${event.id} type=${event.event_type} transmission=${transmissionId} ` +
-      `transmission_time=${transmission.transmissionTime} duplicate=${duplicate}`,
+    `PayPal webhook accepted: type=${event.event_type} transmission_new=${transmissionNew} ` +
+      `transmission_age_s=${age} duplicate=${duplicate}`,
   );
   return { status: 200, body: { received: true, duplicate } };
 }

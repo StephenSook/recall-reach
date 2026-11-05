@@ -32,18 +32,42 @@ describe("handleWebhookDelivery", () => {
   const rows = async () =>
     (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id_hmac")).rows;
 
-  it("logs each accepted delivery's event, transmission id and transmission time", async () => {
+  it("logs delivery facts (new transmission? its age? duplicate?) but no raw PayPal id or time", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    // paypalHeaders signs transmission time 2026-11-05T20:00:00Z; the clock reads 7 s later.
+    const now = () => Date.parse("2026-11-05T20:00:07Z");
+    const at = (headers: Headers) =>
+      handleWebhookDelivery({ rawBody: body, headers, webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, now });
     try {
-      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
-      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-2"));
+      await at(paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
+      await at(paypalHeaders(body, WEBHOOK_ID, "transmission-2"));
+      await at(paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
       const lines = info.mock.calls.map((c) => String(c[0]));
       expect(lines).toEqual([
-        "PayPal webhook accepted: event=WH-TEST-1 type=PAYMENT.CAPTURE.REFUNDED transmission=transmission-1 transmission_time=2026-11-05T20:00:00Z duplicate=false",
-        "PayPal webhook accepted: event=WH-TEST-1 type=PAYMENT.CAPTURE.REFUNDED transmission=transmission-2 transmission_time=2026-11-05T20:00:00Z duplicate=true",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=true transmission_age_s=7 duplicate=false",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=true transmission_age_s=7 duplicate=true",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=false transmission_age_s=7 duplicate=true",
       ]);
+      for (const raw of ["WH-TEST-1", "transmission-1", "transmission-2", "2026-11-05T20:00:00Z", "TEST-REFUND-1"]) {
+        expect(lines.join("\n"), raw).not.toContain(raw);
+      }
     } finally {
       info.mockRestore();
+    }
+  });
+
+  it("does not log the transmission id when it refuses a replay", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
+      const other = Buffer.from(JSON.stringify({ ...event, id: "WH-REPLAYED" }));
+      expect((await deliver(other, paypalHeaders(other, WEBHOOK_ID, "transmission-1"))).status).toBe(401);
+      const lines = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(lines).toMatch(/already used for another event/);
+      expect(lines).not.toContain("transmission-1");
+      expect(lines).not.toContain("WH-REPLAYED");
+    } finally {
+      warn.mockRestore();
     }
   });
 
