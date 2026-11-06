@@ -27,7 +27,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
   // A form's fragment survives the redirect, so on a wide screen this window stays open after an action.
   const here = `#sale-${row.matchId}`;
   return (
-    <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict}>
+    <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict} data-done={saleWaits(card) ? undefined : ""}>
       <header className="window-bar">
         <span className="id">CPSC recall {row.recallNumber}</span>
         <span className="chips">
@@ -236,8 +236,6 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
-  const waiting = cards.filter(saleWaits);
-  const done = cards.filter((c) => !saleWaits(c));
 
   return (
     <main className="page">
@@ -282,12 +280,10 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </noscript>
       {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
-        {waiting.length > 0 ? <h2 className="section-title narrow-only">Needs review</h2> : null}
-        {waiting.map((card) => (
-          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
-        ))}
-        {done.length > 0 ? <h2 className="section-title narrow-only">Done</h2> : null}
-        {done.map((card) => (
+        {cards.some(saleWaits) ? <h2 className="section-title narrow-only cards-needs-title">Needs review</h2> : null}
+        {cards.some((c) => !saleWaits(c)) ? <h2 className="section-title narrow-only cards-done-title">Done</h2> : null}
+        {/* One list, grouped by CSS: moving a card's element to another list would lose the browser's :target, and an open card would close by itself. */}
+        {cards.map((card) => (
           <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
       </section>

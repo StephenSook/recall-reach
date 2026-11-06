@@ -197,7 +197,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
 test.describe("on a wide screen", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("the grid finds every candidate, approves only a sale's lead, and exports no buyer data", async ({ page }) => {
+  test("the grid finds every candidate, approves only a sale's lead, and exports no buyer data", async ({ page, browser }) => {
     await startDemoShop(page);
     const grid = page.getByTestId("match-grid");
     const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
@@ -276,6 +276,18 @@ test.describe("on a wide screen", () => {
     await grid.getByRole("button", { name: "Done (1)" }).click();
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText("You marked sent");
+
+    // A family's answer moves a sale to Done with no reload, and its open card stays open and on screen.
+    await grid.getByRole("button", { name: /^Needs review/ }).click();
+    await rows.filter({ hasText: "27040" }).getByRole("link", { name: "Open" }).click();
+    const question = await mailLink(recall(page, "27040"));
+    await asFamily(browser, familyUrl(question.body), async (family) => {
+      await family.getByRole("button", { name: "Yes", exact: true }).click();
+      await expect(family.getByTestId("check-answer")).toBeVisible();
+    });
+    await expect(recall(page, "27040").locator(".chips")).toContainText("Family's answer matches", { timeout: 15_000 });
+    await expect(recall(page, "27040")).toBeVisible();
+    await expect(recall(page, "27040").getByTestId("check-result")).toBeInViewport({ ratio: 1 });
   });
 
   test("the grid fits a larger window too", async ({ page }) => {
