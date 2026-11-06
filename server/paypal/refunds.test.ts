@@ -1609,6 +1609,25 @@ describe("refunds", () => {
       expect(rec.exceptions).toEqual(["PayPal's webhook has not arrived yet."]);
     });
 
+    it("says PayPal hasn't finished a refund PayPal says is pending, and doesn't blame the webhook", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      const rec = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      expect(rec.exceptions).toEqual(["PayPal hasn't finished this refund yet."]);
+    });
+
+    it("goes back to waiting on the webhook once PayPal has finished", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      pp.settle("COMPLETED");
+      const rec = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      expect(rec.exceptions).toEqual(["PayPal's webhook has not arrived yet."]);
+    });
+
     it("marks a pending refund unconfirmed after 10 minutes with no webhook and no answer from PayPal", async () => {
       const m = await setUp();
       const a = await approve(m.id);

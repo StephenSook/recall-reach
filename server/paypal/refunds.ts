@@ -718,7 +718,8 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   if (status === "refunded" && captureFacts && captureFacts.status !== "REFUNDED" && captureFacts.status !== "PARTIALLY_REFUNDED") {
     exceptions.push("The ledger says refunded, but PayPal's payment does not show a refund.");
   }
-  if (!webhookSeen && status !== "failed" && status !== "reserved") exceptions.push("PayPal's webhook has not arrived yet.");
+  if (refund?.status === "PENDING") exceptions.push("PayPal hasn't finished this refund yet.");
+  else if (!webhookSeen && status !== "failed" && status !== "reserved") exceptions.push("PayPal's webhook has not arrived yet.");
 
   return {
     matchId: row.match_id,
