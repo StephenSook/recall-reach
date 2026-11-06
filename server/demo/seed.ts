@@ -160,38 +160,44 @@ export async function seedDemoShop(
   );
 
   const shopId = await createShop(db, { name: DEMO_LABEL, kind: "DEMO" });
-  const cipher = createContactCipher(opts.secret, shopId);
-  for (const o of orders) await storeOrderLines(db, shopId, o.lines, cipher, `${DEMO_LABEL}: ${o.demoCase.label}`);
+  try {
+    const cipher = createContactCipher(opts.secret, shopId);
+    for (const o of orders) await storeOrderLines(db, shopId, o.lines, cipher, `${DEMO_LABEL}: ${o.demoCase.label}`);
 
-  const insertPayment = `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
-     values ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8, $9::jsonb)`;
-  for (const o of fresh) {
-    await db.query(insertPayment, [
-      shopId,
-      o.orderId,
-      o.invoiceId,
-      o.capture?.id ?? null,
-      o.capture?.status ?? null,
-      o.capture?.createTime ?? null,
-      o.capture?.amountCents ?? null,
-      o.capture?.currency ?? null,
-      JSON.stringify(o.items.map((i) => ({ name: i.name, sku: i.sku }))),
-    ]);
+    const insertPayment = `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+       values ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8, $9::jsonb)`;
+    for (const o of fresh) {
+      await db.query(insertPayment, [
+        shopId,
+        o.orderId,
+        o.invoiceId,
+        o.capture?.id ?? null,
+        o.capture?.status ?? null,
+        o.capture?.createTime ?? null,
+        o.capture?.amountCents ?? null,
+        o.capture?.currency ?? null,
+        JSON.stringify(o.items.map((i) => ({ name: i.name, sku: i.sku }))),
+      ]);
+    }
+    // A search row has no order id. Its transaction id is the capture's, and it is what makes the row unique here.
+    for (const p of pool) {
+      await db.query(insertPayment, [shopId, p.transactionId, p.invoiceId, p.transactionId, p.status, p.paidAt, p.amountCents, p.currency, JSON.stringify(p.items)]);
+    }
+    await db.query(
+      "insert into shop_items (shop_id, sku, title, price_cents, currency, listed, source) values ($1, $2, $3, $4, $5, true, $6)",
+      [shopId, SHELF_ITEM.sku, SHELF_ITEM.title, SHELF_ITEM.priceCents, SHELF_ITEM.currency, `${DEMO_LABEL}: listed, still on the shelf`],
+    );
+    const run = await runShopCheck(db, shopId, {
+      today: opts.today,
+      paypalSearched: coverage.complete,
+      failedMonths: failedMonths(coverage.failedWindows),
+      search: coverage,
+      recallsFrom: opts.recallsFrom,
+    });
+    return { shopId, run, search: coverage };
+  } catch (err) {
+    // Nobody can reach a shop that didn't finish, so it doesn't stay.
+    await db.query("delete from shops where id = $1", [shopId]);
+    throw err;
   }
-  // A search row has no order id. Its transaction id is the capture's, and it is what makes the row unique here.
-  for (const p of pool) {
-    await db.query(insertPayment, [shopId, p.transactionId, p.invoiceId, p.transactionId, p.status, p.paidAt, p.amountCents, p.currency, JSON.stringify(p.items)]);
-  }
-  await db.query(
-    "insert into shop_items (shop_id, sku, title, price_cents, currency, listed, source) values ($1, $2, $3, $4, $5, true, $6)",
-    [shopId, SHELF_ITEM.sku, SHELF_ITEM.title, SHELF_ITEM.priceCents, SHELF_ITEM.currency, `${DEMO_LABEL}: listed, still on the shelf`],
-  );
-  const run = await runShopCheck(db, shopId, {
-    today: opts.today,
-    paypalSearched: coverage.complete,
-    failedMonths: failedMonths(coverage.failedWindows),
-    search: coverage,
-    recallsFrom: opts.recallsFrom,
-  });
-  return { shopId, run, search: coverage };
 }
