@@ -121,7 +121,7 @@ describe("buying through PayPal's own approval page", () => {
       const body = paypal.bodies[0] as { intent: string; purchase_units: { invoice_id: string }[]; payment_source: { card?: unknown; paypal: { experience_context: Record<string, string> } } };
       expect(body.intent).toBe("CAPTURE");
       expect(body.payment_source.card).toBeUndefined();
-      expect(body.payment_source.paypal.experience_context).toMatchObject({ user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING" });
+      expect(body.payment_source.paypal.experience_context).toMatchObject({ user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING", brand_name: "DEMO SHOP" });
       expect(body.payment_source.paypal.experience_context.return_url).toBe(started.returnUrl);
       expect(body.payment_source.paypal.experience_context.cancel_url).toBe(`${SITE}/api/demo/buy/paypal/return?cancelled=1`);
       expect(body.purchase_units[0].invoice_id).toMatch(/^DEMO-LIVE-[0-9a-f]{12}$/);

@@ -119,6 +119,7 @@ export async function startPayPalBuy(
     requestId: randomUUID(),
     returnUrl,
     cancelUrl: `${input.siteUrl}${PAYPAL_RETURN}?cancelled=1`,
+    brandName: DEMO_LABEL,
   });
   return { orderId, approveUrl, returnUrl };
 }

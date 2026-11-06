@@ -188,6 +188,8 @@ export async function createCardOrder(client: PayPalClient, input: CardOrderInpu
 export interface PayPalOrderInput extends Omit<CardOrderInput, "card"> {
   returnUrl: string;
   cancelUrl: string;
+  /** The seller's name on PayPal's page, in place of the sandbox account's. */
+  brandName: string;
 }
 
 const SANDBOX_APPROVAL_HOST = "www.sandbox.paypal.com";
@@ -204,7 +206,7 @@ export async function createPayPalOrder(client: PayPalClient, input: PayPalOrder
       purchase_units: [orderUnit(input)],
       payment_source: {
         paypal: {
-          experience_context: { return_url: input.returnUrl, cancel_url: input.cancelUrl, user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING" },
+          experience_context: { return_url: input.returnUrl, cancel_url: input.cancelUrl, user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING", brand_name: input.brandName },
         },
       },
     },
