@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
@@ -646,6 +646,58 @@ describe("refunds", () => {
         [shopId],
       );
       expect(await refusal(approve(rows[0].id, SESSION, NOW, pp.client))).toBe("AMOUNT_ABOVE_REMAINING");
+    });
+  });
+
+  describe("deadlines are checked when they matter, not when the request came in", () => {
+    /** A client whose capture read takes this long, measured on the clock the refund code reads. */
+    function slowCaptureRead(pp: ReturnType<typeof fakePayPal>, tookMs: number): PayPalClient {
+      const real = performance.now.bind(performance);
+      return {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "GET" && /captures\/[^/]+$/.test(path)) {
+            const later = real() + tookMs;
+            vi.spyOn(performance, "now").mockImplementation(() => later);
+          }
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("refuses an approval that ran out while PayPal was being read", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const almostOver = new Date(NOW.getTime() + 14 * 60_000 + 59_000);
+      expect(await refusal(execute(a.approvalId, slowCaptureRead(pp, 30_000), SESSION, almostOver))).toBe("APPROVAL_NOT_VALID");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("refuses a repeat whose whole send would not fit before the six-hour limit", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const first = fakePayPal({ refundSteps: ["down", "down", "down"] });
+      const r = await execute(a.approvalId, first.client);
+      await agedFromNow(r.refundId);
+      const pp = fakePayPal();
+      const nearLimit = new Date(NOW.getTime() + 6 * 3_600_000 - 7 * 60_000);
+      const rejected = askPayPalAgain(db, slowCaptureRead(pp, 2 * 60_000), { shopId, refundId: r.refundId, recordKey: key, now: nearLimit });
+      expect(await refusal(rejected)).toBe("TOO_OLD_TO_ASK_AGAIN");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("still repeats when the whole send fits before the limit", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const first = fakePayPal({ refundSteps: ["down", "down", "down"] });
+      const r = await execute(a.approvalId, first.client);
+      await agedFromNow(r.refundId);
+      const pp = fakePayPal();
+      const fine = new Date(NOW.getTime() + 60 * 60_000);
+      expect((await askPayPalAgain(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: fine })).status).toBe("refunded");
     });
   });
 

@@ -275,7 +275,7 @@ export async function executeRefund(
       `update approvals set consumed_at = $4::timestamptz
        where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
        returning id`,
-      [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
+      [input.approvalId, input.shopId, input.sessionId, timeSince(startedAt, now)],
     );
     if (consumed.rows.length === 0) throw invalid();
     const inserted = await tx.query<{ id: string; request_id: string; send_lease_id: string }>(
@@ -341,6 +341,9 @@ async function moveLedger(
 
 /** The checks before a send can take minutes when PayPal is slow, so a lease runs from when it is taken. */
 const leaseEnd = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt) + SEND_LEASE_MS).toISOString();
+/** The whole send has to fit inside the limit, retries included, so the last moment to begin is a lease early. */
+const tooOldToRepeat = (createdAt: Date, atMs: number) => atMs + SEND_LEASE_MS - createdAt.getTime() > ASK_AGAIN_MS;
+
 /** The time now, on the same clock as `now` (tests set it), however long the checks since then have taken. */
 const timeSince = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt)).toISOString();
 
@@ -524,9 +527,8 @@ export async function askPayPalAgain(
   // A person may have refunded it by hand from here on, and a repeat could then make a second refund.
   if (row.seller_sent_to_paypal_at || row.repeat_refused_at) throw checkInPayPal();
   if (!row.capture_id) throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Check PayPal directly.");
-  if (now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS) {
-    throw new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
-  }
+  const tooOldNow = () => new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
+  if (tooOldToRepeat(row.created_at, now.getTime())) throw tooOldNow();
   // The same checks as a first send, except one: a capture showing a refund may be showing this one.
   const { recallDate } = await approvedFactsHold(db, row);
   const today = now.toISOString().slice(0, 10);
@@ -540,12 +542,15 @@ export async function askPayPalAgain(
   }
   refusePaymentDates(capture, recallDate, now);
 
+  // Those checks can take minutes, so the limit and the lease are read on the clock as it stands now.
+  const claimAt = timeSince(startedAt, now);
+  if (tooOldToRepeat(row.created_at, Date.parse(claimAt))) throw tooOldNow();
   const claimed = await db.query<{ send_lease_id: string }>(
     `update refunds set send_lease_until = $2::timestamptz, send_lease_id = gen_random_uuid(), updated_at = $3::timestamptz
      where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $3::timestamptz)
        and seller_sent_to_paypal_at is null and repeat_refused_at is null
      returning send_lease_id`,
-    [input.refundId, leaseEnd(startedAt, now), now.toISOString()],
+    [input.refundId, leaseEnd(startedAt, now), claimAt],
   );
   const holder = claimed.rows[0]?.send_lease_id;
   if (!holder) {
@@ -682,7 +687,7 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   const sendMayBeRunning = row.send_lease_until !== null && row.send_lease_until.getTime() > now.getTime();
   const refusedRepeat = row.repeat_refused_at !== null;
   const sentToPayPal = row.seller_sent_to_paypal_at !== null;
-  const tooOld = now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS;
+  const tooOld = tooOldToRepeat(row.created_at, now.getTime());
   const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld;
   const stuck = noAnswer && !sendMayBeRunning && !canAskAgain ? { orderNumber: row.order_number, sentToPayPal } : null;
   if (noAnswer && row.capture_id !== null && tooOld) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
