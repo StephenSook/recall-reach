@@ -134,9 +134,9 @@ export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolea
 export const paymentLine = (row: Pick<QueueRow, "verdict" | "joinState" | "isListing">) =>
   row.joinState === "IDENTIFIED" && !row.isListing && row.verdict !== "CLEARED" ? "PayPal's records show a payment for this sale." : null;
 
-/** A refund needs the payment. Sold after the recall is still worth saying when that payment isn't known. */
-export const pathChip = (row: Pick<QueueRow, "salePath" | "joinState">) =>
-  row.salePath === "REFUND_ELIGIBLE" && row.joinState === "HISTORY_UNAVAILABLE" ? "Sold after the recall" : row.salePath ? PATH_CHIP[row.salePath] : "";
+/** "Refund eligible" only when the card offers one. Sold after the recall is still worth saying when it doesn't. */
+export const pathChip = (row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "refund">) =>
+  !row.salePath ? "" : row.salePath === "REFUND_ELIGIBLE" && !refundOnOffer(row) ? "Sold after the recall" : PATH_CHIP[row.salePath];
 
 /**
  * What has happened on this row, once anything has. Until then, what the check found. A family's yes stays the
@@ -151,7 +151,7 @@ export function stateChip(row: Pick<QueueRow, "verdict" | "notice" | "refund">):
 }
 
 /** A sale's path, for a confirmed match. A refund made or under way is no longer on offer. One that failed can be tried again. */
-export const pathNow = (row: Pick<QueueRow, "verdict" | "salePath" | "joinState" | "refund">) =>
+export const pathNow = (row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "refund">) =>
   row.verdict === "MATCH" && row.salePath && (!row.refund || row.refund.status === "failed") ? pathChip(row) : null;
 
 /** The chips on a card. A sale path is a claim about a confirmed match, so it shows on nothing else. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -57,6 +57,22 @@ describe("a sale after the recall, when the payment isn't known", () => {
     const chips = chipsFor(row({ salePath: "REFUND_ELIGIBLE", joinState: "HISTORY_UNAVAILABLE" }));
     expect(chips).toContain("Sold after the recall");
     expect(chips).not.toContain("Refund eligible");
+  });
+
+  it.each([
+    ["two possible orders", { joinState: "AMBIGUOUS_JOIN" }],
+    ["no record at PayPal", { joinState: "NO_PAYPAL_RECORD" }],
+    ["no search of PayPal", { joinState: null }],
+    ["a match the check didn't confirm", { strength: "BRAND" as const }],
+  ])("does not say so with %s, since no refund is on offer", (_why, over) => {
+    const chips = chipsFor(row(over));
+    expect(chips).toContain("Sold after the recall");
+    expect(chips).not.toContain("Refund eligible");
+  });
+
+  it("says the same in the grid's Path column", () => {
+    expect(pathNow(row({ joinState: "AMBIGUOUS_JOIN" }))).toBe("Sold after the recall");
+    expect(pathNow(row())).toBe("Refund eligible");
   });
 
   it("does say so once the payment is known", () => {
@@ -305,7 +321,7 @@ describe("chipsFor", () => {
   });
 
   it("carries the join state, and the shelf for a listing", () => {
-    expect(chipsFor(row({ joinState: "AMBIGUOUS_JOIN" }))).toEqual(["Needs review", "Refund eligible", "Two possible orders"]);
+    expect(chipsFor(row({ joinState: "AMBIGUOUS_JOIN" }))).toEqual(["Needs review", "Sold after the recall", "Two possible orders"]);
     expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: true }))).toEqual(["Scope gap", "Pull from the shelf"]);
   });
 
