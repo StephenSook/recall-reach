@@ -850,7 +850,7 @@ describe("refunds", () => {
 
     it("won't offer a refund on a payment with an open dispute", async () => {
       const { id: matchId } = await setUp();
-      expect(await refusal(approve(matchId, SESSION, NOW, fakePayPal({ disputes: [{ status: "OPEN" }] }).client))).toBe("OPEN_DISPUTE");
+      expect(await refusal(approve(matchId, SESSION, NOW, fakePayPal({ disputes: [{ status: "OPEN" }] }).client))).toBe("PAYMENT_DISPUTED");
       expect((await db.query("select 1 from approvals")).rows).toEqual([]);
     });
 
@@ -858,7 +858,7 @@ describe("refunds", () => {
       const { id: matchId } = await setUp();
       const { approvalId } = await approve(matchId, SESSION, NOW, fakePayPal().client);
       const disputed = fakePayPal({ disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
-      expect(await refusal(execute(approvalId, disputed.client))).toBe("OPEN_DISPUTE");
+      expect(await refusal(execute(approvalId, disputed.client))).toBe("PAYMENT_DISPUTED");
       expect(disputed.calls.filter((c) => c.method === "POST")).toEqual([]);
       expect((await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [approvalId])).rows[0].consumed_at).toBeNull();
       expect((await db.query("select 1 from refunds")).rows).toEqual([]);
@@ -874,18 +874,14 @@ describe("refunds", () => {
       await expect(execute(approvalId, fakePayPal().client)).resolves.toMatchObject({ status: "refunded" });
     });
 
-    it("lets a resolved dispute through", async () => {
+    it("sends the seller to PayPal on a resolved dispute too, since the buyer may already be paid back", async () => {
       const { id: matchId } = await setUp();
-      const pp = fakePayPal({ disputes: [{ status: "RESOLVED" }] });
-      const { approvalId } = await approve(matchId, SESSION, NOW, pp.client);
-      await expect(execute(approvalId, pp.client)).resolves.toMatchObject({ status: "refunded" });
+      expect(await refusal(approve(matchId, SESSION, NOW, fakePayPal({ disputes: [{ status: "RESOLVED" }] }).client))).toBe("PAYMENT_DISPUTED");
     });
 
     it("stores nothing from the dispute", async () => {
       const { id: matchId } = await setUp();
-      const pp = fakePayPal({ disputes: [{ status: "RESOLVED", reason: "SENTINEL" } as { status: string }] });
-      const { approvalId } = await approve(matchId, SESSION, NOW, pp.client);
-      await execute(approvalId, pp.client);
+      await refusal(approve(matchId, SESSION, NOW, fakePayPal({ disputes: [{ status: "OPEN", reason: "SENTINEL" } as { status: string }] }).client));
       const { rows } = await db.query<{ t: string; c: string }>("select table_name as t, column_name as c from information_schema.columns where table_schema = 'public' and data_type in ('text', 'jsonb')");
       for (const { t, c } of rows) expect((await db.query(`select 1 from "${t}" where "${c}"::text like '%SENTINEL%' limit 1`)).rows, `${t}.${c}`).toEqual([]);
     });

@@ -44,7 +44,7 @@ export type RefusalCode =
   | "PAYMENT_CHANGED"
   | "PAYPAL_FACTS_CHANGED"
   | "PAYPAL_UNREACHABLE"
-  | "OPEN_DISPUTE"
+  | "PAYMENT_DISPUTED"
   | "DISPUTES_UNREADABLE"
   | "REFUND_WINDOW_CLOSED"
   | "PAYMENT_NOT_AFTER_RECALL"
@@ -417,7 +417,7 @@ async function refusePayPalFacts(
   refusePaymentDates(capture, facts.recallDate, facts.now);
   // A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back.
   const dispute = await disputeOnCapture(client, captureId);
-  if (dispute === "OPEN") throw new RefundRefused("OPEN_DISPUTE", "PayPal shows an open dispute on this payment. Settle it in PayPal first.");
+  if (dispute === "DISPUTED") throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
   if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so nothing was refunded. Please try again.");
   const ledger = await ledgerOnCapture(q, captureId);
   const refundedByPayPal = await refundedPerPayPal(client, capture, ledger.knownRefundId);

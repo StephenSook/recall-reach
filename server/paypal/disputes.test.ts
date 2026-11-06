@@ -34,26 +34,24 @@ describe("reading PayPal's disputes on a capture", () => {
 
   it.each([
     ["no disputes", { items: [] }, "NONE"],
-    ["no items at all", {}, "NONE"],
-    ["a resolved dispute", { items: [{ status: "RESOLVED" }] }, "NONE"],
-    ["an open dispute", { items: [{ status: "OPEN" }] }, "OPEN"],
-    ["one waiting on the seller", { items: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] }, "OPEN"],
-    ["one waiting on the buyer", { items: [{ status: "WAITING_FOR_BUYER_RESPONSE" }] }, "OPEN"],
-    ["one under review", { items: [{ status: "UNDER_REVIEW" }] }, "OPEN"],
-    ["a status PayPal calls other", { items: [{ status: "OTHER" }] }, "OPEN"],
-    ["a status this app has never seen", { items: [{ status: "SOMETHING_NEW" }] }, "OPEN"],
-    ["a dispute with no status", { items: [{}] }, "OPEN"],
-    ["one resolved and one open", { items: [{ status: "RESOLVED" }, { status: "OPEN" }] }, "OPEN"],
+    ["no disputes, with PayPal's links to this page", { items: [], links: [{ rel: "self" }, { rel: "first" }] }, "NONE"],
+    ["an open dispute", { items: [{ status: "OPEN" }] }, "DISPUTED"],
+    ["one waiting on the seller", { items: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] }, "DISPUTED"],
+    ["one under review", { items: [{ status: "UNDER_REVIEW" }] }, "DISPUTED"],
+    // PayPal may already have paid the buyer back on a resolved dispute, and the list doesn't say who won.
+    ["a resolved dispute", { items: [{ status: "RESOLVED" }] }, "DISPUTED"],
+    ["a status this app has never seen", { items: [{ status: "SOMETHING_NEW" }] }, "DISPUTED"],
+    ["a dispute with no status", { items: [{}] }, "DISPUTED"],
   ])("%s", async (_name, data, expected) => {
     await expect(disputeOnCapture(clientAnswering(data), "CAPTURE123")).resolves.toBe(expected);
   });
 
-  it("can't call a full page clear, because an open one could be on the next", async () => {
-    const full = { items: Array.from({ length: 50 }, () => ({ status: "RESOLVED" })) };
-    await expect(disputeOnCapture(clientAnswering(full), "CAPTURE123")).resolves.toBe("UNREADABLE");
+  it("can't call an answer clear when PayPal says there's another page", async () => {
+    await expect(disputeOnCapture(clientAnswering({ items: [], links: [{ rel: "next" }] }), "CAPTURE123")).resolves.toBe("UNREADABLE");
   });
 
   it.each([
+    ["an answer with no list of disputes", {}],
     ["an answer of another shape", { items: "none" }],
     ["items that aren't objects", { items: ["x"] }],
     ["a null answer", null],
