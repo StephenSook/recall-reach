@@ -39,7 +39,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
         </div>
         <div className="stat stat-SCOPE_GAP">
           <span className="stat-value">{counts.scopeGaps}</span>
-          <span className="stat-label">Recalls we can&apos;t tell yet</span>
+          <span className="stat-label">Can&apos;t tell yet</span>
         </div>
         <div className="stat stat-CLEARED">
           <span className="stat-value">{counts.cleared}</span>
