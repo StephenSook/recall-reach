@@ -11,6 +11,7 @@ import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { agentClientFromEnv, spentToday } from "./claude";
 import { runAgentOnRecord } from "./recallAgent";
+import { writeRecallQuestion } from "./recallQuestion";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date();
@@ -62,6 +63,17 @@ describe.skipIf(!key)("the recall agent (live)", () => {
     report("confirmed", run);
     expect(run.finding).toBe("SAME_PRODUCT");
     expect(run.evidence.map((e) => e.source).sort()).toEqual(["item", "recall"]);
+  });
+
+  it("writes a grounded question for recalls with nothing a rule can ask about", async () => {
+    const client = agentClientFromEnv()!;
+    for (const number of ["27040", "27065", "27067", "27074", "27055"]) {
+      const { rows } = await db.query<{ recall_id: number }>("select recall_id from recalls where recall_number = $1", [number]);
+      const status = await writeRecallQuestion(db, client, { recallId: rows[0].recall_id, now: NOW });
+      const { rows: saved } = await db.query<Record<string, unknown>>("select outcome, question, evidence, every_recalled_unit, abstain_reason, model, cost_micros from recall_questions where recall_id = $1", [rows[0].recall_id]);
+      process.stdout.write(`\n[${number}] ${status} ${JSON.stringify(saved[0])}\n`);
+      expect(["WROTE", "ABSTAINED"]).toContain(status);
+    }
   });
 
   it("works on the fallback model when the main one is down", async () => {
