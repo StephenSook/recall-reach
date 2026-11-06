@@ -251,6 +251,18 @@ describe("refunds", () => {
       expect(await refusal(approve(m.id))).toBe("JOIN_NOT_IDENTIFIED");
     });
 
+    it("refuses an order with a row that could not be read: its amount cannot be trusted", async () => {
+      const m = await setUp(line({ orderIncomplete: true }));
+      const message = await approve(m.id).catch((e: unknown) => (e instanceof RefundRefused ? `${e.code}: ${e.message}` : String(e)));
+      expect(message).toBe("ORDER_INCOMPLETE: A row of this order could not be read, so this amount cannot be trusted. Fix the file and import it again.");
+    });
+
+    it("allows it once the shop's file is fixed and imported again", async () => {
+      const m = await setUp(line({ orderIncomplete: true }));
+      await storeOrderLines(db, shopId, [line()], createContactCipher("k".repeat(32), shopId), "test");
+      await expect(approve(m.id)).resolves.toBeDefined();
+    });
+
     it("refuses a scope gap: it needs a confirmed match", async () => {
       const m = await setUp(line({ title: "Papablic bedside sleeper" }));
       expect(m.verdict).toBe("SCOPE_GAP");
@@ -603,6 +615,7 @@ describe("refunds", () => {
         ["the SKU", { sku: "PAPA-2" }],
         ["the currency", { currency: "CAD" }],
         ["the order date", { orderedOn: "2026-11-05" }],
+        ["whether the whole order could be read", { orderIncomplete: true }],
       ];
       it.each(changes)("refuses when %s changed, and moves no money", async (_field, over) => {
         const m = await setUp();

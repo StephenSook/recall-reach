@@ -25,6 +25,7 @@ describe("parseShopExport: Shopify orders CSV", () => {
       orderedOn: "2026-03-14",
       paymentReference: "pyid-test-1",
       buyerEmail: "test-buyer-one@example.test",
+      orderIncomplete: false,
     });
   });
 
@@ -52,6 +53,19 @@ describe("parseShopExport: Shopify orders CSV", () => {
       ["#T1005", "Created at"],
     ]);
     expect(lines.map((l) => l.orderNumber)).toEqual(["#T1001", "#T1001", "#T1002"]);
+  });
+
+  it("marks every line of an order with a rejected row: its discount share cannot be trusted", () => {
+    const csv = [
+      "Name,Email,Created at,Currency,Discount Amount,Lineitem quantity,Lineitem name,Lineitem price,Lineitem sku",
+      "#A1,a@example.com,2026-11-05,USD,10.00,1,Stroller,100.00,S1",
+      "#A1,,,,,1,,100.00,S2",
+      "#B1,b@example.com,2026-11-05,USD,0.00,1,Crib,50.00,C1",
+    ].join("\n");
+    const parsed = parseShopExport(csv);
+    expect(parsed.rejected.map((r) => r.orderNumber)).toEqual(["#A1"]);
+    expect(parsed.lines.find((l) => l.orderNumber === "#A1")?.orderIncomplete).toBe(true);
+    expect(parsed.lines.find((l) => l.orderNumber === "#B1")?.orderIncomplete).toBe(false);
   });
 
   it("carries no address, name or other column it was not asked for", () => {
@@ -90,6 +104,18 @@ describe("parseShopExport: generic CSV", () => {
     expect(lines).toEqual([]);
     expect(rejected.map((r) => r.reason.split(":")[0])).toEqual(["quantity", "quantity", "buyer_email"]);
     expect(JSON.stringify(rejected)).not.toContain("not-an-email");
+  });
+
+  it("marks an order with a rejected row here too", () => {
+    const csv = [
+      "order_number,title,quantity,unit_price,currency,ordered_on",
+      "#G1,Stroller,1,100.00,USD,2026-11-05",
+      "#G1,,1,100.00,USD,2026-11-05",
+      "#G2,Crib,1,50.00,USD,2026-11-05",
+    ].join("\n");
+    const parsed = parseShopExport(csv);
+    expect(parsed.lines.find((l) => l.orderNumber === "#G1")?.orderIncomplete).toBe(true);
+    expect(parsed.lines.find((l) => l.orderNumber === "#G2")?.orderIncomplete).toBe(false);
   });
 
   it("refuses a file it does not recognize", () => {

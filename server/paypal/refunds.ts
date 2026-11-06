@@ -47,6 +47,7 @@ export type RefusalCode =
   | "NOTHING_LEFT_TO_REFUND"
   | "REMAINING_UNKNOWN"
   | "AMOUNT_ABOVE_REMAINING"
+  | "ORDER_INCOMPLETE"
   | "NO_SUCH_REFUND"
   | "NOTHING_TO_ASK"
   | "REFUND_BEING_SENT"
@@ -73,7 +74,7 @@ export function refundAmountCents(line: { unitPriceCents: number; quantity: numb
 
 export const refundedAmount = (cents: number, currency: string) => `${centsToValue(cents)} ${currency}`;
 
-const LINE_COLUMNS = "order_number, line_no, title, sku, quantity, unit_price_cents, discount_cents, currency, ordered_on";
+const LINE_COLUMNS = "order_number, line_no, title, sku, quantity, unit_price_cents, discount_cents, currency, ordered_on, order_incomplete";
 
 interface LineFacts {
   order_number: string;
@@ -85,12 +86,13 @@ interface LineFacts {
   discount_cents: number;
   currency: string;
   ordered_on: string;
+  order_incomplete: boolean;
 }
 
 /** Everything a refund amount or decision rests on. JSON, so no field can run into the next. */
 const lineVersion = (l: LineFacts) =>
   createHash("sha256")
-    .update(JSON.stringify([l.order_number, l.line_no, l.title, l.sku, l.quantity, l.unit_price_cents, l.discount_cents, l.currency, l.ordered_on]))
+    .update(JSON.stringify([l.order_number, l.line_no, l.title, l.sku, l.quantity, l.unit_price_cents, l.discount_cents, l.currency, l.ordered_on, l.order_incomplete]))
     .digest("hex");
 
 /** Refuses unless the recall and the line are still what the person approved. Returns the dates that decide eligibility. */
@@ -169,6 +171,9 @@ export async function approveRefund(
   }
   if (m.join_state !== "IDENTIFIED") {
     throw new RefundRefused("JOIN_NOT_IDENTIFIED", "This order line is not linked to exactly one PayPal payment.");
+  }
+  if (m.order_incomplete) {
+    throw new RefundRefused("ORDER_INCOMPLETE", "A row of this order could not be read, so this amount cannot be trusted. Fix the file and import it again.");
   }
   const captureId = await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, now.toISOString().slice(0, 10));
   const open = await db.query("select 1 from refunds where order_line_id = $1 and status <> 'failed'", [m.order_line_id]);

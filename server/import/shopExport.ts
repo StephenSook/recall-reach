@@ -28,6 +28,8 @@ export interface ImportedOrderLine {
   orderedOn: string;
   paymentReference: string | null;
   buyerEmail: string | null;
+  /** Another row of this order could not be read, so this line's share of any order discount may be wrong. */
+  orderIncomplete?: boolean;
 }
 
 export interface RejectedRow {
@@ -199,6 +201,12 @@ function parseGeneric(rows: Row[]): ParsedExport {
 
 const GENERIC_REQUIRED = ["order_number", "title", "quantity", "unit_price", "currency", "ordered_on"];
 
+function markIncompleteOrders(parsed: ParsedExport): ParsedExport {
+  const incomplete = new Set(parsed.rejected.map((r) => r.orderNumber));
+  for (const line of parsed.lines) line.orderIncomplete = incomplete.has(line.orderNumber);
+  return parsed;
+}
+
 export function parseShopExport(csv: string): ParsedExport {
   const rows = parse(csv, {
     columns: (header: string[]) => header.map((h) => h.trim()),
@@ -207,8 +215,8 @@ export function parseShopExport(csv: string): ParsedExport {
     relax_column_count: true,
   }) as Row[];
   const header = Object.keys(rows[0] ?? {});
-  if (header.includes("Lineitem name") && header.includes("Name")) return parseShopify(rows);
+  if (header.includes("Lineitem name") && header.includes("Name")) return markIncompleteOrders(parseShopify(rows));
   const lower = header.map((h) => h.toLowerCase());
-  if (GENERIC_REQUIRED.every((c) => lower.includes(c))) return parseGeneric(rows);
+  if (GENERIC_REQUIRED.every((c) => lower.includes(c))) return markIncompleteOrders(parseGeneric(rows));
   throw new Error("not a recognized order export: expected Shopify's order CSV or the generic columns in README");
 }

@@ -23,14 +23,14 @@ export async function storeOrderLines(
   for (const l of lines) {
     const { rows } = await db.query<{ inserted: boolean }>(
       `insert into order_lines (shop_id, order_number, line_no, title, sku, quantity, unit_price_cents,
-         discount_cents, currency, ordered_on, payment_reference, buyer_email_enc, source)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13)
+         discount_cents, currency, ordered_on, payment_reference, buyer_email_enc, source, order_incomplete)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14)
        on conflict (shop_id, order_number, line_no) do update set
          title = excluded.title, sku = excluded.sku, quantity = excluded.quantity,
          unit_price_cents = excluded.unit_price_cents, discount_cents = excluded.discount_cents,
          currency = excluded.currency, ordered_on = excluded.ordered_on,
          payment_reference = excluded.payment_reference, buyer_email_enc = excluded.buyer_email_enc,
-         source = excluded.source, imported_at = now()
+         source = excluded.source, order_incomplete = excluded.order_incomplete, imported_at = now()
        returning (xmax = 0) as inserted`,
       [
         shopId,
@@ -46,6 +46,7 @@ export async function storeOrderLines(
         l.paymentReference,
         l.buyerEmail ? cipher.seal(l.buyerEmail) : null,
         source,
+        l.orderIncomplete ?? false,
       ],
     );
     if (rows[0].inserted) inserted++;
