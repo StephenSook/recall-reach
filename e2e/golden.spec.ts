@@ -290,6 +290,17 @@ test.describe("on a wide screen", () => {
     await expect(recall(page, "27040").getByTestId("check-result")).toBeInViewport({ ratio: 1 });
   });
 
+  test("the eval page lists every held-out pair it got wrong, filterable by what it did", async ({ page }) => {
+    await page.goto("/eval");
+    const grid = page.getByTestId("eval-wrong-grid");
+    await expect(grid.getByRole("button", { name: "All (38)" })).toBeVisible({ timeout: 20_000 });
+    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(38);
+    await grid.getByRole("button", { name: "Misses it (1)" }).click();
+    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(1);
+    await grid.getByRole("button", { name: "A seller could message a family (2)" }).click();
+    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(2);
+  });
+
   test("the grid fits a larger window too", async ({ page }) => {
     await page.setViewportSize({ width: 1456, height: 900 });
     await startDemoShop(page);

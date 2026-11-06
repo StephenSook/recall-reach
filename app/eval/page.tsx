@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Link from "next/link";
 import { parsePairs, type EvalResults, type Rate, type scoreClaude } from "@/server/eval/score";
+import { wrongPairs } from "./wrongPairs";
+import { WrongPairsLoader } from "./WrongPairsLoader";
 
 const read = (name: string) => readFileSync(join(process.cwd(), "eval", name), "utf8");
 const percent = (r: Rate) => (r.rate === null ? "none measured" : `${(r.rate * 100).toFixed(0)}%`);
@@ -134,6 +136,9 @@ export default function EvalPage() {
         </table>
       </div>
       <p className="note">Ranges are 95% Wilson intervals. Word match flags whatever the search finds, with no way to abstain.</p>
+
+      <h2 className="section-title">Where it was wrong</h2>
+      <WrongPairsLoader rows={wrongPairs(parsePairs(read("pairs.csv")), matcher, JSON.parse(read("recalls.json")))} />
 
       {stated ? (
         <>
