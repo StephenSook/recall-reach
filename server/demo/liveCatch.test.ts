@@ -100,7 +100,9 @@ describe("a sale as it happens", () => {
     });
 
     it("gives every sale its own order number, because PayPal refuses a repeat", async () => {
-      expect((await buy()).orderNumber).not.toBe((await buy()).orderNumber);
+      const first = await buy();
+      await catchIt();
+      expect((await buy()).orderNumber).not.toBe(first.orderNumber);
     });
 
     it("leaves nothing behind if PayPal refuses the payment", async () => {
@@ -242,6 +244,36 @@ describe("a sale as it happens", () => {
       await catchIt();
       const { rows } = await db.query<Record<string, unknown>>("select * from live_catch_runs");
       expect(Object.keys(rows[0]).sort()).toEqual(["caught_at", "id", "seconds"]);
+    });
+  });
+
+  describe("pressing again while a sale is on its way", () => {
+    it("refuses in plain words, and makes no second capture", async () => {
+      await buy();
+      const made = paypal.captures.length;
+      await expect(buy()).rejects.toMatchObject({ name: "LiveSaleRefused", message: "That sale is on its way. PayPal can take a minute or two to tell us." });
+      expect(paypal.captures.length).toBe(made);
+      const { rows } = await db.query("select 1 from order_lines where shop_id = $1 and live_sale", [shopId]);
+      expect(rows).toHaveLength(1);
+    });
+
+    it("lets another sale start once the card has landed", async () => {
+      await buy();
+      await catchIt();
+      await expect(buy()).resolves.toMatchObject({ orderNumber: expect.stringContaining("DEMO-LIVE-") });
+    });
+
+    it("doesn't block the shop for good if PayPal never tells us", async () => {
+      await buy();
+      await db.query("update order_lines set imported_at = now() - interval '6 minutes' where shop_id = $1 and live_sale", [shopId]);
+      await expect(buy()).resolves.toMatchObject({ orderNumber: expect.stringContaining("DEMO-LIVE-") });
+    });
+
+    it("leaves other shops alone", async () => {
+      await buy();
+      const other = await seedDemoShop(db, paypal.client, { today: TODAY, secret: "k".repeat(32) });
+      const item = (await db.query<{ id: string }>("select id from shop_items where shop_id = $1 and listed", [other.shopId])).rows[0].id;
+      await expect(buyAsFamily(db, paypal.client, { shopId: other.shopId, shopItemId: item, today: TODAY, secret: "k".repeat(32) })).resolves.toBeDefined();
     });
   });
 

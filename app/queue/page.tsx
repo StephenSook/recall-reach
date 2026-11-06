@@ -8,6 +8,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
+import { BuyButtons } from "./BuyButtons";
 import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
@@ -19,7 +20,7 @@ import { WatchForSale } from "./WatchForSale";
 export const dynamic = "force-dynamic";
 
 /** One sale that needs a person. Cleared recalls are a plain list on the page: there is nothing to do on them. */
-function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean }) {
+function Card({ card, shopName, shopKind, agentReady, saleOnItsWay }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean; saleOnItsWay: boolean }) {
   const row = card.lead;
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const notifiable = canNotify(row);
@@ -67,22 +68,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
 
         {canApprove || canAskClaude || canBuy ? (
           <div className="actions">
-            {canBuy ? (
-              <form action="/api/demo/buy" method="post">
-                <input type="hidden" name="shopItemId" value={row.recordId} />
-                <button type="submit" className="btn btn-outline">
-                  Buy this as a family
-                </button>
-              </form>
-            ) : null}
-            {canBuy ? (
-              <form action="/api/demo/buy/paypal" method="post">
-                <input type="hidden" name="shopItemId" value={row.recordId} />
-                <button type="submit" className="btn btn-outline">
-                  Buy with a PayPal sandbox login
-                </button>
-              </form>
-            ) : null}
+            {canBuy ? <BuyButtons shopItemId={row.recordId} waiting={saleOnItsWay} /> : null}
             {canApprove ? (
               <form action={`/api/queue/notices${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
@@ -346,7 +332,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>
             {real && sitsApart(card) && (i === 0 || !sitsApart(cards[i - 1])) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
-            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
+            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} saleOnItsWay={pendingLiveSales > 0} />
           </Fragment>
         ))}
       </section>

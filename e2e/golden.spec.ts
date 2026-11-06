@@ -313,6 +313,9 @@ test("a recalled item sold as it happens lands on the queue with no reload, and 
   const cards = page.getByTestId("needs").locator('article[data-recall="27018"]');
   const before = await cards.count();
   await cards.first().getByRole("button", { name: "Buy this as a family" }).click();
+  // A second press can't make a second sale while this one is on its way.
+  await expect(cards.first().getByRole("button", { name: "Buy this as a family" })).toBeDisabled();
+  await expect(cards.first().getByTestId("sale-on-its-way")).toContainText("a minute or two");
   // PayPal's webhook brings it, so this waits on the sandbox.
   await expect(cards).toHaveCount(before + 1, { timeout: 120_000 });
 

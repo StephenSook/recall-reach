@@ -65,6 +65,9 @@ export interface UnidentifiedPayment {
   currency: string | null;
 }
 
+/** How long a live sale counts as on its way. PayPal took up to 85 s in testing. Past this, a lost webhook can't block the shop. */
+export const SALE_ON_ITS_WAY_MINUTES = 5;
+
 export interface QueueData {
   shop: { name: string; kind: string } | null;
   /** A store read from its public listings, not from sales. Null for anything else: a demo shop has one listing and real sales. */
@@ -242,8 +245,9 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
 
   const pending = await db.query<{ n: number }>(
     `select count(*)::int as n from order_lines l where l.shop_id = $1 and l.live_sale
+     and l.imported_at > now() - make_interval(mins => $2)
      and not exists (select 1 from recall_matches m where m.order_line_id = l.id and m.caught_at is not null)`,
-    [shopId],
+    [shopId, SALE_ON_ITS_WAY_MINUTES],
   );
   const items = await db.query<{ total: number; for_sale: number }>("select count(*)::int as total, count(*) filter (where listed)::int as for_sale from shop_items where shop_id = $1", [shopId]);
   const c = run.rows[0];

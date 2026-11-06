@@ -9,16 +9,27 @@ import type { PayPalClient } from "../paypal/client";
 import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
 import { createContactCipher } from "../privacy/contactCipher";
 import { pushNewCards } from "../push/push";
+import { SALE_ON_ITS_WAY_MINUTES } from "../queue/queue";
 import { businessDay } from "../time/businessDay";
 import { DEMO_LABEL, SANDBOX_TEST_CARD } from "./seed";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class LiveSaleRefused extends Error {
-  constructor() {
-    super("That item can't be bought here.");
+  constructor(message = "That item can't be bought here.") {
+    super(message);
     this.name = "LiveSaleRefused";
   }
+}
+
+/** Each sale is real, and PayPal can take a minute or two to report one, so a second press mustn't make a second sale. */
+async function refuseWhileOneIsOnItsWay(db: Db, shopId: string): Promise<void> {
+  const { rows } = await db.query(
+    `select 1 from order_lines l where l.shop_id = $1 and l.live_sale and l.imported_at > now() - make_interval(mins => $2)
+     and not exists (select 1 from recall_matches m where m.order_line_id = l.id and m.caught_at is not null) limit 1`,
+    [shopId, SALE_ON_ITS_WAY_MINUTES],
+  );
+  if (rows.length > 0) throw new LiveSaleRefused("That sale is on its way. PayPal can take a minute or two to tell us.");
 }
 
 interface ListedItem {
@@ -69,6 +80,7 @@ export async function buyAsFamily(
   input: { shopId: string; shopItemId: string; today: string; secret: string; demoEmail?: string },
 ): Promise<{ orderNumber: string }> {
   const item = await listedItem(db, input.shopId, input.shopItemId);
+  await refuseWhileOneIsOnItsWay(db, input.shopId);
   const orderNumber = newOrderNumber();
   await writeLiveSale(db, input, item, orderNumber);
   try {
@@ -109,6 +121,7 @@ export async function startPayPalBuy(
   input: { shopId: string; sessionId: string; shopItemId: string; siteUrl: string; sessionSecret: string },
 ): Promise<{ orderId: string; approveUrl: string; returnUrl: string }> {
   const item = await listedItem(db, input.shopId, input.shopItemId);
+  await refuseWhileOneIsOnItsWay(db, input.shopId);
   const orderNumber = newOrderNumber();
   const state = checkoutState(input.sessionSecret, input.shopId, input.sessionId, input.shopItemId, orderNumber);
   const returnUrl = `${input.siteUrl}${PAYPAL_RETURN}?state=${encodeURIComponent(state)}`;

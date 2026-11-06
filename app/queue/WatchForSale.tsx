@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const EVERY_MS = 3_000;
-const GIVE_UP_MS = 90_000;
+const GIVE_UP_MS = 180_000;
 
 /** Looks again until PayPal's webhook has put the sale in the queue. The check itself runs on the server. */
 export function WatchForSale() {
@@ -24,7 +24,7 @@ export function WatchForSale() {
   }, [router]);
   return (
     <p role="status" className="alert" data-testid="watching">
-      {late ? "PayPal has not told us about this sale yet. Reload this page to look again." : "A family just bought an item. Waiting for PayPal to tell us."}
+      {late ? "PayPal has not told us about this sale yet. Reload this page to look again." : "A family just bought an item. Waiting for PayPal to tell us. That can take a minute or two."}
     </p>
   );
 }
