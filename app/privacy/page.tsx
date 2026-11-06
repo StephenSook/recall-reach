@@ -8,7 +8,7 @@ export default function Privacy() {
         <h1>Privacy</h1>
       </header>
       <h2 className="section-title">What this app keeps</h2>
-      <p>Your order file&apos;s columns, with buyer emails encrypted, deleted after 7 days or when you ask. CPSC&apos;s public recalls. PayPal sales data is built to be deleted within 48 hours under PayPal&apos;s deletion rule. Stored decisions use your own order number or a keyed hash.</p>
+      <p>Your order file&apos;s columns, with buyer emails encrypted, deleted after 7 days or when you ask. CPSC&apos;s public recalls. PayPal sales data is built to be deleted within 48 hours under PayPal&apos;s deletion rule. Stored decisions use your own order number or a keyed hash. It keeps a keyed fingerprint of each PayPal webhook delivery to refuse repeats, with no ids or amounts.</p>
       <h2 className="section-title">What goes to a third party</h2>
       <p>If you press Check with Claude, CPSC&apos;s text and your item&apos;s title and SKU go to Anthropic. Nothing PayPal returns does, and no buyer&apos;s details do. The app never emails anyone: messages open in your own mail, and you send them.</p>
       <h2 className="section-title">For your shop&apos;s privacy policy</h2>
