@@ -67,6 +67,8 @@ async function countsOf(db: Queryable, runId: string): Promise<ReplayCounts> {
 
 export async function runReplay(db: Db, client: PayPalClient, input: { today: string; now: Date; secret: string }): Promise<{ runId: string }> {
   const started = performance.now();
+  // Before the recalls, so a year loading between the two reads is called missing, never claimed.
+  const recallYearsMissing = await missingRecallYears(db, Number(REPLAY_FROM.slice(0, 4)), input.today);
   // Read first, so every recall this run reports was already there when its check began. One loading during the run
   // waits for the next run, instead of being reported as nothing near. Recalls are never deleted, so the check sees all of these.
   const read = await db.query<{ ids: number[]; digest: string }>(
@@ -74,8 +76,6 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
     [REPLAY_FROM],
   );
   const { ids, digest } = read.rows[0];
-  // Read with them, so a year loading during the run can't be claimed for a run that doesn't hold it.
-  const recallYearsMissing = await missingRecallYears(db, Number(REPLAY_FROM.slice(0, 4)), input.today);
   const { shopId, run, search } = await seedDemoShop(db, client, { today: input.today, secret: input.secret, now: input.now, freshCaptures: false, recallsFrom: REPLAY_FROM });
   try {
     const ms = Math.max(1, Math.round(performance.now() - started));

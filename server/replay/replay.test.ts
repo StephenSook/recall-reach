@@ -258,6 +258,25 @@ describe("Recall Replay", () => {
       expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025, 2026]);
     });
 
+    it("says a year is missing if its load finishes just after the run read its recalls", async () => {
+      const loadedYears = "insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now()), ('RecallDate', '2026-01-01', '2026-11-05', 'ok', 1, now())";
+      const during = new Proxy(db, {
+        get(target, prop) {
+          if (prop === "query") {
+            return async (sql: string, params?: unknown[]) => {
+              const answer = await target.query(sql, params);
+              if (sql.includes("array_agg(recall_id)")) await target.query(loadedYears);
+              return answer;
+            };
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const { runId } = await runReplay(during, fakePayPal().client, { today: TODAY, now: NOW, secret: "k".repeat(32) });
+      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025, 2026]);
+    });
+
     it("has no year to name once every year loaded", async () => {
       await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now()), ('RecallDate', '2026-01-01', '2026-11-05', 'ok', 1, now())");
       const { runId } = await run();
