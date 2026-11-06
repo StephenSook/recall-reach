@@ -1,63 +1,97 @@
 # Recall Reach
 
-Recall Reach helps a small resale shop that takes PayPal find out, the morning a product recall is published, which of its past buyers bought the recalled item, so the shop can reach those families and make it right.
+When a baby product gets recalled after a small resale shop sold it, Recall Reach finds the order, helps the shop reach the family, and refunds the sale through PayPal when the sale came after the recall.
 
-**Status:** in development for the PayPal AI Hackathon (November 2026). This README grows as each part ships. Anything not listed under "What works today" is not built yet.
+**Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
-## What works today
+Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet.
 
-- **CPSC recall loader.** Pulls recalls from the CPSC Recalls API by date range, validates every record, and upserts it into Postgres with a SHA-256 of the exact snapshot. Every pull is logged in `cpsc_pulls`. A record that fails validation is reported, never dropped. A response that is not a JSON array (such as a firewall page served with HTTP 200), or that contains recalls outside the requested dates, is refused.
-- **All 2025 and 2026 recalls loaded:** 420 for 2025 and 514 for 2026 through November 5, 2026 (`pnpm load:recalls`).
-- **PayPal webhook endpoint** (`POST /api/paypal/webhook`). Verifies PayPal's RSA signature against PayPal's own certificate, accepts certificates only from PayPal sandbox hosts, stores each verified event once (PayPal's resource id is kept only as a hash), refuses a transmission id reused for a different event, and caps the body size while reading. It stores no event body, payer details or amounts, so no PayPal transaction data is kept (tests check every stored column).
-- **Health endpoints.** `GET /api/health`: database reachability, recall counts by year, the last CPSC pull, and webhook status, with no secrets. `GET /api/live`: liveness for the host's health checks, which never touches the database.
-- **CI** on every push: lint, typecheck, tests, build, and a gitleaks scan of the full history.
+## What it does
 
-## Data sources
+1. **Checks past sales against real recalls.** It pulls recalls from CPSC every 15 minutes and checks each shop's order lines against them with rules, in the app. A shop that uploaded before a recall came in gets that recall on its next visit.
+2. **Says when it can't tell.** Most recalls cover certain models, dates or versions, and an order line rarely says which one it was. Those become a scope gap, never a false "not recalled".
+3. **Asks the family what the recall needs.** Claude writes one question resting on a sentence CPSC really wrote, and the check rejects a question whose quote isn't in the record. The owner approves it before it goes out.
+4. **Leaves every message and refund to a person.** The owner approves it, the notice opens in the shop's own mail, and they send it. The family answers on a phone page, and the seller's card changes.
+5. **Refunds only what it should.** A sale after the recall date, within 180 days of the payment, for the exact amount the owner approved. The refund goes through PayPal Agent Toolkit with one request id, and the page reconciles our record against PayPal's refund, PayPal's payment and the webhook.
 
-- **CPSC recalls:** the U.S. Consumer Product Safety Commission's public Recalls API (`https://www.saferproducts.gov/RestWebServices/Recall`). Real, public data.
-- **PayPal:** the PayPal sandbox only. Any sales shown in a demo are sandbox orders, labelled DEMO SHOP / SANDBOX.
+## See it for yourself
+
+| Page | What it shows |
+|---|---|
+| [`/judge`](https://recall-reach-web-e022.onrender.com/judge) | A numbered route through all of it |
+| [`/replay`](https://recall-reach-web-e022.onrender.com/replay) | Every recall from 2025 on, checked against the demo shop in one run, with a clock and a link to recount it |
+| [`/eval`](https://recall-reach-web-e022.onrender.com/eval) | Held-out numbers beside a word-match baseline, with intervals and their limits |
+| [`/safety`](https://recall-reach-web-e022.onrender.com/safety) | Five attacks tried against the real code |
+| [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/evidence/paypal), [`/evidence/ag-grid`](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Each claim, and the file that does it. A test fails if the code leaves that file |
+| [`/check`](https://recall-reach-web-e022.onrender.com/check) | A shop's own order file, deleted on request or after 7 days |
+| [`/privacy`](https://recall-reach-web-e022.onrender.com/privacy) | What is kept, and text a shop can copy |
+
+From a terminal:
+
+```bash
+curl https://recall-reach-web-e022.onrender.com/api/health
+curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
+```
+
+## What stays where
+
+- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text and the shop's own item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
+- **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
+- **The app never emails anyone.** Messages open in the shop's own mail.
+- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days.
+
+## Limits
+
+- A shop is checked when a recall first appears. Later edits to that recall don't re-run it.
+- Shops are checked against CPSC recalls from 2022 on. The queue says the real number and dates it checked, and names any year that didn't load.
+- The matcher reads words. It can't see a label on a real product, so a look-alike can still reach a seller as a card to review.
+- `/eval`'s labels were written by Claude and aren't independent. The page says so.
+- Sandbox PayPal only. A real shop's file has no PayPal link, so it can't refund.
+- Tested on demo data and public listings. No real shop has run it yet.
+
+## How it's built
+
+Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Community for the queue and Recall Replay. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
+
+The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 minutes. It touches the database only when the answer changes or on the hourly heartbeat, because a query every 15 minutes would keep a free-tier database awake around the clock.
 
 ## Run it locally
 
-Requirements: Node 22.12 or newer, pnpm 10, and a Postgres database (the app uses Neon).
+Requirements: Node 22.12 or newer, pnpm 10, and a Postgres database.
 
 ```bash
 pnpm install
-cp .env.example .env.local     # then fill in real values
-pnpm db:migrate                 # apply db/migrations to DATABASE_URL
-pnpm load:recalls               # load 2025 and 2026 recalls (or: pnpm load:recalls 2024)
-pnpm dev                        # http://localhost:3000
+cp .env.example .env.local     # then fill in sandbox values
+pnpm db:migrate                # apply db/migrations to DATABASE_URL
+pnpm load:recalls 2022 2023 2024 2025 2026
+pnpm dev                       # http://localhost:3000
 ```
 
-Checks (the same ones CI runs):
+`.env.example` lists every variable and what reads it. Secrets stay in macOS Keychain or the host's secret store, never in the repo.
+
+## Tests
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test        # unit and database tests; Postgres runs in-process (PGlite), no setup needed
-pnpm build
-pnpm test:live   # optional: calls the real CPSC API
+pnpm lint && pnpm typecheck && pnpm test && pnpm build   # what CI runs, with a gitleaks scan of the full history
+pnpm eval                                                # recomputes eval/results.json
+pnpm test:golden                                         # the golden path on the deployed site. It makes real sandbox payments and one real sandbox refund
 ```
 
-## Environment variables
-
-| Variable | Used by | Purpose |
-|---|---|---|
-| `DATABASE_URL` | `server/db/pg.ts` | Postgres connection string |
-| `PAYPAL_WEBHOOK_ID` | `app/api/paypal/webhook/route.ts` | The sandbox app's webhook id, part of every signature PayPal sends |
+`e2e/measure/` holds specs run on purpose on a deployment: the Claude check, a sale reaching the queue, a shop's own file, and a stored shop getting a new recall.
 
 ## Deploy
 
-The service is defined in `render.yaml` (a Render Blueprint): one Node web service, migrations run during the build, and Render's health check uses `/api/live`. `DATABASE_URL` and `PAYPAL_WEBHOOK_ID` are set in Render and `RECORD_HMAC_SECRET` is generated by Render; none of them are in git. A commit deploys only after its CI checks pass.
-
-- Live: https://recall-reach-web-e022.onrender.com (`/api/live`, `/api/health`). Render added the `-e022` suffix to the Blueprint's service name `recall-reach-web`.
-- The server runs one background job (`instrumentation.ts`): it asks CPSC for recalls every 15 minutes, and touches the database only when the answer changes or on the hourly heartbeat, which also purges PayPal data past a 46-hour cutoff. A quiet poll is HTTP only, so the free-tier database can sleep.
-- The PayPal sandbox app's webhook points at `/api/paypal/webhook` for `PAYMENT.CAPTURE.COMPLETED`, `.REFUNDED`, `.REVERSED`, and `.DENIED`.
+`render.yaml` defines the service. Migrations run during the build, a deploy waits for CI on its commit, and Render's health check uses `/api/live`. Past recall years load on the first tick after a deploy and retry hourly.
 
 ### Maintainer checklist
 
-- [ ] **At the hackathon deadline, 2026-11-12T20:00Z:** turn auto-deploy OFF for `recall-reach-web-e022` in the Render dashboard (and pause the Blueprint's auto-sync), and leave both off until winners are announced on 2026-12-21. The repo, video and linked materials must not change in that window, and the app must stay live.
+- [ ] **At the hackathon deadline, 2026-11-12T20:00Z:** turn auto-deploy OFF for `recall-reach-web-e022` in the Render dashboard (and pause the Blueprint's auto-sync), and leave both off until winners are announced.
 
 ## Credits
 
 - PayPal webhook signature verification is adapted from [paypaldev/video-bytemonkio-paypal-tutorial](https://github.com/paypaldev/video-bytemonkio-paypal-tutorial) (MIT License, Copyright (c) 2026 ByteMonk LLC).
+- Recall data comes from the U.S. Consumer Product Safety Commission's public Recalls API. Recall Reach isn't affiliated with or endorsed by CPSC or PayPal.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
