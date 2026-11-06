@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import { latestSafetyRun, runSafetyAttacks, runSafetyChecks } from "./attacks";
+import { latestSafetyRun, refreshSafety, runSafetyAttacks, runSafetyChecks } from "./attacks";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-06T15:00:00Z");
@@ -24,6 +24,32 @@ describe("the safety checks", () => {
   });
   const run = () => runSafetyAttacks(db, { now: NOW, secret: SECRET });
   const outcomeOf = async (id: string) => (await run()).find((r) => r.id === id);
+
+  describe("the hourly job's run", () => {
+    const hoursLater = (h: number) => new Date(NOW.getTime() + h * 3_600_000);
+    const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from safety_runs")).rows[0].n);
+
+    it("runs when there is no run yet, so a new database never shows a blank page", async () => {
+      expect(await refreshSafety(db, { now: NOW, secret: SECRET })).toBe("RAN");
+      expect(await latestSafetyRun(db)).toMatchObject({ ranAt: NOW.toISOString() });
+    });
+
+    it("leaves a run from the last day alone, and runs again after that", async () => {
+      await refreshSafety(db, { now: NOW, secret: SECRET });
+      expect(await refreshSafety(db, { now: hoursLater(23), secret: SECRET })).toBe("FRESH");
+      expect(await runs()).toBe(1);
+      expect(await refreshSafety(db, { now: hoursLater(25), secret: SECRET })).toBe("RAN");
+      expect(await runs()).toBe(2);
+    });
+
+    it("tries again at the next hour when a check didn't run", async () => {
+      await db.query("insert into safety_runs (ms, results, ran_at) values (1, $1::jsonb, $2::timestamptz)", [
+        JSON.stringify([{ id: "near-miss", title: "t", tried: "t", outcome: "NOT_RUN", detail: "d" }]),
+        NOW.toISOString(),
+      ]);
+      expect(await refreshSafety(db, { now: hoursLater(1), secret: SECRET })).toBe("RAN");
+    });
+  });
 
   it("all five are refused by the real code, with what stopped each one", async () => {
     const results = await run();

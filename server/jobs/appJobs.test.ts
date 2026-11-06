@@ -117,6 +117,28 @@ describe("the recall poll job", () => {
     });
   });
 
+  describe("keeping the safety checks fresh", () => {
+    it("is asked on the hourly heartbeat, not on every poll", async () => {
+      const refreshSafety = vi.fn(async () => "FRESH" as const);
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, refreshSafety });
+      for (let tick = 0; tick < HEARTBEAT_TICKS + 1; tick++) await job.run();
+      expect(refreshSafety).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a failed run without stopping the poll", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const cpsc = cpscAnswering(() => nov5);
+        const [job] = appJobs(db, { ...cpsc.deps, refreshSafety: async () => Promise.reject(new Error("safety checks failed")) });
+        await expect(job.run()).rejects.toThrow("safety checks failed");
+        expect(recallPollStatus().lastPollOk).toBe(true);
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   it("asks CPSC for recalls published yesterday and today", async () => {
     const cpsc = cpscAnswering(() => nov5);
     await appJobs(db, cpsc.deps)[0].run();

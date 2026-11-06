@@ -50,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; refreshSafety?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -183,6 +183,18 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
       }
     }
 
+    // Under a second, moves no money and calls no model. It only runs once a day.
+    let safety: string | null = null;
+    let safetyError: unknown = null;
+    if (heartbeat && deps.refreshSafety && Date.now() - started < JOB_BUDGET_MS) {
+      try {
+        safety = await deps.refreshSafety(at);
+      } catch (err) {
+        safetyError = err;
+        console.error(`safety checks failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Also on the heartbeat, and cached, so nobody reading a result ever waits on it or runs into its limit.
     let market: { searched: number; failed: number; left: number } | null = null;
     let marketError: unknown = null;
@@ -206,10 +218,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
         (touchDb && sweep && sweep.shopsFailed > 0 ? `, ${sweep.shopsFailed} failed` : "") +
         (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : "") +
         (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : "") +
+        (safety && safety !== "FRESH" ? `, safety ${safety.toLowerCase()}` : "") +
         (market ? `, market searched ${market.searched}, ${market.left} left${market.failed > 0 ? `, ${market.failed} failed` : ""}` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? marketError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? safetyError ?? marketError;
     if (failure) throw failure;
   };
 

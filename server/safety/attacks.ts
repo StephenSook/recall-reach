@@ -35,6 +35,7 @@ export interface SafetyRun {
 const CAPTURE = "SAFETY-CHECK-CAPTURE";
 const DAY_MS = 86_400_000;
 const SAFETY_RUNS_KEPT = 5;
+const SAFETY_FRESH_MS = 24 * 3_600_000;
 
 /** PayPal's answers for one sale. It counts refund requests, because a replay is proved by what reached PayPal. */
 function standInPayPal(paidAt: Date, amountCents: number) {
@@ -257,9 +258,17 @@ export async function runSafetyChecks(db: Db, opts: { now: Date; secret: string 
   const started = performance.now();
   const results = await runSafetyAttacks(db, opts);
   const ms = Math.max(1, Math.round(performance.now() - started));
-  await db.query("insert into safety_runs (ms, results) values ($1, $2::jsonb)", [ms, JSON.stringify(results)]);
+  await db.query("insert into safety_runs (ms, results, ran_at) values ($1, $2::jsonb, $3::timestamptz)", [ms, JSON.stringify(results), opts.now.toISOString()]);
   await db.query("delete from safety_runs where id not in (select id from safety_runs order by ran_at desc, id limit $1)", [SAFETY_RUNS_KEPT]);
   return { ranAt: opts.now.toISOString(), ms, results };
+}
+
+/** The hourly job's run, so the page's date stays current and a new database has one to show. A run that wasn't all refused goes again. */
+export async function refreshSafety(db: Db, opts: { now: Date; secret: string }): Promise<"FRESH" | "RAN"> {
+  const last = await latestSafetyRun(db);
+  if (last && opts.now.getTime() - Date.parse(last.ranAt) < SAFETY_FRESH_MS && last.results.every((r) => r.outcome === "REFUSED")) return "FRESH";
+  await runSafetyChecks(db, opts);
+  return "RAN";
 }
 
 export async function latestSafetyRun(db: Queryable): Promise<SafetyRun | null> {

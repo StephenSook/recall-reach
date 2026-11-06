@@ -25,6 +25,7 @@ export async function register(): Promise<void> {
     import("./server/sweep/channel3"),
     import("./server/demo/seed"),
   ]);
+  const { refreshSafety } = await import("./server/safety/attacks");
   const shopDataKey = process.env.SHOP_DATA_KEY;
   startScheduler(
     appJobs(getDb(), {
@@ -32,6 +33,7 @@ export async function register(): Promise<void> {
       refreshReplay: shopDataKey
         ? (at) => refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(at), now: at, secret: shopDataKey }), at)
         : undefined,
+      refreshSafety: shopDataKey ? (at) => refreshSafety(getDb(), { now: at, secret: shopDataKey }) : undefined,
       sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at, undefined, DEMO_RECALL_NUMBERS),
     }),
   );
