@@ -38,8 +38,8 @@ export async function pendingQuestions(db: Queryable, opts: { limit: number; fir
 
 /**
  * False if nothing changed: the words are not the ones this person read, or it was already decided.
- * Rejecting also takes the question off any message the family has not settled, in one statement, so a question a
- * person said is wrong is no longer asked. "Not sure" settles nothing, and nor does a no given on an older version of the recall. A real answer stays as the record of what was asked.
+ * Rejecting also takes the question off any message the family has not settled, in one statement, so a question that
+ * was rejected is no longer asked. "Not sure" settles nothing, and nor does a no given on an older version of the recall. A real answer stays as the record of what was asked.
  */
 export async function reviewQuestion(
   db: Queryable,

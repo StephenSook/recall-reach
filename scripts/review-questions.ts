@@ -1,4 +1,5 @@
 // For a person, in a terminal: read each question Claude wrote and accept or reject it. Nothing is decided for you.
+// A person's accept is the only thing that lets a family's no count. A rejection may also be made on the owner's instruction.
 //   pnpm review:questions [--limit 20]
 // It asks for the database URL and hides it, because one pasted into a command stays in the shell's history.
 import { createInterface } from "node:readline/promises";

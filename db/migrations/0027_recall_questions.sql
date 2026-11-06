@@ -10,7 +10,7 @@ create table recall_questions (
   evidence             text, -- exact words from the CPSC record that the question rests on
   every_recalled_unit  boolean not null default false,
   abstain_reason       text,
-  review               text check (review in ('ACCEPTED', 'REJECTED')), -- set by a person, never by a model
+  review               text check (review in ('ACCEPTED', 'REJECTED')), -- a person's accept is the only thing that lets a no count; a rejection may be made on the owner's instruction
   model                text not null,
   input_tokens         integer not null,
   output_tokens        integer not null,
