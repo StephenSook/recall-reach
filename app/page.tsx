@@ -29,6 +29,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
         </p>
         <footer>
           <p>Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.</p>
+          <p>
+            <Link href="/judge">Judging this? Start here</Link>
+          </p>
         </footer>
       </div>
     </main>

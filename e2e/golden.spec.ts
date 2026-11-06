@@ -297,6 +297,29 @@ test("the safety checks run live, and every one is refused", async ({ page }) =>
   await expect(page.locator('article[data-attack="forged-webhook"]')).toContainText("401");
 });
 
+test("the judge's door works logged out, and every page it names is there", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Judging this? Start here" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Three minutes, no login");
+  await expect(page.getByRole("button", { name: "Try it as a demo shop" })).toBeVisible();
+  for (const [path, heading] of [
+    ["/evidence/paypal", "How it uses PayPal"],
+    ["/evidence/ag-grid", "How it uses AG Grid"],
+    ["/privacy", "Privacy"],
+    ["/safety", "Safety checks"],
+    ["/replay", "Recall Replay"],
+  ]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
+  }
+  const health = await request.get("/api/health");
+  expect(health.ok()).toBe(true);
+  const day = await request.get("/api/recalls/today/matches?shop=demo");
+  expect(day.ok()).toBe(true);
+  expect((await day.json()).recalls.length).toBeGreaterThan(0);
+  expect((await request.get("/api/recalls/today/matches?shop=other")).status()).toBe(400);
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
