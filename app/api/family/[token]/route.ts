@@ -11,8 +11,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const noticeId = noticeIdFromToken(secret("SESSION_SECRET"), token);
   if (!noticeId) return refused(404, "This link is not valid.");
   const form = await request.formData();
+  // Back to where they tapped: the answer sits far down a phone, and a page that jumps to the top looks like nothing happened.
+  const stopping = form.get("action") === "stopped";
   try {
-    if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
+    if (stopping) await recordFamilyStopped(getDb(), noticeId);
     else {
       const asked = form.get("asked");
       await recordFamilyAnswer(getDb(), noticeId, familyAnswerFrom(form.getAll("answer").map(String)), typeof asked === "string" ? asked : undefined);
@@ -21,5 +23,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (!(err instanceof NoticeRefused)) throw err;
     // The page shows the link's real state, so a refused post just lands back on it.
   }
-  return seeOther(request, `/r/${token}`);
+  return seeOther(request, `/r/${token}${stopping ? "#stopped" : ""}`);
 }

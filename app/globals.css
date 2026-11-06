@@ -733,6 +733,9 @@ pre {
   border-radius: var(--radius-control);
   font-size: var(--text-lead);
 }
+#stopped {
+  scroll-margin-top: 16px;
+}
 .result {
   margin-block: 20px;
   padding: 14px 16px;

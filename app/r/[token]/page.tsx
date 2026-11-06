@@ -106,7 +106,7 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
         </p>
 
         {view.stopped ? (
-          <p data-testid="stopped" className="result">
+          <p id="stopped" data-testid="stopped" className="result">
             You&apos;ve told {view.shopName} you stopped using it. This does not finish the recall steps. Keep it out of children&apos;s reach and follow the steps above.
           </p>
         ) : !view.expired ? (

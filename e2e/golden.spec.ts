@@ -110,6 +110,7 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
     await expect(family.getByRole("link", { name: "Open the maker's recall page" })).toBeVisible();
     await family.getByRole("button", { name: "I've stopped using it" }).click();
     await expect(family.getByTestId("stopped")).toContainText("This does not finish the recall steps.");
+    await expect(family.getByTestId("stopped")).toBeInViewport({ ratio: 1 });
     await expect(family.locator("body")).not.toContainText("DEMO-"); // no order data on the family's page
   });
 
