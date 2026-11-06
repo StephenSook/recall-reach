@@ -93,9 +93,11 @@ export function createPayPalClient(opts: {
       let refreshedAfter401 = false;
       let uncertain = false;
       for (let attempt = 1; ; attempt++) {
-        if (ro.notAfter !== undefined && Date.now() > ro.notAfter) throw new Error("too late to send this request");
+        const tooLate = () => ro.notAfter !== undefined && Date.now() > ro.notAfter;
+        if (tooLate()) throw new Error("too late to send this request");
         try {
           const headers: Record<string, string> = { Authorization: `Bearer ${await opts.tokens.get()}` };
+          if (tooLate()) throw new Error("too late to send this request");
           if (ro.body !== undefined) headers["Content-Type"] = "application/json";
           if (ro.requestId) headers["PayPal-Request-Id"] = ro.requestId;
 

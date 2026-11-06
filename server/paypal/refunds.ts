@@ -456,6 +456,7 @@ async function sendRefund(
   // From here the outcome is unknown. A send that lost the row or outlived its lease must not go out at all,
   // because a reservation past its lease may be given up and the line freed.
   const sendAt = Date.parse(timeSince(send.startedAt, now));
+  const realSendAt = Date.now(); // read before any waiting, so a pause below cannot move the deadline
   const sending = await db.query<{ send_lease_until: Date }>(
     `update refunds set status = 'unconfirmed', updated_at = $3::timestamptz
      where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $4::timestamptz
@@ -470,11 +471,11 @@ async function sendRefund(
   try {
     // An attempt begun in time finishes inside the lease, and nobody is sent to refund by hand until the lease
     // ends. So a send held up for any reason, including between attempts, cannot land after that.
-    const leaseLeft = sending.rows[0].send_lease_until.getTime() - sendAt - LAST_ATTEMPT_MS;
+    const usableLease = sending.rows[0].send_lease_until.getTime() - sendAt - LAST_ATTEMPT_MS;
     const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${send.captureId}/refund`, {
       requestId: send.requestId,
       body: { amount: { currency_code: send.currency, value: centsToValue(send.amountCents) } },
-      notAfter: Date.now() + leaseLeft,
+      notAfter: realSendAt + usableLease,
     });
     const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);

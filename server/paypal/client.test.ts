@@ -176,6 +176,27 @@ describe("PayPal client", () => {
       expect(err).not.toBeInstanceOf(PayPalApiError);
     });
 
+    it("checks again after getting a token, because that can take a while too", async () => {
+      const calls: string[] = [];
+      const start = Date.now();
+      const client = createPayPalClient({
+        tokens: {
+          get: async () => {
+            vi.spyOn(Date, "now").mockReturnValue(start + 5000);
+            return "t";
+          },
+          invalidate: () => {},
+        },
+        fetchImpl: (async (input: string) => {
+          calls.push(String(input));
+          return Response.json({});
+        }) as unknown as typeof fetch,
+        sleep: async () => {},
+      });
+      await expect(client.request("POST", "/v2/x", { requestId: "r1", notAfter: start + 1000 })).rejects.toThrow(/too late/);
+      expect(calls).toEqual([]);
+    });
+
     it("goes ahead while there is time", async () => {
       const s = scripted([ok({ id: "fine" })]);
       await expect(s.client.request("POST", "/v2/x", { requestId: "r1", notAfter: Date.now() + 60_000 })).resolves.toMatchObject({ data: { id: "fine" } });

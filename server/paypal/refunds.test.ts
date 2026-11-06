@@ -609,6 +609,24 @@ describe("refunds", () => {
       expect(pp.posts()).toEqual([]);
     });
 
+    it("does not send after a pause while it was marking the row, however long that pause was", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const start = Date.now();
+      const pausing: typeof db = {
+        ...db,
+        query: (async (sql: string, params?: unknown[]) => {
+          const answer = await db.query(sql, params);
+          if (sql.includes("set status = 'unconfirmed'")) vi.spyOn(Date, "now").mockReturnValue(start + 7 * 60_000);
+          return answer;
+        }) as typeof db.query,
+      };
+      await executeRefund(pausing, pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW });
+      vi.restoreAllMocks();
+      expect(pp.posts()).toEqual([]);
+    });
+
     it("gives the send a last moment to begin, early enough to finish before its lease ends", async () => {
       const m = await setUp();
       const a = await approve(m.id);
