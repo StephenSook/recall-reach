@@ -611,6 +611,8 @@ const refundSchema = z.object({
 });
 
 export interface Reconciliation {
+  /** The match this refund was approved on, whose card a seller came from. */
+  matchId: string | null;
   /** No clear answer, and it is still safe to repeat the stored request. */
   canAskAgain: boolean;
   /** No clear answer and no PayPal refund id. Only PayPal itself can say what happened. */
@@ -655,9 +657,11 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     order_number: string;
     capture_id: string | null;
     paypal_refund_id: string | null;
+    match_id: string | null;
   }>(
     `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, r.failure, r.repeat_refused_at, r.seller_sent_to_paypal_at,
-            l.order_number, p.capture_id, p.refund_id as paypal_refund_id
+            l.order_number, p.capture_id, p.refund_id as paypal_refund_id,
+            (select m.id from approvals a join recall_matches m on m.shop_id = a.shop_id and m.recall_id = a.recall_id and m.order_line_id = a.order_line_id where a.id = r.approval_id limit 1) as match_id
      from refunds r join order_lines l on l.id = r.order_line_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
     [input.refundId, input.shopId],
@@ -717,6 +721,7 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   if (!webhookSeen && status !== "failed" && status !== "reserved") exceptions.push("PayPal's webhook has not arrived yet.");
 
   return {
+    matchId: row.match_id,
     canAskAgain,
     stuck,
     newerAnswer,

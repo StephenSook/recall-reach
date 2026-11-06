@@ -96,7 +96,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
         </form>
       ) : null}
       <p>
-        <a href="/queue">Back to the queue</a>
+        <a href={rec.matchId ? `/queue#sale-${rec.matchId}` : "/queue"}>Back to the queue</a>
       </p>
     </main>
   );

@@ -617,6 +617,16 @@ describe("refunds", () => {
       expect(seen).toEqual(["unconfirmed"]);
     });
 
+    it("says which match a refund belongs to, so its page can lead back to that card", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow();
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      const rec = await readRefund(db, pp.client, { shopId, refundId: rows[0].id, recordKey: key, now: NOW });
+      expect(rec.matchId).toBe(m.id);
+    });
+
     it("frees the line when a reservation was never sent and its lease has run out", async () => {
       const m = await setUp();
       const a = await approve(m.id);
@@ -1577,6 +1587,7 @@ describe("refunds", () => {
       );
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(rec).toEqual({
+        matchId: m.id,
         canAskAgain: false,
         stuck: null,
         newerAnswer: null,
