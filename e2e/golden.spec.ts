@@ -274,6 +274,7 @@ test.describe("Recall Replay", () => {
     await button.click();
     await expect(page).toHaveURL(/\/replay\/[0-9a-f-]{36}$/, { timeout: 120_000 });
     await expect(page.getByTestId("clock")).toContainText(/\d+ recalls in \d+\.\d seconds/);
+    await expect(page.getByTestId("ran-at")).toHaveText(/^Run [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M ET\.$/);
     const grid = page.getByTestId("replay-grid");
     await expect(grid.locator(".ag-row[row-id]").first()).toBeVisible();
     await grid.getByRole("button", { name: /^Matched/ }).click();

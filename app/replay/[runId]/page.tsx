@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { loadReplay } from "@/server/replay/replay";
-import { matchSplitLine, OUTCOME_CHIP, replayGap, replayIntro, seconds } from "../labels";
+import { matchSplitLine, OUTCOME_CHIP, ranAt, replayGap, replayIntro, seconds } from "../labels";
 import { ReplayGridLoader } from "../ReplayGridLoader";
 import { RunAgainButton } from "../RunAgainButton";
 
@@ -51,6 +51,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
         {counts.unidentified} {counts.unidentified === 1 ? "payment" : "payments"} couldn&apos;t be identified. {counts.notNear} recalls had nothing near them.
       </p>
       <p className="note">
+        <span data-testid="ran-at">Run {ranAt(replay.createdAt)}.</span>{" "}
         {search.complete ? `PayPal's search read all ${search.windows} windows.` : `PayPal's search failed for ${search.failedWindows} of ${search.windows} windows.`} PayPal can take up to 3 hours to list a sale and keeps 3 years. Run at {replay.createdAt.slice(0, 16).replace("T", " ")} UTC.{" "}
         <a href={`/api/proof/${replay.runId}`}>Recount these numbers</a>.
       </p>

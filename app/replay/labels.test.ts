@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { matchSplitLine, replayGap, replayIntro } from "./labels";
+import { matchSplitLine, ranAt, replayGap, replayIntro } from "./labels";
 
 const match = (saleSplit: "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE" | null) => ({ outcome: "MATCH" as const, saleSplit });
+
+describe("ranAt", () => {
+  it("says when, on the US calendar every other date here uses, in plain spaces", () => {
+    expect(ranAt("2026-11-06T06:44:15Z")).toBe("Nov 6, 2026, 1:44 AM ET");
+  });
+});
 
 describe("what a run says it covered", () => {
   it("says every recall only when every year loaded", () => {

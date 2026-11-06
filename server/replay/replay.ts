@@ -43,6 +43,9 @@ export interface Replay {
 /** Replay keeps its own stated window: all of 2025 and 2026 so far. The shop check reaches further back. */
 export const REPLAY_FROM = "2025-01-01";
 
+/** Someone may arrive after a quiet week, so the hourly job keeps a run from the last day. */
+export const REPLAY_FRESH_MS = 24 * 3_600_000;
+
 const DIGEST_SQL = `encode(sha256(convert_to(string_agg(recall_number || ':' || raw_sha256, ',' order by recall_number), 'UTF8')), 'hex')`;
 
 async function countsOf(db: Queryable, runId: string): Promise<ReplayCounts> {
@@ -106,6 +109,22 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
   } finally {
     await db.query("delete from shops where id = $1", [shopId]);
   }
+}
+
+/**
+ * Makes a new run if the newest good one is a day old. A run that couldn't read PayPal is dropped when there is a good
+ * one to keep showing, and tried again at the next call, so a PayPal outage can't replace good numbers with a partial run.
+ */
+export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date): Promise<"FRESH" | "RAN" | "DISCARDED"> {
+  const { rows } = await db.query<{ at: string | Date | null }>("select max(created_at) as at from replay_runs where search_complete");
+  const at = rows[0]?.at;
+  if (at && now.getTime() - new Date(at).getTime() < REPLAY_FRESH_MS) return "FRESH";
+  const { runId } = await run();
+  const dropped = await db.query(
+    "delete from replay_runs r where r.id = $1 and not r.search_complete and exists (select 1 from replay_runs o where o.id <> r.id and o.search_complete) returning 1",
+    [runId],
+  );
+  return dropped.rows.length > 0 ? "DISCARDED" : "RAN";
 }
 
 interface RunRow {
@@ -192,6 +211,7 @@ export async function proveReplay(db: Queryable, runId: string) {
   const { rows } = await db.query<{ digest: string }>(`select ${DIGEST_SQL} as digest from recalls where recall_date >= $1::date`, [REPLAY_FROM]);
   return {
     runId,
+    ranAt: new Date(run.created_at).toISOString(),
     stored,
     recomputed,
     agree: JSON.stringify(stored) === JSON.stringify(recomputed),

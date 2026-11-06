@@ -50,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -171,6 +171,18 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
       }
     }
 
+    // On the heartbeat, so it shares a wake-up that is happening anyway. A failure here says nothing about CPSC.
+    let replay: string | null = null;
+    let replayError: unknown = null;
+    if (heartbeat && deps.refreshReplay && Date.now() - started < JOB_BUDGET_MS) {
+      try {
+        replay = await deps.refreshReplay(at);
+      } catch (err) {
+        replayError = err;
+        console.error(`replay refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
     const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : touchDb ? " (shops waiting)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
@@ -180,10 +192,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
         loaded +
         (touchDb && sweep && sweep.shopsChecked > 0 ? `, checked ${sweep.shopsChecked} ${sweep.shopsChecked === 1 ? "shop" : "shops"} against new recalls` : "") +
         (touchDb && sweep && sweep.shopsFailed > 0 ? `, ${sweep.shopsFailed} failed` : "") +
-        (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : ""),
+        (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : "") +
+        (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError ?? sweepError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError;
     if (failure) throw failure;
   };
 

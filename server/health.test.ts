@@ -17,6 +17,12 @@ const WEBHOOK_ID = "TEST-WEBHOOK-ID-SECRET-LOOKING";
 
 describe("getHealth", () => {
   let db: Awaited<ReturnType<typeof testDb>>;
+  const replayed = (at: string) =>
+    db.query(
+      `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest, created_at)
+       values (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, 'x', $1::timestamptz)`,
+      [at],
+    );
   beforeEach(async () => {
     db = await testDb();
     await migrate(db);
@@ -29,7 +35,7 @@ describe("getHealth", () => {
     const health = await getHealth(db, {});
     expect(health).toMatchObject({
       ok: false,
-      checks: { database: true, webhook: false, lastPull: false, purge: true, poll: true },
+      checks: { database: true, webhook: false, lastPull: false, purge: true, poll: true, replay: false },
       database: { ok: true },
       cpsc: { recalls: 0, byYear: {}, lastPull: null },
       paypal: { environment: "sandbox", webhookConfigured: false, lastVerifiedWebhookAt: null },
@@ -52,6 +58,7 @@ describe("getHealth", () => {
       fetchCert: fetchTestCert,
     });
 
+    await replayed(new Date().toISOString());
     const health = await getHealth(db, { PAYPAL_WEBHOOK_ID: WEBHOOK_ID, RECORD_HMAC_SECRET: "r".repeat(32) });
     expect(health.ok).toBe(true);
     expect(health.cpsc).toMatchObject({
@@ -74,7 +81,8 @@ describe("getHealth", () => {
 
     it("is ok when every named check passes", async () => {
       await pulled("ok");
-      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true } });
+      await replayed("2026-11-06T02:00:00Z");
+      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
     });
 
     it("isn't, without the webhook id or a usable record key", async () => {
@@ -103,6 +111,13 @@ describe("getHealth", () => {
       await pulled("ok");
       await db.query("insert into shops (name, kind, created_at) values ('x', 'DEMO', $1::timestamptz)", ["2026-11-04T00:00:00Z"]);
       expect(await check()).toMatchObject({ ok: false, checks: { purge: false } });
+    });
+
+    it("isn't, when the newest Replay is two days old or there is none: a judge would find it stale", async () => {
+      await pulled("ok");
+      expect((await check()).checks?.replay).toBe(false);
+      await replayed("2026-11-04T10:00:00Z");
+      expect(await check()).toMatchObject({ ok: false, checks: { replay: false } });
     });
 
     it("isn't, when the last poll failed", async () => {

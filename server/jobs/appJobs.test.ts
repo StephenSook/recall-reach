@@ -69,6 +69,29 @@ describe("the recall poll job", () => {
     expect(jobs.map((j) => [j.name, j.everyMs])).toEqual([["cpsc-poll", POLL_MS]]);
   });
 
+  describe("keeping Replay fresh", () => {
+    it("is asked on the hourly heartbeat, not on every poll", async () => {
+      const refreshReplay = vi.fn(async () => "FRESH" as const);
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, refreshReplay });
+      for (let tick = 0; tick < HEARTBEAT_TICKS + 1; tick++) await job.run();
+      expect(refreshReplay).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a failed refresh without stopping the poll or calling CPSC down", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const cpsc = cpscAnswering(() => nov5);
+        const [job] = appJobs(db, { ...cpsc.deps, refreshReplay: async () => Promise.reject(new Error("PayPal down")) });
+        await expect(job.run()).rejects.toThrow("PayPal down");
+        expect(recallPollStatus().lastPollOk).toBe(true);
+        expect(await pulls()).toBeGreaterThan(0);
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   it("asks CPSC for recalls published yesterday and today", async () => {
     const cpsc = cpscAnswering(() => nov5);
     await appJobs(db, cpsc.deps)[0].run();

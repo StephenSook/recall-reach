@@ -5,6 +5,11 @@ export const SPLIT_CHIP: Record<NonNullable<ReplayRow["saleSplit"]>, string> = {
 
 export const seconds = (ms: number) => (ms / 1000).toFixed(1);
 
+const ranFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" });
+
+/** When a run was made, so nobody takes an old run for a new one. */
+export const ranAt = (iso: string) => `${ranFormat.format(new Date(iso)).replace(/\s+/g, " ")} ET`;
+
 /** "Every" holds only when every year loaded. */
 export const replayIntro = (yearsMissing: number[]) =>
   yearsMissing.length === 0

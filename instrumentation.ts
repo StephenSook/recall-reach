@@ -7,12 +7,23 @@ export async function register(): Promise<void> {
     console.warn("background jobs not started: DATABASE_URL is not set");
     return;
   }
-  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }] = await Promise.all([
+  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }, { refreshReplay, runReplay }, { payPalClientFromEnv }, { businessDay }] = await Promise.all([
     import("./server/db/pg"),
     import("./server/jobs/appJobs"),
     import("./server/jobs/scheduler"),
     import("./server/match/run"),
+    import("./server/replay/replay"),
+    import("./server/paypal/client"),
+    import("./server/time/businessDay"),
   ]);
-  startScheduler(appJobs(getDb(), { backfillFromYear: Number(CHECK_FROM.slice(0, 4)) }));
+  const shopDataKey = process.env.SHOP_DATA_KEY;
+  startScheduler(
+    appJobs(getDb(), {
+      backfillFromYear: Number(CHECK_FROM.slice(0, 4)),
+      refreshReplay: shopDataKey
+        ? (at) => refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(at), now: at, secret: shopDataKey }), at)
+        : undefined,
+    }),
+  );
   console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");
 }

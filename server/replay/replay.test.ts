@@ -5,7 +5,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Method, PayPalClient } from "../paypal/client";
-import { latestRecallDay, latestReplay, loadReplay, proveReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
+import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -38,6 +38,59 @@ describe("Recall Replay", () => {
 
   const run = (client = fakePayPal().client) => runReplay(db, client, { today: TODAY, now: NOW, secret: "k".repeat(32) });
   const total = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from recalls")).rows[0].n);
+
+  describe("keeping a run from the last day, for someone arriving in a quiet week", () => {
+    const hoursBeforeNow = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
+    const age = (runId: string, hours: number) => db.query("update replay_runs set created_at = $2::timestamptz where id = $1", [runId, hoursBeforeNow(hours)]);
+    const refresh = (client = fakePayPal().client) => refreshReplay(db, () => run(client), NOW);
+    const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from replay_runs")).rows[0].n);
+
+    it("runs when there is no run yet, and leaves no shop behind", async () => {
+      expect(await refresh()).toBe("RAN");
+      expect(await runs()).toBe(1);
+      expect((await db.query("select 1 from shops")).rows).toEqual([]);
+    });
+
+    it("does nothing while the newest good run is under a day old", async () => {
+      await age((await run()).runId, 23);
+      expect(await refresh()).toBe("FRESH");
+      expect(await runs()).toBe(1);
+    });
+
+    it("runs again once the newest good run is a day old", async () => {
+      const { runId } = await run();
+      await age(runId, 25);
+      expect(await refresh()).toBe("RAN");
+      expect((await latestReplay(db))?.runId).not.toBe(runId);
+    });
+
+    it("keeps the last good run when PayPal's search fails, and tries again next time", async () => {
+      const { runId } = await run();
+      await age(runId, 25);
+      expect(await refresh(fakePayPal({ searchFails: true }).client)).toBe("DISCARDED");
+      expect((await latestReplay(db))?.runId).toBe(runId);
+      expect(await runs()).toBe(1);
+      expect(await refresh()).toBe("RAN");
+    });
+
+    it("keeps a run with a failed search when it is the only one, because it says so on the page", async () => {
+      expect(await refresh(fakePayPal({ searchFails: true }).client)).toBe("RAN");
+      const latest = await latestReplay(db);
+      expect((await loadReplay(db, latest?.runId ?? ""))?.search.complete).toBe(false);
+    });
+
+    it("tries again next time when the only run has a failed search", async () => {
+      await refresh(fakePayPal({ searchFails: true }).client);
+      expect(await refresh()).toBe("RAN");
+    });
+
+    it("says when a run was made, in the run and in its proof", async () => {
+      const { runId } = await run();
+      await age(runId, 1);
+      expect((await loadReplay(db, runId))?.createdAt).toBe(hoursBeforeNow(1));
+      expect((await proveReplay(db, runId))?.ranAt).toBe(hoursBeforeNow(1));
+    });
+  });
 
   describe("a run", () => {
     it("checks every recall loaded, and says what happened to each", async () => {

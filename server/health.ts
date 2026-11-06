@@ -25,6 +25,8 @@ export interface Health {
     purge: boolean;
     /** The background poll's last run didn't fail. */
     poll: boolean;
+    /** Replay has a run from the last two days: the hourly job keeps one from the last day. */
+    replay: boolean;
   };
   database: { ok: boolean };
   cpsc: {
@@ -41,6 +43,7 @@ export interface Health {
   } | null;
   /** The background poll's last run, held in memory: a quiet poll never touches the database. */
   poll: RecallPollStatus;
+  replay: { lastRunAt: string | null };
   paypal: {
     /** Webhook certificates are accepted only from PayPal sandbox hosts (server/paypal/webhooks.ts). */
     environment: "sandbox";
@@ -51,6 +54,7 @@ export interface Health {
 
 /** Two hourly heartbeats and a margin. */
 const MAX_PULL_AGE_MS = 2.5 * 3_600_000;
+const MAX_REPLAY_AGE_MS = 48 * 3_600_000;
 
 function recordKeyWorks(secret: string | undefined): boolean {
   if (!secret) return false;
@@ -88,6 +92,8 @@ export async function getHealth(
       `select ${OVERDUE} as any`,
       [checkedAt, PAYPAL_RETENTION_HOURS],
     );
+    const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
+    const lastRunAt = iso(replay.rows[0]?.at);
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
     const checks = {
@@ -96,6 +102,7 @@ export async function getHealth(
       lastPull: p?.status === "ok" && pulledAt !== null && now.getTime() - Date.parse(pulledAt) <= MAX_PULL_AGE_MS,
       purge: !overdue.rows[0]?.any,
       poll: pollOk,
+      replay: lastRunAt !== null && now.getTime() - Date.parse(lastRunAt) <= MAX_REPLAY_AGE_MS,
     };
     return {
       ok: Object.values(checks).every(Boolean),
@@ -117,6 +124,7 @@ export async function getHealth(
           : null,
       },
       poll,
+      replay: { lastRunAt },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
   } catch (err) {
@@ -124,10 +132,11 @@ export async function getHealth(
     return {
       ok: false,
       checkedAt,
-      checks: { database: false, webhook: webhookOk, lastPull: false, purge: false, poll: pollOk },
+      checks: { database: false, webhook: webhookOk, lastPull: false, purge: false, poll: pollOk, replay: false },
       database: { ok: false },
       cpsc: null,
       poll,
+      replay: { lastRunAt: null },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
   }
