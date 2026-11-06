@@ -341,6 +341,15 @@ describe("Recall Replay", () => {
   });
 
   describe("old runs", () => {
+    it("never prunes the last good run away, however many runs failed since", async () => {
+      const good = (await run()).runId;
+      await db.query("update replay_runs set created_at = now() - interval '1 day' where id = $1", [good]);
+      const failing = fakePayPal({ searchFails: true }).client;
+      for (let i = 0; i < REPLAYS_KEPT; i++) await run(failing);
+      const kept = await db.query<{ id: string }>("select id from replay_runs where search_complete");
+      expect(kept.rows.map((r) => r.id)).toEqual([good]);
+    });
+
     it("keeps only the newest", async () => {
       let last = "";
       for (let i = 0; i < REPLAYS_KEPT + 2; i++) last = (await run()).runId;
