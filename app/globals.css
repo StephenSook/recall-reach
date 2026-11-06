@@ -792,6 +792,12 @@ pre {
   font-size: var(--text-lead);
   color: var(--color-body);
 }
+.door-no-login {
+  margin-top: 6px;
+  color: var(--color-body);
+  font-size: 15px;
+  text-align: center;
+}
 .door-other {
   margin-top: 14px;
 }
