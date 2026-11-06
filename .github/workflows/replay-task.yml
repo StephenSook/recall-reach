@@ -14,6 +14,8 @@ permissions:
 jobs:
   replay-task:
     name: replay-task
+    # The key is an environment secret, and this environment only runs from main, so a branch can't read it.
+    environment: replay-task
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
