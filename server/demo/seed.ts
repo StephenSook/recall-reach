@@ -26,6 +26,7 @@ interface DemoCase {
   priceCents: number;
   /** Days before the recall to date the order. Null means the order really is today. */
   seededDaysBeforeRecall: number | null;
+  /** Shown beside every recall this line comes near, so it says only what is true of the line itself. */
   label: string;
 }
 
@@ -36,7 +37,7 @@ const CASES: DemoCase[] = [
     sku: "DEMO-BREZZA",
     priceCents: 9500,
     seededDaysBeforeRecall: 51,
-    label: "NOTICE ONLY, order date seeded before the recall",
+    label: "order date seeded",
   },
   {
     recallNumber: "27027",
@@ -44,7 +45,7 @@ const CASES: DemoCase[] = [
     sku: "DEMO-PAPABLIC",
     priceCents: 9000,
     seededDaysBeforeRecall: null,
-    label: "REFUND ELIGIBLE, sandbox capture made today, after the recall",
+    label: "sold today, with a sandbox capture made today",
   },
   {
     recallNumber: "27040",
@@ -52,7 +53,7 @@ const CASES: DemoCase[] = [
     sku: "DEMO-COSTWAY",
     priceCents: 4000,
     seededDaysBeforeRecall: 30,
-    label: "SCOPE GAP, order date seeded before the recall",
+    label: "order date seeded",
   },
 ];
 

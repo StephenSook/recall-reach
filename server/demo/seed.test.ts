@@ -81,6 +81,8 @@ describe("seedDemoShop", () => {
     expect(shop[0]).toEqual({ name: DEMO_LABEL, kind: "DEMO" });
     const lines = await matches(shopId);
     for (const l of lines) expect(String(l.source)).toMatch(/^DEMO SHOP/);
+    // A line can sit beside many recalls, so its label must be true beside all of them.
+    for (const l of lines) expect(String(l.source)).not.toMatch(/recall|eligible|notice only|scope gap/i);
     expect(lines.find((l) => l.recall_number === "27072")?.source).toMatch(/seeded/);
     expect(lines.find((l) => l.recall_number === "27027")?.source).toMatch(/today/);
   });
