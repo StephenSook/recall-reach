@@ -1,7 +1,7 @@
 // The matcher's deterministic core. It reads public CPSC text and shop-owned text, and runs locally.
 //
-//   MATCH      the shop's text shows the recalled model, or for a one-model recall, the same line
-//              with the printed look CPSC describes.
+//   MATCH      the shop's text shows the recalled model, or for a one-model recall, the same brand and
+//              line with the printed look CPSC describes.
 //   SCOPE_GAP  related, but the text cannot show whether this unit is covered. This is the common case:
 //              CPSC's structured Model field is empty on all 934 records of 2025-26.
 //   CLEARED    a sibling model CPSC did not list, sold before first sale, or sharing at most one
@@ -194,11 +194,12 @@ export function verdictFor(
     return cleared(reason, matched);
   }
 
-  // A one-model recall with a printed look: the title's own words can pin the unit.
+  // A one-model recall with a printed look: the title's own words can pin the unit, but only with the
+  // brand named. A confirmed match can lead to a refund, and ordinary words in common are not enough.
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && itemWords.has(w))
     .sort();
-  if (recallModels.length === 1 && look.length >= 2) {
+  if (hasBrand && recallModels.length === 1 && look.length >= 2) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",
