@@ -1,3 +1,4 @@
+import { ranAt } from "@/app/replay/labels";
 import { RunAgainButton } from "@/app/replay/RunAgainButton";
 import { getDb } from "@/server/db/pg";
 import { latestSafetyRun, type AttackOutcome } from "@/server/safety/attacks";
@@ -52,7 +53,7 @@ export default async function SafetyPage({ searchParams }: { searchParams: Promi
         </section>
       ) : null}
       <p className="note">
-        PayPal and the model are stand-ins here, so a check never moves sandbox money or spends anything. The webhook check, the refund rules, the agent&apos;s tools and the matcher are the real code, on throwaway shops that are deleted afterwards. {run ? `Last run ${run.ranAt}.` : null}
+        PayPal and the model are stand-ins here, so a check never moves sandbox money or spends anything. The webhook check, the refund rules, the agent&apos;s tools and the matcher are the real code, on throwaway shops that are deleted afterwards. {run ? `Run ${ranAt(run.ranAt)}.` : null}
       </p>
       <div className="provenance">
         <span className="chip chip-real">Real CPSC</span>
