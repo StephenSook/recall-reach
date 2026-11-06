@@ -50,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -183,6 +183,18 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
       }
     }
 
+    // Also on the heartbeat, and cached, so nobody reading a result ever waits on it or runs into its limit.
+    let market: { searched: number; failed: number; left: number } | null = null;
+    let marketError: unknown = null;
+    if (heartbeat && deps.sweepMarket && Date.now() - started < JOB_BUDGET_MS) {
+      try {
+        market = await deps.sweepMarket(at);
+      } catch (err) {
+        marketError = err;
+        console.error(`market search failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
     const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : touchDb ? " (shops waiting)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
@@ -193,10 +205,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
         (touchDb && sweep && sweep.shopsChecked > 0 ? `, checked ${sweep.shopsChecked} ${sweep.shopsChecked === 1 ? "shop" : "shops"} against new recalls` : "") +
         (touchDb && sweep && sweep.shopsFailed > 0 ? `, ${sweep.shopsFailed} failed` : "") +
         (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : "") +
-        (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : ""),
+        (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : "") +
+        (market ? `, market searched ${market.searched}, ${market.left} left${market.failed > 0 ? `, ${market.failed} failed` : ""}` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? marketError;
     if (failure) throw failure;
   };
 

@@ -69,6 +69,31 @@ describe("the recall poll job", () => {
     expect(jobs.map((j) => [j.name, j.everyMs])).toEqual([["cpsc-poll", POLL_MS]]);
   });
 
+  describe("searching the market for recent recalls", () => {
+    const run = { searched: 2, failed: 0, left: 3 };
+
+    it("runs on the hourly heartbeat, not on every poll, and says how far it got", async () => {
+      const sweepMarket = vi.fn(async () => run);
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, sweepMarket });
+      for (let tick = 0; tick < HEARTBEAT_TICKS + 1; tick++) await job.run();
+      expect(sweepMarket).toHaveBeenCalledTimes(2);
+      expect(info[0]).toContain("market searched 2, 3 left");
+    });
+
+    it("reports a failure without stopping the poll or calling CPSC down", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const cpsc = cpscAnswering(() => nov5);
+        const [job] = appJobs(db, { ...cpsc.deps, sweepMarket: async () => Promise.reject(new Error("limit")) });
+        await expect(job.run()).rejects.toThrow("limit");
+        expect(recallPollStatus().lastPollOk).toBe(true);
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   describe("keeping Replay fresh", () => {
     it("is asked on the hourly heartbeat, not on every poll", async () => {
       const refreshReplay = vi.fn(async () => "FRESH" as const);
