@@ -8,7 +8,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sharedWordOnly, splitCounts, traceLine, refundOnOffer } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -243,14 +243,15 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const shopName = shop.name;
   const shopKind = shop.kind;
-  const { cards, cleared, unrelated } = toCards(rows);
+  const { cards: found, cleared, unrelated } = toCards(rows);
+  // A real shop's cards split by what they rest on, with shared words last. A demo shop keeps its one list, so its numbers can't move.
+  const real = shopKind === "REAL";
+  const cards = real ? [...found.filter((c) => !sitsApart(c)), ...found.filter(sitsApart)] : found;
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
   const listed = listings ? listingCounts(cards, listings.total) : null;
-  // A real shop's cards split by what they rest on. A demo shop keeps its one list, so its numbers can't move.
-  const real = shopKind === "REAL";
   const split = real ? splitCounts(cards) : null;
-  const waiting = real ? cards.filter((c) => saleWaits(c) && !sharedWordOnly(c.lead)).length : counts.waiting;
+  const waiting = real ? cards.filter((c) => saleWaits(c) && !sitsApart(c)).length : counts.waiting;
   const grid = gridRows(rows, cards, { sharedWordsApart: real, listings: Boolean(listed) });
 
   return (
@@ -344,8 +345,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {/* One list in a fixed order, with each card's chip saying where it stands. A card moved to another list or place loses the browser's :target, and an open card would close by itself. */}
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>
-            {/* Cards run strongest first, so this falls once, between what's worth a look and what only shares a word. */}
-            {real && sharedWordOnly(card.lead) && (i === 0 || !sharedWordOnly(cards[i - 1].lead)) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
+            {real && sitsApart(card) && (i === 0 || !sitsApart(cards[i - 1])) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
             <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
           </Fragment>
         ))}

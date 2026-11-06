@@ -1,7 +1,7 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
-import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, sharedWordOnly, stateChip } from "./labels";
+import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, sharedWordOnly, sitsApart, stateChip } from "./labels";
 
 export type GridTab = "needs" | "words" | "done" | "cleared" | "shelf" | "unidentified" | "all";
 
@@ -22,7 +22,7 @@ export interface GridRow {
   waits: boolean;
   approvable: boolean;
   weak: boolean;
-  /** On a real shop's queue, a card that only shares a word with a recall sits in its own tab. A demo shop has no such tab. */
+  /** On a real shop's queue, a card with nothing but shared words and nothing done on it sits in its own tab. A demo shop has no such tab. */
   apart: boolean;
   tellCpsc: boolean;
   listedOnShelf: boolean;
@@ -38,6 +38,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
   for (const card of cards) for (const r of [card.lead, ...card.also]) cardOf.set(r.matchId, card.lead.matchId);
   const leads = new Set(cards.map((c) => c.lead.matchId));
   const waiting = new Set(cards.filter(saleWaits).map((c) => c.lead.matchId));
+  const apart = new Set(opts.sharedWordsApart ? cards.filter(sitsApart).map((c) => c.lead.matchId) : []);
   // One order on the page: the cards' leads as they stand, then the other recalls on those sales, then the rest.
   const rank = new Map<string, number>();
   for (const [i, card] of cards.entries()) {
@@ -66,7 +67,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
       waits: opts.listings ? true : waiting.has(r.matchId),
       approvable: isLead && canNotify(r) && needsApproval(r),
       weak: sharedWordOnly(r),
-      apart: Boolean(opts.sharedWordsApart) && isLead && r.verdict !== "CLEARED" && sharedWordOnly(r),
+      apart: apart.has(r.matchId),
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,

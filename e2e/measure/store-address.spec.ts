@@ -22,7 +22,7 @@ test("a store types its address, sees what needs a check with no claim about sal
   const counts = { seconds, tiles, cards: await page.locator(".cards > .window").count() };
   console.log(JSON.stringify(counts)); // counts only: no store's name and no title
 
-  for (const word of ["Sold:", "this sale", "Sandbox PayPal", "Refund eligible", "Sold after the recall", "Approve this", "Pull from the shelf"]) await expect(page.locator("main")).not.toContainText(word);
+  for (const word of ["Sold:", "this sale", "Sandbox PayPal", "Refund eligible", "Sold after the recall", "Approve", "Export Tell CPSC", "Pull from the shelf"]) await expect(page.locator("main")).not.toContainText(word);
   await expect(page.getByRole("columnheader", { name: "Sold" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /refund/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Buy this as a family" })).toHaveCount(0);

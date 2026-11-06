@@ -78,15 +78,20 @@ export function queueCounts(q: { cards: { lead: CountedRow; also: unknown[] }[];
 /** Only a shared word with a recall. Worth seeing, but not worth pulling anything off a shelf for. */
 export const sharedWordOnly = (row: Pick<QueueRow, "strength">) => row.strength === "PRODUCT_WORDS" || row.strength === "NO_SHARED_WORDS";
 
+type CardRow = Pick<QueueRow, "strength" | "notice" | "refund" | "approval">;
+
+/** Apart only when a card holds nothing but shared words and nothing has been done on it: a seller never loses sight of work they owe. */
+export const sitsApart = (card: { lead: CardRow; also: CardRow[] }) => [card.lead, ...card.also].every((r) => sharedWordOnly(r) && !r.notice && !r.refund && !r.approval);
+
 /** A real shop's cards, split by what they rest on. Each record counts once, under the strongest thing it came near. */
-export function splitCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[]) {
-  const strong = new Set(cards.filter((c) => !sharedWordOnly(c.lead)).map((c) => c.lead.recordId));
+export function splitCounts(cards: { lead: CardRow & Pick<QueueRow, "recordId">; also: CardRow[] }[]) {
+  const strong = new Set(cards.filter((c) => !sitsApart(c)).map((c) => c.lead.recordId));
   const word = new Set(cards.map((c) => c.lead.recordId).filter((id) => !strong.has(id)));
   return { needCheck: strong.size, sharedWord: word.size };
 }
 
 /** What the tiles say for a store read from its listings. */
-export function listingCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[], total: number) {
+export function listingCounts(cards: Parameters<typeof splitCounts>[0], total: number) {
   const { needCheck, sharedWord } = splitCounts(cards);
   // Not "clear": the check keeps the closest titles per recall, so a listing past that cap has no card and wasn't read.
   return { total, needCheck, sharedWord, notFlagged: total - needCheck - sharedWord };

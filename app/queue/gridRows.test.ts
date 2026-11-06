@@ -125,6 +125,13 @@ describe("the tabs", () => {
       expect(inTab(of("word"), "all")).toBe(true);
     });
 
+    it("a word-only card with a refund in flight stays in Needs review, and doesn't move to its own tab", () => {
+      const inFlight = row({ matchId: "flight", recordId: "sale-6", verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", refund: { id: "r", status: "pending", amountCents: 100, currency: "USD", failure: null } });
+      const [r] = gridRows([inFlight], [{ lead: inFlight, also: [] }], { sharedWordsApart: true });
+      expect(inTab(r, "words")).toBe(false);
+      expect(inTab(r, "needs")).toBe(true);
+    });
+
     it("a brand stays in Needs review", () => {
       expect(inTab(of("brand"), "needs")).toBe(true);
       expect(inTab(of("brand"), "words")).toBe(false);

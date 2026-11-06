@@ -90,7 +90,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
         paginationPageSizeSelector={false}
         getRowId={(p) => String(p.data.matchId)}
         pinnedBottomRowData={totals}
-        rowSelection={{ mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false, isRowSelectable: (n: IRowNode<Row>) => Boolean(n.data?.approvable) }}
+        rowSelection={listings ? undefined : { mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false, isRowSelectable: (n: IRowNode<Row>) => Boolean(n.data?.approvable) }}
         selectionColumnDef={{ width: 44, minWidth: 44, maxWidth: 44, resizable: false, sortable: false }}
         onCellClicked={(e) => {
           // A row opens its window. The checkbox only picks it.
@@ -104,7 +104,8 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
         onModelUpdated={(e) => setShown(e.api.getDisplayedRowCount())}
         onSelectionChanged={(e) => setSelected(e.api.getSelectedRows().map((r) => String(r.matchId)))}
       />
-      <div className="grid-actions">
+      {/* No message or refund can come from a listing, so a store's queue has nothing to approve or export. */}
+      {listings ? null : <div className="grid-actions">
         <form action="/api/queue/notices" method="post">
           {selected.map((id) => (
             <input key={id} type="hidden" name="matchId" value={id} />
@@ -129,7 +130,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
         >
           Export Tell CPSC list
         </button>
-      </div>
+      </div>}
     </section>
   );
 }

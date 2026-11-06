@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, sitsApart, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -343,7 +343,8 @@ describe("chipsFor", () => {
 });
 
 describe("a store read from its listings", () => {
-  const card = (recordId: string, strength: "CONFIRMED" | "BRAND" | "PRODUCT_WORDS" | "NO_SHARED_WORDS") => ({ lead: { recordId, strength } });
+  const none = { notice: null, refund: null, approval: null };
+  const card = (recordId: string, strength: "CONFIRMED" | "BRAND" | "PRODUCT_WORDS" | "NO_SHARED_WORDS") => ({ lead: { recordId, strength, ...none }, also: [] });
 
   it("counts each listing once, under the strongest thing it came near", () => {
     const cards = [card("a", "CONFIRMED"), card("a", "CONFIRMED"), card("b", "BRAND"), card("c", "PRODUCT_WORDS"), card("d", "NO_SHARED_WORDS")];
@@ -353,6 +354,28 @@ describe("a store read from its listings", () => {
   it("counts a real shop's sales the same way, with no total", () => {
     expect(splitCounts([card("a", "BRAND"), card("a", "CONFIRMED"), card("b", "PRODUCT_WORDS"), card("c", "NO_SHARED_WORDS")])).toEqual({ needCheck: 1, sharedWord: 2 });
     expect(splitCounts([])).toEqual({ needCheck: 0, sharedWord: 0 });
+  });
+
+  describe("work a seller still owes never sits apart", () => {
+    const word = (over = {}) => ({ recordId: "a", strength: "PRODUCT_WORDS" as const, ...none, ...over });
+    const pendingRefund = { id: "r", status: "pending", amountCents: 100, currency: "USD", failure: null };
+    const asked = { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT" as const, stopped: false, result: "CANT_TELL" };
+
+    it.each([
+      ["a refund in flight, after the evidence weakened", { lead: word({ refund: pendingRefund }), also: [] }],
+      ["a question already sent", { lead: word({ notice: asked }), also: [] }],
+      ["an approval waiting", { lead: word({ approval: { id: "a", amountCents: 100, currency: "USD", expiresAt: "x" } }), also: [] }],
+      ["a stronger recall under the lead", { lead: word({ notice: asked }), also: [{ ...word(), strength: "BRAND" as const }] }],
+      ["an action on a recall under the lead", { lead: word(), also: [word({ notice: asked })] }],
+    ])("%s", (_name, c) => {
+      expect(sitsApart(c)).toBe(false);
+      expect(splitCounts([c])).toEqual({ needCheck: 1, sharedWord: 0 });
+    });
+
+    it("only a card with nothing but shared words and nothing done on it", () => {
+      expect(sitsApart({ lead: word(), also: [word({ recordId: "a" })] })).toBe(true);
+      expect(splitCounts([{ lead: word(), also: [] }])).toEqual({ needCheck: 0, sharedWord: 1 });
+    });
   });
 
   it("adds up to the listings read", () => {
