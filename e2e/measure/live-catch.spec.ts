@@ -22,12 +22,24 @@ test("a sale reaches the queue with no one pressing anything", async ({ page }) 
   const item = await page.locator('form[action="/api/demo/buy"] input[name="shopItemId"]').first().inputValue();
   const again = await page.request.post("/api/demo/buy", { form: { shopItemId: item }, headers: { origin: new URL(page.url()).origin }, maxRedirects: 0 });
   expect(new URL(again.headers().location).searchParams.get("message")).toBe("That sale is on its way. PayPal can take a minute or two to tell us.");
-  if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/buy-waiting.png`, fullPage: false });
+  if (process.env.SHOT_DIR) {
+    await shelf.getByTestId("sale-on-its-way").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${process.env.SHOT_DIR}/buy-waiting.png` });
+  }
 
   // The queue looks again by itself. Nothing on the page is pressed from here on.
   const caught = page.getByTestId("caught");
   await expect(caught).toBeVisible({ timeout: 120_000 });
   console.log(await caught.innerText());
   await expect(page.locator('article[data-recall="27018"]')).toHaveCount(2);
-  await expect(shelf.first().getByRole("button", { name: "Buy this as a family" })).toBeEnabled();
+  // The buttons come back once the card has landed. Only the listing's card has them, not the new sale's.
+  const buy = page.getByRole("button", { name: "Buy this as a family" });
+  await expect(buy).toHaveCount(1);
+  await expect(buy).toBeEnabled({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Buy with a PayPal sandbox login" })).toBeEnabled();
+  await expect(page.getByTestId("sale-on-its-way")).toHaveCount(0);
+  if (process.env.SHOT_DIR) {
+    await buy.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${process.env.SHOT_DIR}/buy-after.png` });
+  }
 });
