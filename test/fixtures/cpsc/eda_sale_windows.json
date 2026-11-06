@@ -1,5 +1,5 @@
 {
-"source": "research/eda/outputs/records.csv (EDA analysis.py sale_window and prices), CPSC Retailers text from the 2025 and 2026 API pulls, 2026-11-05",
+"source": "An analysis of CPSC's records (sale_window and prices), CPSC Retailers text from the 2025 and 2026 API pulls, 2026-11-05",
 "records": [
 {
 "recallNumber": "25081",
