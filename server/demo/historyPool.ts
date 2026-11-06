@@ -2,6 +2,9 @@
 // Search on every run. PayPal takes up to 3 hours to list a capture (about 213 minutes measured once),
 // so a shop made a moment ago cannot find its own new sales there, and this pool is what it finds.
 //
+// A search cannot pick these out by custom id: custom_field came back on no row, even for a capture that
+// set custom_id (measured 2026-11-06). So they are picked out by invoice id, or by SKU when they have none.
+//
 // They are read-only: nothing refunds them. They are dated when they were made, so an order date on a
 // line that links to one is demo data and is labelled as seeded. Sessions share one sandbox account,
 // which is why the marker matters: it picks these rows out from every other session's payments.
@@ -49,6 +52,7 @@ export const HISTORY_POOL: HistoryPoolPayment[] = [
     orderNumber: null,
     lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", quantity: 1, unitPriceCents: 3500 }],
   },
-  // Only an amount: nothing ties it to any line, so it is counted as unidentified and never cleared.
-  { requestId: "8f6a4c10-5e0b-4d57-9a01-000000000007", orderNumber: null, lines: [], amountCents: 4200 },
+  // Only an amount: no line has this number and it lists no items, so it is counted as unidentified and
+  // never cleared. The invoice id is only how a search finds it again.
+  { requestId: "8f6a4c10-5e0b-4d57-9a01-000000000008", orderNumber: "DEMO-HIST-NO-ITEMS", lines: [], amountCents: 4200 },
 ];
