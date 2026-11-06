@@ -110,14 +110,17 @@ export async function seedDemoShop(
   for (const c of [...CASES, SHELF_ITEM]) {
     if (c.required && !recallDate.has(c.recallNumber)) throw new Error(`demo recall ${c.recallNumber} is not loaded; run pnpm load:recalls`);
   }
+  // A case needs its recall. Without it the line only comes near whatever shares a word with it, which is a false alarm.
+  const cases = CASES.filter((c) => recallDate.has(c.recallNumber));
+  const leftOutSkus = new Set(CASES.filter((c) => !recallDate.has(c.recallNumber)).flatMap((c) => c.lines.map((l) => l.sku)));
 
   const { payments, coverage } = await searchTransactions(client, { from: new Date(now.getTime() - LOOK_BACK_DAYS * 86_400_000), to: now });
-  const pool = poolPayments(payments);
+  const pool = poolPayments(payments).filter((p) => !p.items.some((i) => i.sku !== null && leftOutSkus.has(i.sku)));
   const dayOf = (sku: string) => pool.find((p) => p.items.some((i) => i.sku === sku))?.paidAt?.slice(0, 10) ?? opts.today;
 
   // PayPal refuses a repeated invoice id, so a new sale gets a number of its own.
   const batch = randomBytes(4).toString("hex");
-  const orders = CASES.map((demoCase, i) => {
+  const orders = cases.map((demoCase, i) => {
     const orderNumber = demoCase.poolOrderNumber ?? `DEMO-${batch}-${i + 1}`;
     const orderedOn = demoCase.seededNearPaymentSku
       ? dayOf(demoCase.seededNearPaymentSku)

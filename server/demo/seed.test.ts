@@ -157,6 +157,15 @@ describe("seedDemoShop", () => {
       expect(rows[0].searched_to).toBe(asked.at(-1)?.end_date.slice(0, 10));
     });
 
+    it("leaves out a case whose recall isn't loaded, along with its standing payment", async () => {
+      const { shopId, run } = await seed(fakePayPal().client);
+      const lines = await db.query("select id from order_lines where shop_id = $1 and sku = 'DEMO-MAMAROO'", [shopId]);
+      const payments = await db.query("select id from paypal_payments where shop_id = $1 and order_number = 'DEMO-HIST-MAMAROO'", [shopId]);
+      expect(lines.rows).toEqual([]);
+      expect(payments.rows).toEqual([]);
+      expect(run.unidentifiedPayments).toBe(1); // the payment that says only an amount
+    });
+
     it("takes only the demo's standing payments: another session's sale is not this shop's", async () => {
       const { shopId } = await seed(fakePayPal().client);
       const { rows } = await db.query<{ order_number: string | null }>("select order_number from paypal_payments where shop_id = $1", [shopId]);
