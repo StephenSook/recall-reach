@@ -24,11 +24,45 @@ describe("createRateLimiter", () => {
   });
 });
 
-describe("clientIp", () => {
-  it("takes the first forwarded address", () => {
-    expect(clientIp(new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" }))).toBe("203.0.113.9");
+describe("createRateLimiter under pressure", () => {
+  it("does not let the sweep hand the calling key a new quota", () => {
+    let now = 0;
+    const allow = createRateLimiter({ limit: 1, windowMs: 1000, now: () => now });
+    now = 600;
+    expect(allow("a")).toBe(true);
+    now = 1100; // the sweep runs on this call, with "a" hit 500 ago
+    expect(allow("a")).toBe(false);
   });
-  it("has a stable fallback", () => {
-    expect(clientIp(new Headers())).toBe("unknown");
+
+  it("keeps the map bounded inside the window, dropping the oldest key first", () => {
+    const now = 0;
+    const sizes: number[] = [];
+    const allow = createRateLimiter({ limit: 1, windowMs: 1_000_000, now: () => now, maxKeys: 3, onSize: (n) => sizes.push(n) });
+    for (const key of ["a", "b", "c", "d", "e"]) expect(allow(key)).toBe(true);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(3);
+    expect(allow("e")).toBe(false); // still remembered
+    expect(allow("a")).toBe(true); // dropped first
+  });
+});
+
+describe("clientIp", () => {
+  const headers = (h: Record<string, string>) => new Headers(h);
+
+  it("reads the address Cloudflare sets, which a caller cannot forge (measured on Render, 2026-11-06)", () => {
+    expect(clientIp(headers({ "true-client-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.99, 198.51.100.7, 10.0.0.1" }), true)).toBe("198.51.100.7");
+  });
+
+  it("ignores a forged x-forwarded-for: its left value is whatever the caller sent", () => {
+    const a = clientIp(headers({ "true-client-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.1" }), true);
+    const b = clientIp(headers({ "true-client-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.2" }), true);
+    expect(a).toBe(b);
+  });
+
+  it("gives no answer on the host when the header is missing, rather than one shared bucket", () => {
+    expect(clientIp(headers({}), true)).toBeNull();
+  });
+
+  it("uses one local key off the host, where there is no proxy", () => {
+    expect(clientIp(headers({}), false)).toBe("local");
   });
 });

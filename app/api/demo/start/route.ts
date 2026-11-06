@@ -7,12 +7,14 @@ import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
 export const dynamic = "force-dynamic";
 
-// Each demo shop makes real sandbox captures, so it is limited per visitor.
-const allow = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
+// Each demo shop makes real sandbox captures, so it is limited per visitor and for everyone together.
+const perVisitor = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
+const everyone = createRateLimiter({ limit: 60, windowMs: 60 * 60_000 });
 
 export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
-  if (!allow(clientIp(request.headers))) return seeOther(request, "/?demo=busy");
+  const visitor = clientIp(request.headers);
+  if (!visitor || !perVisitor(visitor) || !everyone("all")) return seeOther(request, "/?demo=busy");
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { shopId } = await seedDemoShop(getDb(), payPalClientFromEnv(), {
