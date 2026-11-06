@@ -16,7 +16,7 @@ import type { PayPalClient } from "../paypal/client";
 import { createCardOrder } from "../paypal/orders";
 import { failedMonths, searchTransactions, type SearchCoverage } from "../paypal/transactions";
 import { createContactCipher } from "../privacy/contactCipher";
-import { poolPayments } from "./historyPool";
+import { HISTORY_POOL_MADE_ON, poolPayments } from "./historyPool";
 
 export const DEMO_LABEL = "DEMO SHOP";
 
@@ -45,8 +45,8 @@ interface DemoCase {
   freshCapture?: boolean;
   /** Days before the recall to date the order. Absent means the order really is today. */
   seededDaysBeforeRecall?: number;
-  /** Dated beside the standing payment with this SKU, because a SKU only links a payment within a week of the order. */
-  seededNearPaymentSku?: string;
+  /** Dated beside the standing payments, because a SKU only links a payment within a week of the order. */
+  seededNearPool?: boolean;
   /** Shown beside every recall this line comes near, so it says only what is true of the line itself. */
   label: string;
   orderDiscountCents?: number;
@@ -76,8 +76,8 @@ const CASES: DemoCase[] = [
   // NEAR MISS: the same brand as a recall, and another product, so it clears with its reason.
   { recallNumber: "27072", poolOrderNumber: "DEMO-HIST-BREZZA-FORMULA", seededDaysBeforeRecall: 20, label: SEEDED, lines: [{ title: "Baby Brezza Formula Pro Advanced", sku: "DEMO-BREZZA-FORMULA", priceCents: 12000 }] },
   // AMBIGUOUS JOIN: two lines reuse one SKU and one payment could belong to either, so nothing goes out on either.
-  { recallNumber: "26688", seededNearPaymentSku: "DEMO-TALECO", label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
-  { recallNumber: "26688", seededNearPaymentSku: "DEMO-TALECO", label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
+  { recallNumber: "26688", seededNearPool: true, label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
+  { recallNumber: "26688", seededNearPool: true, label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
   // A real listing with a strong real-world scope gap: the recall covers only the 3-point harness.
   { recallNumber: "22200", poolOrderNumber: "DEMO-HIST-MAMAROO", seededDaysBeforeRecall: 90, label: SEEDED, lines: [{ title: "4moms MamaRoo Multi-Motion Swing", sku: "DEMO-MAMAROO", priceCents: 8500 }] },
 ];
@@ -118,14 +118,13 @@ export async function seedDemoShop(
 
   const { payments, coverage } = await searchTransactions(client, { from: new Date(now.getTime() - LOOK_BACK_DAYS * 86_400_000), to: now });
   const pool = poolPayments(payments).filter((p) => !p.items.some((i) => i.sku !== null && leftOutSkus.has(i.sku)));
-  const dayOf = (sku: string) => pool.find((p) => p.items.some((i) => i.sku === sku))?.paidAt?.slice(0, 10) ?? opts.today;
 
   // PayPal refuses a repeated invoice id, so a new sale gets a number of its own.
   const batch = randomBytes(4).toString("hex");
   const orders = cases.map((demoCase, i) => {
     const orderNumber = demoCase.poolOrderNumber ?? `DEMO-${batch}-${i + 1}`;
-    const orderedOn = demoCase.seededNearPaymentSku
-      ? dayOf(demoCase.seededNearPaymentSku)
+    const orderedOn = demoCase.seededNearPool
+      ? HISTORY_POOL_MADE_ON
       : demoCase.seededDaysBeforeRecall === undefined
         ? opts.today
         : daysBefore(recallDate.get(demoCase.recallNumber) ?? opts.today, demoCase.seededDaysBeforeRecall);

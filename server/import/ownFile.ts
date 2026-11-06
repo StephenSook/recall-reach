@@ -55,6 +55,14 @@ export async function deleteOwnShop(db: Queryable, shopId: string): Promise<bool
   return rows.length > 0;
 }
 
+/** A demo shop is a visit. Nobody can reach one after its session ends, so it isn't kept long after. */
+export const DEMO_SHOP_DAYS = 3;
+
+export async function purgeOldDemoShops(db: Queryable, now: Date = new Date()): Promise<number> {
+  const { rows } = await db.query("delete from shops where kind = 'DEMO' and created_at < $1::timestamptz - make_interval(days => $2) returning 1", [now.toISOString(), DEMO_SHOP_DAYS]);
+  return rows.length;
+}
+
 export async function purgeOldOwnShops(db: Queryable, now: Date = new Date()): Promise<number> {
   const { rows } = await db.query("delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(days => $2) returning id", [now.toISOString(), OWN_FILE_DAYS]);
   return rows.length;

@@ -10,6 +10,9 @@
 // which is why the marker matters: it picks these rows out from every other session's payments.
 export const HISTORY_POOL_MARKER = "DEMO-HIST";
 
+/** When these captures were made, written here by hand. A line's date must never be read from PayPal's answer, or PayPal's data would outlast its purge. */
+export const HISTORY_POOL_MADE_ON = "2026-11-05";
+
 export interface HistoryPoolPayment {
   /** A fixed PayPal-Request-Id, so running the script twice soon after does not make a second payment. */
   requestId: string;

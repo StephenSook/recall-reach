@@ -9,7 +9,7 @@ import { approveRefund, RefundRefused } from "../paypal/refunds";
 import { createContactCipher } from "../privacy/contactCipher";
 import { loadQueue } from "../queue/queue";
 import { createShop } from "./store";
-import { deleteOwnShop, importOwnFile, MAX_LINES, OwnFileRefused, purgeOldOwnShops } from "./ownFile";
+import { deleteOwnShop, importOwnFile, MAX_LINES, OwnFileRefused, purgeOldDemoShops, purgeOldOwnShops } from "./ownFile";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const SECRET = "k".repeat(32);
@@ -158,6 +158,18 @@ describe("a shop checking its own order file", () => {
       const { shopId } = await load();
       await age(shopId, 6);
       expect(await purgeOldOwnShops(db, NOW)).toBe(0);
+    });
+
+    it("deletes a demo shop once its visit is long over, and keeps a recent one", async () => {
+      const old = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+      const recent = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+      const own = (await load()).shopId;
+      await age(old, 4);
+      await age(recent, 2);
+      await age(own, 4);
+      expect(await purgeOldDemoShops(db, NOW)).toBe(1);
+      const { rows } = await db.query<{ id: string }>("select id from shops order by id");
+      expect(rows.map((r) => r.id).sort()).toEqual([recent, own].sort());
     });
 
     it("leaves demo shops to themselves", async () => {

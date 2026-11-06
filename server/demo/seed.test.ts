@@ -7,6 +7,7 @@ import { migrate } from "../db/migrate";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { approveRefund } from "../paypal/refunds";
 import { createContactCipher } from "../privacy/contactCipher";
+import { HISTORY_POOL_MADE_ON } from "./historyPool";
 import { DEMO_LABEL, seedDemoShop } from "./seed";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -179,6 +180,23 @@ describe("seedDemoShop", () => {
       expect(run.unidentifiedPayments).toBe(1);
       const { rows } = await db.query("select id from order_lines where shop_id = $1 and sku = 'DEMO-MAMAROO'", [shopId]);
       expect(rows).toEqual([]);
+    });
+
+    it("never dates a line from what PayPal returned: a date kept on a line would outlast the 48-hour purge", async () => {
+      const pp = fakePayPal();
+      const moved: PayPalClient = {
+        request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
+          const answer = await pp.client.request(method, path, opts);
+          if (!path.startsWith("/v1/reporting")) return answer;
+          const data = JSON.parse(JSON.stringify(answer.data)) as { transaction_details: { transaction_info: Record<string, unknown> }[] };
+          for (const row of data.transaction_details) row.transaction_info.transaction_initiation_date = "2026-09-09T12:00:00+0000";
+          return { ...answer, data };
+        }) as PayPalClient["request"],
+      };
+      const { shopId } = await seedDemoShop(db, moved, { today: TODAY, secret: SECRET });
+      const { rows } = await db.query<{ ordered_on: string }>("select ordered_on from order_lines where shop_id = $1 and sku = 'DEMO-TALECO'", [shopId]);
+      expect(rows.length).toBe(2);
+      for (const row of rows) expect(row.ordered_on).toBe(HISTORY_POOL_MADE_ON);
     });
 
     it("leaves out a case whose recall isn't loaded, along with its standing payment", async () => {
