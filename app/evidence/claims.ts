@@ -24,7 +24,7 @@ export const PAYPAL_CLAIMS: Claim[] = [
 
 export const API_CLAIMS: Claim[] = [
   { what: "Runs the rules a shop's sales get, on the text you send", file: "server/match/textCheck.ts", find: "verdictFor(" },
-  { what: "An MCP server over HTTP, with one read-only tool", file: "app/api/mcp/route.ts", find: "readOnlyHint: true" },
+  { what: "An MCP server over HTTP, with two read-only tools", file: "app/api/mcp/route.ts", find: "readOnlyHint: true" },
   { what: "An OpenAPI file, and a test that the real answers fit it", file: "server/openapi.test.ts", find: "misfits" },
   { what: "60 checks an hour per visitor, across the API and the tool", file: "server/web/publicCheck.ts", find: "limit: 60" },
   { what: "Counts calls, and never keeps the text", file: "server/web/publicCalls.ts", find: "insert into public_calls (day, surface, calls)" },

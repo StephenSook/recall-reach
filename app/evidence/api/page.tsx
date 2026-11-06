@@ -31,7 +31,7 @@ export default async function ApiEvidence() {
       <h2 className="section-title">As a tool for an agent</h2>
       <pre data-testid="mcp-config">{MCP_CONFIG}</pre>
       <p>
-        One tool, <code>check_recall</code>. A result names a recall to read, not a finding about the item, and an empty result doesn&apos;t mean an item is safe. <a href="/openapi.yaml">The OpenAPI file</a>.
+        Two read-only tools: <code>check_recall</code>, and <code>get_recall</code>, which gives one recall&apos;s CPSC text by its number. A result names a recall to read, not a finding about the item, and an empty result doesn&apos;t mean an item is safe. <a href="/openapi.yaml">The OpenAPI file</a>.
       </p>
       <ClaimList claims={API_CLAIMS} />
       {calls ? (

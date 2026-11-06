@@ -119,6 +119,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "app/api/mcp/route.ts", call: "McpServer" },
       { file: "app/api/mcp/route.ts", call: "checkText" },
+      { file: "app/api/mcp/route.ts", call: "readPublicRecall" },
     ],
   },
   { name: "OpenAPI", status: "claimed", evidence: [{ file: "openapi.yaml", find: "openapi: 3" }, { file: "server/openapi.test.ts", call: "Validator" }] },

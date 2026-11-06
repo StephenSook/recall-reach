@@ -61,7 +61,7 @@ paths:
       operationId: mcp
       summary: The same check as an MCP tool over Streamable HTTP
       description: >-
-        One read-only tool, check_recall(title, model). Stateless: each request stands alone. Send JSON-RPC 2.0, with
+        Two read-only tools: check_recall(title, model), and get_recall(recallNumber), which gives one recall's CPSC text. Stateless: each request stands alone. Send JSON-RPC 2.0, with
         Accept application/json, text/event-stream. It shares the limit of /api/check.
       requestBody:
         required: true
