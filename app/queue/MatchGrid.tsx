@@ -43,12 +43,12 @@ const columns: ColDef<Row>[] = [
 ];
 
 /** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
-export default function MatchGrid({ rows }: { rows: GridRow[] }) {
+export default function MatchGrid({ rows, startOn = "needs" }: { rows: GridRow[]; startOn?: GridTab }) {
   const api = useRef<GridApi<Row> | null>(null);
-  const tabRef = useRef<GridTab>("needs");
-  const [tab, setTab] = useState<GridTab>("needs");
+  const tabRef = useRef<GridTab>(startOn);
+  const [tab, setTab] = useState<GridTab>(startOn);
   const [selected, setSelected] = useState<string[]>([]);
-  const [shown, setShown] = useState(() => rows.filter((r) => inTab(r, "needs")).length);
+  const [shown, setShown] = useState(() => rows.filter((r) => inTab(r, startOn)).length);
   const candidates = rows.filter((r) => r.verdict !== "UNIDENTIFIED").length;
   const totals = useMemo(() => [{ product: `${shown} of ${candidates} shown` }], [shown, candidates]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);

@@ -75,6 +75,16 @@ export function queueCounts(q: { cards: { lead: CountedRow; also: unknown[] }[];
   return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.filter(saleWaits).length };
 }
 
+/** Only a shared word with a recall. Worth seeing, but not worth pulling anything off a shelf for. */
+export const sharedWordOnly = (row: Pick<QueueRow, "strength">) => row.strength === "PRODUCT_WORDS" || row.strength === "NO_SHARED_WORDS";
+
+/** What the tiles say for a store read from its listings. Each listing counts once, under the strongest thing it came near. */
+export function listingCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[], total: number) {
+  const strong = new Set(cards.filter((c) => !sharedWordOnly(c.lead)).map((c) => c.lead.recordId));
+  const word = new Set(cards.map((c) => c.lead.recordId).filter((id) => !strong.has(id)));
+  return { total, needCheck: strong.size, sharedWord: word.size, cleared: total - strong.size - word.size };
+}
+
 /** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */
 export const chipClass = (chip: string) => (chip === PATH_CHIP.REFUND_ELIGIBLE ? "chip chip-refund" : "chip");
 
@@ -101,6 +111,18 @@ export function traceLine(step: { tool: string; ok: boolean; item?: string; quer
   return "Recorded its finding";
 }
 
+const recallsLine = (c: NonNullable<QueueData["coverage"]>) => {
+  const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
+  const range = c.recallsFrom && c.recallsTo ? `, ${c.recallsFrom} to ${c.recallsTo}` : "";
+  const gap = c.recallYearsMissing.length > 0 ? ` Recalls from ${c.recallYearsMissing.join(", ")} did not fully load.` : "";
+  return `Checked ${c.recallsChecked.toLocaleString("en-US")} recalls${range}.${gap}${left}`;
+};
+
+/** A store read from its listings: what was read, and what that can't show. */
+export function listingCoverageLine(c: NonNullable<QueueData["coverage"]>, listings: NonNullable<QueueData["listings"]>): string {
+  return `Read ${listings.total.toLocaleString("en-US")} ${counted(listings.total, "listing", "listings")}, ${listings.forSale.toLocaleString("en-US")} for sale now. No sales or PayPal history were read. ${recallsLine(c)}`;
+}
+
 /** Says "Searched" only when all of PayPal's history was read. Anything less means no dates and no payment count. */
 export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
   const searched = c.paypalSearched
@@ -108,10 +130,7 @@ export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
     : c.failedWindows > 0
       ? `PayPal's history was only partly read: ${c.failedWindows} of ${c.searchWindows} searches failed.`
       : "PayPal's history was not searched.";
-  const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
-  const range = c.recallsFrom && c.recallsTo ? `, ${c.recallsFrom} to ${c.recallsTo}` : "";
-  const gap = c.recallYearsMissing.length > 0 ? ` Recalls from ${c.recallYearsMissing.join(", ")} did not fully load.` : "";
-  return `${searched} Checked ${c.recallsChecked.toLocaleString("en-US")} recalls${range}.${gap}${left}`;
+  return `${searched} ${recallsLine(c)}`;
 }
 
 /** Whether anything may go out on this row at all: there has to be a buyer, one order, and more than product words. */
@@ -163,6 +182,7 @@ export function chipsFor(row: Pick<QueueRow, "verdict" | "strength" | "salePath"
   if (row.strength === "PRODUCT_WORDS") chips.push("Product words only");
   const join = row.joinState ? JOIN_CHIP[row.joinState] : undefined;
   if (join) chips.push(join);
-  if (row.isListing && row.stillListed) chips.push("Pull from the shelf");
+  if (row.isListing && row.stillListed && !sharedWordOnly(row)) chips.push("Pull from the shelf");
+  if (row.isListing && !row.stillListed) chips.push("Not for sale now");
   return chips;
 }

@@ -1,7 +1,7 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
-import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, stateChip } from "./labels";
+import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, sharedWordOnly, stateChip } from "./labels";
 
 export type GridTab = "needs" | "done" | "cleared" | "shelf" | "unidentified" | "all";
 
@@ -62,9 +62,9 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
       isLead,
       waits: waiting.has(r.matchId),
       approvable: isLead && canNotify(r) && needsApproval(r),
-      weak: r.strength === "PRODUCT_WORDS" || r.strength === "NO_SHARED_WORDS",
+      weak: sharedWordOnly(r),
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
-      listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED",
+      listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,
     };
   });

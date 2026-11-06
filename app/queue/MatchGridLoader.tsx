@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Component, useSyncExternalStore, type ReactNode } from "react";
-import type { GridRow } from "./gridRows";
+import type { GridRow, GridTab } from "./gridRows";
 
 const MatchGrid = dynamic(() => import("./MatchGrid"), { ssr: false });
 
@@ -28,11 +28,11 @@ class ShowWindowsIfItFails extends Component<{ children: ReactNode }, { failed: 
 }
 
 /** A table this wide does not fit a phone, and a phone has the windows, so it never downloads the grid. */
-export function MatchGridLoader({ rows }: { rows: GridRow[] }) {
+export function MatchGridLoader({ rows, startOn }: { rows: GridRow[]; startOn?: GridTab }) {
   const wide = useSyncExternalStore(subscribe, () => window.matchMedia(WIDE).matches, () => false);
   return wide ? (
     <ShowWindowsIfItFails>
-      <MatchGrid rows={rows} />
+      <MatchGrid rows={rows} startOn={startOn} />
     </ShowWindowsIfItFails>
   ) : null;
 }

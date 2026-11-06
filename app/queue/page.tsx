@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Fragment } from "react";
 import { getDb } from "@/server/db/pg";
 import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
@@ -7,7 +8,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, refundOnOffer } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, sharedWordOnly, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -234,7 +235,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
 export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[] }> }) {
   const session = await currentSession();
   if (!session) redirect("/");
-  const { rows, shop, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
+  const { rows, shop, listings, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
   // A session can outlast its shop, which is deleted with its data. There is no queue left to show.
   if (!shop) redirect("/");
   const params = await searchParams;
@@ -244,22 +245,50 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
+  const listed = listings ? listingCounts(cards, listings.total) : null;
 
   return (
     <main className="page">
       <header className="page-head">
         <h1>{shopName}</h1>
-        <span className="quiet">
-          {counts.waiting} {counted(counts.waiting, "item waits", "items wait")} for you
-        </span>
+        <span className="quiet">{listed ? `${listed.needCheck} ${counted(listed.needCheck, "needs a check", "need a check")}` : `${counts.waiting} ${counted(counts.waiting, "item waits", "items wait")} for you`}</span>
       </header>
-      <p>Check each match, then approve what goes out. Nothing is sent without you.</p>
+      {listed ? (
+        <>
+          <p data-testid="listings-lead">These are your public listings, not your sales. None is confirmed: only the item in hand can settle it.</p>
+          <p className="note">
+            This checks what&apos;s listed today. <Link href="/check">Your order file</Link> is what checks past sales.
+          </p>
+        </>
+      ) : (
+        <p>Check each match, then approve what goes out. Nothing is sent without you.</p>
+      )}
       {message ? (
         <p role="alert" className="alert">
           {message}
         </p>
       ) : null}
       {pendingLiveSales > 0 ? <WatchForSale /> : rows.some((r) => r.notice && r.notice.state !== "FAMILY_RESPONDED") ? <LookAgain everyMs={3_000} forMs={180_000} /> : null}
+      {listed ? (
+        <div className="stats" data-testid="stats">
+          <div className="stat">
+            <span className="stat-value">{listed.total.toLocaleString("en-US")}</span>
+            <span className="stat-label">{counted(listed.total, "Listing read", "Listings read")}</span>
+          </div>
+          <div className="stat stat-SCOPE_GAP">
+            <span className="stat-value">{listed.needCheck}</span>
+            <span className="stat-label">{counted(listed.needCheck, "Needs a check", "Need a check")}</span>
+          </div>
+          <div className="stat">
+            <span className="stat-value">{listed.sharedWord}</span>
+            <span className="stat-label">Share a word only</span>
+          </div>
+          <div className="stat stat-CLEARED">
+            <span className="stat-value">{listed.cleared.toLocaleString("en-US")}</span>
+            <span className="stat-label">Nothing close</span>
+          </div>
+        </div>
+      ) : (
       <div className="stats" data-testid="stats">
         <div className="stat">
           <span className="stat-value">{counts.recallsChecked?.toLocaleString("en-US") ?? "None"}</span>
@@ -278,8 +307,9 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           <span className="stat-label">Cleared</span>
         </div>
       </div>
+      )}
       <p className="note">
-        {coverage ? <span data-testid="coverage">{coverageLine(coverage)} </span> : null}
+        {coverage ? <span data-testid="coverage">{listings ? listingCoverageLine(coverage, listings) : coverageLine(coverage)} </span> : null}
         {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
@@ -290,11 +320,15 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <section data-testid="needs" className="cards">
         <h2 className="section-title narrow-only">Your queue</h2>
         {/* One list in a fixed order, with each card's chip saying where it stands. A card moved to another list or place loses the browser's :target, and an open card would close by itself. */}
-        {cards.map((card) => (
-          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
+        {cards.map((card, i) => (
+          <Fragment key={card.lead.matchId}>
+            {/* Cards run strongest first, so this falls once, between what's worth a look and what only shares a word. */}
+            {listed && sharedWordOnly(card.lead) && (i === 0 || !sharedWordOnly(cards[i - 1].lead)) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
+            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
+          </Fragment>
         ))}
       </section>
-      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} />
+      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} startOn={listed ? "shelf" : "needs"} />
       <p className="cards-hint note">Open a row to work on it.</p>
       {cleared.length > 0 || unrelated > 0 ? (
         <section className="narrow-only">
@@ -343,7 +377,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       {shopKind === "REAL" ? (
         <details className="delete-data">
           <summary>Delete my data</summary>
-          <p>This deletes your file, its checks and any messages you prepared, for good.</p>
+          <p>{listed ? "This deletes your listings and their checks, for good." : "This deletes your file, its checks and any messages you prepared, for good."}</p>
           <form action="/api/shop/delete" method="post">
             <button type="submit" className="btn btn-outline">
               Delete everything

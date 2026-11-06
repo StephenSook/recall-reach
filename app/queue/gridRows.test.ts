@@ -103,6 +103,13 @@ describe("the tabs", () => {
   it("needs review shows what the cards show", () => expect(shown("needs")).toEqual(["lead", "shelf"]));
   it("cleared shows cleared", () => expect(shown("cleared")).toEqual(["clear"]));
   it("the shelf shows matched items still listed", () => expect(shown("shelf")).toEqual(["shelf"]));
+  it("the shelf leaves out a listing that only shares a word with a recall, and All still shows it", () => {
+    const weak = row({ matchId: "word", recordId: "listing-2", isListing: true, stillListed: true, orderedOn: null, salePath: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+    const [out] = gridRows([weak], [{ lead: weak, also: [] }]);
+    expect(inTab(out, "shelf")).toBe(false);
+    expect(inTab(out, "all")).toBe(true);
+    expect(inTab(out, "needs")).toBe(true);
+  });
   it("the shelf shows an item once, however many recalls it comes near", () => {
     const near = build([
       row({ matchId: "lead", recordId: "listing-1", isListing: true, stillListed: true, orderedOn: null, salePath: null, verdict: "MATCH", strength: "CONFIRMED" }),

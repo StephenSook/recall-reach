@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -327,5 +327,38 @@ describe("chipsFor", () => {
 
   it("shows only that it is cleared on a cleared row", () => {
     expect(chipsFor(row({ verdict: "CLEARED", strength: "BRAND" }))).toEqual(["Cleared"]);
+  });
+
+  it("never says pull something from the shelf over a shared word", () => {
+    const listing = { joinState: null, salePath: null, isListing: true, stillListed: true };
+    expect(chipsFor(row({ ...listing, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" }))).toEqual(["Can't tell yet", "Product words only"]);
+    expect(chipsFor(row({ ...listing, verdict: "SCOPE_GAP", strength: "NO_SHARED_WORDS" }))).toEqual(["Can't tell yet"]);
+    expect(chipsFor(row({ ...listing, verdict: "MATCH", strength: "CONFIRMED" }))).toEqual(["Needs review", "Pull from the shelf"]);
+  });
+
+  it("says a sold-out listing isn't for sale, and nothing about who bought it", () => {
+    const chips = chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: false }));
+    expect(chips).toEqual(["Can't tell yet", "Not for sale now"]);
+  });
+});
+
+describe("a store read from its listings", () => {
+  const card = (recordId: string, strength: "CONFIRMED" | "BRAND" | "PRODUCT_WORDS" | "NO_SHARED_WORDS") => ({ lead: { recordId, strength } });
+
+  it("counts each listing once, under the strongest thing it came near", () => {
+    const cards = [card("a", "CONFIRMED"), card("a", "CONFIRMED"), card("b", "BRAND"), card("c", "PRODUCT_WORDS"), card("d", "NO_SHARED_WORDS")];
+    expect(listingCounts(cards, 219)).toEqual({ total: 219, needCheck: 2, sharedWord: 2, cleared: 215 });
+  });
+
+  it("adds up to the listings read", () => {
+    const { needCheck, sharedWord, cleared } = listingCounts([card("a", "BRAND"), card("b", "PRODUCT_WORDS")], 2);
+    expect(needCheck + sharedWord + cleared).toBe(2);
+    expect(cleared).toBe(0);
+  });
+
+  it("says what was read, and that no sale was", () => {
+    const c = { recallsChecked: 1855, searchedFrom: null, searchedTo: "2026-11-06", recallsFrom: "2022-01-03", recallsTo: "2026-11-05", recallYearsMissing: [], unidentifiedPayments: 0, paypalSearched: false, candidatesNotChecked: 3, searchWindows: 0, failedWindows: 0 };
+    expect(listingCoverageLine(c, { total: 1000, forSale: 950 })).toBe("Read 1,000 listings, 950 for sale now. No sales or PayPal history were read. Checked 1,855 recalls, 2022-01-03 to 2026-11-05. 3 candidates were not checked.");
+    expect(listingCoverageLine(c, { total: 1, forSale: 1 })).toContain("Read 1 listing,");
   });
 });
