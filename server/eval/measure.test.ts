@@ -126,9 +126,9 @@ describe("the eval on the real labels", () => {
   it("a title stating a recalled model is confirmed or asks, never clears, and one a character off is not confirmed", () => {
     const { matcher, baseline } = JSON.parse(load("results.json")).statedModels;
     // Exact on purpose. A drop in either fails here, and regenerating the results can't hide it.
-    expect(matcher.confirmed).toMatchObject({ k: 53, n: 60 });
-    expect(matcher.asks).toBe(7);
-    expect(matcher.limitedAsks).toBe(5);
+    expect(matcher.confirmed).toMatchObject({ k: 52, n: 60 });
+    expect(matcher.asks).toBe(8);
+    expect(matcher.limitedAsks).toBe(6);
     expect(matcher.cleared).toBe(0);
     expect(baseline.asks).toBe(0); // word match never asks
     expect(matcher.offByOneConfirmed.k).toBe(0);

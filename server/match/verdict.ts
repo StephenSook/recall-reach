@@ -175,13 +175,23 @@ export function fullScopeInRecord(recall: Pick<Recall, "description">): boolean 
 const IN_A_MONTH_OR_YEAR = "(?:\\d|january|february|march|april|may|june|july|august|september|october|november|december)";
 const PART_OF_A_MODEL = new RegExp(
   `\\bonly\\b[^.]*\\b(?:manufactured|produced|made|dates?|date codes?|lot|serial|batch)\\b` +
-    `|\\bmanufactured\\s+(?:from|between|before|after|during|in\\s+${IN_A_MONTH_OR_YEAR})` +
+    `|\\bmanufactured\\s+(?:from|between|before|after|during|prior to|on or|in\\s+${IN_A_MONTH_OR_YEAR})` +
+    `|\\bmanufacture date (?:in|of|before|after|from|between)\\b` +
+    `|\\b(?:one|two|three|four|five|six|several) (?:production )?(?:lots?|batch(?:es)?)\\b` +
     `|\\b(?:(?:date|lot|batch|serial)\\s*(?:code|number)s?|VINs?|serial\\s+ranges?|manufacturing\\s+dates?)\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b`,
   "i",
 );
 
+const UNIT_ID = /\b(?:serial|lot|batch|date)\s*(?:numbers?|codes?|ranges?)\b|\bVINs?\b|\bvehicle identification numbers?\b/i;
+const SAYS_WHICH = /\b(?:begin|begins|beginning|start|starts|starting|contain|contains|containing|range|ranges|ranging|within|between|through|following|one of|prefix|position|impacted)\b/i;
+const SAYS_WHERE = /\b(?:located|printed|stamped|molded|engraved|imprinted|displayed|displays|appears?|under|found|listed|lists|label|labels|sticker|plate|plates|regardless|all|visible|(?:is|are)\s+(?:on|in|at|inside))\b/i;
+
+/** A sentence naming a serial, lot, batch, date code or VIN limits the recall, unless all it says is where that number is. */
+const tiedToAUnit = (sentence: string) => UNIT_ID.test(sentence) && (SAYS_WHICH.test(sentence) || !SAYS_WHERE.test(sentence));
+
 /** CPSC limits the recall to part of a model: a date, a lot, a serial range, certain VINs. The model alone can't show this unit is in it. */
-export const limitedWithinModel = (description: string) => PART_OF_A_MODEL.test(description) || ONE_UNIT_AT_A_TIME.some((pointer) => pointer.test(description));
+export const limitedWithinModel = (description: string) =>
+  PART_OF_A_MODEL.test(description) || ONE_UNIT_AT_A_TIME.some((pointer) => pointer.test(description)) || description.split(/(?<=\.)\s+/).some(tiedToAUnit);
 
 /** A sale on the recall's own calendar date needs a human: it may have been before the announcement. */
 export function salePath(orderedOn: string, recallDate: string): SalePath {

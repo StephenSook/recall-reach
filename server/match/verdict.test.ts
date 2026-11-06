@@ -340,6 +340,44 @@ describe("a record where the model alone can't settle it", () => {
     expect(limitedWithinModel(description)).toBe(true);
   });
 
+  // Each is verbatim from the recall named: the model is only part of what decides it.
+  it.each([
+    ["26027, a serial prefix", "This recall includes model year 2017-2024 DR2A and DR2E Personal Transportation Vehicles (PTVs) with serial numbers that begin with J0D, J0E, and J2D."],
+    ["26419, a serial prefix", "The recalled models have a serial number starting with EEV, ERV, EAV, EYV, EUV, ELV or RFV."],
+    ["26388, a serial on the base that begins", "The Breez fans have a removable barrel power jack and have a serial number on the underside of the fan's wooden base that begins with BZ10 or BZ02."],
+    ["26511, one serial", "This recall involves SLF Sauna Blankets, model number 30065TAR with serial number WF2236430065."],
+    ["26315, batch codes", "This recall involves HALO Magic Sleepsuit with batch codes PO30592, PO30641 and PO30685."],
+    ["24325, batch numbers", "This recall involves Papablic Archie Infant Swings with model number PAPABLIC61A and batch numbers PF2106C01 and PF2301C01."],
+    ["26096, date codes", "This recall involves children's Grow 'N Stow Folding Learning Tower with model number LP01711 and date codes, in YYYYMM format, from 202409 to 202501."],
+    ["26151, date codes", "The impacted date codes are 712A0329BE and 712A0421BE."],
+    ["24344, one of these date codes", "Model E2037 has one USB-A port, one USB-C port, measures about four inches long and two inches wide, and has one of the following date codes (YYWW): 2318, 2319, 2322."],
+    ["25189, lot codes", "This recall involves 50-fluid-ounce bottles of Woolite Delicates detergent (SKU 62338-72724) with lot codes S24364, S24365 and S24366, sold exclusively on Amazon.com."],
+    ["25408, serial ranges", "The affected diffusers have the following serial number ranges: JX230000001 to JX230801425 and JX240000001 to JX240049959."],
+    ["24736, serials on a plate that range", "Data plates on the side of the recalled vehicles have the model number and serial numbers ranging from 31706-35058, Y1025-Y1310, 50011-50012, and 50075-52920."],
+    ["25283, a VIN position", "The 2022 model year recalled motorcycles have the letter N in the 10th position of the vehicle identification number (VIN)."],
+    ["24729, a date", "This recall involves Vibe Bear portable playyard mattresses, manufactured on or after August 15, 2022."],
+    ["24263, a date", "This recall involves all sizes and thicknesses of the Nap Queen Sleep Victoria Cooling Gel and Pocket Coil Hybrid Mattresses manufactured prior to October 2023, models NQ691011, NQ691015"],
+    ["25052, a date", "This recall involves Segway Ninebot KickScooters with model number P100S and a manufacture date in 2023."],
+    ["24224, two lots", "This recall involves two lots of Project Watson Eyelid Wipes (45 count) for dogs, which are packaged in a small round container with a twist-on lid and blue and white labeling."],
+    ["24337, one batch", "This recall involves one production batch of Finger-Ease Guitar String Lubricant."],
+  ])("reads %s as limited", (_about, description) => {
+    expect(limitedWithinModel(description)).toBe(true);
+  });
+
+  it.each([
+    ["26581, where the serial is", "The serial number is under the bar code that is under the model number."],
+    ["25045, where the serial is", "The serial number is on the right side of the alarm."],
+    ["23199, where a code can't be seen", "Because the manufacturing and date codes are not visible once a cabinet is installed"],
+    ["26466, every batch", "The recall includes all batch numbers for the referenced products."],
+    ["24168, whatever the date", "The following model numbers are included in this recall regardless of date manufactured: AWR070BLST3P8U AWR105BLST3P8U"],
+    ["25118, what a label lists", "The back of the side seam label lists washing instructions and batch code information."],
+    ["25113, what a label has", "The second sewn in labels has the batch ID, manufacture date and location."],
+    ["26628, where it was made", "The stools were manufactured in China."],
+    ["23121, a plain label", 'The sewn-in neck label displays the garment size and "The Oaks Apparel," "Est. 2014" and "www.oaksapparel.com."'],
+  ])("doesn't read %s as limited", (_about, description) => {
+    expect(limitedWithinModel(description)).toBe(false);
+  });
+
   it("makes naming a model in 26763 a scope gap", () => {
     const description = "Affected models are TF450-C, TF450-E, TF450-X and TF450RC Edition. Consumers can check if their VIN is included in this recall at https://www.triumphmotorcycles.com/owners/recalls.";
     expect(verdictFor({ ...BREZZA, title: "Triumph Recalls Motorcycles", description }, { title: "Triumph TF450-C motorcycle" })).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });

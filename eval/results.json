@@ -607,14 +607,14 @@
   "matcher": {
    "recalls": 60,
    "confirmed": {
-    "k": 53,
+    "k": 52,
     "n": 60,
-    "rate": 0.8833333333333333,
-    "low": 0.7782097940014185,
-    "high": 0.9423235259654994
+    "rate": 0.8666666666666667,
+    "low": 0.758346054099279,
+    "high": 0.9308597302169036
    },
-   "asks": 7,
-   "limitedAsks": 5,
+   "asks": 8,
+   "limitedAsks": 6,
    "cleared": 0,
    "offByOneConfirmed": {
     "k": 0,
