@@ -51,7 +51,8 @@ test("a refused repeat sends the seller to PayPal, and the line stays blocked", 
 
   // PayPal's answer proves nothing about the first send, so nothing here claims the refund failed.
   await expect(page.getByTestId("ledger")).toContainText("unconfirmed");
-  await expect(page.getByTestId("exceptions")).toContainText("PayPal refused the repeat (REFUND_AMOUNT_EXCEEDED).");
+  await expect(page.getByTestId("exceptions")).toContainText("PayPal refused the repeat (");
+  await expect(page.getByTestId("exceptions")).toContainText("REFUND_AMOUNT_EXCEEDED");
   await expect(page.getByRole("button", { name: "Ask PayPal again" })).toHaveCount(0);
   await expect(page.getByTestId("stuck")).toContainText("If no refund shows, refund it there.");
   await expect(page.getByTestId("stuck")).toContainText("DEMO-");

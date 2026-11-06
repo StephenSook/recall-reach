@@ -5,6 +5,7 @@
 // POSTs that carry a PayPal-Request-Id, which PayPal uses to return the original result instead of
 // acting twice (measured 2026-11-05 on a refund: same id, same refund). Nothing here logs.
 import { createTokenProvider, PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
+import { refundsThroughToolkit } from "./toolkitRefund";
 
 const ID_FOLLOWS = new Set(["captures", "refunds", "orders", "authorizations"]);
 
@@ -141,5 +142,5 @@ export function payPalClientFromEnv(env: NodeJS.ProcessEnv = process.env): PayPa
   const clientId = env.PAYPAL_CLIENT_ID?.trim();
   const clientSecret = env.PAYPAL_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) throw new Error("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be set (see .env.example)");
-  return createPayPalClient({ tokens: createTokenProvider({ clientId, clientSecret }) });
+  return createPayPalClient({ tokens: createTokenProvider({ clientId, clientSecret }), fetchImpl: refundsThroughToolkit() });
 }

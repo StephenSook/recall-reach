@@ -4,6 +4,8 @@
 // and moves no more money. A test steers it with the file at FAKE_PAYPAL_CONTROL: { lose: n } loses the next
 // n refund answers after the refund lands, and { refuse: n } refuses the next n with a 422.
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 
 const HOST = "api-m.sandbox.paypal.com";
 const realFetch = globalThis.fetch;
@@ -85,6 +87,17 @@ function fakePayPal(url, init) {
   }
   throw new Error(`fake PayPal has no ${method} ${path}`);
 }
+
+// The refund itself leaves through PayPal Agent Toolkit, which uses its own copy of axios.
+const fromProject = createRequire(join(process.cwd(), "package.json"));
+const axiosModule = createRequire(fromProject.resolve("@paypal/agent-toolkit/mcp"))("axios");
+const axios = axiosModule.default ?? axiosModule;
+axios.defaults.adapter = async (config) => {
+  const answer = await fakePayPal(new URL(config.url), { method: config.method.toUpperCase(), headers: config.headers.toJSON(), body: config.data });
+  const response = { data: await answer.json(), status: answer.status, statusText: "", headers: {}, config };
+  if (answer.status >= 400) throw new axios.AxiosError("refused", "ERR_BAD_REQUEST", config, {}, response);
+  return response;
+};
 
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
