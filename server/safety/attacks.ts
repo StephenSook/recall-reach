@@ -50,6 +50,7 @@ function standInPayPal(paidAt: Date, amountCents: number) {
       if (method === "GET" && path === `/v2/payments/captures/${CAPTURE}`) {
         return { status: 200, data: { id: CAPTURE, status: "COMPLETED", create_time: paidAt.toISOString(), amount: { currency_code: "USD", value } } };
       }
+      if (method === "GET" && path === "/v1/customer/disputes") return { status: 200, data: { items: [] } };
       throw new Error(`a safety check asked PayPal for something unexpected: ${method} ${path}`);
     }) as PayPalClient["request"],
   };

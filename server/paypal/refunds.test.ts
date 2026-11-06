@@ -54,6 +54,8 @@ function fakePayPal(
     refundSteps?: RefundStep[];
     captureReads?: (number | "down" | "ok")[];
     refundedElsewhereCents?: number;
+    /** What PayPal's Disputes API answers for this capture. "down" means it can't be reached. */
+    disputes?: { status?: string }[] | "down";
   } = {},
 ) {
   const calls: { method: string; path: string; opts: { body?: unknown; requestId?: string } }[] = [];
@@ -106,6 +108,10 @@ function fakePayPal(
       if (step === "lost") throw new TypeError("network down");
       if (landed instanceof Response) return landed;
       return Response.json({ id: landed.refund.id, status: landed.refund.status }, { status: landed.replay ? 200 : 201 });
+    }
+    if (url.pathname === "/v1/customer/disputes" && method === "GET") {
+      if (over.disputes === "down") throw new TypeError("network down");
+      return Response.json({ items: over.disputes ?? [] });
     }
     const refund = /^\/v2\/payments\/refunds\/([\w-]+)$/.exec(url.pathname);
     const found = refund && method === "GET" ? [...refunds.values()].find((r) => r.id === refund[1]) : undefined;
@@ -826,6 +832,62 @@ describe("refunds", () => {
       const pp = fakePayPal();
       const fine = new Date(NOW.getTime() + 60 * 60_000);
       expect((await askPayPalAgain(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: fine })).status).toBe("refunded");
+    });
+  });
+
+  describe("a dispute on the payment", () => {
+    const disputeCalls = (calls: { path: string }[]) => calls.filter((c) => c.path.startsWith("/v1/customer/disputes"));
+
+    it("reads PayPal's disputes for this capture at review and again before sending", async () => {
+      const { id: matchId } = await setUp();
+      const pp = fakePayPal();
+      const approval = await approve(matchId, SESSION, NOW, pp.client);
+      expect(disputeCalls(pp.calls)).toHaveLength(1);
+      await execute(approval.approvalId, pp.client);
+      expect(disputeCalls(pp.calls)).toHaveLength(2);
+      expect(disputeCalls(pp.calls)[0].path).toBe("/v1/customer/disputes");
+    });
+
+    it("won't offer a refund on a payment with an open dispute", async () => {
+      const { id: matchId } = await setUp();
+      expect(await refusal(approve(matchId, SESSION, NOW, fakePayPal({ disputes: [{ status: "OPEN" }] }).client))).toBe("OPEN_DISPUTE");
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("sends nothing if a dispute opens after the approval, and leaves the approval unspent", async () => {
+      const { id: matchId } = await setUp();
+      const { approvalId } = await approve(matchId, SESSION, NOW, fakePayPal().client);
+      const disputed = fakePayPal({ disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
+      expect(await refusal(execute(approvalId, disputed.client))).toBe("OPEN_DISPUTE");
+      expect(disputed.calls.filter((c) => c.method === "POST")).toEqual([]);
+      expect((await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [approvalId])).rows[0].consumed_at).toBeNull();
+      expect((await db.query("select 1 from refunds")).rows).toEqual([]);
+      await expect(execute(approvalId, fakePayPal().client)).resolves.toMatchObject({ status: "refunded" });
+    });
+
+    it("holds the refund if the disputes can't be read, says so, and lets it be tried again", async () => {
+      const { id: matchId } = await setUp();
+      const { approvalId } = await approve(matchId, SESSION, NOW, fakePayPal().client);
+      const down = fakePayPal({ disputes: "down" });
+      await expect(execute(approvalId, down.client)).rejects.toMatchObject({ code: "DISPUTES_UNREADABLE", message: "PayPal's disputes could not be read, so nothing was refunded. Please try again." });
+      expect(down.calls.filter((c) => c.method === "POST")).toEqual([]);
+      await expect(execute(approvalId, fakePayPal().client)).resolves.toMatchObject({ status: "refunded" });
+    });
+
+    it("lets a resolved dispute through", async () => {
+      const { id: matchId } = await setUp();
+      const pp = fakePayPal({ disputes: [{ status: "RESOLVED" }] });
+      const { approvalId } = await approve(matchId, SESSION, NOW, pp.client);
+      await expect(execute(approvalId, pp.client)).resolves.toMatchObject({ status: "refunded" });
+    });
+
+    it("stores nothing from the dispute", async () => {
+      const { id: matchId } = await setUp();
+      const pp = fakePayPal({ disputes: [{ status: "RESOLVED", reason: "SENTINEL" } as { status: string }] });
+      const { approvalId } = await approve(matchId, SESSION, NOW, pp.client);
+      await execute(approvalId, pp.client);
+      const { rows } = await db.query<{ t: string; c: string }>("select table_name as t, column_name as c from information_schema.columns where table_schema = 'public' and data_type in ('text', 'jsonb')");
+      for (const { t, c } of rows) expect((await db.query(`select 1 from "${t}" where "${c}"::text like '%SENTINEL%' limit 1`)).rows, `${t}.${c}`).toEqual([]);
     });
   });
 

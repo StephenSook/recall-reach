@@ -9,6 +9,7 @@ export interface Claim {
 export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Reads the shop's sales from Transaction Search, across windows, and reports any window that failed", file: "server/paypal/transactions.ts", find: "/v1/reporting/transactions" },
   { what: "Reads the capture from PayPal again before any refund, and again to reconcile", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
+  { what: "Reads PayPal's Disputes API before each refund", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
   { what: "Sends each refund through PayPal Agent Toolkit, server side", file: "server/paypal/toolkitRefund.ts", find: "refundsThroughToolkit" },
   { what: "Sends one request id per refund, so a retry gets the same refund back", file: "server/paypal/client.ts", find: "PayPal-Request-Id" },
   { what: "Reads the refund back from PayPal to reconcile it", file: "server/paypal/refunds.ts", find: "/v2/payments/refunds/" },

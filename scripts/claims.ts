@@ -34,6 +34,14 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "PayPal Customer Disputes",
+    status: "claimed",
+    evidence: [
+      { file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
+      { file: "server/paypal/refunds.ts", call: "disputeOnCapture" },
+    ],
+  },
+  {
     name: "PayPal Payments refunds",
     status: "claimed",
     evidence: [

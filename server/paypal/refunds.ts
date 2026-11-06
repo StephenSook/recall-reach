@@ -17,6 +17,7 @@ import { joinShop } from "../match/run";
 import { businessDay } from "../time/businessDay";
 import type { RecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
+import { disputeOnCapture } from "./disputes";
 import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./orders";
 
 const APPROVAL_MS = 15 * 60_000;
@@ -43,6 +44,8 @@ export type RefusalCode =
   | "PAYMENT_CHANGED"
   | "PAYPAL_FACTS_CHANGED"
   | "PAYPAL_UNREACHABLE"
+  | "OPEN_DISPUTE"
+  | "DISPUTES_UNREADABLE"
   | "REFUND_WINDOW_CLOSED"
   | "PAYMENT_NOT_AFTER_RECALL"
   | "NOTHING_LEFT_TO_REFUND"
@@ -412,6 +415,10 @@ async function refusePayPalFacts(
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
   }
   refusePaymentDates(capture, facts.recallDate, facts.now);
+  // A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back.
+  const dispute = await disputeOnCapture(client, captureId);
+  if (dispute === "OPEN") throw new RefundRefused("OPEN_DISPUTE", "PayPal shows an open dispute on this payment. Settle it in PayPal first.");
+  if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so nothing was refunded. Please try again.");
   const ledger = await ledgerOnCapture(q, captureId);
   const refundedByPayPal = await refundedPerPayPal(client, capture, ledger.knownRefundId);
   refuseAboveRemaining(capture.amountCents, refundedByPayPal, ledger, facts.amountCents, facts.currency);

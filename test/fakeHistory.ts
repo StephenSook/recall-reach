@@ -26,8 +26,9 @@ export const historyRows = [
   row(91, { transaction_event_code: "T1107", transaction_amount: { currency_code: "USD", value: "-2.00" } }),
 ];
 
-/** Answers a search request, or null if this is not one. Passing `fail` makes every search fail. */
+/** Answers a search request, or null if this is not one. Passing `fail` makes every search fail. A dispute read finds none. */
 export function answerSearch(path: string, fail = false) {
+  if (path === "/v1/customer/disputes") return { status: 200, data: { items: [] } };
   if (path !== "/v1/reporting/transactions") return null;
   if (fail) throw new Error("search failed");
   return { status: 200, data: { transaction_details: historyRows, total_pages: 1 } };
