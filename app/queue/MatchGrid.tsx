@@ -34,7 +34,7 @@ const columns: ColDef<Row>[] = [
   { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: true },
   { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
   { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
-  { field: "state", headerName: "State", width: 128, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: true },
+  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: true },
   { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: true },
   { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter" },
   { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: true },
