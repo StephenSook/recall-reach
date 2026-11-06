@@ -226,7 +226,7 @@ small,
   .cards-hint {
     display: block;
   }
-  .cards:has(.window:target) .cards-hint {
+  .cards:has(.window:target) ~ .cards-hint {
     display: none;
   }
   .cards > .window:not(:target),

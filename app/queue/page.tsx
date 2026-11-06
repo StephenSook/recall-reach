@@ -277,17 +277,18 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
-      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} />
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; }`}</style>
       </noscript>
+      {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
-        <p className="cards-hint note">Open a row to work on it.</p>
         <h2 className="section-title narrow-only">Needs review</h2>
         {cards.map((card) => (
           <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
       </section>
+      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} />
+      <p className="cards-hint note">Open a row to work on it.</p>
       {cleared.length > 0 || unrelated > 0 ? (
         <section className="narrow-only">
           <h2 className="section-title">Checked and cleared</h2>

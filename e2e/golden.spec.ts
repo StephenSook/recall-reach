@@ -244,11 +244,14 @@ test.describe("on a wide screen", () => {
     await rows.filter({ hasText: "27040" }).getByRole("link", { name: "Open" }).click();
     await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Prepared");
 
-    // An action keeps its window open.
+    // An action keeps its window open, and on screen: the grid draws late, and must not push it off.
     await rows.filter({ hasText: "27072" }).getByRole("link", { name: "Open" }).click();
     await recall(page, "27072").getByRole("button", { name: "Approve this notice" }).click();
     await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("Prepared");
-    await expect(recall(page, "27072")).toBeVisible();
+    await expect(recall(page, "27072").getByTestId("notice-state")).toBeInViewport({ ratio: 1 });
+    await rows.filter({ hasText: "27027" }).first().getByRole("link", { name: "Open" }).click();
+    await recall(page, "27027").getByRole("button", { name: "Review refund" }).click();
+    await expect(recall(page, "27027").getByRole("button", { name: "Refund 90.00 USD" })).toBeInViewport({ ratio: 1 });
   });
 
   test("the grid fits a larger window too", async ({ page }) => {
