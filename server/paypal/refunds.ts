@@ -3,9 +3,10 @@
 // An approval binds shop, session, recall version, order line, exact amount and currency, expires
 // in 15 minutes, and is consumed once, atomically. Executing it re-reads the capture from PayPal and
 // refuses on any mismatch. Capture contract (payments_payment_v2.json, read 2026-11-05): status is
-// COMPLETED, PARTIALLY_REFUNDED, REFUNDED, PENDING, DECLINED or FAILED, and the refunded total is
-// only on refund resources. So what is left comes from the live status plus our ledger, and PayPal's
-// own REFUND_AMOUNT_EXCEEDED is the backstop. "You can send a full or partial refund within 180 days
+// COMPLETED, PARTIALLY_REFUNDED, REFUNDED, PENDING, DECLINED or FAILED, and the refunded total is only
+// on refund resources. Measured 2026-11-05: a GET on any refund of a capture reports that capture's total
+// so far, including refunds made elsewhere. So what is left comes from PayPal, once a refund of ours can
+// show it, and PayPal's own REFUND_AMOUNT_EXCEEDED is the backstop. "You can send a full or partial refund within 180 days
 // of the payment date" (paypal.com help, how-do-i-issue-a-refund).
 //
 // Raw PayPal ids stay in paypal_refund_refs (46-hour purge); the ledger holds only an HMAC.
@@ -136,6 +137,7 @@ export interface Approval {
 
 export async function approveRefund(
   db: Queryable,
+  client: PayPalClient,
   input: { shopId: string; sessionId: string; matchId: string; now?: Date },
 ): Promise<Approval> {
   const now = input.now ?? new Date();
@@ -168,7 +170,7 @@ export async function approveRefund(
   if (m.join_state !== "IDENTIFIED") {
     throw new RefundRefused("JOIN_NOT_IDENTIFIED", "This order line is not linked to exactly one PayPal payment.");
   }
-  await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, now.toISOString().slice(0, 10));
+  const captureId = await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, now.toISOString().slice(0, 10));
   const open = await db.query("select 1 from refunds where order_line_id = $1 and status <> 'failed'", [m.order_line_id]);
   if (open.rows.length > 0) {
     throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
@@ -179,6 +181,10 @@ export async function approveRefund(
     discountCents: m.discount_cents,
   });
   if (amountCents <= 0) throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "This line has nothing to refund.");
+
+  // The exact amount a person sees has to be one PayPal can still honor.
+  const { rows: recalls } = await db.query<{ recall_date: string }>("select recall_date from recalls where recall_id = $1", [m.recall_id]);
+  await refusePayPalFacts(db, client, captureId, { amountCents, currency: m.currency, recallDate: recalls[0].recall_date, now });
 
   const expiresAt = new Date(now.getTime() + APPROVAL_MS).toISOString();
   const inserted = await db.query<{ id: string }>(
@@ -240,34 +246,12 @@ export async function executeRefund(
   const today = now.toISOString().slice(0, 10);
   const captureId = await identifiedCapture(db, input.shopId, approval.order_line_id, approval.paypal_payment_id, today);
 
-  const capture = await readCapture(client, captureId);
-  if (capture.currency !== approval.currency) {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
-  }
-  if (capture.status === "REFUNDED") throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "PayPal says this payment is already fully refunded.");
-  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
-  }
-
-  refusePaymentDates(capture, recallDate, now);
-
-  let remaining = capture.amountCents;
-  if (capture.status === "PARTIALLY_REFUNDED") {
-    const ledger = await db.query<{ total: string }>(
-      `select coalesce(sum(r.amount_cents), 0)::text as total
-       from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
-       where p.capture_id = $1 and r.status <> 'failed'`,
-      [captureId],
-    );
-    const known = Number(ledger.rows[0].total);
-    if (known === 0) {
-      throw new RefundRefused("REMAINING_UNKNOWN", "This payment was partly refunded outside this app. Check PayPal first.");
-    }
-    remaining = capture.amountCents - known;
-  }
-  if (approval.amount_cents > remaining) {
-    throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
-  }
+  const { capture, refundedByPayPal } = await refusePayPalFacts(db, client, captureId, {
+    amountCents: approval.amount_cents,
+    currency: approval.currency,
+    recallDate,
+    now,
+  });
 
   // Spending the approval, reserving the line and recording the intent happen together or not at all.
   // The lock serializes reservations on one capture, so two lines cannot both claim the same balance.
@@ -277,15 +261,7 @@ export async function executeRefund(
       throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
     }
     await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [captureId]);
-    const reservedOnCapture = await tx.query<{ total: string }>(
-      `select coalesce(sum(r.amount_cents), 0)::text as total
-       from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
-       where p.capture_id = $1 and r.status <> 'failed'`,
-      [captureId],
-    );
-    if (Number(reservedOnCapture.rows[0].total) + approval.amount_cents > capture.amountCents) {
-      throw new RefundRefused("AMOUNT_ABOVE_REMAINING", "The approved amount is more than this payment has left to refund.");
-    }
+    refuseAboveRemaining(capture.amountCents, refundedByPayPal, await ledgerOnCapture(tx, captureId), approval.amount_cents, approval.currency);
     const consumed = await tx.query(
       `update approvals set consumed_at = $4::timestamptz
        where id = $1 and shop_id = $2 and session_id = $3 and consumed_at is null and expires_at > $4::timestamptz
@@ -343,6 +319,69 @@ async function moveLedger(
 /** The checks before a send can take minutes when PayPal is slow, so a lease runs from when it is taken. */
 const leaseEnd = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt) + SEND_LEASE_MS).toISOString();
 
+/** Our ledger on one capture: what is settled as refunded, what may still land, and a refund PayPal can be asked about. */
+async function ledgerOnCapture(q: Queryable, captureId: string): Promise<{ refundedCents: number; openCents: number; knownRefundId: string | null }> {
+  const { rows } = await q.query<{ status: string; amount_cents: number; refund_id: string | null }>(
+    `select r.status, r.amount_cents, p.refund_id
+     from refunds r join paypal_refund_refs p on p.refund_row_id = r.id
+     where p.capture_id = $1 and r.status <> 'failed'`,
+    [captureId],
+  );
+  const sum = (settled: boolean) => rows.filter((r) => (r.status === "refunded") === settled).reduce((total, r) => total + r.amount_cents, 0);
+  return { refundedCents: sum(true), openCents: sum(false), knownRefundId: rows.find((r) => r.refund_id)?.refund_id ?? null };
+}
+
+const refundTotalSchema = z.object({
+  seller_payable_breakdown: z.object({ total_refunded_amount: z.object({ value: z.string() }) }),
+});
+
+/** What PayPal says has been refunded on this capture so far, from any refund of ours on it. */
+async function refundedPerPayPal(client: PayPalClient, capture: CaptureFacts, knownRefundId: string | null): Promise<number> {
+  if (capture.status === "COMPLETED") return 0;
+  const unknown = () => new RefundRefused("REMAINING_UNKNOWN", "This payment was partly refunded outside this app. Check PayPal first.");
+  if (!knownRefundId) throw unknown();
+  let data: unknown;
+  try {
+    ({ data } = await client.request("GET", `/v2/payments/refunds/${knownRefundId}`));
+  } catch {
+    throw new RefundRefused("PAYPAL_UNREACHABLE", "PayPal did not answer, so nothing was refunded. Please try again.");
+  }
+  const parsed = refundTotalSchema.safeParse(data);
+  if (!parsed.success) throw unknown();
+  return valueToCents(parsed.data.seller_payable_breakdown.total_refunded_amount.value);
+}
+
+/** Refuses unless this much still fits. What may be on its way counts against it, even if PayPal does not show it yet. */
+function refuseAboveRemaining(captureCents: number, refundedByPayPal: number, ledger: { refundedCents: number; openCents: number }, amountCents: number, currency: string): void {
+  const left = captureCents - Math.max(refundedByPayPal, ledger.refundedCents) - ledger.openCents;
+  if (amountCents > left) {
+    throw new RefundRefused(
+      "AMOUNT_ABOVE_REMAINING",
+      `This payment has ${refundedAmount(Math.max(0, left), currency)} left to refund, and this line is ${refundedAmount(amountCents, currency)}. To refund what is left, do it in PayPal.`,
+    );
+  }
+}
+
+/** Everything a live capture must show before a person can approve this amount, or the approval can be spent. */
+async function refusePayPalFacts(
+  q: Queryable,
+  client: PayPalClient,
+  captureId: string,
+  facts: { amountCents: number; currency: string; recallDate: string; now: Date },
+): Promise<{ capture: CaptureFacts; refundedByPayPal: number }> {
+  const capture = await readCapture(client, captureId);
+  if (capture.currency !== facts.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
+  if (capture.status === "REFUNDED") throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "PayPal says this payment is already fully refunded.");
+  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") {
+    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
+  }
+  refusePaymentDates(capture, facts.recallDate, facts.now);
+  const ledger = await ledgerOnCapture(q, captureId);
+  const refundedByPayPal = await refundedPerPayPal(client, capture, ledger.knownRefundId);
+  refuseAboveRemaining(capture.amountCents, refundedByPayPal, ledger, facts.amountCents, facts.currency);
+  return { capture, refundedByPayPal };
+}
+
 async function readCapture(client: PayPalClient, captureId: string): Promise<CaptureFacts> {
   try {
     return await getCapture(client, captureId);
@@ -356,7 +395,7 @@ function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date
   const paidOn = (capture.createTime ?? "").slice(0, 10);
   if (!paidOn) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no date for this payment.");
   if (now.getTime() - Date.parse(`${paidOn}T00:00:00Z`) > REFUND_WINDOW_DAYS * 86_400_000) {
-    throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed.");
+    throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed. Check the recall page for the next steps.");
   }
   if (paidOn <= recallDate) {
     throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");

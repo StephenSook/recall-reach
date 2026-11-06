@@ -134,6 +134,11 @@ function fakePayPal(
     /** The refunds PayPal actually made, however many times it was asked. */
     made: () => [...refunds.values()],
     settle: (status: string) => refunds.forEach((r) => (r.status = status)),
+    /** A refund someone made in PayPal itself. PayPal's totals include it; this app has no row for it. */
+    refundElsewhere: (cents: number, captureId = "CAP-1") => {
+      refundedOn.set(captureId, total(captureId) + cents);
+      statusOf.set(captureId, refundedOn.get(captureId) === amount ? "REFUNDED" : "PARTIALLY_REFUNDED");
+    },
     /** What the next refund POSTs will meet. */
     thenRefund: (...next: RefundStep[]) => steps.push(...next),
     thenCaptureReads: (...next: (number | "down" | "ok")[]) => captureReads.push(...next),
@@ -192,7 +197,8 @@ describe("refunds", () => {
     );
     return rows[0];
   }
-  const approve = (matchId: string, sessionId = SESSION, now = NOW) => approveRefund(db, { shopId, sessionId, matchId, now });
+  const approve = (matchId: string, sessionId = SESSION, now = NOW, client: PayPalClient = fakePayPal({ amountCents: 100000 }).client) =>
+    approveRefund(db, client, { shopId, sessionId, matchId, now });
   const execute = (approvalId: string, client: PayPalClient, sessionId = SESSION, now = NOW) =>
     executeRefund(db, client, { shopId, sessionId, approvalId, recordKey: key, now });
   /** The ledger row's age is measured from the test's clock, not the real one. */
@@ -254,7 +260,7 @@ describe("refunds", () => {
     it("refuses another shop's match", async () => {
       const m = await setUp();
       const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
-      expect(await refusal(approveRefund(db, { shopId: other, sessionId: SESSION, matchId: m.id, now: NOW }))).toBe("NO_SUCH_MATCH");
+      expect(await refusal(approveRefund(db, fakePayPal().client, { shopId: other, sessionId: SESSION, matchId: m.id, now: NOW }))).toBe("NO_SUCH_MATCH");
     });
 
     it("refuses while an earlier refund for this line is not settled as failed", async () => {
@@ -262,6 +268,122 @@ describe("refunds", () => {
       const a = await approve(m.id);
       await execute(a.approvalId, fakePayPal({ refundSteps: ["down", "down", "down"] }).client);
       expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
+    });
+  });
+
+  describe("what is left on the payment, from PayPal", () => {
+    // One payment of $100 with two lines on it: $30 and $60.
+    async function twoLines() {
+      const cipher = createContactCipher("k".repeat(32), shopId);
+      await storeOrderLines(db, shopId, [line({ lineNo: 2, sku: "PAPA-2", unitPriceCents: 6000 })], cipher, "test");
+      await setUp(line({ unitPriceCents: 3000 }), { amountCents: 10000 });
+      const { rows } = await db.query<{ id: string; line_no: number }>(
+        `select m.id, l.line_no from recall_matches m join recalls r using (recall_id) join order_lines l on l.id = m.order_line_id
+         where m.shop_id = $1 and r.recall_number = '27027' order by l.line_no`,
+        [shopId],
+      );
+      return { thirty: rows[0].id, sixty: rows[1].id };
+    }
+    const hundred = (over: Parameters<typeof fakePayPal>[0] = {}) => fakePayPal({ amountCents: 10000, ...over });
+
+    it("counts a refund made in PayPal itself once one of ours can show the total", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred();
+      await execute((await approve(thirty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      pp.refundElsewhere(2000); // $50 refunded in all, $50 left, and the $60 line no longer fits
+      expect(await refusal(approve(sixty, SESSION, NOW, pp.client))).toBe("AMOUNT_ABOVE_REMAINING");
+      expect(pp.posts()).toHaveLength(1);
+    });
+
+    it("says what is left and what the seller can do next", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred();
+      await execute((await approve(thirty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      pp.refundElsewhere(2000);
+      const message = await approve(sixty, SESSION, NOW, pp.client).catch((e: Error) => e.message);
+      expect(message).toBe("This payment has 50.00 USD left to refund, and this line is 60.00 USD. To refund what is left, do it in PayPal.");
+    });
+
+    it("allows the second line when the balance covers it", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred();
+      await execute((await approve(thirty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      const r = await execute((await approve(sixty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      expect(r.status).toBe("refunded");
+      expect(pp.made()).toHaveLength(2);
+    });
+
+    it("checks again at the send: a refund made in PayPal after the approval stops it", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred();
+      await execute((await approve(thirty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      const a = await approve(sixty, SESSION, NOW, pp.client);
+      pp.refundElsewhere(2000);
+      expect(await refusal(execute(a.approvalId, pp.client))).toBe("AMOUNT_ABOVE_REMAINING");
+      expect(pp.posts()).toHaveLength(1);
+      const { rows } = await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [a.approvalId]);
+      expect(rows[0].consumed_at).toBeNull();
+    });
+
+    it("counts money that may be on its way: a refund with no clear answer holds its share", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred({ refundSteps: ["down", "down", "down"] });
+      await execute((await approve(sixty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      // PayPal shows nothing refunded, but the $60 may still land: only $40 can be promised.
+      const fits = await approve(thirty, SESSION, NOW, pp.client);
+      expect(fits.amountCents).toBe(3000);
+      const more = await storeOrderLines(db, shopId, [line({ lineNo: 3, sku: "PAPA-3", unitPriceCents: 5000 })], createContactCipher("k".repeat(32), shopId), "test");
+      expect(more.inserted).toBe(1);
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      const { rows } = await db.query<{ id: string }>(
+        `select m.id from recall_matches m join recalls r using (recall_id) join order_lines l on l.id = m.order_line_id
+         where m.shop_id = $1 and r.recall_number = '27027' and l.line_no = 3`,
+        [shopId],
+      );
+      expect(await refusal(approve(rows[0].id, SESSION, NOW, pp.client))).toBe("AMOUNT_ABOVE_REMAINING");
+    });
+
+    it("refuses to guess when PayPal shows a partial refund and no refund of ours can show the total", async () => {
+      const m = await setUp();
+      expect(await refusal(approve(m.id, SESSION, NOW, fakePayPal({ status: "PARTIALLY_REFUNDED" }).client))).toBe("REMAINING_UNKNOWN");
+    });
+
+    it("refuses to guess when PayPal's refund does not state the total", async () => {
+      const { thirty, sixty } = await twoLines();
+      const pp = hundred();
+      await execute((await approve(thirty, SESSION, NOW, pp.client)).approvalId, pp.client);
+      const noTotal: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          const answer = await pp.client.request<Record<string, unknown>>(method, path, opts);
+          if (path.includes("/refunds/")) delete answer.data.seller_payable_breakdown;
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      expect(await refusal(approve(sixty, SESSION, NOW, noTotal))).toBe("REMAINING_UNKNOWN");
+    });
+
+    it("says PayPal did not answer rather than guessing, and approves nothing", async () => {
+      const m = await setUp();
+      expect(await refusal(approve(m.id, SESSION, NOW, fakePayPal({ captureReads: ["down", "down", "down"] }).client))).toBe("PAYPAL_UNREACHABLE");
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("refuses at the approval what the send would refuse", async () => {
+      const m = await setUp();
+      const client = (over: Parameters<typeof fakePayPal>[0]) => fakePayPal(over).client;
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ status: "REFUNDED" })))).toBe("NOTHING_LEFT_TO_REFUND");
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ status: "DECLINED" })))).toBe("PAYPAL_FACTS_CHANGED");
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ currency: "CAD" })))).toBe("PAYPAL_FACTS_CHANGED");
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ createTime: "2026-05-01T00:00:00Z" })))).toBe("REFUND_WINDOW_CLOSED");
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ createTime: "2026-10-15T12:00:00Z" })))).toBe("PAYMENT_NOT_AFTER_RECALL");
+      expect(await refusal(approve(m.id, SESSION, NOW, client({ amountCents: 8000 })))).toBe("AMOUNT_ABOVE_REMAINING");
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("words the closed window the way the copy deck does", async () => {
+      const m = await setUp();
+      const message = await approve(m.id, SESSION, NOW, fakePayPal({ createTime: "2026-05-01T00:00:00Z" }).client).catch((e: Error) => e.message);
+      expect(message).toBe("PayPal refund window closed. Check the recall page for the next steps.");
     });
   });
 

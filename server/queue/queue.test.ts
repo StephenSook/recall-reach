@@ -20,11 +20,9 @@ function fakePayPal(): PayPalClient {
       if (method === "POST") {
         const id = `RAWORDERID${orders.size}`;
         const unit = (opts.body as { purchase_units: { amount: unknown }[] }).purchase_units[0];
-        orders.set(id, {
-          id,
-          status: "COMPLETED",
-          purchase_units: [{ ...unit, payments: { captures: [{ id: `RAWCAPTUREID${orders.size}`, status: "COMPLETED", create_time: `${TODAY}T14:00:00Z`, amount: unit.amount }] } }],
-        });
+        const capture = { id: `RAWCAPTUREID${orders.size}`, status: "COMPLETED", create_time: `${TODAY}T14:00:00Z`, amount: unit.amount };
+        orders.set(capture.id, capture);
+        orders.set(id, { id, status: "COMPLETED", purchase_units: [{ ...unit, payments: { captures: [capture] } }] });
         return { status: 201, data: { id } };
       }
       return { status: 200, data: orders.get(path.split("/").pop() ?? "") };
@@ -35,12 +33,14 @@ function fakePayPal(): PayPalClient {
 describe("loadQueue", () => {
   let db: Awaited<ReturnType<typeof testDb>>;
   let shopId: string;
+  let paypal: PayPalClient;
   beforeEach(async () => {
     db = await testDb();
     await migrate(db);
     const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });
     await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
-    ({ shopId } = await seedDemoShop(db, fakePayPal(), { today: TODAY, secret: "k".repeat(32) }));
+    paypal = fakePayPal();
+    ({ shopId } = await seedDemoShop(db, paypal, { today: TODAY, secret: "k".repeat(32) }));
   });
   afterEach(async () => {
     await db.close();
@@ -103,7 +103,7 @@ describe("loadQueue", () => {
 
   it("shows a pending approval only to the session that made it", async () => {
     const { matchId } = await row("27027");
-    const a = await approveRefund(db, { shopId, sessionId: "session-1", matchId });
+    const a = await approveRefund(db, paypal, { shopId, sessionId: "session-1", matchId });
     expect((await row("27027")).approval).toMatchObject({ id: a.approvalId, amountCents: 9000, currency: "USD" });
     const other = await loadQueue(db, shopId, "session-2");
     expect(other.rows.find((r) => r.recallNumber === "27027")?.approval).toBeNull();
