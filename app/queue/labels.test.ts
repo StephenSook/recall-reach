@@ -28,6 +28,18 @@ describe("queueCounts", () => {
   });
 });
 
+describe("a sale after the recall, when the payment isn't known", () => {
+  it("does not say a refund is possible", () => {
+    const chips = chipsFor(row({ salePath: "REFUND_ELIGIBLE", joinState: "HISTORY_UNAVAILABLE" }));
+    expect(chips).toContain("Sold after the recall");
+    expect(chips).not.toContain("Refund eligible");
+  });
+
+  it("does say so once the payment is known", () => {
+    expect(chipsFor(row({ salePath: "REFUND_ELIGIBLE", joinState: "IDENTIFIED" }))).toContain("Refund eligible");
+  });
+});
+
 describe("chipClass", () => {
   it("gives refund eligible its own red, and every other chip the plain one", () => {
     expect(chipClass("Refund eligible")).toBe("chip chip-refund");

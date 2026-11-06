@@ -1,7 +1,7 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow } from "@/server/queue/queue";
-import { canNotify, needsApproval, NOTICE_STATE, PATH_CHIP, VERDICT_CHIP } from "./labels";
+import { canNotify, needsApproval, NOTICE_STATE, pathChip, VERDICT_CHIP } from "./labels";
 
 export type GridTab = "needs" | "cleared" | "shelf" | "all";
 
@@ -51,7 +51,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
       itemTitle: r.itemTitle,
       verdict: r.verdict,
       state: VERDICT_CHIP[r.verdict],
-      path: r.verdict === "MATCH" && r.salePath ? PATH_CHIP[r.salePath] : null,
+      path: r.verdict === "MATCH" && r.salePath ? pathChip(r) : null,
       soldOn: r.orderedOn,
       recallDate: r.recallDate,
       reason: r.reason,

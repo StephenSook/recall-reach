@@ -88,11 +88,15 @@ export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolea
   return !safety && confirmed;
 }
 
+/** A refund needs the payment. Sold after the recall is still worth saying when that payment isn't known. */
+export const pathChip = (row: Pick<QueueRow, "salePath" | "joinState">) =>
+  row.salePath === "REFUND_ELIGIBLE" && row.joinState === "HISTORY_UNAVAILABLE" ? "Sold after the recall" : row.salePath ? PATH_CHIP[row.salePath] : "";
+
 /** The chips on a card. A sale path is a claim about a confirmed match, so it shows on nothing else. */
 export function chipsFor(row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "isListing" | "stillListed">): string[] {
   const chips: string[] = [VERDICT_CHIP[row.verdict]];
   if (row.verdict === "CLEARED") return chips;
-  if (row.verdict === "MATCH" && row.salePath) chips.push(PATH_CHIP[row.salePath]);
+  if (row.verdict === "MATCH" && row.salePath) chips.push(pathChip(row));
   if (row.strength === "PRODUCT_WORDS") chips.push("Product words only");
   const join = row.joinState ? JOIN_CHIP[row.joinState] : undefined;
   if (join) chips.push(join);

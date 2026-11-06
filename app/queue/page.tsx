@@ -44,6 +44,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
         <p className="quiet">{row.reason}</p>
         {row.caughtSeconds !== null ? <p data-testid="caught">Reached your queue {row.caughtSeconds} seconds after PayPal took the payment.</p> : null}
         {row.salePath === "REVIEW" && row.verdict === "MATCH" ? <p>Sold on the recall date. Please review.</p> : null}
+        {row.verdict === "MATCH" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "HISTORY_UNAVAILABLE" ? <p>A refund needs your PayPal connected. This check read your file only.</p> : null}
         {row.verdict !== "CLEARED" && productWordsOnly ? <p>Nothing goes out on product words alone. Check the recall page.</p> : null}
 
         {notifiable && row.question ? (
@@ -208,7 +209,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
 
         <div className="provenance">
           <span className="chip chip-real">Real CPSC</span>
-          <span className="chip chip-sandbox">Sandbox PayPal</span>
+          {shopKind === "DEMO" ? <span className="chip chip-sandbox">Sandbox PayPal</span> : null}
           <span className="chip chip-sandbox">{shopKind === "DEMO" ? "Demo shop" : "Real shop"}</span>
           <small>{row.source}</small>
         </div>
@@ -307,6 +308,17 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
         </section>
+      ) : null}
+      {shopKind === "REAL" ? (
+        <details className="delete-data">
+          <summary>Delete my data</summary>
+          <p>This deletes your file, its checks and any messages you prepared, for good.</p>
+          <form action="/api/shop/delete" method="post">
+            <button type="submit" className="btn btn-outline">
+              Delete everything
+            </button>
+          </form>
+        </details>
       ) : null}
     </main>
   );

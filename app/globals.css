@@ -450,6 +450,26 @@ small,
   border-top: 2px solid var(--color-ink);
 }
 
+/* A shop's own file */
+.upload {
+  max-width: 640px;
+  margin-block: 16px;
+  padding: 16px;
+}
+.field input[type="file"] {
+  min-height: 52px;
+  padding: 10px;
+  font-size: 16px;
+}
+.delete-data {
+  margin-top: 32px;
+  font-size: 14px;
+}
+.delete-data summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
 /* The three records beside each other */
 .ledger {
   width: 100%;
@@ -617,6 +637,9 @@ small,
   margin-block: 14px 24px;
   font-size: var(--text-lead);
   color: var(--color-body);
+}
+.door-other {
+  margin-top: 14px;
 }
 .door-card footer {
   margin-top: 24px;

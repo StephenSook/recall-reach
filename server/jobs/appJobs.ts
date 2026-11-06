@@ -1,6 +1,7 @@
 import { fetchRecalls, type FetchDeps } from "../cpsc/fetch";
 import { recordPull, snapshotHash } from "../cpsc/pull";
 import type { Db } from "../db/types";
+import { purgeOldOwnShops } from "../import/ownFile";
 import { purgePayPalData } from "../privacy/retention";
 import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
 
@@ -62,6 +63,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
     if (purgeOwed) {
       try {
         purged = await purgePayPalData(db, at);
+        await purgeOldOwnShops(db, at);
         purgeOwed = false;
       } catch (err) {
         purgeError = err;
