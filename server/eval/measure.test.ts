@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { parseRecalls } from "../cpsc/schema";
-import { modelTokens } from "../match/verdict";
+import { modelsNamedInText, modelTokens } from "../match/verdict";
 import { checkResult } from "../notice/store";
 import { decidePairs, parsePairs, rate, runEval, score, scoreClaude, scoreStatedModels, wilson, type ClaudeFinding, type Decision, type EvalPair } from "./measure";
 
@@ -140,11 +140,14 @@ describe("the eval on the real labels", () => {
     const byNumber = new Map(valid.map((v) => [v.recall.recallNumber, v.recall]));
     const stated = parsePairs(load("positives.csv")).filter((p) => p.label === "MATCH");
     expect(stated).toHaveLength(60);
-    // These titles end in the model, so no pair can drop out because the tokenizer doesn't read its model as one (4155L).
+    // Most of these titles end in the model, so a pair can't drop out because the tokenizer doesn't read it as one (4155L).
+    // Two don't (26611 ends in an airflow figure, 27064 in a masked VIN), so this also tries every model the record lists.
     const typed = stated.flatMap((p) => {
+      const recall = byNumber.get(p.recallNumber)!;
       const last = p.title.trim().split(/\s+/).at(-1) ?? "";
       expect(last, p.pairId).toMatch(/\d/);
-      return [...new Set([last, ...modelTokens(p.title)])].map((model) => ({ pair: p.pairId, model, recall: byNumber.get(p.recallNumber)! }));
+      const record = `${recall.title} ${recall.description}`;
+      return [...new Set([last, ...modelTokens(p.title), ...modelTokens(record), ...modelsNamedInText(record)])].map((model) => ({ pair: p.pairId, model, recall }));
     });
     const told = typed.filter(({ model, recall }) => checkResult(recall, { question: "Q", kind: "model" }, model) === "DOESNT_MATCH").map((t) => `${t.pair}: ${t.model}`);
     expect(told).toEqual([]);
