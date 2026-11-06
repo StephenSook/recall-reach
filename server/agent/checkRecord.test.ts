@@ -17,9 +17,13 @@ const TITLE = "Costway high chair";
 const usage = { input_tokens: 500, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
 const toolUse = (name: string, input: Record<string, unknown>) => ({ type: "tool_use", id: `c-${Math.random().toString(36).slice(2, 8)}`, name, input });
 
-/** Answers each kind of request by which tool it offers, the way the two jobs really differ. */
-function fakeClaude(status?: number) {
+/**
+ * Answers each kind of request by which tool it offers, the way the two jobs really differ. `reads` are the tool calls
+ * the finding job makes before it answers: a sentinel only sees what a tool sends if the tool actually runs.
+ */
+function fakeClaude(status?: number, reads: [string, Record<string, unknown>][] = []) {
   const requests: Record<string, unknown>[] = [];
+  let readsDone = 0;
   const fetchImpl = async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     requests.push(body);
@@ -27,7 +31,9 @@ function fakeClaude(status?: number) {
     const writesQuestion = body.tools.some((t: { name: string }) => t.name === "record_question");
     const content = writesQuestion
       ? [toolUse("record_question", { question: "Does your high chair convert into a table and chair set?", evidence: "convert into a table and chair set", every_recalled_unit: true, abstain_reason: null })]
-      : [toolUse("record_finding", { item_id: "item-1", finding: "CANT_TELL", evidence: [{ source: "recall", quote: "Costway Convertible High Chairs" }], missing_field: "Whether it converts", reason: "The title does not say." })];
+      : readsDone < reads.length
+        ? [toolUse(...reads[readsDone++])]
+        : [toolUse("record_finding", { item_id: "item-1", finding: "CANT_TELL", evidence: [{ source: "recall", quote: "Costway Convertible High Chairs" }], missing_field: "Whether it converts", reason: "The title does not say." })];
     return Response.json({ id: "m", type: "message", role: "assistant", model: body.model, content, stop_reason: "tool_use", stop_sequence: null, usage });
   };
   return { client: new Anthropic({ apiKey: "k", fetch: fetchImpl as typeof fetch, maxRetries: 0 }), requests };
@@ -64,6 +70,28 @@ describe("checking a sale with Claude", () => {
     expect(asked("record_finding")).toHaveLength(1);
     expect(JSON.stringify(asked("record_question"))).toContain("convert into a table and chair set");
     expect(JSON.stringify(asked("record_question"))).not.toContain("ONLY-THE-SHOP-KNOWS"); // it reads only CPSC's text
+  });
+
+  it("sends nothing PayPal returned, on either call, for a sale linked to a real payment", async () => {
+    await db.query(
+      `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+       values ($1, 'SENTINEL-ORDER-ID', '#1', 'SENTINEL-CAPTURE-ID', 'COMPLETED', '2019-03-14T12:00:00Z', 8675309, 'USD', $2::jsonb)`,
+      [shopId, JSON.stringify([{ name: "SENTINEL PAYPAL ITEM NAME", sku: "SENTINEL-PAYPAL-SKU" }, { name: TITLE, sku: null }])],
+    );
+    await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+    await db.query(`delete from recall_matches m using recalls r where r.recall_id = m.recall_id and m.shop_id = $1 and r.recall_number <> '27040'`, [shopId]);
+    const { rows } = await db.query<{ paypal_payment_id: string | null; join_state: string }>("select paypal_payment_id, join_state from recall_matches where shop_id = $1", [shopId]);
+    expect(rows[0].join_state).toBe("IDENTIFIED"); // the payment really is linked to this sale, so there is something to leak
+    expect(rows[0].paypal_payment_id).not.toBeNull();
+
+    const { client, requests } = fakeClaude(undefined, [["read_recall", {}], ["read_shop_item", { item_id: "item-1" }], ["search_shop_items", { query: "high chair" }]]);
+    await check(client);
+    const asked = (name: string) => requests.filter((r) => (r.tools as { name: string }[]).some((t) => t.name === name));
+    expect(asked("record_question").length).toBeGreaterThan(0);
+    expect(asked("record_finding")).toHaveLength(4); // every read ran, and the sale's own record was sent
+    const sent = JSON.stringify(requests);
+    expect(sent).toContain(TITLE); // the shop's own words did reach it
+    for (const value of ["SENTINEL", "8675309", "2019-03-14", rows[0].paypal_payment_id as string]) expect(sent, value).not.toContain(value);
   });
 
   it("costs nothing the second time", async () => {
