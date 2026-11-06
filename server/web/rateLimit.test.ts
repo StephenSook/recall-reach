@@ -58,6 +58,22 @@ describe("clientIp", () => {
     expect(a).toBe(b);
   });
 
+  it("treats one IPv6 network as one visitor: a single home can hold countless addresses", () => {
+    const of = (ip: string) => clientIp(headers({ "true-client-ip": ip }), true);
+    expect(of("2001:db8:1:2:aaaa::1")).toBe(of("2001:db8:1:2:bbbb:cccc:dddd:eeee"));
+    expect(of("2001:db8:1:2::1")).toBe(of("2001:0db8:0001:0002:0000:0000:0000:0002"));
+    expect(of("2001:db8:1:2::1")).not.toBe(of("2001:db8:1:3::1"));
+  });
+
+  it("treats an IPv4 address the same however it is written", () => {
+    expect(clientIp(headers({ "true-client-ip": "::ffff:198.51.100.7" }), true)).toBe("198.51.100.7");
+  });
+
+  it("gives no answer for a value that is not an address", () => {
+    expect(clientIp(headers({ "true-client-ip": "not an address" }), true)).toBeNull();
+    expect(clientIp(headers({ "true-client-ip": "198.51.100.7, 203.0.113.1" }), true)).toBeNull();
+  });
+
   it("gives no answer on the host when the header is missing, rather than one shared bucket", () => {
     expect(clientIp(headers({}), true)).toBeNull();
   });
