@@ -1,16 +1,18 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { centsToValue } from "@/server/paypal/orders";
-import { loadQueue, tellCpscDraft, type QueueRow } from "@/server/queue/queue";
+import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession } from "@/server/web/http";
-import { CHECK_RESULT, JOIN_CHIP, NOTICE_STATE, PATH_CHIP, REFUND_STATE, VERDICT_CHIP } from "./labels";
+import { CHECK_RESULT, chipsFor, NOTICE_STATE, REFUND_STATE } from "./labels";
 import { NoticeActions } from "./NoticeActions";
 
 export const dynamic = "force-dynamic";
 
-function Row({ row, shopName, shopKind }: { row: QueueRow; shopName: string; shopKind: string }) {
+function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string; shopKind: string }) {
+  const row = card.lead;
   const blocked = row.joinState === "AMBIGUOUS_JOIN";
-  const canNotify = row.verdict !== "CLEARED" && !row.isListing && !blocked;
+  const productWordsOnly = row.strength === "PRODUCT_WORDS";
+  const canNotify = row.verdict !== "CLEARED" && !row.isListing && !blocked && !productWordsOnly;
   const provenance = shopKind === "DEMO" ? "REAL CPSC, SANDBOX PAYPAL, DEMO SHOP" : "REAL CPSC, SANDBOX PAYPAL, REAL SHOP";
   return (
     <article data-recall={row.recallNumber} data-verdict={row.verdict}>
@@ -18,10 +20,7 @@ function Row({ row, shopName, shopKind }: { row: QueueRow; shopName: string; sho
         CPSC recall {row.recallNumber}: {row.product}
       </h3>
       <p>
-        <strong>{VERDICT_CHIP[row.verdict]}</strong>
-        {row.salePath && row.verdict !== "CLEARED" ? <> | {PATH_CHIP[row.salePath]}</> : null}
-        {row.joinState && JOIN_CHIP[row.joinState] ? <> | {JOIN_CHIP[row.joinState]}</> : null}
-        {row.isListing && row.stillListed ? <> | Pull from the shelf</> : null}
+        <strong>{chipsFor(row).join(" | ")}</strong>
       </p>
       <p>
         Item: {row.itemTitle}
@@ -35,7 +34,13 @@ function Row({ row, shopName, shopKind }: { row: QueueRow; shopName: string; sho
       <p>{row.reason}</p>
       {row.matched.length > 0 ? <p>Shared: {row.matched.join("; ")}</p> : null}
       {row.missing.length > 0 ? <p>Missing: {row.missing.join("; ")}</p> : null}
-      {row.salePath === "REVIEW" && row.verdict !== "CLEARED" ? <p>Sold on the recall date. Please review.</p> : null}
+      {row.salePath === "REVIEW" && row.verdict === "MATCH" ? <p>Sold on the recall date. Please review.</p> : null}
+      {row.verdict !== "CLEARED" && productWordsOnly ? <p>Nothing goes out on product words alone. Check the recall page.</p> : null}
+      {row.verdict !== "CLEARED" ? (
+        <p>
+          <a href={row.recallUrl}>CPSC&apos;s recall page</a>
+        </p>
+      ) : null}
 
       {canNotify && !row.notice ? (
         <form action="/api/queue/notices" method="post">
@@ -103,6 +108,23 @@ function Row({ row, shopName, shopKind }: { row: QueueRow; shopName: string; sho
           </details>
         </section>
       ) : null}
+      {card.also.length > 0 ? (
+        <details data-testid="also">
+          <summary>
+            {card.also.length} other possible {card.also.length === 1 ? "recall" : "recalls"} for this sale
+          </summary>
+          <ul>
+            {card.also.map((other) => (
+              <li key={other.matchId}>
+                <a href={other.recallUrl}>
+                  CPSC recall {other.recallNumber}: {other.product}
+                </a>{" "}
+                ({chipsFor(other).join(" | ")}). {other.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </article>
   );
 }
@@ -114,8 +136,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const { message } = await searchParams;
   const shopName = shop?.name ?? "";
   const shopKind = shop?.kind ?? "DEMO";
-  const needs = rows.filter((r) => r.verdict !== "CLEARED");
-  const cleared = rows.filter((r) => r.verdict === "CLEARED");
+  const { cards, cleared, unrelated } = toCards(rows);
 
   return (
     <main>
@@ -134,18 +155,23 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           {coverage.candidatesNotChecked > 0 ? ` ${coverage.candidatesNotChecked} candidates were not checked.` : ""}
         </p>
       ) : null}
-      <section>
+      <section data-testid="needs">
         <h2>Needs review</h2>
-        {needs.map((row) => (
-          <Row key={row.matchId} row={row} shopName={shopName} shopKind={shopKind} />
+        {cards.map((card) => (
+          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} />
         ))}
       </section>
-      {cleared.length > 0 ? (
+      {cleared.length > 0 || unrelated > 0 ? (
         <section>
           <h2>Checked and cleared</h2>
           {cleared.map((row) => (
-            <Row key={row.matchId} row={row} shopName={shopName} shopKind={shopKind} />
+            <Card key={row.matchId} card={{ lead: row, also: [] }} shopName={shopName} shopKind={shopKind} />
           ))}
+          {unrelated > 0 ? (
+            <p data-testid="unrelated">
+              {unrelated} more {unrelated === 1 ? "recall" : "recalls"} came up in the search and {unrelated === 1 ? "shares" : "share"} no brand or product word.
+            </p>
+          ) : null}
         </section>
       ) : null}
     </main>

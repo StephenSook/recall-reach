@@ -122,6 +122,10 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
 
 test("a scope gap is settled by a check request that asks what this recall needs", async ({ page, browser }) => {
   await startDemoShop(page);
+  // One card per sale. "Costway high chair" also comes close to other high chair recalls, and they stay
+  // under its one card rather than each asking the family a question.
+  await expect(page.getByTestId("needs").locator("article")).toHaveCount(3);
+  await expect(page.locator('article[data-recall="27040"]').getByTestId("also")).toContainText("25206");
 
   const costway = recall(page, "27040");
   await expect(costway).toContainText("Scope gap");
