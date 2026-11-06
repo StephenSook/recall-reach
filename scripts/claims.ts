@@ -80,6 +80,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/replay/staticPage.ts", find: "export function renderStaticReplay" },
       { file: "scripts/exportReplay.ts", call: "renderStaticReplay" },
+      { file: "docs/replay/index.html", find: "A saved copy of one run" },
     ],
   },
   {

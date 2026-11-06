@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import type { Replay, ReplayRow } from "./replay";
 import { renderStaticReplay, SavedRunRefused } from "./staticPage";
@@ -37,6 +38,20 @@ function recount(html: string) {
   });
   return said.textContent;
 }
+
+describe("the saved copy in docs/replay", () => {
+  const html = readFileSync("docs/replay/index.html", "utf8");
+
+  it("recounts to the numbers it states", () => {
+    expect(recount(html)).toMatch(/^Recounted from the rows on this page: \d+ checked.* They agree with the numbers above\.$/);
+  });
+
+  it("is a real run, and says it's a copy", () => {
+    expect(html).toMatch(/Run [0-9a-f-]{36}, made /);
+    expect(html).toContain("A saved copy of one run");
+    expect([...html.matchAll(/<tr data-outcome=/g)].length).toBeGreaterThan(100);
+  });
+});
 
 describe("a saved copy of one Replay run", () => {
   it("states the run's numbers, its id and when it ran", () => {
