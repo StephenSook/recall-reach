@@ -27,9 +27,9 @@ export const CHECK_RESULT: Record<string, string> = {
 };
 
 /** What the stat row shows. Each number is counted from what is on the page. */
-export function queueCounts(q: { cards: { lead: { verdict: string } }[]; cleared: unknown[]; recallsChecked: number | null }) {
+export function queueCounts(q: { cards: { lead: { verdict: string } }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
   const matched = q.cards.filter((c) => c.lead.verdict === "MATCH").length;
-  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length, waiting: q.cards.length };
+  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.length };
 }
 
 /** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */
@@ -66,6 +66,10 @@ export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
   const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
   return `${searched} Checked ${c.recallsChecked} recalls.${left}`;
 }
+
+/** Whether anything may go out on this row at all: there has to be a buyer, one order, and more than product words. */
+export const canNotify = (row: Pick<QueueRow, "verdict" | "isListing" | "joinState" | "strength">) =>
+  row.verdict !== "CLEARED" && !row.isListing && row.joinState !== "AMBIGUOUS_JOIN" && row.strength !== "PRODUCT_WORDS" && row.strength !== "NO_SHARED_WORDS";
 
 /** Whether a message for this row is waiting on the seller's approval. */
 export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolean {

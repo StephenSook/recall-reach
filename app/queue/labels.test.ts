@@ -15,11 +15,11 @@ describe("queueCounts", () => {
   const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: { verdict } });
 
   it("counts what waits on the seller, and only what is on the page", () => {
-    expect(queueCounts({ cards: [card("MATCH"), card("MATCH"), card("SCOPE_GAP")], cleared: [{}], recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 1, waiting: 3 });
+    expect(queueCounts({ cards: [card("MATCH"), card("MATCH"), card("SCOPE_GAP")], cleared: [{}], unrelated: 6, recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 7, waiting: 3 });
   });
 
   it("shows no recall count when no check has run", () => {
-    expect(queueCounts({ cards: [], cleared: [], recallsChecked: null })).toEqual({ recallsChecked: null, matched: 0, scopeGaps: 0, cleared: 0, waiting: 0 });
+    expect(queueCounts({ cards: [], cleared: [], unrelated: 0, recallsChecked: null })).toEqual({ recallsChecked: null, matched: 0, scopeGaps: 0, cleared: 0, waiting: 0 });
   });
 });
 

@@ -23,6 +23,12 @@ async function mailLink(card: Locator) {
   return { link, subject: params.get("subject") ?? "", body: params.get("body") ?? "" };
 }
 
+async function streamToText(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 const familyUrl = (body: string) => {
   const found = /https?:\/\/\S+\/r\/\S+/.exec(body);
   expect(found, "the message links to the family page").not.toBeNull();
@@ -152,4 +158,47 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await page.reload();
   await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Family responded");
   await expect(recall(page, "27040").getByTestId("check-result")).toHaveText("Family's answer matches the recall");
+});
+
+test("the grid finds every candidate, approves only a sale's lead, and exports no buyer data", async ({ page }) => {
+  await startDemoShop(page);
+  const grid = page.getByTestId("match-grid");
+  const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
+  await expect(rows).toHaveCount(3);
+
+  await grid.getByRole("button", { name: /^All candidates/ }).click();
+  await expect.poll(() => rows.count()).toBeGreaterThan(3);
+  await grid.getByPlaceholder("Filter").fill("25206");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("25206");
+  // Another recall on a sale that already has a lead. Approving it could send the wrong message, so it can't be picked.
+  await expect(rows.first().locator("input[type=checkbox]")).toBeDisabled();
+  await grid.getByPlaceholder("Filter").fill("");
+
+  await grid.getByRole("button", { name: /^Needs review/ }).click();
+  await expect(rows).toHaveCount(3);
+  const download = page.waitForEvent("download");
+  await grid.getByRole("button", { name: "Export Tell CPSC list" }).click();
+  const csv = await streamToText(await (await download).createReadStream());
+  expect(csv).toContain("27027");
+  expect(csv).not.toContain("27072"); // sold before the recall: not on this list
+  expect(csv).not.toContain("@");
+  expect(csv).not.toContain("gray stars"); // the shop's own words stay out
+
+  const costway = grid.locator(".ag-row", { hasText: "27040" });
+  await costway.first().locator("input[type=checkbox]").first().check();
+  await grid.getByRole("button", { name: "Approve selected (1)" }).click();
+  await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Prepared");
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the windows do the work: no grid, and nothing runs off the screen", async ({ page }) => {
+    await startDemoShop(page);
+    await expect(recall(page, "27040")).toBeVisible();
+    await expect(page.getByTestId("match-grid")).toHaveCount(0);
+    const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(scroll).toBeLessThanOrEqual(client);
+  });
 });

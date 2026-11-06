@@ -4,7 +4,9 @@ import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession } from "@/server/web/http";
-import { agentHeadline, CHECK_RESULT, chipClass, chipsFor, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { gridRows } from "./gridRows";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +14,12 @@ export const dynamic = "force-dynamic";
 /** One sale that needs a person. Cleared recalls are a plain list on the page: there is nothing to do on them. */
 function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean }) {
   const row = card.lead;
-  const blocked = row.joinState === "AMBIGUOUS_JOIN";
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
-  const canNotify = row.verdict !== "CLEARED" && !row.isListing && !blocked && !productWordsOnly;
-  const canApprove = canNotify && needsApproval(row);
+  const notifiable = canNotify(row);
+  const canApprove = notifiable && needsApproval(row);
   const canAskClaude = agentReady && !row.agent && row.verdict !== "CLEARED";
   return (
-    <article className="window" data-recall={row.recallNumber} data-verdict={row.verdict}>
+    <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict}>
       <header className="window-bar">
         <span className="id">CPSC recall {row.recallNumber}</span>
         <span className="chips">
@@ -39,7 +40,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
         {row.salePath === "REVIEW" && row.verdict === "MATCH" ? <p>Sold on the recall date. Please review.</p> : null}
         {row.verdict !== "CLEARED" && productWordsOnly ? <p>Nothing goes out on product words alone. Check the recall page.</p> : null}
 
-        {canNotify && row.question ? (
+        {notifiable && row.question ? (
           <div className="ask">
             The family is asked:
             <strong data-testid="family-question">{row.question.question}</strong>
@@ -81,7 +82,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
             {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it</p> : null}
             {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
             {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
-            {canNotify && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
+            {notifiable && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
             {row.notice.state === "OPENED_IN_MAIL" ? (
               <form className="actions" action={`/api/queue/notices/${row.notice.id}/sent`} method="post">
                 <button type="submit" className="btn btn-outline">
@@ -211,7 +212,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const shopKind = shop?.kind ?? "DEMO";
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
-  const counts = queueCounts({ cards, cleared, recallsChecked: coverage?.recallsChecked ?? null });
+  const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
 
   return (
     <main className="page">
@@ -256,6 +257,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           Claude check unavailable.
         </p>
       )}
+      <MatchGridLoader rows={gridRows(rows, { cards, cleared })} />
       <section data-testid="needs">
         <h2 className="section-title">Needs review</h2>
         {cards.map((card) => (
@@ -275,7 +277,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
               </header>
               <ul className="cleared-list">
                 {cleared.map((row) => (
-                  <li key={row.matchId} data-recall={row.recallNumber}>
+                  <li key={row.matchId} id={`match-${row.matchId}`} data-recall={row.recallNumber}>
                     <span className="id">CPSC recall {row.recallNumber}</span> <strong>{row.product}</strong>
                     <span className="quiet">
                       {row.itemTitle}: {row.reason}
