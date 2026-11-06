@@ -307,6 +307,24 @@ describe("notices", () => {
       expect(await resultOf(noticeId)).toBe("MATCHES");
     });
 
+    it("keeps a can't-tell that came from a real answer: only an explicit not sure stays open", async () => {
+      const noticeId = await check("#F11");
+      // CPSC's full list is elsewhere, so a no cannot clear it and comes out as can't tell.
+      await db.query("update recalls set description = description || ' Other models are listed below.' where recall_number = '27040'");
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("CANT_TELL");
+      expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("CANT_TELL");
+      expect((await familyView(db, noticeId))?.answerOpen).toBe(false);
+    });
+
+    it("shows the question again after not sure, and not after a real answer", async () => {
+      const unsure = await check("#F12");
+      expect((await familyView(db, unsure))?.answerOpen).toBe(true);
+      await recordFamilyAnswer(db, unsure, "not_sure");
+      expect((await familyView(db, unsure))?.answerOpen).toBe(true);
+      await recordFamilyAnswer(db, unsure, "yes");
+      expect((await familyView(db, unsure))?.answerOpen).toBe(false);
+    });
+
     it("keeps a real answer once there is one, even after a later not sure", async () => {
       const noticeId = await check("#F10");
       expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("MATCHES");

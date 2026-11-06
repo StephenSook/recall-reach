@@ -183,7 +183,7 @@ export async function recordFamilyStopped(db: Queryable, noticeId: string): Prom
   await db.query("update notices set family_stopped = true, responded_at = coalesce(responded_at, now()) where id = $1", [noticeId]);
 }
 
-/** The first answer stands. The link has no login, so anyone holding it could otherwise change what the seller sees. */
+/** The first real answer stands. The link has no login, so anyone holding it could otherwise change what the seller sees. */
 export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer: string): Promise<CheckResult> {
   const { rows } = await db.query<{
     recall_number: string;
@@ -205,12 +205,14 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   const said = answer.trim();
   const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
   if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");
-  // "Not sure" stays open, so the family can look and answer. A real answer is final.
+  // Only an explicit "not sure" stays open, so the family can look and then answer.
   const saved = await db.query<{ check_result: CheckResult }>(
-    `update notices set check_result = case when check_result is null or check_result = 'CANT_TELL' then $2 else check_result end,
+    `update notices set
+       check_result = case when check_result is null or check_open then $2 else check_result end,
+       check_open = case when check_result is null or check_open then $3::boolean else false end,
        responded_at = coalesce(responded_at, now())
      where id = $1 returning check_result`,
-    [noticeId, checkResult(notice, question, said)],
+    [noticeId, checkResult(notice, question, said), said === "not_sure"],
   );
   return saved.rows[0].check_result;
 }
@@ -228,15 +230,17 @@ export interface FamilyView {
   result: CheckResult | null;
   /** The link no longer takes answers. CPSC's words still show: the hazard has not gone away. */
   expired: boolean;
+  /** The question can still be answered: none yet, or only "not sure". */
+  answerOpen: boolean;
 }
 
 /** All the family page gets. No buyer, order or payment data, so none can reach the page. */
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
-    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; expired: boolean }
+    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean }
   >(
-    `select n.kind, n.family_stopped, n.check_result, n.family_link_expires_at <= now() as expired, s.name as shop_name,
+    `select n.kind, n.family_stopped, n.check_result, n.check_open, n.family_link_expires_at <= now() as expired, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
@@ -257,5 +261,6 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     stopped: n.family_stopped,
     result: n.check_result,
     expired: n.expired,
+    answerOpen: n.check_result === null || n.check_open,
   };
 }

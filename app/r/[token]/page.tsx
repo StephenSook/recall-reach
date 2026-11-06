@@ -37,7 +37,7 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
 
       {view.expired ? <p data-testid="expired">This link no longer takes answers. What CPSC says about this product is below.</p> : null}
 
-      {isCheck && (!view.result || view.result === "CANT_TELL") && view.question && !view.expired ? (
+      {isCheck && view.answerOpen && view.question && !view.expired ? (
         <section>
           <p data-testid="question">{view.question.question}</p>
           <form action={action} method="post">
