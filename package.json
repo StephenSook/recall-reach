@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:live": "CPSC_LIVE=1 vitest run --config vitest.live.config.ts",
     "test:golden": "playwright test",
+    "test:local": "playwright test --config playwright.local.config.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "load:recalls": "tsx scripts/load-recalls.ts"
   },

@@ -5,6 +5,7 @@ import { defineConfig } from "@playwright/test";
 //   BASE_URL=http://localhost:3000 pnpm test:golden
 export default defineConfig({
   testDir: "e2e",
+  testIgnore: "local/**", // these fake PayPal: see playwright.local.config.ts
   timeout: 8 * 60_000,
   retries: 0,
   workers: 1,
