@@ -5,7 +5,7 @@ const file = (path: string, text = "ordinary words") => ({ path, text });
 const plenty = Array.from({ length: MIN_FILES }, (_, i) => file(`server/file${i}.ts`));
 
 describe("findViolations", () => {
-  it.each(["BUILD-BRIEF.md", "BUILD-BRIEF-4.md", "CLAUDE.local.md", "research/PLAN.md", "research/film/take.mp4", ".claude/settings.local.json", ".env", ".env.local", "deploy/.env.production", "server.pem", "keys/id.key", "test-results/out.png", "playwright-report/index.html", ".next/trace"])(
+  it.each(["BUILD-BRIEF.md", "BUILD-BRIEF-4.md", "CLAUDE.local.md", "research/PLAN.md", "research/film/take.mp4", "docs/BUILD-BRIEF.md", "docs/CLAUDE.local.md", "docs/research/notes.txt", ".claude/settings.local.json", ".env", ".env.local", "deploy/.env.production", "server.pem", "keys/id.key", "test-results/out.png", "playwright-report/index.html", ".next/trace"])(
     "catches the file %s",
     (path) => {
       expect(findViolations([file(path)])).toEqual([`${path}: shouldn't ship`]);
@@ -22,6 +22,8 @@ describe("findViolations", () => {
     ["local instructions", "see CLAUDE.local for this"],
     ["the research folder", "wording from research/COPY-DECK.md"],
     ["the research folder, one level up", "read ../research/PLAN.md"],
+    ["a nested research path", "See research/film/PLAN.md"],
+    ["a research file with a digit", "See research/DEMO-CASES-2.md"],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
@@ -61,6 +63,20 @@ describe("judge", () => {
   it("fails in CI when it can't tell whether the repo is public", () => {
     expect(judge({ repoPrivate: undefined, ci: true, walked: MIN_FILES, violations: [] }).code).toBe(1);
     expect(judge({ repoPrivate: "", ci: true, walked: MIN_FILES, violations: [] }).code).toBe(1);
+  });
+
+  it("doesn't count a file it couldn't read toward the floor", () => {
+    expect(judge({ repoPrivate: "false", ci: true, walked: MIN_FILES, unread: 1, violations: [] }).code).toBe(1);
+  });
+
+  it("fails in CI on any file it couldn't read, public or private: a clean result wouldn't mean anything", () => {
+    const { code, lines } = judge({ repoPrivate: "true", ci: true, walked: MIN_FILES + 5, unread: 1, violations: [] });
+    expect(code).toBe(1);
+    expect(lines.join(" ")).toContain("couldn't read 1");
+  });
+
+  it("allows an unreadable file by hand: a deleted file can still be staged", () => {
+    expect(judge({ repoPrivate: undefined, ci: false, walked: MIN_FILES + 5, unread: 1, violations: [] }).code).toBe(0);
   });
 
   it("only reports when run by hand with no flag", () => {
