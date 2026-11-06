@@ -6,7 +6,8 @@ const RENDER_TASK_RUNS = "https://api.render.com/v1/task-runs";
 export async function startReplayTask(env: Record<string, string | undefined>, fetchImpl: typeof fetch = fetch): Promise<string> {
   const key = env.RENDER_API_KEY;
   const task = env.REPLAY_WORKFLOW_TASK;
-  if (!key || !task) return "not set up";
+  // Red, not a clean exit: a deleted or revoked key should show before the web service's fallback hides it.
+  if (!key || !task) throw new Error("the Render key or the task's name is missing");
   const res = await fetchImpl(RENDER_TASK_RUNS, {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },

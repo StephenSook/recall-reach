@@ -13,9 +13,9 @@ describe("starting the daily Replay refresh", () => {
     expect(f.mock.calls[0][1].headers).toMatchObject({ authorization: "Bearer rnd_SENTINEL" });
   });
 
-  it.each([[{}], [{ RENDER_API_KEY: "k" }], [{ REPLAY_WORKFLOW_TASK: "t" }], [{ RENDER_API_KEY: "", REPLAY_WORKFLOW_TASK: "t" }]])("does nothing with %j", async (env) => {
+  it.each([[{}], [{ RENDER_API_KEY: "k" }], [{ REPLAY_WORKFLOW_TASK: "t" }], [{ RENDER_API_KEY: "", REPLAY_WORKFLOW_TASK: "t" }]])("fails with %j, so a missing key shows red, and calls no one", async (env) => {
     const f = vi.fn();
-    await expect(startReplayTask(env, f as unknown as typeof fetch)).resolves.toBe("not set up");
+    await expect(startReplayTask(env, f as unknown as typeof fetch)).rejects.toThrow("missing");
     expect(f).not.toHaveBeenCalled();
   });
 
