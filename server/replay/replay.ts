@@ -46,6 +46,12 @@ export const REPLAY_FROM = "2025-01-01";
 
 /** Someone may arrive after a quiet week, so the hourly job keeps a run from the last day. */
 export const REPLAY_FRESH_MS = 24 * 3_600_000;
+/**
+ * With the daily Render Workflow in place. GitHub's daily start can run hours late, so the task runs on anything over
+ * 20 hours old, and this service only steps in past 28: the workflow does the work, and nothing depends on it.
+ */
+export const REPLAY_TASK_FRESH_MS = 20 * 3_600_000;
+export const REPLAY_FALLBACK_MS = 28 * 3_600_000;
 
 const DIGEST_SQL = `encode(sha256(convert_to(string_agg(recall_number || ':' || raw_sha256, ',' order by recall_number), 'UTF8')), 'hex')`;
 
@@ -121,10 +127,10 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
  * Makes a new run if the newest good one is a day old. A run that couldn't read PayPal is dropped when there is a good
  * one to keep showing, and tried again at the next call, so a PayPal outage can't replace good numbers with a partial run.
  */
-export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date): Promise<"FRESH" | "RAN" | "DISCARDED"> {
+export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date, freshMs: number = REPLAY_FRESH_MS): Promise<"FRESH" | "RAN" | "DISCARDED"> {
   const { rows } = await db.query<{ at: string | Date | null }>("select max(created_at) as at from replay_runs where search_complete");
   const at = rows[0]?.at;
-  if (at && now.getTime() - new Date(at).getTime() < REPLAY_FRESH_MS) return "FRESH";
+  if (at && now.getTime() - new Date(at).getTime() < freshMs) return "FRESH";
   const { runId } = await run();
   const dropped = await db.query(
     "delete from replay_runs r where r.id = $1 and not r.search_complete and exists (select 1 from replay_runs o where o.id <> r.id and o.search_complete) returning 1",

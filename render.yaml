@@ -32,3 +32,37 @@ services:
         generateValue: true
       - key: SESSION_SECRET
         generateValue: true
+
+  # Replay's daily refresh. It costs only what a run uses, a daily GitHub Action starts it, and if it doesn't run the web
+  # service does the refresh itself. Its settings come from the web service, so no secret is copied by hand.
+  - type: workflow
+    name: recall-reach-replay
+    runtime: node
+    region: virginia # next to the Neon database, like the web service
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm exec tsx workflows/replayTask.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: recall-reach-web
+          envVarKey: DATABASE_URL
+      - key: PAYPAL_CLIENT_ID
+        fromService:
+          type: web
+          name: recall-reach-web
+          envVarKey: PAYPAL_CLIENT_ID
+      - key: PAYPAL_CLIENT_SECRET
+        fromService:
+          type: web
+          name: recall-reach-web
+          envVarKey: PAYPAL_CLIENT_SECRET
+      - key: SHOP_DATA_KEY
+        fromService:
+          type: web
+          name: recall-reach-web
+          envVarKey: SHOP_DATA_KEY

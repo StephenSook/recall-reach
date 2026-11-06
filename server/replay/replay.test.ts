@@ -6,7 +6,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Db, Queryable } from "../db/types";
 import type { Method, PayPalClient } from "../paypal/client";
-import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
+import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FALLBACK_MS, REPLAY_TASK_FRESH_MS, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -83,6 +83,31 @@ describe("Recall Replay", () => {
     const age = (runId: string, hours: number) => db.query("update replay_runs set created_at = $2::timestamptz where id = $1", [runId, hoursBeforeNow(hours)]);
     const refresh = (client = fakePayPal().client) => refreshReplay(db, () => run(client), NOW);
     const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from replay_runs")).rows[0].n);
+
+    describe("with the daily Render Workflow in place", () => {
+      const at = (hoursOld: number, freshMs: number) => async () => {
+        const { runId } = await run(fakePayPal().client);
+        await age(runId, hoursOld);
+        return refreshReplay(db, () => run(fakePayPal().client), NOW, freshMs);
+      };
+
+      it("the task runs on a day-old run even when GitHub starts it a little early", async () => {
+        expect(await at(21, REPLAY_TASK_FRESH_MS)()).toBe("RAN");
+      });
+
+      it("the task leaves a run from earlier today alone", async () => {
+        expect(await at(19, REPLAY_TASK_FRESH_MS)()).toBe("FRESH");
+      });
+
+      it("the web service holds back while the task still has time", async () => {
+        expect(await at(27, REPLAY_FALLBACK_MS)()).toBe("FRESH");
+      });
+
+      it("the web service steps in when the task didn't run, before health calls it stale", async () => {
+        expect(await at(29, REPLAY_FALLBACK_MS)()).toBe("RAN");
+        expect(REPLAY_FALLBACK_MS).toBeLessThan(48 * 3_600_000);
+      });
+    });
 
     it("runs when there is no run yet, and leaves no shop behind", async () => {
       expect(await refresh()).toBe("RAN");

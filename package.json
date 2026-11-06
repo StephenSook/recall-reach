@@ -31,6 +31,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@paypal/agent-toolkit": "1.11.0",
     "@paypal/paypal-server-sdk": "2.5.0",
+    "@renderinc/sdk": "1.7.0",
     "ag-grid-community": "36.2.0",
     "ag-grid-react": "36.2.0",
     "csv-parse": "7.0.3",

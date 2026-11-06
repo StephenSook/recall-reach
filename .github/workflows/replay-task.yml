@@ -1,0 +1,27 @@
+name: Replay task
+
+# Starts Replay's daily refresh on Render Workflows, which has no scheduler of its own. The Render API key lives only in
+# this one step, and this file has no pull_request trigger, so a fork can't reach it. If this doesn't run, the web service
+# does the refresh itself. Like the probe, its check-run pins to the branch head and says nothing about that commit's code.
+on:
+  schedule:
+    - cron: "47 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay-task:
+    name: replay-task
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node --experimental-strip-types scripts/startReplayTask.ts
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          REPLAY_WORKFLOW_TASK: recall-reach-replay/refresh_replay
