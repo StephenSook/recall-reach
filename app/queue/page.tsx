@@ -7,7 +7,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, saleWaits } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, refundOnOffer, saleWaits } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -111,9 +111,10 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
           </section>
         ) : null}
 
-        {row.verdict === "MATCH" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED" ? (
+        {/* A refund already asked for stays on the card, even if the evidence has changed since: it may still need checking. */}
+        {row.refund || (row.verdict === "MATCH" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED") ? (
           <section className="state-line">
-            {!row.refund && !row.approval ? (
+            {refundOnOffer(row) && !row.approval ? (
               <form action={`/api/queue/refunds/approve${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
                 <button type="submit" className="btn btn-outline">
@@ -121,7 +122,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
                 </button>
               </form>
             ) : null}
-            {row.approval && !row.refund ? (
+            {refundOnOffer(row) && row.approval ? (
               <RefundForm approvalId={row.approval.id} label={`Refund ${centsToValue(row.approval.amountCents)} ${row.approval.currency}`} />
             ) : null}
             {row.refund ? (
