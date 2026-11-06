@@ -52,7 +52,7 @@ function fakePayPal(
     currency?: string;
     refundStatus?: string;
     refundSteps?: RefundStep[];
-    captureReads?: (number | "down")[];
+    captureReads?: (number | "down" | "ok")[];
     refundedElsewhereCents?: number;
   } = {},
 ) {
@@ -90,7 +90,7 @@ function fakePayPal(
     if (capture && method === "GET") {
       const read = captureReads.shift();
       if (read === "down") throw new TypeError("network down");
-      if (read !== undefined) return refusal(read, "CAPTURE_READ_FAILED");
+      if (typeof read === "number") return refusal(read, "CAPTURE_READ_FAILED");
       return Response.json({
         id: capture[1],
         status: statusOf.get(capture[1]) ?? over.status ?? "COMPLETED",
@@ -134,6 +134,9 @@ function fakePayPal(
     /** The refunds PayPal actually made, however many times it was asked. */
     made: () => [...refunds.values()],
     settle: (status: string) => refunds.forEach((r) => (r.status = status)),
+    /** What the next refund POSTs will meet. */
+    thenRefund: (...next: RefundStep[]) => steps.push(...next),
+    thenCaptureReads: (...next: (number | "down" | "ok")[]) => captureReads.push(...next),
     posts: () => calls.filter((c) => c.method === "POST"),
   };
 }
@@ -683,6 +686,35 @@ describe("refunds", () => {
       const after = await again(r.refundId, refusing.client, LATER);
       expect(after).toMatchObject({ status: "failed", failure: "REFUND_AMOUNT_EXCEEDED" });
       await expect(approve(m.id)).resolves.toBeDefined();
+    });
+
+    describe("what a refused repeat can and cannot prove", () => {
+      const noProof: [number, RefundStep[]][] = [
+        [401, [401, 401]],
+        [403, [403]],
+        [404, [404]],
+      ];
+      it.each(noProof)("stays unconfirmed on %s: that says nothing about the first send", async (_status, steps) => {
+        const { m, r } = await noClearAnswer(["down", "down", "down"]);
+        const after = await again(r.refundId, fakePayPal({ refundSteps: steps }).client, LATER);
+        expect(after.status).toBe("unconfirmed");
+        expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
+      });
+
+      it("stays unconfirmed on a 422 when the capture shows money already refunded", async () => {
+        const { m, r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
+        expect(pp.made()).toHaveLength(1);
+        pp.thenRefund(422);
+        const after = await again(r.refundId, pp.client, LATER);
+        expect(after.status).toBe("unconfirmed");
+        expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
+      });
+
+      it("stays unconfirmed when the capture cannot be read after a 422", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        const pp = fakePayPal({ refundSteps: [422], captureReads: ["down", "down", "down"] });
+        expect((await again(r.refundId, pp.client, LATER)).status).toBe("unconfirmed");
+      });
     });
 
     it("holds the lease for longer than the slowest possible send", async () => {

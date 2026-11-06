@@ -320,17 +320,31 @@ export async function executeRefund(
   return sendRefund(
     db,
     client,
-    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency },
+    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false },
     input.recordKey,
     now,
   );
+}
+
+/**
+ * Whether a repeat's refusal proves the earlier send made no refund. "Failed" frees the line for a new
+ * approval with a new request id, so it needs proof: PayPal judged this request (401, 403 and 404 say
+ * nothing about the earlier send), and the capture shows no refund on it at all.
+ */
+async function repeatProvesNothingLanded(client: PayPalClient, captureId: string, refusal: PayPalApiError): Promise<boolean> {
+  if (refusal.status !== 400 && refusal.status !== 422) return false;
+  try {
+    return (await getCapture(client, captureId)).status === "COMPLETED";
+  } catch {
+    return false;
+  }
 }
 
 /** Sends one stored refund and records PayPal's answer. Repeating it with the same request id makes no second refund. */
 async function sendRefund(
   db: Queryable,
   client: PayPalClient,
-  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string },
+  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean },
   recordKey: RecordKey,
   now: Date,
 ): Promise<RefundOutcome> {
@@ -352,7 +366,9 @@ async function sendRefund(
     const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);
   } catch (err) {
-    if (clearlyRefused(err)) return settle("failed", err.issue ?? `HTTP ${err.status}`);
+    if (clearlyRefused(err) && (!send.repeat || (await repeatProvesNothingLanded(client, send.captureId, err)))) {
+      return settle("failed", err.issue ?? `HTTP ${err.status}`);
+    }
     return settle("unconfirmed", "No clear answer from PayPal. Check it before trying again.");
   }
 }
@@ -411,7 +427,7 @@ export async function askPayPalAgain(
   return sendRefund(
     db,
     client,
-    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency },
+    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true },
     input.recordKey,
     now,
   );
