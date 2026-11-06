@@ -5,18 +5,19 @@ export const SPLIT_CHIP: Record<NonNullable<ReplayRow["saleSplit"]>, string> = {
 
 export const seconds = (ms: number) => (ms / 1000).toFixed(1);
 
-/** Accounts for every match in the run, so the split adds up to the count beside it. */
+/** Accounts for every recall matched, in the same unit as the count beside it: Replay counts recalls, not sales. */
 export function matchSplitLine(rows: Pick<ReplayRow, "outcome" | "saleSplit">[]): string {
   const matches = rows.filter((r) => r.outcome === "MATCH");
-  if (matches.length === 0) return "Nothing matched.";
+  if (matches.length === 0) return "No recalls matched.";
   const count = (split: ReplayRow["saleSplit"]) => matches.filter((r) => r.saleSplit === split).length;
-  const say = (k: number, one: string, many: string) => (k === 0 ? null : `${k} ${k === 1 ? one : many}`);
   const parts = [
-    say(count("NOTICE_ONLY"), "sold before the recall and needs a notice", "sold before the recall and need a notice"),
-    say(count("REFUND_ELIGIBLE"), "sold after it and can be refunded", "sold after it and can be refunded"),
-    say(count("REVIEW"), "sold on the recall date and needs a look", "sold on the recall date and need a look"),
-    say(count(null), "is still listed and has not been sold", "are still listed and have not been sold"),
-  ].filter((part) => part !== null);
-  const list = parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
-  return `Of the ${matches.length} ${matches.length === 1 ? "match" : "matches"}, ${list}.`;
+    { k: count("NOTICE_ONLY"), one: "has a sale before the recall and needs a notice", many: "have a sale before the recall and need a notice" },
+    { k: count("REFUND_ELIGIBLE"), one: "has a sale after it that can be refunded", many: "have a sale after it that can be refunded" },
+    { k: count("REVIEW"), one: "has a sale on the recall date and needs a look", many: "have a sale on the recall date and need a look" },
+    { k: count(null), one: "has a listing with no sale", many: "have a listing with no sale" },
+  ].filter((p) => p.k > 0);
+  if (matches.length === 1) return `The 1 recall matched ${parts[0].one}.`;
+  const said = parts.map((p) => `${p.k} ${p.k === 1 ? p.one : p.many}`);
+  const list = said.length < 2 ? said.join("") : `${said.slice(0, -1).join(", ")}, and ${said.at(-1)}`;
+  return `Of the ${matches.length} recalls matched, ${list}.`;
 }

@@ -29,15 +29,15 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
         </div>
         <div className="stat stat-MATCH">
           <span className="stat-value">{counts.matched}</span>
-          <span className="stat-label">Matched</span>
+          <span className="stat-label">Recalls matched</span>
         </div>
         <div className="stat stat-SCOPE_GAP">
           <span className="stat-value">{counts.scopeGaps}</span>
-          <span className="stat-label">Scope gaps</span>
+          <span className="stat-label">Recalls with a scope gap</span>
         </div>
         <div className="stat stat-CLEARED">
           <span className="stat-value">{counts.cleared}</span>
-          <span className="stat-label">Cleared</span>
+          <span className="stat-label">Recalls cleared</span>
         </div>
       </div>
       <p className="note" data-testid="replay-split">
