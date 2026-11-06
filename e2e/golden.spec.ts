@@ -82,7 +82,7 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
   await expect(brezza).toContainText("Notice only");
   await expect(brezza).toContainText("model: BRZ0083");
   await expect(brezza).toContainText("DEMO SHOP");
-  await expect(brezza).toContainText("REAL CPSC");
+  await expect(brezza).toContainText("Real CPSC");
   await expect(brezza.getByRole("button", { name: /refund/i })).toHaveCount(0);
 
   await brezza.getByRole("button", { name: "Approve this notice" }).click();
