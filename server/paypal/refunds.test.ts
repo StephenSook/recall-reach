@@ -685,6 +685,26 @@ describe("refunds", () => {
       await expect(approve(m.id)).resolves.toBeDefined();
     });
 
+    it("holds the lease for longer than the slowest possible send", async () => {
+      // 3 attempts plus one after a token refresh, 60 s each; 2 token requests, 30 s each; 1.5 s of backoff.
+      const SLOWEST_SEND_MS = 4 * 60_000 + 2 * 30_000 + 1_500;
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const leases: Date[] = [];
+      const watching: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "POST") {
+            const { rows } = await db.query<{ send_lease_until: Date }>("select send_lease_until from refunds");
+            leases.push(rows[0].send_lease_until);
+          }
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      await execute(a.approvalId, watching);
+      expect(leases[0].getTime() - NOW.getTime()).toBeGreaterThan(SLOWEST_SEND_MS);
+    });
+
     it("stays unconfirmed when PayPal still gives no clear answer", async () => {
       const { r } = await noClearAnswer(["down", "down", "down"]);
       const after = await again(r.refundId, fakePayPal({ refundSteps: ["down", "down", "down"] }).client, LATER);

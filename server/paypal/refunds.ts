@@ -20,8 +20,8 @@ import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./ord
 const APPROVAL_MS = 15 * 60_000;
 const REFUND_WINDOW_DAYS = 180;
 const UNCONFIRMED_AFTER_MS = 10 * 60_000;
-/** A send is up to 3 attempts of up to 60 s each, with backoff. This covers all of it. */
-const SEND_LEASE_MS = 4 * 60_000;
+/** Longer than the slowest send: 3 attempts plus one after a token refresh at 60 s, 2 token requests at 30 s, 1.5 s of backoff. */
+const SEND_LEASE_MS = 6 * 60_000;
 // PayPal stores a request id "for a period of time" and names no period for refunds (idempotency page and
 // refund reference, read 2026-11-05). Past it, a repeat could make a second refund, so asking again is
 // limited to a window short enough to trust. Widen it only on a measured replay.
