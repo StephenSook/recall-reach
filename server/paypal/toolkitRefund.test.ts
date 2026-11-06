@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createPayPalClient, PayPalApiError } from "./client";
 import { createRefundThroughToolkit, refundsThroughToolkit, toolkitSetup, type CreateRefundCall } from "./toolkitRefund";
 
-type Mode = number | "ok" | "drop" | "hang";
+type Mode = number | "ok" | "drop" | "hang" | "trickle";
 
 describe("create_refund through the toolkit", () => {
   let server: http.Server;
@@ -44,6 +44,17 @@ describe("create_refund through the toolkit", () => {
         entry.body = JSON.parse(raw || "{}");
         if (mode === "drop") return void req.socket.destroy();
         if (mode === "hang") return void res.on("close", () => (entry.closedEarly = !res.writableEnded));
+        if (mode === "trickle") {
+          // Headers at once, then a little of the body forever: a socket timeout never fires on this.
+          res.setHeader("content-type", "application/json");
+          res.write('{"id":');
+          const drip = setInterval(() => res.write(" "), 50);
+          res.on("close", () => {
+            clearInterval(drip);
+            entry.closedEarly = !res.writableEnded;
+          });
+          return;
+        }
         res.setHeader("content-type", "application/json");
         if (typeof mode === "number") {
           res.statusCode = mode;
@@ -247,6 +258,33 @@ describe("create_refund through the toolkit", () => {
   describe("the timeout", () => {
     it("is set on the copy of axios the package really uses", async () => {
       expect((await toolkitSetup(call())).timeoutMs).toBe(60_000);
+    });
+
+    it("gives up on an answer that keeps trickling in, and closes the connection", async () => {
+      const { setTimeoutForTest } = await toolkitSetup(call());
+      setTimeoutForTest(400);
+      mode = "trickle";
+      const started = Date.now();
+      const answer = await toStub(call());
+      expect(Date.now() - started).toBeLessThan(5000);
+      expect(answer).toMatchObject({ ok: false });
+      expect((answer as { status?: number }).status).toBeUndefined();
+      await vi.waitFor(() => expect(seen.at(-1)?.closedEarly).toBe(true));
+      setTimeoutForTest(60_000);
+    });
+
+    it("stops waiting when the client's own timer fires, whatever the toolkit is doing", async () => {
+      const never = new Promise<unknown>(() => {});
+      const route = refundsThroughToolkit((async () => new Response()) as typeof fetch, () => never);
+      const controller = new AbortController();
+      const answer = route("https://api-m.sandbox.paypal.com/v2/payments/captures/C/refund", {
+        method: "POST",
+        headers: { Authorization: "Bearer t", "PayPal-Request-Id": "r" },
+        body: JSON.stringify({ amount: { currency_code: "USD", value: "1.00" } }),
+        signal: controller.signal,
+      });
+      controller.abort(new Error("timed out"));
+      await expect(answer).rejects.toThrow();
     });
 
     it("gives up on a silent PayPal and closes the connection", async () => {

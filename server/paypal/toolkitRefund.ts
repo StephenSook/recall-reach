@@ -10,7 +10,8 @@
 //   a dropped connection has no status.
 // - request_id belongs to the toolkit instance, so each call gets its own. Without one PayPal makes a new
 //   refund every time. Without an amount it refunds the whole payment. So neither can be left out here.
-// - It has no timeout of its own. The setting below reaches the copy of axios inside the package.
+// - It has no timeout of its own. The settings below reach the copy of axios inside the package. axios's own
+//   timeout stops counting once headers arrive, so a request also gets a signal that bounds the whole answer.
 //
 // Loaded on first use, because it adds about 95 MB (measured), and with require, so that the toolkit and the
 // axios whose timeout is set here are the same copy. An ESM import would load a different one.
@@ -30,9 +31,14 @@ export interface CreateRefundCall {
   accessToken: string;
 }
 
+interface ToolkitAxios {
+  defaults: { timeout?: number };
+  interceptors: { request: { use(onRequest: (config: { signal?: AbortSignal }) => { signal?: AbortSignal }): unknown } };
+}
+
 interface Loaded {
   PayPalMCPToolkit: typeof Toolkit;
-  axiosDefaults: { timeout?: number };
+  axiosDefaults: ToolkitAxios["defaults"];
   entry: string;
 }
 
@@ -43,9 +49,14 @@ function load(): Loaded {
     const fromProject = createRequire(join(process.cwd(), "package.json"));
     const entry = fromProject.resolve(ENTRY);
     const { PayPalMCPToolkit } = fromProject(ENTRY) as { PayPalMCPToolkit: typeof Toolkit };
-    const axios = createRequire(entry)("axios") as { default?: { defaults: Loaded["axiosDefaults"] }; defaults: Loaded["axiosDefaults"] };
-    const axiosDefaults = (axios.default ?? axios).defaults;
+    const required = createRequire(entry)("axios") as ToolkitAxios & { default?: ToolkitAxios };
+    const axios = required.default ?? required;
+    const axiosDefaults = axios.defaults;
     axiosDefaults.timeout = TIMEOUT_MS;
+    axios.interceptors.request.use((config) => {
+      config.signal ??= AbortSignal.timeout(axiosDefaults.timeout ?? TIMEOUT_MS);
+      return config;
+    });
     loaded = { PayPalMCPToolkit, axiosDefaults, entry };
   }
   return loaded;
@@ -95,6 +106,18 @@ function knownIssue(message: string): string | undefined {
   return KNOWN_ISSUES.find((code) => message.includes(code)) ?? KNOWN_PHRASES.find(([phrase]) => phrase.test(message))?.[1];
 }
 
+/** The client's own timer still decides when an attempt is over, whatever the toolkit is doing. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | null | undefined): Promise<T> {
+  if (!signal) return work;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }),
+  ]);
+}
+
 /** A fetch for the PayPal client: a refund goes through the toolkit, and anything else goes through `other`. */
 export function refundsThroughToolkit(
   other: typeof fetch = (input, init) => fetch(input, init),
@@ -113,7 +136,7 @@ export function refundsThroughToolkit(
     const body = refundBody.safeParse(JSON.parse(String(init?.body ?? "{}")));
     if (!body.success) throw new Error("a refund needs an amount");
 
-    const answer = (await createRefund({ captureId: refund[1], amount: body.data.amount, requestId, accessToken })) as {
+    const answer = (await untilAborted(createRefund({ captureId: refund[1], amount: body.data.amount, requestId, accessToken }), init?.signal)) as {
       ok?: boolean;
       id?: unknown;
       status?: unknown;
