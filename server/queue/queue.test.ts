@@ -343,6 +343,15 @@ describe("toCards", () => {
     expect(cards.flatMap((c) => c.also.map((r) => r.recallNumber))).toEqual(["25206"]);
   });
 
+  it("keeps every sale's card in its place when one is acted on, or when that lapses: a card that moves closes if it is open", () => {
+    const order = (rows: QueueRow[]) => toCards(rows).cards.map((c) => c.lead.recallNumber);
+    const newer = row("27072", { recordId: "line-1", matchId: "m1" });
+    const older = row("27027", { recordId: "line-2", matchId: "m2" });
+    const notice = { id: "n", kind: "SAFETY_NOTICE", state: "PREPARED" as const, stopped: false, result: null };
+    expect(order([newer, older])).toEqual(["27072", "27027"]);
+    expect(order([newer, { ...older, notice }])).toEqual(["27072", "27027"]);
+  });
+
   it("keeps a row already acted on in front, so what was sent never drops out of sight", () => {
     const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, result: null };
     const { cards } = toCards([row("27040", { strength: "BRAND" }), row("25206", { notice })]);

@@ -218,24 +218,6 @@ small,
   box-shadow: var(--shadow-hard-xs);
 }
 
-/* On a phone, what still waits comes first, then what's done. */
-.cards {
-  display: flex;
-  flex-direction: column;
-}
-.cards-needs-title {
-  order: 0;
-}
-.cards > .window {
-  order: 1;
-}
-.cards-done-title {
-  order: 2;
-}
-.cards > .window[data-done] {
-  order: 3;
-}
-
 /* On a wide screen the grid is the list, and a row opens one window. Everything shows on a phone. */
 .cards-hint {
   display: none;

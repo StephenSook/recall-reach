@@ -281,11 +281,12 @@ export interface QueueCard {
 
 const STRENGTH_ORDER: Record<Strength, number> = { CONFIRMED: 0, BRAND: 1, PRODUCT_WORDS: 2, NO_SHARED_WORDS: 3 };
 const actedOn = (r: QueueRow) => r.notice !== null || r.approval !== null || r.refund !== null;
-const stronger = (a: QueueRow, b: QueueRow) =>
-  Number(actedOn(b)) - Number(actedOn(a)) ||
+const byEvidence = (a: QueueRow, b: QueueRow) =>
   STRENGTH_ORDER[a.strength] - STRENGTH_ORDER[b.strength] ||
   b.recallDate.localeCompare(a.recallDate) ||
   b.recallNumber.localeCompare(a.recallNumber);
+/** Which of a sale's recalls leads its card. */
+const stronger = (a: QueueRow, b: QueueRow) => Number(actedOn(b)) - Number(actedOn(a)) || byEvidence(a, b);
 
 /**
  * Turns rows into what a seller reads: one card per sale, led by its strongest candidate, with the rest
@@ -306,7 +307,8 @@ export function toCards(rows: QueueRow[]): { cards: QueueCard[]; cleared: QueueR
     if (confirmed.length === 0) cards.push({ lead: others[0], also: others.slice(1) });
     confirmed.forEach((lead, i) => cards.push({ lead, also: i === 0 ? others : [] }));
   }
-  cards.sort((a, b) => STRENGTH_ORDER[a.lead.strength] - STRENGTH_ORDER[b.lead.strength] || stronger(a.lead, b.lead));
+  // By the evidence only, so a card holds its place when it's acted on, or when an approval lapses during a refresh: a card that moves closes if it's open.
+  cards.sort((a, b) => byEvidence(a.lead, b.lead));
   const clearedRows = rows.filter((r) => r.verdict === "CLEARED");
   return {
     cards,

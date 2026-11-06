@@ -7,7 +7,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, refundOnOffer, saleWaits } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -27,7 +27,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
   // A form's fragment survives the redirect, so on a wide screen this window stays open after an action.
   const here = `#sale-${row.matchId}`;
   return (
-    <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict} data-done={saleWaits(card) ? undefined : ""}>
+    <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict}>
       <header className="window-bar">
         <span className="id">CPSC recall {row.recallNumber}</span>
         <span className="chips">
@@ -280,9 +280,8 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </noscript>
       {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
-        {cards.some(saleWaits) ? <h2 className="section-title narrow-only cards-needs-title">Needs review</h2> : null}
-        {cards.some((c) => !saleWaits(c)) ? <h2 className="section-title narrow-only cards-done-title">Done</h2> : null}
-        {/* One list, grouped by CSS: moving a card's element to another list would lose the browser's :target, and an open card would close by itself. */}
+        <h2 className="section-title narrow-only">Your queue</h2>
+        {/* One list in a fixed order, with each card's chip saying where it stands. A card moved to another list or place loses the browser's :target, and an open card would close by itself. */}
         {cards.map((card) => (
           <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
