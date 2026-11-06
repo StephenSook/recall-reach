@@ -67,6 +67,8 @@ export interface UnidentifiedPayment {
 
 export interface QueueData {
   shop: { name: string; kind: string } | null;
+  /** A store read from its public listings, not from sales. Null for anything else: a demo shop has one listing and real sales. */
+  listings: { total: number; forSale: number } | null;
   unidentified: UnidentifiedPayment[];
   coverage: {
     recallsChecked: number;
@@ -243,6 +245,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      and not exists (select 1 from recall_matches m where m.order_line_id = l.id and m.caught_at is not null)`,
     [shopId],
   );
+  const items = await db.query<{ total: number; for_sale: number }>("select count(*)::int as total, count(*) filter (where listed)::int as for_sale from shop_items where shop_id = $1", [shopId]);
   const c = run.rows[0];
   const { joined } = await joinShop(db, shopId, { today: businessDay(new Date()) });
   const unidentified = await db.query<{ id: string; paid_on: string | null; amount_cents: number | null; currency: string | null }>(
@@ -253,6 +256,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
   return {
     unidentified: unidentified.rows.map((p) => ({ id: p.id, paidOn: p.paid_on, amountCents: p.amount_cents, currency: p.currency })),
     shop: shop.rows[0] ?? null,
+    listings: shop.rows[0]?.kind === "REAL" && items.rows[0].total > 0 ? { total: items.rows[0].total, forSale: items.rows[0].for_sale } : null,
     coverage: c
       ? {
           recallsChecked: c.recalls_checked,

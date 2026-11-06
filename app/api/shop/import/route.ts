@@ -3,21 +3,17 @@ import { readCappedBody } from "@/server/http/body";
 import { importOwnFile, MAX_FILE_BYTES, OWN_FILE_DAYS, OwnFileRefused } from "@/server/import/ownFile";
 import { businessDay } from "@/server/time/businessDay";
 import { fromThisSite, refused, secret, seeOther, signIn, withMessage } from "@/server/web/http";
-import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
+import { ownCheckAllowed } from "@/server/web/ownCheck";
 
 export const dynamic = "force-dynamic";
 
-// A file is compared with every recall, so this is limited per visitor and for everyone together.
-const perVisitor = createRateLimiter({ limit: 5, windowMs: 60 * 60_000 });
-const everyone = createRateLimiter({ limit: 30, windowMs: 60 * 60_000 });
 /** Room for the form around the file. */
 const FORM_OVERHEAD = 16 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
   const back = (code: string) => seeOther(request, `/check?error=${code}`);
-  const visitor = clientIp(request.headers);
-  if (!visitor || !perVisitor(visitor) || !everyone("all")) return back("BUSY");
+  if (!ownCheckAllowed(request.headers)) return back("BUSY");
 
   const read = await readCappedBody(request, MAX_FILE_BYTES + FORM_OVERHEAD);
   if (!read.ok) return back("TOO_BIG");
