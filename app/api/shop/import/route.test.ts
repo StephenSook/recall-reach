@@ -4,7 +4,7 @@ vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
 const load = vi.hoisted(() => vi.fn());
 vi.mock("@/server/import/ownFile", async (original) => ({ ...(await original<typeof import("@/server/import/ownFile")>()), importOwnFile: load }));
 
-import { MAX_FILE_BYTES, OwnFileRefused } from "@/server/import/ownFile";
+import { MAX_FILE_BYTES, OWN_FILE_DAYS, OwnFileRefused } from "@/server/import/ownFile";
 import { POST } from "./route";
 
 const post = (over: { file?: string | null; origin?: string; ip?: string; name?: string } = {}) => {
@@ -37,6 +37,13 @@ describe("POST /api/shop/import", () => {
     expect(res.headers.get("location")).toBe("http://localhost/queue");
     expect(res.headers.get("set-cookie")).toMatch(/HttpOnly/);
     expect(load).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ shopName: "Little Sprouts", csv: "order_number,title" }));
+  });
+
+  it("keeps the shop signed in as long as its file is kept, Secure on https", async () => {
+    vi.stubEnv("RENDER_EXTERNAL_URL", "https://shop.example");
+    const cookie = (await post({ origin: "https://shop.example" })).headers.get("set-cookie") ?? "";
+    expect(cookie).toContain(`Max-Age=${OWN_FILE_DAYS * 86_400}`);
+    expect(cookie).toContain("; Secure");
   });
 
   it("says how many rows it could not read", async () => {

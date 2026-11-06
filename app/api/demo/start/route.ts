@@ -1,9 +1,8 @@
 import { seedDemoShop } from "@/server/demo/seed";
 import { getDb } from "@/server/db/pg";
 import { payPalClientFromEnv } from "@/server/paypal/client";
-import { sessionCookie, SESSION_COOKIE } from "@/server/session/session";
 import { businessDay } from "@/server/time/businessDay";
-import { baseUrl, fromThisSite, refused, secret, seeOther } from "@/server/web/http";
+import { fromThisSite, refused, secret, seeOther, signIn } from "@/server/web/http";
 import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +21,7 @@ export async function POST(request: Request): Promise<Response> {
       secret: secret("SHOP_DATA_KEY"),
       demoEmail: process.env.DEMO_BUYER_EMAIL || undefined,
     });
-    const { value } = sessionCookie(secret("SESSION_SECRET"), shopId);
-    const response = seeOther(request, "/queue");
-    const secure = baseUrl(request).startsWith("https:") ? "; Secure" : "";
-    response.headers.append("Set-Cookie", `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secure}`);
-    return response;
+    return signIn(request, seeOther(request, "/queue"), shopId);
   } catch (err) {
     console.error("demo start failed:", err instanceof Error ? err.message : "unknown error");
     return seeOther(request, "/?demo=failed");

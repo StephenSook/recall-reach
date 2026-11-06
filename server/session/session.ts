@@ -9,7 +9,7 @@ export interface ShopSession {
   sessionId: string;
 }
 
-const SESSION_MS = 24 * 3_600_000;
+export const SESSION_MS = 24 * 3_600_000;
 
 /**
  * A signed cookie value naming the shop and this browser's session. Approvals are bound to it. The expiry is

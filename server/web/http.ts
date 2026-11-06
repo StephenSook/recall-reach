@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { readSession, SESSION_COOKIE, type ShopSession } from "../session/session";
+import { readSession, SESSION_COOKIE, SESSION_MS, sessionCookie, type ShopSession } from "../session/session";
 import { messageQuery } from "./queueMessage";
 
 export function secret(name: "SESSION_SECRET" | "SHOP_DATA_KEY"): string {
@@ -19,6 +19,14 @@ export function baseUrl(request?: Request): string {
 export async function currentSession(): Promise<ShopSession | null> {
   const jar = await cookies();
   return readSession(secret("SESSION_SECRET"), jar.get(SESSION_COOKIE)?.value);
+}
+
+/** Signs a shop in on this response. The one place a session cookie is built, so its Max-Age and its signed expiry agree and it stays Secure on https. */
+export function signIn(request: Request, response: Response, shopId: string, lastsMs: number = SESSION_MS): Response {
+  const { value } = sessionCookie(secret("SESSION_SECRET"), shopId, new Date(), lastsMs);
+  const secure = baseUrl(request).startsWith("https:") ? "; Secure" : "";
+  response.headers.append("Set-Cookie", `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lastsMs / 1000}${secure}`);
+  return response;
 }
 
 /**
