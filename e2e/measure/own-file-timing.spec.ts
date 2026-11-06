@@ -23,11 +23,19 @@ test("times a full-size order file through the real upload, then deletes it", as
   await page.getByLabel("Your shop's name").fill("Timing Test Shop");
   await page.getByLabel("Your order file").setInputFiles({ name: "orders.csv", mimeType: "text/csv", buffer: readFileSync(path!) });
 
+  // A page can't be read while its form is submitting, so it notes the message as it appears, to read back after.
+  await page.evaluate(() => {
+    new MutationObserver(() => {
+      const shown = document.querySelector('[data-testid="checking"]');
+      if (shown) sessionStorage.setItem("checking", shown.textContent ?? "");
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+
   const started = Date.now();
   await page.getByRole("button", { name: "Check my file" }).click();
-  await expect(page.getByTestId("checking")).toContainText("couple of minutes");
   await expect(page).toHaveURL(/\/queue/, { timeout: 8 * 60_000 });
   const uploaded = Date.now() - started;
+  expect(await page.evaluate(() => sessionStorage.getItem("checking"))).toContain("couple of minutes");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Timing Test Shop");
   console.log(`seconds to the queue: ${(uploaded / 1000).toFixed(1)}`);
   console.log(await page.getByTestId("coverage").innerText());
