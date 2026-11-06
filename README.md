@@ -8,7 +8,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 
 ## What it does
 
-1. **Checks past sales against real recalls.** It pulls recalls from CPSC every 15 minutes and checks each shop's order lines against them with rules, in the app. A shop that uploaded before a recall came in gets that recall on its next visit.
+1. **Checks past sales against real recalls.** It pulls recalls from CPSC every 15 minutes and checks each shop's order lines against them with rules, in the app. A shop that uploaded before a recall came in gets that recall on its next visit from the same browser.
 2. **Says when it can't tell.** Most recalls cover certain models, dates or versions, and an order line rarely says which one it was. Those become a scope gap, never a false "not recalled".
 3. **Asks the family what the recall needs.** Claude writes one question resting on a sentence CPSC really wrote, and the check rejects a question whose quote isn't in the record. The owner approves it before it goes out.
 4. **Leaves every message and refund to a person.** The owner approves it, the notice opens in the shop's own mail, and they send it. The family answers on a phone page, and the seller's card changes.
