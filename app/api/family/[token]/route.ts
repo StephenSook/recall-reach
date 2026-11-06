@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { noticeIdFromToken } from "@/server/notice/token";
-import { recordFamilyAnswer, recordFamilyStopped } from "@/server/notice/store";
+import { NoticeRefused, recordFamilyAnswer, recordFamilyStopped } from "@/server/notice/store";
 import { refused, secret, seeOther } from "@/server/web/http";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const noticeId = noticeIdFromToken(secret("SESSION_SECRET"), token);
   if (!noticeId) return refused(404, "This link is not valid.");
   const form = await request.formData();
-  if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
-  else await recordFamilyAnswer(getDb(), noticeId, String(form.get("answer") ?? "").slice(0, 80));
+  try {
+    if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
+    else await recordFamilyAnswer(getDb(), noticeId, String(form.get("answer") ?? "").slice(0, 80));
+  } catch (err) {
+    if (!(err instanceof NoticeRefused)) throw err;
+    // The page shows the link's real state, so a refused post just lands back on it.
+  }
   return seeOther(request, `/r/${token}`);
 }

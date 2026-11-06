@@ -10,7 +10,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -174,25 +174,40 @@ export function checkResult(
   return "CANT_TELL";
 }
 
+const linkExpired = () => new NoticeRefused("LINK_EXPIRED", "This link has expired.");
+
 export async function recordFamilyStopped(db: Queryable, noticeId: string): Promise<void> {
-  const { rows } = await db.query(
-    "update notices set family_stopped = true, responded_at = coalesce(responded_at, now()) where id = $1 returning id",
-    [noticeId],
-  );
-  if (rows.length === 0) throw noNotice();
+  const { rows } = await db.query<{ expired: boolean }>("select family_link_expires_at <= now() as expired from notices where id = $1", [noticeId]);
+  if (!rows[0]) throw noNotice();
+  if (rows[0].expired) throw linkExpired();
+  await db.query("update notices set family_stopped = true, responded_at = coalesce(responded_at, now()) where id = $1", [noticeId]);
 }
 
+/** The first answer stands. The link has no login, so anyone holding it could otherwise change what the seller sees. */
 export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer: string): Promise<CheckResult> {
-  const { rows } = await db.query<{ recall_number: string; title: string; description: string }>(
-    `select r.recall_number, r.title, r.description from notices n
+  const { rows } = await db.query<{
+    recall_number: string;
+    title: string;
+    description: string;
+    kind: string;
+    check_result: CheckResult | null;
+    expired: boolean;
+  }>(
+    `select r.recall_number, r.title, r.description, n.kind, n.check_result, n.family_link_expires_at <= now() as expired from notices n
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id where n.id = $1`,
     [noticeId],
   );
-  const recall = rows[0];
-  if (!recall) throw noNotice();
-  const result = checkResult(recall, checkQuestion({ recallNumber: recall.recall_number, title: recall.title, description: recall.description }), answer);
-  await db.query("update notices set check_result = $2, responded_at = coalesce(responded_at, now()) where id = $1", [noticeId, result]);
-  return result;
+  const notice = rows[0];
+  if (!notice) throw noNotice();
+  if (notice.kind !== "CHECK_REQUEST") throw new NoticeRefused("NOT_A_QUESTION", "This message does not ask a question.");
+  if (notice.expired) throw linkExpired();
+  if (notice.check_result) return notice.check_result;
+  const result = checkResult(notice, checkQuestion({ recallNumber: notice.recall_number, title: notice.title, description: notice.description }), answer);
+  const saved = await db.query<{ check_result: CheckResult }>(
+    `update notices set check_result = coalesce(check_result, $2), responded_at = coalesce(responded_at, now()) where id = $1 returning check_result`,
+    [noticeId, result],
+  );
+  return saved.rows[0].check_result;
 }
 
 export interface FamilyView {
@@ -206,15 +221,17 @@ export interface FamilyView {
   question: CheckQuestion | null;
   stopped: boolean;
   result: CheckResult | null;
+  /** The link no longer takes answers. CPSC's words still show: the hazard has not gone away. */
+  expired: boolean;
 }
 
 /** All the family page gets. No buyer, order or payment data, so none can reach the page. */
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
-    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null }
+    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; expired: boolean }
   >(
-    `select n.kind, n.family_stopped, n.check_result, s.name as shop_name,
+    `select n.kind, n.family_stopped, n.check_result, n.family_link_expires_at <= now() as expired, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
@@ -234,5 +251,6 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     question: n.kind === "CHECK_REQUEST" ? checkQuestion({ recallNumber: n.recall_number, title: n.title, description: n.description }) : null,
     stopped: n.family_stopped,
     result: n.check_result,
+    expired: n.expired,
   };
 }

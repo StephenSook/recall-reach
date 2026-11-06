@@ -35,7 +35,9 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
       <h1>{isCheck ? "Please check one thing" : "This product was recalled"}</h1>
       <p>{view.product}</p>
 
-      {isCheck && !view.result && view.question ? (
+      {view.expired ? <p data-testid="expired">This link no longer takes answers. What CPSC says about this product is below.</p> : null}
+
+      {isCheck && !view.result && view.question && !view.expired ? (
         <section>
           <p data-testid="question">{view.question.question}</p>
           <form action={action} method="post">
@@ -80,12 +82,12 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
         <p data-testid="stopped">
           You&apos;ve told {view.shopName} you stopped using it. This does not finish the recall steps. Keep it out of children&apos;s reach and follow the steps above.
         </p>
-      ) : (
+      ) : !view.expired ? (
         <form action={action} method="post">
           <input type="hidden" name="action" value="stopped" />
           <button type="submit">I&apos;ve stopped using it</button>
         </form>
-      )}
+      ) : null}
       <footer>
         <p>Recall details come from the U.S. CPSC. This page was sent by {view.shopName}.</p>
       </footer>

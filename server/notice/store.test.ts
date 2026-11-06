@@ -272,6 +272,58 @@ describe("notices", () => {
     });
   });
 
+  describe("what a family link allows", () => {
+    const check = async (orderNumber: string) => {
+      const m = await matchFor("27040", line({ orderNumber, title: "Costway high chair" }));
+      return (await prepareNotice(db, { shopId, matchId: m })).noticeId;
+    };
+    const lapse = (noticeId: string) => db.query("update notices set family_link_expires_at = now() - interval '1 minute' where id = $1", [noticeId]);
+    const resultOf = async (noticeId: string) => (await db.query<{ check_result: string | null }>("select check_result from notices where id = $1", [noticeId])).rows[0].check_result;
+
+    it("keeps the first answer: anyone holding the link cannot change it later", async () => {
+      const noticeId = await check("#F1");
+      expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("MATCHES");
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("MATCHES");
+      expect(await resultOf(noticeId)).toBe("MATCHES");
+    });
+
+    it("takes an answer only on a check request", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#F2" }));
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+      expect(await refusal(recordFamilyAnswer(db, noticeId, "no"))).toBe("NOT_A_QUESTION");
+      expect(await resultOf(noticeId)).toBeNull();
+    });
+
+    it("stops taking an answer once the link has expired", async () => {
+      const noticeId = await check("#F3");
+      await lapse(noticeId);
+      expect(await refusal(recordFamilyAnswer(db, noticeId, "yes"))).toBe("LINK_EXPIRED");
+      expect(await resultOf(noticeId)).toBeNull();
+    });
+
+    it("stops taking a report once the link has expired", async () => {
+      const noticeId = await check("#F4");
+      await lapse(noticeId);
+      expect(await refusal(recordFamilyStopped(db, noticeId))).toBe("LINK_EXPIRED");
+    });
+
+    it("still shows what CPSC says after it has expired, because the hazard has not gone away", async () => {
+      const noticeId = await check("#F5");
+      await lapse(noticeId);
+      const view = await familyView(db, noticeId);
+      expect(view?.expired).toBe(true);
+      expect(view?.recallUrl).toMatch(/^https:/);
+      expect(view?.hazards.length).toBeGreaterThan(0);
+    });
+
+    it("lasts about six months from when it was prepared", async () => {
+      const noticeId = await check("#F6");
+      const { rows } = await db.query<{ days: string }>("select extract(day from family_link_expires_at - prepared_at)::text as days from notices where id = $1", [noticeId]);
+      expect(rows[0].days).toBe("180");
+      expect((await familyView(db, noticeId))?.expired).toBe(false);
+    });
+  });
+
   describe("familyView", () => {
     it("shows the recall and the shop's name, with CPSC's words, and no buyer or order data", async () => {
       const m = await matchFor("27072", line({ buyerEmail: "test-buyer@example.test", orderNumber: "#SECRET-ORDER" }));
