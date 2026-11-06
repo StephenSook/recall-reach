@@ -262,6 +262,8 @@ test("the eval card shows held-out numbers, with their limits on the page", asyn
   await expect(page.getByTestId("eval-sentence")).toContainText(/\d+ of \d+/);
   await expect(page.getByTestId("eval-table")).toContainText("Word match");
   await expect(page.getByText("One labeller")).toBeVisible();
+  // The limit sits with the number, in the very next row.
+  await expect(page.getByRole("row", { name: /A look-alike could reach a family/ }).locator("xpath=following-sibling::tr[1]")).toContainText("One labeller");
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll).toBeLessThanOrEqual(client);
 });

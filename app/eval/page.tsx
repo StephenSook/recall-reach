@@ -109,6 +109,12 @@ export default function EvalPage() {
               <Cell r={matcher.couldReachFamily} />
               <Cell r={baseline.couldReachFamily} />
             </tr>
+            {/* The limit travels with the number. */}
+            <tr>
+              <td colSpan={3} className="note" data-testid="eval-labeller">
+                Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller, with a person&apos;s audit still to come.
+              </td>
+            </tr>
             <tr>
               <td>Title can&apos;t settle it: asks</td>
               <Cell r={matcher.abstained} />
@@ -195,7 +201,6 @@ export default function EvalPage() {
 
       <h2 className="section-title">What this does not show</h2>
       <ul className="limits">
-        <li>Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller, with a person&apos;s audit still to come.</li>
         <li>The titles are new retail listings. Resale titles are shorter and noisier.</li>
         <li>This set has no true matches: every title naming a recalled line still lacked what the recall&apos;s scope needs. It can&apos;t measure finding them.</li>
         <li>These are small numbers, and some titles repeat across recalls. Read the ranges.</li>
