@@ -57,6 +57,22 @@ describe("which rows can be approved from the grid", () => {
   });
 });
 
+describe("needs review and done", () => {
+  const sent = row({ matchId: "sent", recordId: "sale-2", notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, result: null } });
+  const rows = build([row({ matchId: "waiting" }), sent, row({ matchId: "other", recordId: "sale-2", recallNumber: "25206", recallDate: "2020-01-01" })]);
+  const inIt = (tab: Parameters<typeof inTab>[1]) => rows.filter((r) => inTab(r, tab)).map((r) => r.matchId).sort();
+
+  it("needs review holds only sales that still wait on the seller", () => expect(inIt("needs")).toEqual(["waiting"]));
+  it("done holds the sales that don't", () => expect(inIt("done")).toEqual(["sent"]));
+  it("a sale's other recalls are in neither: its lead speaks for it", () => expect([...inIt("needs"), ...inIt("done")]).not.toContain("other"));
+  it("all still shows every one", () => expect(inIt("all")).toEqual(["other", "sent", "waiting"]));
+  it("a payment it couldn't tie to an order is in neither", () => {
+    const payment = unidentifiedRows([{ id: "p", paidOn: null, amountCents: 100, currency: "USD" }])[0];
+    expect(inTab(payment, "needs")).toBe(false);
+    expect(inTab(payment, "done")).toBe(false);
+  });
+});
+
 describe("what a row says", () => {
   it("follows what happened: a sent notice", () => {
     expect(by(build([row({ notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, result: null } })]), "m1").state).toBe("You marked sent");
@@ -166,6 +182,7 @@ describe("what the grid holds", () => {
 
   it("carries nothing a browser should not have", () => {
     const fields = Object.keys(by(build([row({})]), "m1")).sort();
-    expect(fields).toEqual(["anchor", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "soldOn", "state", "tellCpsc", "verdict", "weak"]);
+    expect(fields).toEqual(["anchor", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "soldOn", "state", "tellCpsc", "verdict",
+      "waits", "weak"]);
   });
 });

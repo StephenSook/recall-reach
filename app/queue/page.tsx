@@ -7,7 +7,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, waitsOnSeller } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -235,6 +235,8 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
+  const waiting = cards.filter((c) => waitsOnSeller(c.lead));
+  const done = cards.filter((c) => !waitsOnSeller(c.lead));
 
   return (
     <main className="page">
@@ -279,8 +281,12 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </noscript>
       {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
-        <h2 className="section-title narrow-only">Needs review</h2>
-        {cards.map((card) => (
+        {waiting.length > 0 ? <h2 className="section-title narrow-only">Needs review</h2> : null}
+        {waiting.map((card) => (
+          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
+        ))}
+        {done.length > 0 ? <h2 className="section-title narrow-only">Done</h2> : null}
+        {done.map((card) => (
           <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
       </section>

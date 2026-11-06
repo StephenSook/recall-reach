@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, stateChip, traceLine } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -36,7 +36,12 @@ describe("counted", () => {
 });
 
 describe("queueCounts", () => {
-  const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: { verdict } });
+  const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: row({ verdict, salePath: "NOTICE_ONLY" }) });
+
+  it("counts what the check found in the tiles, and only what still waits in the wait count", () => {
+    const cards = [card("MATCH"), card("SCOPE_GAP"), { lead: row({ salePath: "NOTICE_ONLY", notice: told("MARKED_SENT") }) }];
+    expect(queueCounts({ cards, cleared: [], unrelated: 0, recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 0, waiting: 2 });
+  });
 
   it("counts what waits on the seller, and only what is on the page", () => {
     expect(queueCounts({ cards: [card("MATCH"), card("MATCH"), card("SCOPE_GAP")], cleared: [{}], unrelated: 6, recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 7, waiting: 3 });
@@ -155,6 +160,36 @@ describe("needsApproval", () => {
     ["SCOPE_GAP", "SAFETY_NOTICE", "MARKED_SENT", false],
   ] as const)("%s with a %s in state %s: %s", (verdict, kind, state, expected) => {
     expect(needsApproval({ verdict, notice: notice(kind, state) })).toBe(expected);
+  });
+});
+
+describe("waitsOnSeller: there is still something only the seller can do", () => {
+  const notice = { salePath: "NOTICE_ONLY" as const };
+  it.each<[string, Parameters<typeof waitsOnSeller>[0], boolean]>([
+    ["a new match", row(notice), true],
+    ["a message prepared, not sent", row({ ...notice, notice: told("PREPARED") }), true],
+    ["a message opened, not sent", row({ ...notice, notice: told("OPENED_IN_MAIL") }), true],
+    ["a message sent", row({ ...notice, notice: told("MARKED_SENT") }), false],
+    ["a family that answered", row({ ...notice, notice: told("FAMILY_RESPONDED") }), false],
+    ["a question sent, with the recall since confirmed: the family still has to be told", row({ ...notice, notice: told("MARKED_SENT", "CHECK_REQUEST") }), true],
+    ["a refund on offer, with the family told", row({ notice: told("MARKED_SENT") }), true],
+    ["a refund made, with the family not told: it is still a recall", row({ refund: refund("refunded") }), true],
+    ["a refund made and the family told", row({ refund: refund("refunded"), notice: told("MARKED_SENT") }), false],
+    ["a refund at PayPal, with the family told: that waits on PayPal", row({ refund: refund("pending"), notice: told("MARKED_SENT") }), false],
+    ["a refund being sent, with the family told", row({ refund: refund("reserved"), notice: told("MARKED_SENT") }), false],
+    ["a refund with no clear answer: only the seller can check", row({ refund: refund("unconfirmed"), notice: told("MARKED_SENT") }), true],
+    ["a refund that failed: it can be tried again", row({ refund: refund("failed"), notice: told("MARKED_SENT") }), true],
+    ["no payment to refund, with the family told", row({ joinState: "HISTORY_UNAVAILABLE", notice: told("MARKED_SENT") }), false],
+    ["a scope gap with no question yet", row({ verdict: "SCOPE_GAP", strength: "BRAND", salePath: "NOTICE_ONLY" }), true],
+    ["a scope gap's question sent", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("MARKED_SENT", "CHECK_REQUEST") }), false],
+    ["a scope gap's question answered", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", "MATCHES") }), false],
+    ["product words only: nothing can go out, so it's the seller's to check", row({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" }), true],
+    ["two possible orders: nothing can go out, so it's the seller's to check", row({ joinState: "AMBIGUOUS_JOIN" }), true],
+    ["an item still on the shelf", row({ isListing: true, stillListed: true, salePath: null, joinState: null }), true],
+    ["an item off the shelf", row({ isListing: true, stillListed: false, salePath: null, joinState: null }), false],
+    ["cleared", row({ verdict: "CLEARED" }), false],
+  ])("%s", (_about, r, waits) => {
+    expect(waitsOnSeller(r)).toBe(waits);
   });
 });
 

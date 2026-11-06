@@ -35,10 +35,27 @@ const CHECK_CHIP: Record<string, string> = {
 /** One word for one, another for any other number. */
 export const counted = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** What the stat row shows. Each number is counted from what is on the page. */
-export function queueCounts(q: { cards: { lead: { verdict: string } }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
+/**
+ * Whether there is still something only the seller can do. The one rule behind the wait count, the Needs review tab
+ * and Done. Telling the family comes first: a refund made with no notice sent still waits, because it is still a recall.
+ */
+export function waitsOnSeller(row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "isListing" | "stillListed" | "notice" | "refund">): boolean {
+  if (row.verdict === "CLEARED") return false;
+  if (row.isListing) return row.stillListed;
+  const canRefund = row.verdict === "MATCH" && row.strength === "CONFIRMED" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED";
+  if (canRefund && (!row.refund || row.refund.status === "failed" || row.refund.status === "unconfirmed")) return true;
+  // Nothing can go out on this row, so nobody else will ever settle it.
+  if (!canNotify(row)) return true;
+  const told = row.notice?.state === "MARKED_SENT" || row.notice?.state === "FAMILY_RESPONDED";
+  return !told || needsApproval(row);
+}
+
+type CountedRow = Parameters<typeof waitsOnSeller>[0];
+
+/** What the stat row shows. The tiles are what the check found, so they stay. The wait count goes down as work gets done. */
+export function queueCounts(q: { cards: { lead: CountedRow }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
   const matched = q.cards.filter((c) => c.lead.verdict === "MATCH").length;
-  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.length };
+  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.filter((c) => waitsOnSeller(c.lead)).length };
 }
 
 /** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */

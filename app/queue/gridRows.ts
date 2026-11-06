@@ -1,9 +1,9 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
-import { canNotify, needsApproval, NOTICE_STATE, pathNow, stateChip } from "./labels";
+import { canNotify, needsApproval, NOTICE_STATE, pathNow, stateChip, waitsOnSeller } from "./labels";
 
-export type GridTab = "needs" | "cleared" | "shelf" | "unidentified" | "all";
+export type GridTab = "needs" | "done" | "cleared" | "shelf" | "unidentified" | "all";
 
 export interface GridRow {
   matchId: string;
@@ -18,6 +18,8 @@ export interface GridRow {
   reason: string;
   noticeState: string | null;
   isLead: boolean;
+  /** Something is still only the seller's to do. */
+  waits: boolean;
   approvable: boolean;
   weak: boolean;
   tellCpsc: boolean;
@@ -57,6 +59,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
       reason: r.reason,
       noticeState: r.notice ? NOTICE_STATE[r.notice.state] : null,
       isLead,
+      waits: isLead && waitsOnSeller(r),
       approvable: isLead && canNotify(r) && needsApproval(r),
       weak: r.strength === "PRODUCT_WORDS" || r.strength === "NO_SHARED_WORDS",
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
@@ -81,6 +84,7 @@ export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
     reason: "It names no item or order, so it can't be checked against a recall. It is not cleared.",
     noticeState: null,
     isLead: false,
+    waits: false,
     approvable: false,
     weak: false,
     tellCpsc: false,
@@ -92,7 +96,8 @@ export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
 export function inTab(row: GridRow, tab: GridTab): boolean {
   if (tab === "unidentified") return row.verdict === "UNIDENTIFIED";
   if (row.verdict === "UNIDENTIFIED") return false;
-  if (tab === "needs") return row.isLead;
+  if (tab === "needs") return row.isLead && row.waits;
+  if (tab === "done") return row.isLead && !row.waits;
   if (tab === "cleared") return row.verdict === "CLEARED";
   if (tab === "shelf") return row.listedOnShelf && row.isLead;
   return true;

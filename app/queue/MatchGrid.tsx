@@ -9,6 +9,7 @@ import { chipClass } from "./labels";
 
 const TABS: { id: GridTab; label: string }[] = [
   { id: "needs", label: "Needs review" },
+  { id: "done", label: "Done" },
   { id: "cleared", label: "Cleared" },
   { id: "shelf", label: "Pull from the shelf" },
   { id: "unidentified", label: "Couldn't identify" },

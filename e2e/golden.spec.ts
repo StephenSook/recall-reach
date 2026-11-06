@@ -114,8 +114,11 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
     await expect(family.locator("body")).not.toContainText("DEMO-"); // no order data on the family's page
   });
 
-  // No reload: the seller's page sees it by itself.
+  // No reload: the seller's page sees it by itself, and the status and the wait count move with it.
   await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("Family responded", { timeout: 15_000 });
+  await expect(recall(page, "27072").locator(".chips")).toContainText("Family responded");
+  await expect(recall(page, "27072").locator(".chips")).not.toContainText("Needs review");
+  await expect(page.locator(".page-head")).toContainText("8 items wait for you");
   await expect(recall(page, "27072").getByTestId("family-report")).toHaveText("Family says they stopped using it");
 
   // REFUND ELIGIBLE: a real sandbox capture made today, truly after the recall date.
@@ -144,6 +147,10 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
   // The refund line appears only now that PayPal has confirmed it.
   await page.goto("/queue");
   await expect(recall(page, "27027").getByTestId("refund-state")).toHaveText("Refunded");
+  await expect(recall(page, "27027").locator(".chips")).toContainText("Refunded");
+  await expect(recall(page, "27027").locator(".chips")).not.toContainText("Refund eligible");
+  // Refunded with the notice not sent: the family still has to be told, so it still waits.
+  await expect(page.locator(".page-head")).toContainText("8 items wait for you");
   const after = await mailLink(recall(page, "27027"));
   expect(after.body).toContain("PayPal confirmed a refund of 90.00 USD to your original payment.");
 
@@ -181,6 +188,10 @@ test("a scope gap is settled by a check request that asks what this recall needs
 
   await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Family responded", { timeout: 15_000 });
   await expect(recall(page, "27040").getByTestId("check-result")).toHaveText("Family's answer matches the recall");
+  await expect(recall(page, "27040").locator(".chips")).toContainText("Family's answer matches");
+  await expect(recall(page, "27040").locator(".chips")).not.toContainText("Scope gap");
+  await expect(recall(page, "27040").locator(".chips")).not.toContainText(/confirmed/i);
+  await expect(page.locator(".page-head")).toContainText("8 items wait for you");
 });
 
 test.describe("on a wide screen", () => {
@@ -249,6 +260,22 @@ test.describe("on a wide screen", () => {
     await rows.filter({ hasText: "27027" }).first().getByRole("link", { name: "Open" }).click();
     await recall(page, "27027").getByRole("button", { name: "Review refund" }).click();
     await expect(recall(page, "27027").getByRole("button", { name: "Refund 90.00 USD" })).toBeInViewport({ ratio: 1 });
+
+    // Sent is done: the row, the tab counts and the wait count all move, and the row can still be found.
+    await grid.getByRole("button", { name: /^All candidates/ }).click();
+    await rows.filter({ hasText: "BRZ0083" }).first().getByRole("link", { name: "Open" }).click();
+    const { link } = await mailLink(recall(page, "27072"));
+    await link.click();
+    await recall(page, "27072").getByRole("button", { name: "I sent it" }).click();
+    await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("You marked sent");
+    await expect(recall(page, "27072").locator(".chips")).toContainText("You marked sent");
+    await expect(page.locator(".page-head")).toContainText("8 items wait for you");
+    await expect(grid.getByRole("button", { name: "Needs review (8)" })).toBeVisible();
+    await expect(rows).toHaveCount(8);
+    await expect(rows.filter({ hasText: "BRZ0083" })).toHaveCount(0);
+    await grid.getByRole("button", { name: "Done (1)" }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("You marked sent");
   });
 
   test("the grid fits a larger window too", async ({ page }) => {
