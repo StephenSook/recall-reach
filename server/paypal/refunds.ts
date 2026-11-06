@@ -211,6 +211,7 @@ export async function executeRefund(
   input: { shopId: string; sessionId: string; approvalId: string; recordKey: RecordKey; now?: Date },
 ): Promise<RefundOutcome> {
   const now = input.now ?? new Date();
+  const startedAt = performance.now();
   const invalid = () => new RefundRefused("APPROVAL_NOT_VALID", "This approval is missing, expired, already used, or from another session.");
   if (!UUID.test(input.approvalId)) throw invalid();
 
@@ -292,12 +293,12 @@ export async function executeRefund(
       [input.approvalId, input.shopId, input.sessionId, now.toISOString()],
     );
     if (consumed.rows.length === 0) throw invalid();
-    const inserted = await tx.query<{ id: string; request_id: string }>(
-      `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status, send_lease_until)
-       values ($1, $2, $3, $4, $5, 'pending', $6::timestamptz)
+    const inserted = await tx.query<{ id: string; request_id: string; send_lease_id: string }>(
+      `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status, send_lease_until, send_lease_id)
+       values ($1, $2, $3, $4, $5, 'pending', $6::timestamptz, gen_random_uuid())
        on conflict (order_line_id) where status <> 'failed' do nothing
-       returning id, request_id`,
-      [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency, new Date(now.getTime() + SEND_LEASE_MS).toISOString()],
+       returning id, request_id, send_lease_id`,
+      [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency, leaseEnd(startedAt, now)],
     );
     const reserved = inserted.rows[0];
     if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
@@ -308,7 +309,7 @@ export async function executeRefund(
   return sendRefund(
     db,
     client,
-    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false },
+    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false, holder: row.send_lease_id },
     input.recordKey,
     now,
   );
@@ -323,20 +324,24 @@ async function moveLedger(
   refundRowId: string,
   to: RefundOutcome["status"],
   now: Date,
-  extra: { failure?: string | null; clearLease?: boolean } = {},
+  extra: { failure?: string | null; holder?: string } = {},
 ): Promise<RefundOutcome["status"]> {
   const moved = await q.query<{ status: RefundOutcome["status"] }>(
     `update refunds set status = $2, updated_at = $3::timestamptz,
        failure = case when $4::boolean then $5 else failure end,
-       send_lease_until = case when $6::boolean then null else send_lease_until end
-     where id = $1 and status in ('pending', 'unconfirmed')
+       send_lease_until = case when $6::uuid is null then send_lease_until end,
+       send_lease_id = case when $6::uuid is null then send_lease_id end
+     where id = $1 and status in ('pending', 'unconfirmed') and ($6::uuid is null or send_lease_id = $6::uuid)
      returning status`,
-    [refundRowId, to, now.toISOString(), extra.failure !== undefined, extra.failure ?? null, extra.clearLease ?? false],
+    [refundRowId, to, now.toISOString(), extra.failure !== undefined, extra.failure ?? null, extra.holder ?? null],
   );
   if (moved.rows[0]) return moved.rows[0].status;
   const { rows } = await q.query<{ status: RefundOutcome["status"] }>("select status from refunds where id = $1", [refundRowId]);
   return rows[0].status;
 }
+
+/** The checks before a send can take minutes when PayPal is slow, so a lease runs from when it is taken. */
+const leaseEnd = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt) + SEND_LEASE_MS).toISOString();
 
 async function readCapture(client: PayPalClient, captureId: string): Promise<CaptureFacts> {
   try {
@@ -376,7 +381,7 @@ async function repeatProvesNothingLanded(client: PayPalClient, captureId: string
 async function sendRefund(
   db: Queryable,
   client: PayPalClient,
-  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean },
+  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean; holder: string },
   recordKey: RecordKey,
   now: Date,
 ): Promise<RefundOutcome> {
@@ -386,7 +391,7 @@ async function sendRefund(
       await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [send.rowId, refundId]);
       await db.query("update refunds set refund_ref_hmac = coalesce(refund_ref_hmac, $2) where id = $1", [send.rowId, recordKey("paypal-resource", refundId)]);
     }
-    const status = await moveLedger(db, send.rowId, answer, now, { failure, clearLease: true });
+    const status = await moveLedger(db, send.rowId, answer, now, { failure, holder: send.holder });
     return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure: status === answer ? failure : null };
   };
 
@@ -416,6 +421,7 @@ export async function askPayPalAgain(
   input: { shopId: string; refundId: string; recordKey: RecordKey; now?: Date },
 ): Promise<RefundOutcome> {
   const now = input.now ?? new Date();
+  const startedAt = performance.now();
   const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
   if (!UUID.test(input.refundId)) throw notFound();
   const { rows } = await db.query<{
@@ -460,18 +466,19 @@ export async function askPayPalAgain(
   }
   refusePaymentDates(capture, recallDate, now);
 
-  const claimed = await db.query(
-    `update refunds set send_lease_until = $2::timestamptz, updated_at = $3::timestamptz
+  const claimed = await db.query<{ send_lease_id: string }>(
+    `update refunds set send_lease_until = $2::timestamptz, send_lease_id = gen_random_uuid(), updated_at = $3::timestamptz
      where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $3::timestamptz)
-     returning id`,
-    [input.refundId, new Date(now.getTime() + SEND_LEASE_MS).toISOString(), now.toISOString()],
+     returning send_lease_id`,
+    [input.refundId, leaseEnd(startedAt, now), now.toISOString()],
   );
-  if (claimed.rows.length === 0) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
+  const holder = claimed.rows[0]?.send_lease_id;
+  if (!holder) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
 
   return sendRefund(
     db,
     client,
-    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true },
+    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true, holder },
     input.recordKey,
     now,
   );

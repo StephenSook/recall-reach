@@ -783,6 +783,44 @@ describe("refunds", () => {
       });
     });
 
+    it("a send that lost its lease cannot settle the row over the send that took it over", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const first = heldBack(fakePayPal({ refundSteps: [422] }).client, (method) => method === "POST");
+      const sending = execute(a.approvalId, first.client);
+      await first.reached;
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      await db.query("update refunds set status = 'unconfirmed', send_lease_until = $2::timestamptz where id = $1", [rows[0].id, NOW.toISOString()]);
+      await agedFromNow(rows[0].id);
+      const pp = fakePayPal();
+      const second = heldBack(pp.client, (method) => method === "POST");
+      const asking = again(rows[0].id, second.client, LATER);
+      await second.reached;
+      first.release();
+      expect((await sending).status).toBe("unconfirmed"); // its 422 does not free the line
+      second.release();
+      expect((await asking).status).toBe("refunded");
+      expect(pp.made()).toHaveLength(1);
+    });
+
+    it("starts the lease when it is taken, not when the request came in", async () => {
+      const { r } = await noClearAnswer(["down", "down", "down"]);
+      const pp = fakePayPal();
+      const leases: Date[] = [];
+      const slowRead: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "GET") await new Promise((resolve) => setTimeout(resolve, 60));
+          if (method === "POST") {
+            const { rows } = await db.query<{ send_lease_until: Date }>("select send_lease_until from refunds");
+            leases.push(rows[0].send_lease_until);
+          }
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      await again(r.refundId, slowRead, LATER);
+      expect(leases[0].getTime() - LATER.getTime()).toBeGreaterThanOrEqual(6 * 60_000 + 50);
+    });
+
     it("holds the lease for longer than the slowest possible send", async () => {
       // 3 attempts plus one after a token refresh, 60 s each; 2 token requests, 30 s each; 1.5 s of backoff.
       const SLOWEST_SEND_MS = 4 * 60_000 + 2 * 30_000 + 1_500;
