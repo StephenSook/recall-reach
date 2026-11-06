@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
@@ -74,6 +74,34 @@ describe("seedDemoShop when it can't finish", () => {
       await expect(seedDemoShop(failing, fakePayPal().client, { today: TODAY, secret: SECRET })).rejects.toThrow("failed here");
       expect((await db.query("select 1 from shops")).rows).toEqual([]);
     } finally {
+      await db.close();
+    }
+  });
+
+  it("says what really went wrong when it can't clean up either", async () => {
+    const db = await testDb();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await migrate(db);
+      const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });
+      await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
+      const failing = new Proxy(db, {
+        get(target, prop) {
+          if (prop === "query") {
+            return async (sql: string, params?: unknown[]) => {
+              if (sql.includes("insert into shop_items")) throw new Error("the first failure");
+              if (sql.includes("delete from shops")) throw new Error("the cleanup failure");
+              return target.query(sql, params);
+            };
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      await expect(seedDemoShop(failing, fakePayPal().client, { today: TODAY, secret: SECRET })).rejects.toThrow("the first failure");
+      expect(logged.mock.calls.flat().join(" ")).toContain("the cleanup failure");
+    } finally {
+      logged.mockRestore();
       await db.close();
     }
   });

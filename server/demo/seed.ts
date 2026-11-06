@@ -197,7 +197,9 @@ export async function seedDemoShop(
     return { shopId, run, search: coverage };
   } catch (err) {
     // Nobody can reach a shop that didn't finish, so it doesn't stay.
-    await db.query("delete from shops where id = $1", [shopId]);
+    await db.query("delete from shops where id = $1", [shopId]).catch((cleanup: unknown) => {
+      console.error("demo shop cleanup failed:", cleanup instanceof Error ? cleanup.message : "unknown error");
+    });
     throw err;
   }
 }
