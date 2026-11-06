@@ -239,12 +239,7 @@ export async function executeRefund(
   const today = now.toISOString().slice(0, 10);
   const captureId = await identifiedCapture(db, input.shopId, approval.order_line_id, approval.paypal_payment_id, today);
 
-  let capture: CaptureFacts;
-  try {
-    capture = await getCapture(client, captureId);
-  } catch {
-    throw new RefundRefused("PAYPAL_UNREACHABLE", "PayPal did not answer, so nothing was refunded. Please try again.");
-  }
+  const capture = await readCapture(client, captureId);
   if (capture.currency !== approval.currency) {
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
   }
@@ -253,14 +248,7 @@ export async function executeRefund(
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
   }
 
-  const paidOn = (capture.createTime ?? "").slice(0, 10);
-  if (!paidOn) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no date for this payment.");
-  if (now.getTime() - Date.parse(`${paidOn}T00:00:00Z`) > REFUND_WINDOW_DAYS * 86_400_000) {
-    throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed.");
-  }
-  if (paidOn <= recallDate) {
-    throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
-  }
+  refusePaymentDates(capture, recallDate, now);
 
   let remaining = capture.amountCents;
   if (capture.status === "PARTIALLY_REFUNDED") {
@@ -324,6 +312,26 @@ export async function executeRefund(
     input.recordKey,
     now,
   );
+}
+
+async function readCapture(client: PayPalClient, captureId: string): Promise<CaptureFacts> {
+  try {
+    return await getCapture(client, captureId);
+  } catch {
+    throw new RefundRefused("PAYPAL_UNREACHABLE", "PayPal did not answer, so nothing was refunded. Please try again.");
+  }
+}
+
+/** Within 180 days of the payment, and paid after the recall date, whatever the order date says. */
+function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date): void {
+  const paidOn = (capture.createTime ?? "").slice(0, 10);
+  if (!paidOn) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no date for this payment.");
+  if (now.getTime() - Date.parse(`${paidOn}T00:00:00Z`) > REFUND_WINDOW_DAYS * 86_400_000) {
+    throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed.");
+  }
+  if (paidOn <= recallDate) {
+    throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
+  }
 }
 
 /**
@@ -398,9 +406,10 @@ export async function askPayPalAgain(
     recall_sha256: string;
     order_line_id: string;
     line_sha256: string | null;
+    paypal_payment_id: string | null;
   }>(
     `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, p.capture_id, p.refund_id as paypal_refund_id,
-            a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256
+            a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256, a.paypal_payment_id
      from refunds r join approvals a on a.id = r.approval_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
     [input.refundId, input.shopId],
@@ -414,7 +423,18 @@ export async function askPayPalAgain(
   if (now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS) {
     throw new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
   }
-  await approvedFactsHold(db, row);
+  // The same checks as a first send, except one: a capture showing a refund may be showing this one.
+  const { recallDate } = await approvedFactsHold(db, row);
+  const today = now.toISOString().slice(0, 10);
+  if ((await identifiedCapture(db, input.shopId, row.order_line_id, row.paypal_payment_id, today)) !== row.capture_id) {
+    throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
+  }
+  const capture = await readCapture(client, row.capture_id);
+  if (capture.currency !== row.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
+  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED" && capture.status !== "REFUNDED") {
+    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
+  }
+  refusePaymentDates(capture, recallDate, now);
 
   const claimed = await db.query(
     `update refunds set send_lease_until = $2::timestamptz, updated_at = $3::timestamptz

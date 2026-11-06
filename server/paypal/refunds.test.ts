@@ -712,8 +712,52 @@ describe("refunds", () => {
 
       it("stays unconfirmed when the capture cannot be read after a 422", async () => {
         const { r } = await noClearAnswer(["down", "down", "down"]);
-        const pp = fakePayPal({ refundSteps: [422], captureReads: ["down", "down", "down"] });
+        const pp = fakePayPal({ refundSteps: [422], captureReads: ["ok", "down", "down", "down"] });
         expect((await again(r.refundId, pp.client, LATER)).status).toBe("unconfirmed");
+      });
+    });
+
+    describe("the same checks as the first send", () => {
+      it("refuses when the join no longer points at this payment", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        await db.query(
+          `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency)
+           values ($1, 'ORDER-2', 'r1', 'CAP-2', 'COMPLETED', '2026-11-06T14:00:00Z', 10000, 'USD')`,
+          [shopId],
+        );
+        const pp = fakePayPal();
+        expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("PAYMENT_CHANGED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("refuses past 180 days from the payment", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        const pp = fakePayPal({ createTime: "2026-05-01T00:00:00Z" });
+        expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("REFUND_WINDOW_CLOSED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("refuses a currency that differs from the approved one", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        const pp = fakePayPal({ currency: "CAD" });
+        expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("PAYPAL_FACTS_CHANGED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("refuses a capture status that does not allow a refund", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        const pp = fakePayPal({ status: "DECLINED" });
+        expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("PAYPAL_FACTS_CHANGED");
+        expect(pp.posts()).toEqual([]);
+      });
+
+      it("takes no lease and sends nothing when the capture cannot be read", async () => {
+        const { r } = await noClearAnswer(["down", "down", "down"]);
+        const pp = fakePayPal({ captureReads: ["down", "down", "down"] });
+        expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("PAYPAL_UNREACHABLE");
+        expect(pp.posts()).toEqual([]);
+        const { rows } = await db.query<{ send_lease_until: unknown }>("select send_lease_until from refunds where id = $1", [r.refundId]);
+        expect(rows[0].send_lease_until).toBeNull();
       });
     });
 
