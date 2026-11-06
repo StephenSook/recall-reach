@@ -79,10 +79,10 @@ describe("loadQueue", () => {
     expect(rows.find((r) => r.verdict === "MATCH")?.strength).toBe("CONFIRMED");
   });
 
-  it("shows a gap with no recorded strength as weak, and a match as confirmed", async () => {
+  it("shows any row with no recorded strength as weak, until the check runs again", async () => {
     await db.query("update recall_matches set strength = null where shop_id = $1", [shopId]);
     expect((await row("27040")).strength).toBe("PRODUCT_WORDS");
-    expect((await row("27072")).strength).toBe("CONFIRMED");
+    expect((await row("27072")).strength).toBe("PRODUCT_WORDS");
   });
 
   it("orders what needs a person first: matches, then gaps, then cleared", async () => {

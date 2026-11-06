@@ -13,6 +13,8 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
   const blocked = row.joinState === "AMBIGUOUS_JOIN";
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const canNotify = row.verdict !== "CLEARED" && !row.isListing && !blocked && !productWordsOnly;
+  // The evidence changed before this went out, so it needs approving again as the right message.
+  const staleNotice = row.notice !== null && (row.notice.state === "PREPARED" || row.notice.state === "OPENED_IN_MAIL") && (row.notice.kind === "SAFETY_NOTICE") !== (row.verdict === "MATCH");
   const provenance = shopKind === "DEMO" ? "REAL CPSC, SANDBOX PAYPAL, DEMO SHOP" : "REAL CPSC, SANDBOX PAYPAL, REAL SHOP";
   return (
     <article data-recall={row.recallNumber} data-verdict={row.verdict}>
@@ -42,7 +44,7 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
         </p>
       ) : null}
 
-      {canNotify && !row.notice ? (
+      {canNotify && (!row.notice || staleNotice) ? (
         <form action="/api/queue/notices" method="post">
           <input type="hidden" name="matchId" value={row.matchId} />
           <button type="submit">{row.verdict === "MATCH" ? "Approve this notice" : "Approve this check request"}</button>
@@ -56,7 +58,7 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
           </p>
           {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it</p> : null}
           {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
-          {canNotify ? <NoticeActions noticeId={row.notice.id} /> : null}
+          {canNotify && !staleNotice ? <NoticeActions noticeId={row.notice.id} /> : null}
           {row.notice.state === "OPENED_IN_MAIL" ? (
             <form action={`/api/queue/notices/${row.notice.id}/sent`} method="post">
               <button type="submit">I sent it</button>

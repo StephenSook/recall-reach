@@ -263,6 +263,14 @@ describe("refunds", () => {
       await expect(approve(m.id)).resolves.toBeDefined();
     });
 
+    it("refuses a match with no recorded strength, until the check runs again", async () => {
+      const m = await setUp();
+      await db.query("update recall_matches set strength = null where id = $1", [m.id]);
+      expect(await refusal(approve(m.id))).toBe("NOT_A_CONFIRMED_MATCH");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      await expect(approve(m.id)).resolves.toBeDefined();
+    });
+
     it("refuses a scope gap: it needs a confirmed match", async () => {
       const m = await setUp(line({ title: "Papablic bedside sleeper" }));
       expect(m.verdict).toBe("SCOPE_GAP");

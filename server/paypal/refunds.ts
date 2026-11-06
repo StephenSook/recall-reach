@@ -153,6 +153,7 @@ export async function approveRefund(
   const { rows } = await db.query<
     LineFacts & {
       verdict: string;
+      strength: string | null;
       sale_path: string | null;
       join_state: string | null;
       recall_id: number;
@@ -161,7 +162,7 @@ export async function approveRefund(
       paypal_payment_id: string | null;
     }
   >(
-    `select m.verdict, m.sale_path, m.join_state, m.recall_id, m.recall_sha256, m.order_line_id, m.paypal_payment_id,
+    `select m.verdict, m.strength, m.sale_path, m.join_state, m.recall_id, m.recall_sha256, m.order_line_id, m.paypal_payment_id,
             ${LINE_COLUMNS.split(", ")
               .map((c) => `l.${c}`)
               .join(", ")}
@@ -171,7 +172,7 @@ export async function approveRefund(
   );
   const m = rows[0];
   if (!m || !m.order_line_id) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop.");
-  if (m.verdict !== "MATCH") throw new RefundRefused("NOT_A_CONFIRMED_MATCH", "A refund needs a confirmed match.");
+  if (m.verdict !== "MATCH" || m.strength !== "CONFIRMED") throw new RefundRefused("NOT_A_CONFIRMED_MATCH", "A refund needs a confirmed match.");
   if (m.sale_path !== "REFUND_ELIGIBLE") {
     throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
   }

@@ -119,10 +119,47 @@ describe("notices", () => {
       expect(await refusal(prepareNotice(db, { shopId, matchId: gap }))).toBe("PRODUCT_WORDS_ONLY");
     });
 
-    it("still sends a confirmed match with no recorded strength: the verdict rests on a model or look", async () => {
+    it("does not trust a match with no recorded strength: the older matcher could confirm on weaker grounds", async () => {
       const confirmed = await matchFor("27072", line({ orderNumber: "#L2" }));
       await db.query("update recall_matches set strength = null where id = $1", [confirmed]);
+      expect(await refusal(prepareNotice(db, { shopId, matchId: confirmed }))).toBe("PRODUCT_WORDS_ONLY");
+    });
+
+    it("trusts it again once the check has run again", async () => {
+      const confirmed = await matchFor("27072", line({ orderNumber: "#L5" }));
+      await db.query("update recall_matches set strength = null where id = $1", [confirmed]);
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
       expect((await prepareNotice(db, { shopId, matchId: confirmed })).kind).toBe("SAFETY_NOTICE");
+    });
+
+    it("will not compose a safety notice for a match that is no longer confirmed", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#L6", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
+      const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });
+      expect(kind).toBe("SAFETY_NOTICE");
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#L6", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      expect(await refusal(compose(noticeId))).toBe("EVIDENCE_CHANGED");
+    });
+
+    it("prepares the right message when the seller approves again after that", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#L7", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
+      const first = await prepareNotice(db, { shopId, matchId: m });
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#L7", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      const again = await prepareNotice(db, { shopId, matchId: m });
+      expect(again).toEqual({ noticeId: first.noticeId, kind: "CHECK_REQUEST" });
+      const composed = await compose(again.noticeId);
+      expect(composed.subject).toMatch(/^Quick safety check/);
+    });
+
+    it("leaves a message already sent as it was: the record shows what went out", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#L8", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
+      const first = await prepareNotice(db, { shopId, matchId: m });
+      await markOpened(db, { shopId, noticeId: first.noticeId });
+      await markSent(db, { shopId, noticeId: first.noticeId });
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#L8", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      expect((await prepareNotice(db, { shopId, matchId: m })).kind).toBe("SAFETY_NOTICE");
     });
 
     it("composes nothing if the evidence has weakened since the notice was prepared", async () => {

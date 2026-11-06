@@ -10,7 +10,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER" | "EVIDENCE_CHANGED";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -21,12 +21,14 @@ export class NoticeRefused extends Error {
 
 const twoOrders = () => new NoticeRefused("TWO_POSSIBLE_ORDERS", "Two possible orders. Resolve which order this is first.");
 const alreadyAsked = () => new NoticeRefused("ALREADY_ASKED", "This sale already has a message. One sale gets one question.");
-/** A confirmed match rests on a model or look. Anything else needs the brand behind it, and unknown is not that. */
+/**
+ * A match needs the evidence recorded as confirmed, and a gap needs the brand behind it. No recorded strength
+ * is not enough for either: a row from before strength was recorded may rest on weaker grounds.
+ */
 function refuseWeakEvidence(match: { verdict: string; strength: string | null }): void {
   if (match.verdict === "CLEARED") throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
-  if (match.verdict !== "MATCH" && match.strength !== "BRAND") {
-    throw new NoticeRefused("PRODUCT_WORDS_ONLY", "The shop's text shares only product words with this recall. Nothing goes out on that.");
-  }
+  const enough = match.verdict === "MATCH" ? match.strength === "CONFIRMED" : match.strength === "BRAND";
+  if (!enough) throw new NoticeRefused("PRODUCT_WORDS_ONLY", "The shop's text shares only product words with this recall. Nothing goes out on that.");
 }
 
 const noNotice = () => new NoticeRefused("NO_SUCH_NOTICE", "No such notice for this shop.");
@@ -54,15 +56,24 @@ export async function prepareNotice(
   if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
   refuseWeakEvidence(m);
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
-  const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>("select id, kind from notices where match_id = $1", [input.matchId]);
-  if (existing.rows[0]) return { noticeId: existing.rows[0].id, kind: existing.rows[0].kind };
+  const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST"; sent_at: unknown }>(
+    "select id, kind, sent_at from notices where match_id = $1",
+    [input.matchId],
+  );
+  const mine = existing.rows[0];
+  // What was sent stays on record as it was. Until then, the message follows the evidence as it stands now.
+  if (mine && (mine.kind === kind || mine.sent_at)) return { noticeId: mine.id, kind: mine.kind };
   if (kind === "CHECK_REQUEST") {
     const taken = await db.query(
-      `select 1 from notices where order_line_id = $1
+      `select 1 from notices where order_line_id = $1 and match_id <> $2
        union all select 1 from recall_matches where order_line_id = $1 and verdict = 'MATCH' and id <> $2`,
       [m.order_line_id, input.matchId],
     );
     if (taken.rows.length > 0) throw alreadyAsked();
+  }
+  if (mine) {
+    await db.query("update notices set kind = $2, opened_at = null where id = $1", [mine.id, kind]);
+    return { noticeId: mine.id, kind };
   }
   // The index settles a race between two requests. Here a second notice for the match is the same notice.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
@@ -137,6 +148,9 @@ export async function composeForSeller(
   if (!n) throw noNotice();
   if (n.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
   refuseWeakEvidence(n); // the line may have been corrected since the notice was prepared
+  if (n.kind === "SAFETY_NOTICE" && n.verdict !== "MATCH") {
+    throw new NoticeRefused("EVIDENCE_CHANGED", "The evidence changed since this was prepared. Approve it again to get the right message.");
+  }
 
   const context = {
     recall: { recallNumber: n.recall_number, url: n.url, products: n.products, hazards: n.hazards, remedies: n.remedies },
