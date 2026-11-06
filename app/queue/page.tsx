@@ -291,7 +291,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             <span className="stat-value">{listed.sharedWord}</span>
             <span className="stat-label">Share a word only</span>
           </div>
-          <div className="stat stat-CLEARED">
+          <div className="stat">
             <span className="stat-value">{listed.notFlagged.toLocaleString("en-US")}</span>
             <span className="stat-label">Not flagged</span>
           </div>
