@@ -6,7 +6,7 @@ import { migrate } from "../db/migrate";
 import { createShop, storeOrderLines } from "../import/store";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { createContactCipher } from "../privacy/contactCipher";
-import { runShopCheck } from "./run";
+import { ITEMS_PER_STATEMENT, runShopCheck } from "./run";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-05";
@@ -200,6 +200,34 @@ describe("runShopCheck", () => {
     const summary = await runShopCheck(db, shopId, { today: TODAY });
     expect(summary.matches).toBe(25);
     expect(summary.candidatesNotChecked).toBe(0);
+  });
+
+  describe("a file too big for one statement", () => {
+    const filler = (n: number, from = 0) => Array.from({ length: n }, (_, i) => line(`#F${from + i}`, `Handmade ceramic garden gnome number ${from + i}`, "2026-09-15"));
+
+    it("finds what's in every part of it, and asks the database in several statements, none too big", async () => {
+      await store([line("#A", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15"), ...filler(ITEMS_PER_STATEMENT + 5), line("#Z", "Papablic bedside sleeper, gray stars and moon", "2026-10-20")]);
+      const sizes: number[] = [];
+      const counting = {
+        ...db,
+        query: ((sql: string, params?: unknown[]) => {
+          if (sql.includes("word_similarity")) sizes.push((params?.[3] as string[]).length);
+          return db.query(sql, params);
+        }) as typeof db.query,
+      };
+      const summary = await runShopCheck(counting, shopId, { today: TODAY });
+      expect(summary.matches).toBe(2);
+      expect(sizes.length).toBe(2);
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(ITEMS_PER_STATEMENT);
+      expect(sizes.reduce((a, b) => a + b, 0)).toBe(ITEMS_PER_STATEMENT + 7);
+    });
+
+    it("applies the cap on distinct titles across the whole file, not per statement", async () => {
+      const close = (from: number, n: number) => Array.from({ length: n }, (_, i) => line(`#C${from + i}`, `Baby Brezza sterilizer dryer variant ${from + i}`, "2026-09-15"));
+      await store([...close(0, 12), ...filler(ITEMS_PER_STATEMENT), ...close(12, 11)]);
+      const summary = await runShopCheck(db, shopId, { today: TODAY });
+      expect(summary.candidatesNotChecked).toBe(3);
+    });
   });
 
   it("counts what the cap on distinct titles left unchecked, and records it on the run", async () => {

@@ -45,21 +45,29 @@ interface Candidate {
   title: string;
   description: string;
   ordered_on: string | null;
-  within_cap: boolean;
+  similarity: number;
+  model_hit: boolean;
 }
+
+/**
+ * Items per statement. word_similarity is the cost, about 22 microseconds a pair on the free tier (measured on
+ * production), and the pool stops any statement at 60 s. At 1,855 recalls this is about 10 s, so a full-size file can't
+ * get near that limit, however many recalls come.
+ */
+export const ITEMS_PER_STATEMENT = 250;
 
 // Two ways in, and either is enough: the title resembles the recall's title and product names
 // (trigrams, which catch spelling and spacing), or the shop's text carries a model number that
-// appears anywhere in the recall's title or description. $4 maps each item to its model numbers.
+// appears anywhere in the recall's title or description. $3 maps each item to its model numbers.
 const CANDIDATES_SQL = `
   with items as (
     select 'order_line' as kind, id, title, '' as description, ordered_on::text as ordered_on
-    from order_lines where shop_id = $1
+    from order_lines where shop_id = $1 and id = any($4::uuid[])
     union all
     select 'shop_item', id, title, description, null
-    from shop_items where shop_id = $1 -- sold-out listings too; the queue shows which are still for sale
+    from shop_items where shop_id = $1 and id = any($4::uuid[]) -- sold-out listings too; the queue shows which are still for sale
   ),
-  recall_text as (
+  recall_text as materialized (
     select recall_id,
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
       upper(title || ' ' || description) as doc
@@ -70,19 +78,34 @@ const CANDIDATES_SQL = `
     select r.recall_id, i.kind, i.id, i.title, i.description, i.ordered_on,
       word_similarity(lower(i.title), r.name_text) as similarity,
       exists (
-        select 1 from jsonb_array_elements_text(coalesce($4::jsonb -> i.id::text, '[]'::jsonb)) as t(token)
+        select 1 from jsonb_array_elements_text(coalesce($3::jsonb -> i.id::text, '[]'::jsonb)) as t(token)
         where position(t.token in r.doc) > 0
       ) as model_hit
     from recall_text r cross join items i
-  ),
-  ranked as (
-    -- Ranks distinct titles, not records: every sale of a popular item is one family to reach.
-    select *, dense_rank() over (
-      partition by recall_id order by model_hit desc, similarity desc, lower(title)
-    ) as rank
-    from scored where model_hit or similarity >= $2
   )
-  select recall_id, kind, id, title, description, ordered_on, rank <= $3 as within_cap from ranked`;
+  select recall_id, kind, id, title, description, ordered_on, similarity, model_hit from scored where model_hit or similarity >= $2`;
+
+/**
+ * Per recall, the top distinct titles, with a model hit first, then the closest. It ranks titles, not records: every sale
+ * of a popular item is one family to reach. Done here because the candidates arrive in several statements.
+ */
+function withinCap(candidates: Candidate[]): Candidate[] {
+  const rankKey = (c: Candidate) => `${c.model_hit}|${c.similarity}|${c.title.toLowerCase()}`;
+  const byRecall = new Map<number, Candidate[]>();
+  for (const c of candidates) byRecall.set(c.recall_id, [...(byRecall.get(c.recall_id) ?? []), c]);
+  const kept: Candidate[] = [];
+  for (const group of byRecall.values()) {
+    const order = [...group].sort(
+      (a, b) => Number(b.model_hit) - Number(a.model_hit) || b.similarity - a.similarity || (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0),
+    );
+    const top = new Set<string>();
+    for (const c of order) {
+      if (top.size < TOP_CANDIDATES) top.add(rankKey(c));
+      if (top.has(rankKey(c))) kept.push(c);
+    }
+  }
+  return kept;
+}
 
 /** One shop's order lines joined to the PayPal payments held right now, with each payment's capture. */
 export async function joinShop(
@@ -147,15 +170,20 @@ export async function runShopCheck(
     [shopId],
   );
   const tokens = Object.fromEntries(shopText.map((r) => [r.id, modelTokens(r.text.toUpperCase())]));
-  const { rows: allCandidates } = await db.query<Candidate>(CANDIDATES_SQL, [
-    shopId,
-    MIN_SIMILARITY,
-    TOP_CANDIDATES,
-    JSON.stringify(tokens),
-    opts.onlyRecallIds ?? null,
-    recallsFrom,
-  ]);
-  const candidates = allCandidates.filter((c) => c.within_cap && (!opts.onlyRecordId || c.id === opts.onlyRecordId));
+  const allCandidates: Candidate[] = [];
+  for (let at = 0; at < shopText.length; at += ITEMS_PER_STATEMENT) {
+    const part = shopText.slice(at, at + ITEMS_PER_STATEMENT);
+    const { rows } = await db.query<Candidate>(CANDIDATES_SQL, [
+      shopId,
+      MIN_SIMILARITY,
+      JSON.stringify(Object.fromEntries(part.map((r) => [r.id, tokens[r.id]]))),
+      part.map((r) => r.id),
+      opts.onlyRecallIds ?? null,
+      recallsFrom,
+    ]);
+    allCandidates.push(...rows);
+  }
+  const candidates = withinCap(allCandidates).filter((c) => !opts.onlyRecordId || c.id === opts.onlyRecordId);
   const candidatesNotChecked = allCandidates.length - candidates.length;
 
   const { joined, lines } = await joinShop(db, shopId, { today: opts.today, failedMonths: opts.failedMonths });
