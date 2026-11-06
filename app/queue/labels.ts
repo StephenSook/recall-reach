@@ -78,11 +78,18 @@ export function queueCounts(q: { cards: { lead: CountedRow; also: unknown[] }[];
 /** Only a shared word with a recall. Worth seeing, but not worth pulling anything off a shelf for. */
 export const sharedWordOnly = (row: Pick<QueueRow, "strength">) => row.strength === "PRODUCT_WORDS" || row.strength === "NO_SHARED_WORDS";
 
-/** What the tiles say for a store read from its listings. Each listing counts once, under the strongest thing it came near. */
-export function listingCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[], total: number) {
+/** A real shop's cards, split by what they rest on. Each record counts once, under the strongest thing it came near. */
+export function splitCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[]) {
   const strong = new Set(cards.filter((c) => !sharedWordOnly(c.lead)).map((c) => c.lead.recordId));
   const word = new Set(cards.map((c) => c.lead.recordId).filter((id) => !strong.has(id)));
-  return { total, needCheck: strong.size, sharedWord: word.size, cleared: total - strong.size - word.size };
+  return { needCheck: strong.size, sharedWord: word.size };
+}
+
+/** What the tiles say for a store read from its listings. */
+export function listingCounts(cards: { lead: Pick<QueueRow, "recordId" | "strength"> }[], total: number) {
+  const { needCheck, sharedWord } = splitCounts(cards);
+  // Not "clear": the check keeps the closest titles per recall, so a listing past that cap has no card and wasn't read.
+  return { total, needCheck, sharedWord, notFlagged: total - needCheck - sharedWord };
 }
 
 /** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */
@@ -182,7 +189,9 @@ export function chipsFor(row: Pick<QueueRow, "verdict" | "strength" | "salePath"
   if (row.strength === "PRODUCT_WORDS") chips.push("Product words only");
   const join = row.joinState ? JOIN_CHIP[row.joinState] : undefined;
   if (join) chips.push(join);
-  if (row.isListing && row.stillListed && !sharedWordOnly(row)) chips.push("Pull from the shelf");
+  // Pulling something is for a title that names a recalled model. A brand alone only says go and look.
+  if (row.isListing && row.stillListed && row.strength === "CONFIRMED") chips.push("Pull from the shelf");
+  if (row.isListing && row.stillListed && row.strength === "BRAND") chips.push("Check the shelf");
   if (row.isListing && !row.stillListed) chips.push("Not for sale now");
   return chips;
 }

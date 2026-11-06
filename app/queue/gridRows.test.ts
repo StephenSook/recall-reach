@@ -110,6 +110,56 @@ describe("the tabs", () => {
     expect(inTab(out, "all")).toBe(true);
     expect(inTab(out, "needs")).toBe(true);
   });
+
+  describe("on a real shop's queue", () => {
+    const word = row({ matchId: "word", recordId: "sale-9", verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+    const brand = row({ matchId: "brand", recordId: "sale-8", verdict: "SCOPE_GAP", strength: "BRAND" });
+    const cleared = row({ matchId: "gone", recordId: "sale-7", verdict: "CLEARED", strength: "PRODUCT_WORDS" });
+    const out = gridRows([word, brand, cleared], [{ lead: brand, also: [] }, { lead: word, also: [] }], { sharedWordsApart: true });
+    const of = (id: string) => out.find((r) => r.matchId === id) as (typeof out)[number];
+
+    it("a card that only shares a word has its own tab, and leaves Needs review and Done", () => {
+      expect(inTab(of("word"), "words")).toBe(true);
+      expect(inTab(of("word"), "needs")).toBe(false);
+      expect(inTab(of("word"), "done")).toBe(false);
+      expect(inTab(of("word"), "all")).toBe(true);
+    });
+
+    it("a brand stays in Needs review", () => {
+      expect(inTab(of("brand"), "needs")).toBe(true);
+      expect(inTab(of("brand"), "words")).toBe(false);
+    });
+
+    it("a cleared row stays cleared", () => {
+      expect(inTab(of("gone"), "words")).toBe(false);
+      expect(inTab(of("gone"), "cleared")).toBe(true);
+    });
+  });
+
+  describe("on a store's listings", () => {
+    const strongSoldOut = row({ matchId: "out", recordId: "l-1", isListing: true, stillListed: false, orderedOn: null, salePath: null, verdict: "SCOPE_GAP", strength: "BRAND" });
+    const word = row({ matchId: "word", recordId: "l-2", isListing: true, stillListed: true, orderedOn: null, salePath: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+    const out = gridRows([strongSoldOut, word], [{ lead: strongSoldOut, also: [] }, { lead: word, also: [] }], { sharedWordsApart: true, listings: true });
+
+    it("a sold-out listing that needs a check stays in Needs review. Nothing on a store's queue is done", () => {
+      expect(inTab(out[0], "needs")).toBe(true);
+      expect(inTab(out[0], "done")).toBe(false);
+      expect(inTab(out[0], "shelf")).toBe(false);
+    });
+
+    it("one that only shares a word stays apart", () => {
+      expect(inTab(out[1], "words")).toBe(true);
+      expect(inTab(out[1], "needs")).toBe(false);
+    });
+  });
+
+  it("a demo shop's queue has no such split: the same word-only card stays in Needs review", () => {
+    const word = row({ matchId: "word", recordId: "sale-9", verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+    const [out] = gridRows([word], [{ lead: word, also: [] }]);
+    expect(out.apart).toBe(false);
+    expect(inTab(out, "needs")).toBe(true);
+    expect(inTab(out, "words")).toBe(false);
+  });
   it("the shelf shows an item once, however many recalls it comes near", () => {
     const near = build([
       row({ matchId: "lead", recordId: "listing-1", isListing: true, stillListed: true, orderedOn: null, salePath: null, verdict: "MATCH", strength: "CONFIRMED" }),
@@ -195,7 +245,7 @@ describe("what the grid holds", () => {
 
   it("carries nothing a browser should not have", () => {
     const fields = Object.keys(by(build([row({})]), "m1")).sort();
-    expect(fields).toEqual(["anchor", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "soldOn", "state", "tellCpsc", "verdict",
+    expect(fields).toEqual(["anchor", "apart", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "soldOn", "state", "tellCpsc", "verdict",
       "waits", "weak"]);
   });
 });

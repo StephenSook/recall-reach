@@ -8,7 +8,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, sharedWordOnly, traceLine, refundOnOffer } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sharedWordOnly, splitCounts, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -206,7 +206,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
         {card.also.length > 0 ? (
           <details data-testid="also">
             <summary>
-              {card.also.length} other possible {card.also.length === 1 ? "recall" : "recalls"} for this sale
+              {card.also.length} other possible {card.also.length === 1 ? "recall" : "recalls"} for this {row.isListing ? "listing" : "sale"}
             </summary>
             <ul>
               {card.also.map((other) => (
@@ -246,16 +246,21 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
   const listed = listings ? listingCounts(cards, listings.total) : null;
+  // A real shop's cards split by what they rest on. A demo shop keeps its one list, so its numbers can't move.
+  const real = shopKind === "REAL";
+  const split = real ? splitCounts(cards) : null;
+  const waiting = real ? cards.filter((c) => saleWaits(c) && !sharedWordOnly(c.lead)).length : counts.waiting;
+  const grid = gridRows(rows, cards, { sharedWordsApart: real, listings: Boolean(listed) });
 
   return (
     <main className="page">
       <header className="page-head">
         <h1>{shopName}</h1>
-        <span className="quiet">{listed ? `${listed.needCheck} ${counted(listed.needCheck, "needs a check", "need a check")}` : `${counts.waiting} ${counted(counts.waiting, "item waits", "items wait")} for you`}</span>
+        <span className="quiet">{listed ? `${listed.needCheck} ${counted(listed.needCheck, "needs a check", "need a check")}` : `${waiting} ${counted(waiting, "item waits", "items wait")} for you`}</span>
       </header>
       {listed ? (
         <>
-          <p data-testid="listings-lead">These are your public listings, not your sales. None is confirmed: only the item in hand can settle it.</p>
+          <p data-testid="listings-lead">This compares listing titles with CPSC recalls. It doesn&apos;t say this store sold a recalled product. None is confirmed: only the item in hand can settle it.</p>
           <p className="note">
             This checks what&apos;s listed today. <Link href="/check">Your order file</Link> is what checks past sales.
           </p>
@@ -284,29 +289,44 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             <span className="stat-label">Share a word only</span>
           </div>
           <div className="stat stat-CLEARED">
-            <span className="stat-value">{listed.cleared.toLocaleString("en-US")}</span>
-            <span className="stat-label">Nothing close</span>
+            <span className="stat-value">{listed.notFlagged.toLocaleString("en-US")}</span>
+            <span className="stat-label">Not flagged</span>
           </div>
         </div>
       ) : (
-      <div className="stats" data-testid="stats">
-        <div className="stat">
-          <span className="stat-value">{counts.recallsChecked?.toLocaleString("en-US") ?? "None"}</span>
-          <span className="stat-label">{counted(counts.recallsChecked ?? 0, "Recall checked", "Recalls checked")}</span>
+        <div className="stats" data-testid="stats">
+          <div className="stat">
+            <span className="stat-value">{counts.recallsChecked?.toLocaleString("en-US") ?? "None"}</span>
+            <span className="stat-label">{counted(counts.recallsChecked ?? 0, "Recall checked", "Recalls checked")}</span>
+          </div>
+          {split ? (
+            <>
+              <div className="stat stat-SCOPE_GAP">
+                <span className="stat-value">{split.needCheck}</span>
+                <span className="stat-label">{counted(split.needCheck, "Needs a check", "Need a check")}</span>
+              </div>
+              <div className="stat">
+                <span className="stat-value">{split.sharedWord}</span>
+                <span className="stat-label">Share a word only</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="stat stat-MATCH">
+                <span className="stat-value">{counts.matched}</span>
+                <span className="stat-label">Matched</span>
+              </div>
+              <div className="stat stat-SCOPE_GAP">
+                <span className="stat-value">{counts.scopeGaps}</span>
+                <span className="stat-label">Can&apos;t tell yet</span>
+              </div>
+            </>
+          )}
+          <div className="stat stat-CLEARED">
+            <span className="stat-value">{counts.cleared}</span>
+            <span className="stat-label">Cleared</span>
+          </div>
         </div>
-        <div className="stat stat-MATCH">
-          <span className="stat-value">{counts.matched}</span>
-          <span className="stat-label">Matched</span>
-        </div>
-        <div className="stat stat-SCOPE_GAP">
-          <span className="stat-value">{counts.scopeGaps}</span>
-          <span className="stat-label">Can&apos;t tell yet</span>
-        </div>
-        <div className="stat stat-CLEARED">
-          <span className="stat-value">{counts.cleared}</span>
-          <span className="stat-label">Cleared</span>
-        </div>
-      </div>
       )}
       <p className="note">
         {coverage ? <span data-testid="coverage">{listings ? listingCoverageLine(coverage, listings) : coverageLine(coverage)} </span> : null}
@@ -323,12 +343,12 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>
             {/* Cards run strongest first, so this falls once, between what's worth a look and what only shares a word. */}
-            {listed && sharedWordOnly(card.lead) && (i === 0 || !sharedWordOnly(cards[i - 1].lead)) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
+            {real && sharedWordOnly(card.lead) && (i === 0 || !sharedWordOnly(cards[i - 1].lead)) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
             <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
           </Fragment>
         ))}
       </section>
-      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} startOn={listed ? "shelf" : "needs"} />
+      <MatchGridLoader rows={[...grid, ...unidentifiedRows(unidentified)]} startOn={listed && grid.some((r) => r.isLead && r.listedOnShelf) ? "shelf" : "needs"} listings={Boolean(listed)} />
       <p className="cards-hint note">Open a row to work on it.</p>
       {cleared.length > 0 || unrelated > 0 ? (
         <section className="narrow-only">

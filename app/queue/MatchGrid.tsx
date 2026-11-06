@@ -9,6 +9,7 @@ import { chipClass } from "./labels";
 
 const TABS: { id: GridTab; label: string }[] = [
   { id: "needs", label: "Needs review" },
+  { id: "words", label: "Share a word only" },
   { id: "done", label: "Done" },
   { id: "cleared", label: "Cleared" },
   { id: "shelf", label: "Pull from the shelf" },
@@ -43,7 +44,10 @@ const columns: ColDef<Row>[] = [
 ];
 
 /** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
-export default function MatchGrid({ rows, startOn = "needs" }: { rows: GridRow[]; startOn?: GridTab }) {
+/** What a store's listings have no use for, or no right to say: nothing there was sold, and nothing can be sent. */
+const SALE_COLUMNS = new Set(["path", "soldOn", "noticeState"]);
+
+export default function MatchGrid({ rows, startOn = "needs", listings = false }: { rows: GridRow[]; startOn?: GridTab; listings?: boolean }) {
   const api = useRef<GridApi<Row> | null>(null);
   const tabRef = useRef<GridTab>(startOn);
   const [tab, setTab] = useState<GridTab>(startOn);
@@ -52,6 +56,7 @@ export default function MatchGrid({ rows, startOn = "needs" }: { rows: GridRow[]
   const candidates = rows.filter((r) => r.verdict !== "UNIDENTIFIED").length;
   const totals = useMemo(() => [{ product: `${shown} of ${candidates} shown` }], [shown, candidates]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
+  const shownColumns = useMemo(() => (listings ? columns.filter((c) => !SALE_COLUMNS.has(String(c.field))) : columns), [listings]);
 
   const choose = (next: GridTab) => {
     tabRef.current = next;
@@ -63,9 +68,9 @@ export default function MatchGrid({ rows, startOn = "needs" }: { rows: GridRow[]
     <section className="window" data-testid="match-grid" aria-label="All matches">
       <header className="window-bar grid-bar">
         <div className="tabs" role="group" aria-label="Show">
-          {TABS.map((t) => (
+          {TABS.filter((t) => (t.id !== "words" || rows.some((r) => r.apart)) && !(listings && t.id === "done")).map((t) => (
             <button key={t.id} type="button" className="tab" aria-pressed={tab === t.id} onClick={() => choose(t.id)}>
-              {t.label} ({rows.filter((r) => inTab(r, t.id)).length})
+              {listings && t.id === "shelf" ? "On the shelf" : t.label} ({rows.filter((r) => inTab(r, t.id)).length})
             </button>
           ))}
         </div>
@@ -77,7 +82,7 @@ export default function MatchGrid({ rows, startOn = "needs" }: { rows: GridRow[]
       <AgGridReact<Row>
         theme={gridTheme}
         rowData={rows}
-        columnDefs={columns}
+        columnDefs={shownColumns}
         defaultColDef={{ sortable: true, resizable: true }}
         domLayout="autoHeight"
         pagination={rows.length > PAGE_SIZE}

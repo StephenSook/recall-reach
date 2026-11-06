@@ -3,7 +3,7 @@
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
 import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, sharedWordOnly, stateChip } from "./labels";
 
-export type GridTab = "needs" | "done" | "cleared" | "shelf" | "unidentified" | "all";
+export type GridTab = "needs" | "words" | "done" | "cleared" | "shelf" | "unidentified" | "all";
 
 export interface GridRow {
   matchId: string;
@@ -22,6 +22,8 @@ export interface GridRow {
   waits: boolean;
   approvable: boolean;
   weak: boolean;
+  /** On a real shop's queue, a card that only shares a word with a recall sits in its own tab. A demo shop has no such tab. */
+  apart: boolean;
   tellCpsc: boolean;
   listedOnShelf: boolean;
   /** The window this row opens. Null when there is nothing to do on it: its row already says why it cleared. */
@@ -31,7 +33,7 @@ export interface GridRow {
 /** CPSC's words and the sale date. No shop text, and nothing about a buyer. */
 export const TELL_CPSC_COLUMNS = ["recallNumber", "product", "soldOn"] as const satisfies readonly (keyof GridRow)[];
 
-export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
+export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWordsApart?: boolean; listings?: boolean } = {}): GridRow[] {
   const cardOf = new Map<string, string>();
   for (const card of cards) for (const r of [card.lead, ...card.also]) cardOf.set(r.matchId, card.lead.matchId);
   const leads = new Set(cards.map((c) => c.lead.matchId));
@@ -60,9 +62,11 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
       reason: r.reason,
       noticeState: r.notice ? NOTICE_STATE[r.notice.state] : null,
       isLead,
-      waits: waiting.has(r.matchId),
+      // Nothing on a store's listings is ever done here: no message or refund can come from one.
+      waits: opts.listings ? true : waiting.has(r.matchId),
       approvable: isLead && canNotify(r) && needsApproval(r),
       weak: sharedWordOnly(r),
+      apart: Boolean(opts.sharedWordsApart) && isLead && r.verdict !== "CLEARED" && sharedWordOnly(r),
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,
@@ -88,6 +92,7 @@ export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
     waits: false,
     approvable: false,
     weak: false,
+    apart: false,
     tellCpsc: false,
     listedOnShelf: false,
     anchor: null,
@@ -97,8 +102,9 @@ export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
 export function inTab(row: GridRow, tab: GridTab): boolean {
   if (tab === "unidentified") return row.verdict === "UNIDENTIFIED";
   if (row.verdict === "UNIDENTIFIED") return false;
-  if (tab === "needs") return row.isLead && row.waits;
-  if (tab === "done") return row.isLead && !row.waits;
+  if (tab === "words") return row.apart;
+  if (tab === "needs") return row.isLead && row.waits && !row.apart;
+  if (tab === "done") return row.isLead && !row.waits && !row.apart;
   if (tab === "cleared") return row.verdict === "CLEARED";
   if (tab === "shelf") return row.listedOnShelf && row.isLead;
   return true;

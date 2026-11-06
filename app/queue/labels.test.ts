@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -322,7 +322,7 @@ describe("chipsFor", () => {
 
   it("carries the join state, and the shelf for a listing", () => {
     expect(chipsFor(row({ joinState: "AMBIGUOUS_JOIN" }))).toEqual(["Needs review", "Sold after the recall", "Two possible orders"]);
-    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: true }))).toEqual(["Can't tell yet", "Pull from the shelf"]);
+    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: true }))).toEqual(["Can't tell yet", "Check the shelf"]);
   });
 
   it("shows only that it is cleared on a cleared row", () => {
@@ -347,13 +347,18 @@ describe("a store read from its listings", () => {
 
   it("counts each listing once, under the strongest thing it came near", () => {
     const cards = [card("a", "CONFIRMED"), card("a", "CONFIRMED"), card("b", "BRAND"), card("c", "PRODUCT_WORDS"), card("d", "NO_SHARED_WORDS")];
-    expect(listingCounts(cards, 219)).toEqual({ total: 219, needCheck: 2, sharedWord: 2, cleared: 215 });
+    expect(listingCounts(cards, 219)).toEqual({ total: 219, needCheck: 2, sharedWord: 2, notFlagged: 215 });
+  });
+
+  it("counts a real shop's sales the same way, with no total", () => {
+    expect(splitCounts([card("a", "BRAND"), card("a", "CONFIRMED"), card("b", "PRODUCT_WORDS"), card("c", "NO_SHARED_WORDS")])).toEqual({ needCheck: 1, sharedWord: 2 });
+    expect(splitCounts([])).toEqual({ needCheck: 0, sharedWord: 0 });
   });
 
   it("adds up to the listings read", () => {
-    const { needCheck, sharedWord, cleared } = listingCounts([card("a", "BRAND"), card("b", "PRODUCT_WORDS")], 2);
-    expect(needCheck + sharedWord + cleared).toBe(2);
-    expect(cleared).toBe(0);
+    const { needCheck, sharedWord, notFlagged } = listingCounts([card("a", "BRAND"), card("b", "PRODUCT_WORDS")], 2);
+    expect(needCheck + sharedWord + notFlagged).toBe(2);
+    expect(notFlagged).toBe(0);
   });
 
   it("says what was read, and that no sale was", () => {

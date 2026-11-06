@@ -28,11 +28,11 @@ class ShowWindowsIfItFails extends Component<{ children: ReactNode }, { failed: 
 }
 
 /** A table this wide does not fit a phone, and a phone has the windows, so it never downloads the grid. */
-export function MatchGridLoader({ rows, startOn }: { rows: GridRow[]; startOn?: GridTab }) {
+export function MatchGridLoader({ rows, startOn, listings }: { rows: GridRow[]; startOn?: GridTab; listings?: boolean }) {
   const wide = useSyncExternalStore(subscribe, () => window.matchMedia(WIDE).matches, () => false);
   return wide ? (
     <ShowWindowsIfItFails>
-      <MatchGrid rows={rows} startOn={startOn} />
+      <MatchGrid rows={rows} startOn={startOn} listings={listings} />
     </ShowWindowsIfItFails>
   ) : null;
 }

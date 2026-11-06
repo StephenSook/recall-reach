@@ -16,13 +16,14 @@ test("a store types its address, sees what needs a check with no claim about sal
   await expect(page).toHaveURL(/\/queue/, { timeout: 300_000 });
   const seconds = Math.round((Date.now() - started) / 1000);
 
-  await expect(page.getByTestId("listings-lead")).toHaveText("These are your public listings, not your sales. None is confirmed: only the item in hand can settle it.");
+  await expect(page.getByTestId("listings-lead")).toHaveText("This compares listing titles with CPSC recalls. It doesn't say this store sold a recalled product. None is confirmed: only the item in hand can settle it.");
   await expect(page.getByTestId("coverage")).toContainText("No sales or PayPal history were read.");
   const tiles = (await page.getByTestId("stats").locator(".stat").allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
   const counts = { seconds, tiles, cards: await page.locator(".cards > .window").count() };
   console.log(JSON.stringify(counts)); // counts only: no store's name and no title
 
-  for (const word of ["Sold:", "Sandbox PayPal", "Refund eligible", "Sold after the recall", "Approve this"]) await expect(page.locator("main")).not.toContainText(word);
+  for (const word of ["Sold:", "this sale", "Sandbox PayPal", "Refund eligible", "Sold after the recall", "Approve this", "Pull from the shelf"]) await expect(page.locator("main")).not.toContainText(word);
+  await expect(page.getByRole("columnheader", { name: "Sold" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /refund/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Buy this as a family" })).toHaveCount(0);
 
