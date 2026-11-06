@@ -156,6 +156,9 @@ small,
 .chip-CLEARED {
   background: var(--color-cleared);
 }
+.chip-NOT_NEAR {
+  background: var(--color-field);
+}
 .chip-real {
   background: var(--color-cobalt);
   color: var(--color-paper);
@@ -393,6 +396,7 @@ small,
 .grid-bar {
   background: var(--color-field);
 }
+[data-testid="replay-grid"] .ag-cell-wrap-text,
 [data-testid="match-grid"] .ag-cell-wrap-text {
   padding-block: 8px;
   line-height: 1.3;
@@ -404,6 +408,7 @@ small,
   cursor: pointer;
 }
 /* A chip that nearly fills its cell must not get the grid's overflow dots after it. */
+[data-testid="replay-grid"] .chip-cell,
 [data-testid="match-grid"] .chip-cell {
   text-overflow: clip;
 }

@@ -250,6 +250,29 @@ test.describe("on a wide screen", () => {
   });
 });
 
+test.describe("Recall Replay", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("runs every recall with a clock, and anyone can recount it", async ({ page }) => {
+    await page.goto("/replay");
+    const button = page.getByRole("button", { name: /^Run it/ });
+    await button.click();
+    await expect(page).toHaveURL(/\/replay\/[0-9a-f-]{36}$/, { timeout: 120_000 });
+    await expect(page.getByTestId("clock")).toContainText(/\d+ recalls in \d+\.\d seconds/);
+    const grid = page.getByTestId("replay-grid");
+    await expect(grid.locator(".ag-row[row-id]").first()).toBeVisible();
+    await grid.getByRole("button", { name: /^Matched/ }).click();
+    await expect(grid.locator(".ag-row[row-id]").first()).toContainText("Matched");
+
+    const runId = new URL(page.url()).pathname.split("/").pop();
+    const proof = await (await page.request.get(`/api/proof/${runId}`)).json();
+    expect(proof.agree).toBe(true);
+    expect(proof.recomputed.checked).toBeGreaterThan(900);
+    expect(proof.recomputed.matched + proof.recomputed.scopeGaps + proof.recomputed.cleared + proof.recomputed.notNear).toBe(proof.recomputed.checked);
+    await expect(page.locator("body")).not.toContainText("DEMO-HIST");
+  });
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

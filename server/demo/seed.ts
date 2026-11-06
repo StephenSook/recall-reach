@@ -14,7 +14,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck, type RunSummary } from "../match/run";
 import type { PayPalClient } from "../paypal/client";
 import { createCardOrder } from "../paypal/orders";
-import { failedMonths, searchTransactions } from "../paypal/transactions";
+import { failedMonths, searchTransactions, type SearchCoverage } from "../paypal/transactions";
 import { createContactCipher } from "../privacy/contactCipher";
 import { poolPayments } from "./historyPool";
 
@@ -92,8 +92,15 @@ const daysBefore = (day: string, days: number) => new Date(Date.parse(`${day}T00
 export async function seedDemoShop(
   db: Db,
   client: PayPalClient,
-  opts: { today: string; secret: string; demoEmail?: string; now?: Date },
-): Promise<{ shopId: string; run: RunSummary }> {
+  opts: {
+    today: string;
+    secret: string;
+    demoEmail?: string;
+    now?: Date;
+    /** False makes no new sale: for a run that only looks. Default true. */
+    freshCaptures?: boolean;
+  },
+): Promise<{ shopId: string; run: RunSummary; search: SearchCoverage }> {
   const now = opts.now ?? new Date();
   const { rows: recalls } = await db.query<{ recall_number: string; recall_date: string }>(
     "select recall_number, recall_date from recalls where recall_number = any($1::text[])",
@@ -135,7 +142,7 @@ export async function seedDemoShop(
 
   const fresh = await Promise.all(
     orders
-      .filter((o) => o.demoCase.freshCapture)
+      .filter((o) => o.demoCase.freshCapture && opts.freshCaptures !== false)
       .map((o) =>
         createCardOrder(client, {
           orderNumber: o.orderNumber,
@@ -181,5 +188,5 @@ export async function seedDemoShop(
     failedMonths: failedMonths(coverage.failedWindows),
     search: coverage,
   });
-  return { shopId, run };
+  return { shopId, run, search: coverage };
 }

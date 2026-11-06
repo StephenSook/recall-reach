@@ -1,60 +1,11 @@
 "use client";
 
-import {
-  CellStyleModule,
-  ClientSideRowModelModule,
-  CsvExportModule,
-  DateFilterModule,
-  ExternalFilterModule,
-  ModuleRegistry,
-  PaginationModule,
-  PinnedRowModule,
-  QuickFilterModule,
-  RowApiModule,
-  RowAutoHeightModule,
-  RowSelectionModule,
-  TextFilterModule,
-  themeQuartz,
-  type ColDef,
-  type GridApi,
-  type ICellRendererParams,
-  type IRowNode,
-} from "ag-grid-community";
+import type { ColDef, GridApi, ICellRendererParams, IRowNode } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
+import { gridTheme } from "@/app/gridSetup";
 import { inTab, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
-
-ModuleRegistry.registerModules([
-  ClientSideRowModelModule,
-  RowApiModule,
-  RowSelectionModule,
-  QuickFilterModule,
-  TextFilterModule,
-  DateFilterModule,
-  ExternalFilterModule,
-  CsvExportModule,
-  PinnedRowModule,
-  PaginationModule,
-  CellStyleModule,
-  RowAutoHeightModule,
-]);
-
-const theme = themeQuartz.withParams({
-  cellHorizontalPadding: 8,
-  headerColumnResizeHandleColor: "#d2d2d2",
-  fontFamily: "inherit",
-  fontSize: 14,
-  foregroundColor: "#000000",
-  accentColor: "#002af0",
-  borderColor: "#d2d2d2",
-  headerBackgroundColor: "#e8e8e8",
-  headerFontWeight: 700,
-  wrapperBorder: false,
-  wrapperBorderRadius: 0,
-  rowBorder: { style: "dashed", width: 2, color: "#d2d2d2" },
-  selectedRowBackgroundColor: "rgba(165, 181, 255, 0.4)",
-});
 
 const TABS: { id: GridTab; label: string }[] = [
   { id: "needs", label: "Needs review" },
@@ -121,7 +72,7 @@ export default function MatchGrid({ rows }: { rows: GridRow[] }) {
         </label>
       </header>
       <AgGridReact<Row>
-        theme={theme}
+        theme={gridTheme}
         rowData={rows}
         columnDefs={columns}
         defaultColDef={{ sortable: true, resizable: true }}
