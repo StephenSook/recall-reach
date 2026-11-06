@@ -626,12 +626,33 @@ describe("notices", () => {
       expect((await familyView(db, unsure))?.answerOpen).toBe(false);
     });
 
-    it("does not treat typed text as not sure: on a model question, those words are just a wrong model", async () => {
-      const m = await matchFor("27072", line({ orderNumber: "#F13", title: "Baby Brezza sterilizer" }));
-      const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });
-      expect(kind).toBe("CHECK_REQUEST");
-      await recordFamilyAnswer(db, noticeId, "not_sure");
-      expect((await familyView(db, noticeId))?.answerOpen).toBe(false);
+    describe("a family typing a model number", () => {
+      const modelCheck = async (orderNumber: string) => {
+        const m = await matchFor("27072", line({ orderNumber, title: "Baby Brezza sterilizer" }));
+        const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });
+        expect(kind).toBe("CHECK_REQUEST");
+        return noticeId;
+      };
+
+      it.each(["not sure", "not_sure", "can't read it", "no label", "idk", "n/a", "it wore off"])("isn't told it doesn't match for typing %s, and can still answer", async (typed) => {
+        const noticeId = await modelCheck(`#T-${typed}`);
+        expect(await recordFamilyAnswer(db, noticeId, typed)).toBe("CANT_TELL");
+        expect((await familyView(db, noticeId))?.answerOpen).toBe(true);
+      });
+
+      it("can correct a typed code to the recalled model", async () => {
+        const noticeId = await modelCheck("#T-CORRECT");
+        expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("DOESNT_MATCH");
+        expect((await familyView(db, noticeId))?.answerOpen).toBe(true);
+        expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
+      });
+
+      it("once it matches, stays matched: nobody holding the link can talk it down", async () => {
+        const noticeId = await modelCheck("#T-MATCHED");
+        expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
+        expect((await familyView(db, noticeId))?.answerOpen).toBe(false);
+        expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("MATCHES");
+      });
     });
 
     it("keeps a real answer once there is one, even after a later not sure", async () => {
@@ -742,6 +763,10 @@ describe("what a family types, when CPSC's model list has more than our token ru
 
   it("something CPSC's record says elsewhere can't be ruled out either", () => {
     expect(checkResult({ title: "X Recalls Heaters", description: "Heaters, model AB-100. The 1500W version is not included in the 2024 count." }, model, "1500W")).toBe("CANT_TELL");
+  });
+
+  it("words with no number in them are never a model that doesn't match", () => {
+    for (const typed of ["not sure", "worn off", "no sticker", "UNKNOWN"]) expect(checkResult(bissell, model, typed), typed).toBe("CANT_TELL");
   });
 
   it("a code nowhere near the record still doesn't match", () => {

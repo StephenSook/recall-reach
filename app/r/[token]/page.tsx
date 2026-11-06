@@ -64,9 +64,14 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
                   <label className="field">
                     Model number <input name="answer" autoComplete="off" required />
                   </label>
-                  <button type="submit" className="btn big">
-                    Check
-                  </button>
+                  <div className="answers">
+                    <button type="submit" className="btn big">
+                      Check
+                    </button>
+                    <button type="submit" className="btn btn-outline" name="answer" value="not_sure" formNoValidate>
+                      I can&apos;t find it
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div className="answers">

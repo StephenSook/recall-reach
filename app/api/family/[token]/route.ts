@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
     else {
       const asked = form.get("asked");
-      await recordFamilyAnswer(getDb(), noticeId, String(form.get("answer") ?? "").slice(0, 80), typeof asked === "string" ? asked : undefined);
+      await recordFamilyAnswer(getDb(), noticeId, (form.getAll("answer").map(String).find((a) => a.trim()) ?? "").slice(0, 80), typeof asked === "string" ? asked : undefined);
     }
   } catch (err) {
     if (!(err instanceof NoticeRefused)) throw err;

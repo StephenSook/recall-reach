@@ -219,6 +219,8 @@ export function checkResult(
     if (listed.some((m) => unconfuse(normalizeModel(m)) === typed)) return "MATCHES"; // the record itself names this model
     // Nobody is told it doesn't match over a typing slip, or something CPSC's record says elsewhere.
     if (isVariantOf(said, listed) || writtenApart(said).test(text.toUpperCase())) return "CANT_TELL";
+    // "Not sure", "can't read it", "worn off": words with no number aren't a model, so they can't rule anything out.
+    if (!/\d/.test(said)) return "CANT_TELL";
     return fullScope ? "DOESNT_MATCH" : "CANT_TELL";
   }
   // CPSC's list is elsewhere, so nothing a family says here can settle it either way.
@@ -266,14 +268,17 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   const said = answer.trim();
   const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
   if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");
-  // Only an explicit "not sure" stays open, so the family can look and then answer.
+  // An explicit "not sure" stays open, so the family can look and then answer. So does a typed model until it matches,
+  // because a label is easy to misread: the only change left is toward the recall, so a link holder can't talk it down.
+  const result = checkResult(notice, question, said);
+  const staysOpen = question.kind === "model" ? result !== "MATCHES" : said === "not_sure";
   const saved = await db.query<{ check_result: CheckResult }>(
     `update notices set
        check_result = case when check_result is null or check_open then $2 else check_result end,
        check_open = case when check_result is null or check_open then $3::boolean else false end,
        responded_at = coalesce(responded_at, now())
      where id = $1 returning check_result`,
-    [noticeId, checkResult(notice, question, said), question.kind !== "model" && said === "not_sure"],
+    [noticeId, result, staysOpen],
   );
   return saved.rows[0].check_result;
 }
