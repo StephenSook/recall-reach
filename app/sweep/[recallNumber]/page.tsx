@@ -45,10 +45,11 @@ export default async function SweepPage({ params }: { params: Promise<{ recallNu
               ))}
             </ul>
           ) : (
-            <p data-testid="no-candidates">Nothing came back with this recall&apos;s brand and product.</p>
+            <p data-testid="no-candidates">No title to show for this recall&apos;s brand and product.</p>
           )}
           <p className="note" data-testid="sweep-counts">
-            Searched for &quot;{sweep.query}&quot; {ranAt(sweep.searchedAt)}. {view.returned} {view.returned === 1 ? "product" : "products"} came back, and {view.notListed} {view.notListed === 1 ? "isn't" : "aren't"} this recall&apos;s brand and product, so {view.notListed === 1 ? "it isn't" : "they aren't"} named. We keep titles only, no sellers or prices.
+            Searched for &quot;{sweep.query}&quot; {ranAt(sweep.searchedAt)}. {view.returned} {view.returned === 1 ? "product" : "products"} came back. {view.notListed} {view.notListed === 1 ? "isn't" : "aren't"} this recall&apos;s brand and product, so {view.notListed === 1 ? "it isn't" : "they aren't"} named.
+            {view.otherWording > 0 ? ` ${view.otherWording} more ${view.otherWording === 1 ? "is" : "are"} this brand and product in other words, so ${view.otherWording === 1 ? "its title isn't" : "their titles aren't"} shown.` : ""} We keep titles only, no sellers or prices.
             {sweep.recallChanged ? " CPSC has edited this recall since this search." : ""}
           </p>
         </>

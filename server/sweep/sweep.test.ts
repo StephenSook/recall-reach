@@ -170,6 +170,26 @@ describe("the market sweep", () => {
       expect(listings[0].id).toBe("p0");
     });
 
+    it("reads a streamed answer as it comes, without waiting for the stream to close", async () => {
+      const streaming = (async (_url: string | URL, init?: RequestInit) => {
+        if ((init?.method ?? "GET") !== "POST") return new Response(null, { status: 405 });
+        const body = JSON.parse(String(init?.body));
+        if (body.method === "initialize") {
+          return Response.json({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "fake", version: "1" } } });
+        }
+        if (body.id === undefined) return new Response(new ReadableStream(), { status: 202 }); // a notification: its body never closes
+        const message = JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [], structuredContent: { products: [{ id: "a", title: "Streamed", brands: [] }] } } });
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`event: message\ndata: ${message}\n\n`));
+            // Never closes, as a server may keep it open.
+          },
+        });
+        return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }) as typeof fetch;
+      expect((await channel3Search(streaming, { timeoutMs: 2_000 })("x")).listings[0].title).toBe("Streamed");
+    });
+
     it("gives up on an answer that is too large, rather than holding it all", async () => {
       const huge = { products: [{ id: "a", title: "x".repeat(MAX_ANSWER_BYTES + 1000), brands: [] }] };
       await expect(channel3Search(answering(huge))("x")).rejects.toThrow();

@@ -2,7 +2,6 @@
 // record. Nothing from a shop or from PayPal reaches this file: see sweep.ts, which reads only the recalls table.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { readCappedBody } from "../http/body";
 
 export const CHANNEL3_MCP_URL = "https://mcp.trychannel3.com/";
 /** For the whole exchange, start to finish. Five of these fit inside what the hourly job has left after its own budget. */
@@ -38,15 +37,23 @@ function readAnswer(answer: unknown): MarketSearch {
   return { listings: listings.slice(0, MAX_LISTINGS), asOf: validTime(content.as_of) };
 }
 
-/** Every request shares one clock, and no answer is held past the size limit. Only POST answers are read: a GET can be a stream that never ends. */
+/** Passes an answer through as it arrives, and stops it past the size limit. A stream may never close, so nothing waits for its end. */
+function sizeLimited(res: Response): Response {
+  if (!res.body) return res;
+  let seen = 0;
+  const limit = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      seen += chunk.byteLength;
+      if (seen > MAX_ANSWER_BYTES) controller.error(new Error("Channel3's answer is too large"));
+      else controller.enqueue(chunk);
+    },
+  });
+  return new Response(res.body.pipeThrough(limit), { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
+/** Every request shares one clock. */
 function bounded(fetchImpl: typeof fetch, signal: AbortSignal): typeof fetch {
-  return async (url, init) => {
-    const res = await fetchImpl(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
-    if ((init?.method ?? "GET") !== "POST" || !res.body) return res;
-    const read = await readCappedBody(res, MAX_ANSWER_BYTES);
-    if (!read.ok) throw new Error("Channel3's answer is too large");
-    return new Response(read.body as BodyInit, { status: res.status, statusText: res.statusText, headers: res.headers });
-  };
+  return async (url, init) => sizeLimited(await fetchImpl(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }));
 }
 
 export function channel3Search(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number } = {}): SearchMarket {
