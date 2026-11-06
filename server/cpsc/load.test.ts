@@ -114,9 +114,9 @@ describe("loadYears", () => {
         expect(await missing()).toEqual([]);
       });
 
-      it("isn't carried forward by a poll that failed", async () => {
+      it.each(["failed", "partial"])("isn't carried forward by a poll that %s: a recall it rejected isn't held", async (status) => {
         await held("2024-01-01", "2024-06-01");
-        await polled("2024-05-31", TODAY, "failed");
+        await polled("2024-05-31", TODAY, status);
         expect(await missing()).toEqual([2024]);
       });
 

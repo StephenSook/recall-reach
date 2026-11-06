@@ -56,12 +56,12 @@ function runningYearHeld(pulls: HeldPull[], year: number, today: string): boolea
 /**
  * Years from `fromYear` that aren't held. A past year needs a whole-year pull that returned recalls. The running year needs
  * one from its first day that the poll has carried on from without a gap. An empty answer for a whole year is a bad answer,
- * and a partial pull doesn't count as loading a year.
+ * and a partial pull counts for nothing here, because a recall it rejected isn't held.
  */
 export async function missingRecallYears(db: Queryable, fromYear: number, today: string): Promise<number[]> {
   const { rows } = await db.query<HeldPull>(
     `select range_field, range_start::text as range_start, range_end::text as range_end from cpsc_pulls
-     where (range_field = 'RecallDate' and status = 'ok' and fetched > 0) or (range_field = 'LastPublishDate' and status in ('ok', 'partial'))`,
+     where (range_field = 'RecallDate' and status = 'ok' and fetched > 0) or (range_field = 'LastPublishDate' and status = 'ok')`,
   );
   const loaded = new Set(rows.filter((r) => r.range_field === "RecallDate").map((r) => `${r.range_start}..${r.range_end}`));
   const thisYear = Number(today.slice(0, 4));
