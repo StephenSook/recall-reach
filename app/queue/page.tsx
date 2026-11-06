@@ -8,6 +8,7 @@ import { gridRows } from "./gridRows";
 import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
+import { WatchForSale } from "./WatchForSale";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
   const notifiable = canNotify(row);
   const canApprove = notifiable && needsApproval(row);
   const canAskClaude = agentReady && !row.agent && row.verdict !== "CLEARED";
+  const canBuy = shopKind === "DEMO" && row.isListing && row.stillListed && row.verdict !== "CLEARED";
   return (
     <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict}>
       <header className="window-bar">
@@ -37,6 +39,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
           {row.orderedOn ? <>, {row.orderedOn}</> : null}. Recalled {row.recallDate}.
         </p>
         <p className="quiet">{row.reason}</p>
+        {row.caughtSeconds !== null ? <p data-testid="caught">Reached your queue {row.caughtSeconds} seconds after PayPal took the payment.</p> : null}
         {row.salePath === "REVIEW" && row.verdict === "MATCH" ? <p>Sold on the recall date. Please review.</p> : null}
         {row.verdict !== "CLEARED" && productWordsOnly ? <p>Nothing goes out on product words alone. Check the recall page.</p> : null}
 
@@ -53,8 +56,16 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
           </div>
         ) : null}
 
-        {canApprove || canAskClaude ? (
+        {canApprove || canAskClaude || canBuy ? (
           <div className="actions">
+            {canBuy ? (
+              <form action="/api/demo/buy" method="post">
+                <input type="hidden" name="shopItemId" value={row.recordId} />
+                <button type="submit" className="btn btn-outline">
+                  Buy this as a family
+                </button>
+              </form>
+            ) : null}
             {canApprove ? (
               <form action="/api/queue/notices" method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
@@ -206,7 +217,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
 export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string }> }) {
   const session = await currentSession();
   if (!session) redirect("/");
-  const { rows, shop, coverage } = await loadQueue(getDb(), session.shopId, session.sessionId);
+  const { rows, shop, coverage, pendingLiveSales } = await loadQueue(getDb(), session.shopId, session.sessionId);
   const { message } = await searchParams;
   const shopName = shop?.name ?? "";
   const shopKind = shop?.kind ?? "DEMO";
@@ -219,7 +230,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <header className="page-head">
         <h1>{shopName}</h1>
         <span className="quiet">
-          {counts.waiting} {counts.waiting === 1 ? "sale waits" : "sales wait"} for you
+          {counts.waiting} {counts.waiting === 1 ? "item waits" : "items wait"} for you
         </span>
       </header>
       <p>Check each match, then approve what goes out. Nothing is sent without you.</p>
@@ -228,6 +239,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           {message}
         </p>
       ) : null}
+      {pendingLiveSales > 0 ? <WatchForSale /> : null}
       <div className="stats" data-testid="stats">
         <div className="stat">
           <span className="stat-value">{counts.recallsChecked ?? "None"}</span>

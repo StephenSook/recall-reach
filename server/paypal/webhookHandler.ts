@@ -22,6 +22,8 @@ function eventCreateTime(event: WebhookEvent): string | null {
  * 401 when verification fails or the transmission was already used for another event, 200 for a
  * verified event, including a repeat delivery of one already recorded. Recording an event changes
  * no other state: anything that acts on an event must confirm the resource through the PayPal API.
+ * A completed capture goes to onCaptureCompleted, which must be safe to repeat: if it throws, the
+ * delivery fails and PayPal tries again.
  */
 export async function handleWebhookDelivery(input: {
   rawBody: Uint8Array;
@@ -31,6 +33,7 @@ export async function handleWebhookDelivery(input: {
   recordKey: RecordKey | null;
   fetchCert?: CertFetcher;
   now?: () => number;
+  onCaptureCompleted?: (captureId: string) => Promise<unknown>;
 }): Promise<WebhookResponse> {
   if (!input.webhookId || !input.recordKey) {
     console.error("PayPal webhook received but PAYPAL_WEBHOOK_ID or RECORD_HMAC_SECRET is not set");
@@ -98,5 +101,6 @@ export async function handleWebhookDelivery(input: {
     `PayPal webhook accepted: type=${event.event_type} transmission_new=${transmissionNew} ` +
       `transmission_age_s=${age} duplicate=${duplicate}`,
   );
+  if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId) await input.onCaptureCompleted?.(resourceId);
   return { status: 200, body: { received: true, duplicate } };
 }

@@ -32,6 +32,44 @@ describe("handleWebhookDelivery", () => {
   const rows = async () =>
     (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id_hmac")).rows;
 
+  describe("a completed capture", () => {
+    const event = (type: string, id = "WH-CAPTURE-1") => new TextEncoder().encode(JSON.stringify({ id, event_type: type, resource_type: "capture", create_time: "2026-11-06T14:59:50Z", resource: { id: "CAPTURE-1" } }));
+    const send = (raw: Uint8Array, onCaptureCompleted: (id: string) => Promise<unknown>, transmission = "t-1") =>
+      handleWebhookDelivery({ rawBody: raw, headers: paypalHeaders(raw, WEBHOOK_ID, transmission), webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, onCaptureCompleted });
+
+    it("is passed on, by capture id, after it is verified and recorded", async () => {
+      const seen = vi.fn(async () => (await rows()).length);
+      expect((await send(event("PAYMENT.CAPTURE.COMPLETED"), seen)).status).toBe(200);
+      expect(seen).toHaveBeenCalledWith("CAPTURE-1");
+      await expect(seen.mock.results[0].value).resolves.toBe(1);
+    });
+
+    it("is not passed on when the signature fails", async () => {
+      const seen = vi.fn(async () => undefined);
+      const raw = event("PAYMENT.CAPTURE.COMPLETED");
+      const res = await handleWebhookDelivery({ rawBody: raw, headers: paypalHeaders(event("PAYMENT.CAPTURE.DENIED"), WEBHOOK_ID), webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, onCaptureCompleted: seen });
+      expect(res.status).toBe(401);
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it.each(["PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.DENIED", "PAYMENT.CAPTURE.REVERSED"])("%s is not passed on", async (type) => {
+      const seen = vi.fn(async () => undefined);
+      await send(event(type), seen);
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it("is passed on again when PayPal delivers it again, so a failed attempt gets another try", async () => {
+      const seen = vi.fn(async () => undefined);
+      await send(event("PAYMENT.CAPTURE.COMPLETED"), seen, "t-1");
+      await send(event("PAYMENT.CAPTURE.COMPLETED"), seen, "t-2");
+      expect(seen).toHaveBeenCalledTimes(2);
+    });
+
+    it("fails the delivery if acting on it fails, so PayPal tries again", async () => {
+      await expect(send(event("PAYMENT.CAPTURE.COMPLETED"), async () => Promise.reject(new Error("PayPal down")))).rejects.toThrow("PayPal down");
+    });
+  });
+
   it("logs delivery facts (new transmission? its age? duplicate?) but no raw PayPal id or time", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     // paypalHeaders signs transmission time 2026-11-05T20:00:00Z; the clock reads 7 s later.

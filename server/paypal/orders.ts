@@ -101,6 +101,14 @@ export async function getOrder(client: PayPalClient, orderId: string): Promise<O
   };
 }
 
+const captureOrderSchema = z.object({ supplementary_data: z.object({ related_ids: z.object({ order_id: z.string().optional() }).optional() }).optional() });
+
+/** The order a capture belongs to. A capture may carry no invoice number of its own, and its order always does. */
+export async function orderIdOfCapture(client: PayPalClient, captureId: string): Promise<string | null> {
+  const { data } = await client.request("GET", `/v2/payments/captures/${pathId(captureId)}`);
+  return captureOrderSchema.parse(data).supplementary_data?.related_ids?.order_id ?? null;
+}
+
 export async function getCapture(client: PayPalClient, captureId: string): Promise<CaptureFacts> {
   const { data } = await client.request("GET", `/v2/payments/captures/${pathId(captureId)}`);
   return toCapture(captureSchema.parse(data));

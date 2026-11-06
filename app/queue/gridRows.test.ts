@@ -27,6 +27,7 @@ const base: QueueRow = {
   earlierQuestionResult: null,
   question: null,
   agent: null,
+  caughtSeconds: null,
   approval: null,
   refund: null,
 };

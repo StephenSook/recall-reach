@@ -131,7 +131,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await startDemoShop(page);
   // One card per sale. "Costway high chair" also comes close to other high chair recalls, and they stay
   // under its one card rather than each asking the family a question.
-  await expect(page.getByTestId("needs").locator("article")).toHaveCount(3);
+  await expect(page.getByTestId("needs").locator("article")).toHaveCount(4); // three sales, and one item still on the shelf
   await expect(page.locator('article[data-recall="27040"]').getByTestId("also")).toContainText("25206");
 
   const costway = recall(page, "27040");
@@ -164,7 +164,7 @@ test("the grid finds every candidate, approves only a sale's lead, and exports n
   await startDemoShop(page);
   const grid = page.getByTestId("match-grid");
   const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
 
   await grid.getByRole("button", { name: /^All candidates/ }).click();
   await expect.poll(() => rows.count()).toBeGreaterThan(3);
@@ -175,8 +175,11 @@ test("the grid finds every candidate, approves only a sale's lead, and exports n
   await expect(rows.first().locator("input[type=checkbox]")).toBeDisabled();
   await grid.getByPlaceholder("Filter").fill("");
 
+  await grid.getByRole("button", { name: /^Pull from the shelf/ }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("27018");
   await grid.getByRole("button", { name: /^Needs review/ }).click();
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   const download = page.waitForEvent("download");
   await grid.getByRole("button", { name: "Export Tell CPSC list" }).click();
   const csv = await streamToText(await (await download).createReadStream());

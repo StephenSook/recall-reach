@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Method, PayPalClient, RequestOptions } from "./client";
-import { centsToValue, createCardOrder, getCapture, getOrder, valueToCents } from "./orders";
+import { centsToValue, createCardOrder, getCapture, getOrder, orderIdOfCapture, valueToCents } from "./orders";
 
 function fakeClient(reply: (method: Method, path: string, opts: RequestOptions) => unknown) {
   const calls: { method: Method; path: string; opts: RequestOptions }[] = [];
@@ -181,6 +181,18 @@ describe("createCardOrder", () => {
         card: { number: "4111111111111111", expiry: "2030-12", securityCode: "123" },
       }),
     ).rejects.toThrow(/amount/);
+  });
+});
+
+describe("orderIdOfCapture", () => {
+  it("reads the order a capture belongs to", async () => {
+    const client: PayPalClient = { request: (async () => ({ status: 200, data: { id: "CAP-1", status: "COMPLETED", amount: { value: "1.00", currency_code: "USD" }, supplementary_data: { related_ids: { order_id: "ORD-1" } } } })) as PayPalClient["request"] };
+    expect(await orderIdOfCapture(client, "CAP-1")).toBe("ORD-1");
+  });
+
+  it("is null when PayPal does not say", async () => {
+    const client: PayPalClient = { request: (async () => ({ status: 200, data: { id: "CAP-1", status: "COMPLETED", amount: { value: "1.00", currency_code: "USD" } } })) as PayPalClient["request"] };
+    expect(await orderIdOfCapture(client, "CAP-1")).toBeNull();
   });
 });
 

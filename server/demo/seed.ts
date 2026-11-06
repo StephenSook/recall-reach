@@ -17,7 +17,7 @@ import { createContactCipher } from "../privacy/contactCipher";
 export const DEMO_LABEL = "DEMO SHOP";
 
 // PayPal's sandbox accepts this test number (measured 2026-11-05). It is not a real card.
-const SANDBOX_TEST_CARD = { number: "4111111111111111", expiry: "2030-12", securityCode: "123" };
+export const SANDBOX_TEST_CARD = { number: "4111111111111111", expiry: "2030-12", securityCode: "123" };
 
 interface DemoCase {
   recallNumber: string;
@@ -57,6 +57,9 @@ const CASES: DemoCase[] = [
   },
 ];
 
+/** Still on the shelf, on a real recall: what a family can buy for the live catch. Recall 27018 lists model MY002. */
+const SHELF_ITEM = { title: "ONTHEWEI baby bath seat MY002", sku: "DEMO-ONTHEWEI", priceCents: 2800, currency: "USD", recallNumber: "27018" };
+
 const daysBefore = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
 
 /** Creates a fresh demo shop for one session, then runs the real check against it. */
@@ -67,10 +70,10 @@ export async function seedDemoShop(
 ): Promise<{ shopId: string; run: RunSummary }> {
   const { rows: recalls } = await db.query<{ recall_number: string; recall_date: string }>(
     "select recall_number, recall_date from recalls where recall_number = any($1::text[])",
-    [CASES.map((c) => c.recallNumber)],
+    [[...CASES.map((c) => c.recallNumber), SHELF_ITEM.recallNumber]],
   );
   const recallDate = new Map(recalls.map((r) => [r.recall_number, r.recall_date]));
-  for (const c of CASES) {
+  for (const c of [...CASES, SHELF_ITEM]) {
     if (!recallDate.has(c.recallNumber)) throw new Error(`demo recall ${c.recallNumber} is not loaded; run pnpm load:recalls`);
   }
 
@@ -130,6 +133,10 @@ export async function seedDemoShop(
       ],
     );
   }
+  await db.query(
+    "insert into shop_items (shop_id, sku, title, price_cents, currency, listed, source) values ($1, $2, $3, $4, $5, true, $6)",
+    [shopId, SHELF_ITEM.sku, SHELF_ITEM.title, SHELF_ITEM.priceCents, SHELF_ITEM.currency, `${DEMO_LABEL}: listed, still on the shelf`],
+  );
   // PayPal's history has not been searched here: these payments are only the ones this seed just made.
   const run = await runShopCheck(db, shopId, { today: opts.today });
   return { shopId, run };

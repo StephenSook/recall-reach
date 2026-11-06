@@ -1,5 +1,7 @@
 import { getDb } from "@/server/db/pg";
+import { catchLiveSale } from "@/server/demo/liveCatch";
 import { readCappedBody } from "@/server/http/body";
+import { payPalClientFromEnv } from "@/server/paypal/client";
 import { handleWebhookDelivery, MAX_WEBHOOK_BYTES } from "@/server/paypal/webhookHandler";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 
@@ -17,6 +19,7 @@ export async function POST(request: Request): Promise<Response> {
       webhookId: process.env.PAYPAL_WEBHOOK_ID,
       db: getDb(),
       recordKey: recordKeyFromEnv(),
+      onCaptureCompleted: (captureId) => catchLiveSale(getDb(), payPalClientFromEnv(), { captureId, now: new Date() }),
     });
     return Response.json(body, { status });
   } catch (err) {

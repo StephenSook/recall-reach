@@ -49,6 +49,8 @@ export interface QueueRow {
   question: CheckQuestion | null;
   /** Null until Claude has checked exactly this text. */
   agent: AgentFinding | null;
+  /** Seconds from PayPal's capture to this queue, while the payment is held. PayPal's time itself never reaches the page. */
+  caughtSeconds: number | null;
   approval: { id: string; amountCents: number; currency: string; expiresAt: string } | null;
   refund: { id: string; status: string; amountCents: number; currency: string; failure: string | null } | null;
 }
@@ -64,6 +66,8 @@ export interface QueueData {
     candidatesNotChecked: number;
   } | null;
   rows: QueueRow[];
+  /** Sales made just now that PayPal has not told us about yet. */
+  pendingLiveSales: number;
 }
 
 const VERDICT_ORDER = { MATCH: 0, SCOPE_GAP: 1, CLEARED: 2 } as const;
@@ -106,6 +110,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id,
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
             n.written_question,
+            extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
             q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
@@ -124,6 +129,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      ) n on true
      left join recall_questions q on q.recall_sha256 = m.recall_sha256 and q.agent_version = $3 and q.outcome = 'QUESTION' and q.review is distinct from 'REJECTED'
      left join agent_runs ar on ar.id = m.agent_run_id
+     left join paypal_payments pp on pp.id = m.paypal_payment_id
      left join lateral (
        select * from approvals x
        where x.order_line_id = m.order_line_id and x.recall_id = m.recall_id and x.session_id = $2
@@ -170,6 +176,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,
       question: askedFor(r),
       agent: null,
+      caughtSeconds: r.caught_seconds === null || r.caught_seconds === undefined ? null : Math.max(0, Math.round(Number(r.caught_seconds))),
       approval: r.approval_id
         ? {
             id: String(r.approval_id),
@@ -210,6 +217,11 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     (a, b) => VERDICT_ORDER[a.verdict] - VERDICT_ORDER[b.verdict] || a.recallNumber.localeCompare(b.recallNumber) || a.itemTitle.localeCompare(b.itemTitle),
   );
 
+  const pending = await db.query<{ n: number }>(
+    `select count(*)::int as n from order_lines l where l.shop_id = $1 and l.live_sale
+     and not exists (select 1 from recall_matches m where m.order_line_id = l.id and m.caught_at is not null)`,
+    [shopId],
+  );
   const c = run.rows[0];
   return {
     shop: shop.rows[0] ?? null,
@@ -224,6 +236,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
         }
       : null,
     rows: out,
+    pendingLiveSales: pending.rows[0]?.n ?? 0,
   };
 }
 

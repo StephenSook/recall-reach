@@ -73,8 +73,8 @@ describe("loadQueue", () => {
 
   it("says which sale each row is about and how strong the evidence is, so sales stay apart on the page", async () => {
     const { rows } = await loadQueue(db, shopId, "session-1");
-    const { rows: lines } = await db.query<{ id: string }>("select id from order_lines where shop_id = $1", [shopId]);
-    const ids = lines.map((l) => l.id);
+    const { rows: records } = await db.query<{ id: string }>("select id from order_lines where shop_id = $1 union all select id from shop_items where shop_id = $1", [shopId]);
+    const ids = records.map((l) => l.id);
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) expect(ids).toContain(r.recordId);
     expect(new Set(rows.map((r) => r.recordId)).size).toBeGreaterThan(1);
@@ -96,8 +96,9 @@ describe("loadQueue", () => {
   it("links each demo sale to the capture the seed made, with PayPal's history not searched", async () => {
     const q = await loadQueue(db, shopId, "session-1");
     expect(q.coverage?.paypalSearched).toBe(false);
-    expect(q.rows.length).toBeGreaterThanOrEqual(3);
-    for (const r of q.rows) expect(r.joinState, r.recallNumber).toBe("IDENTIFIED");
+    const sales = q.rows.filter((r) => !r.isListing);
+    expect(sales.length).toBeGreaterThanOrEqual(3);
+    for (const r of sales) expect(r.joinState, r.recallNumber).toBe("IDENTIFIED");
   });
 
   it("carries the run's coverage", async () => {
@@ -290,6 +291,7 @@ describe("toCards", () => {
     earlierQuestionResult: null,
     question: null,
     agent: null,
+    caughtSeconds: null,
     approval: null,
     refund: null,
     ...over,

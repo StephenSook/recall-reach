@@ -12,7 +12,8 @@ const TOP_CANDIDATES = 20;
 const MIN_SIMILARITY = 0.3;
 
 export interface RunSummary {
-  runId: string;
+  /** Null when only one record was checked: that says nothing about the shop's coverage. */
+  runId: string | null;
   recallsChecked: number;
   matches: number;
   scopeGaps: number;
@@ -105,6 +106,8 @@ export async function runShopCheck(
     dateFilter?: boolean;
     /** True only if PayPal was read for this run. Otherwise an absent payment proves nothing. */
     paypalSearched?: boolean;
+    /** Check this one record only. It says nothing about the shop's coverage, so no run is recorded. */
+    onlyRecordId?: string;
     failedMonths?: string[];
   },
 ): Promise<RunSummary> {
@@ -122,7 +125,7 @@ export async function runShopCheck(
     TOP_CANDIDATES,
     JSON.stringify(tokens),
   ]);
-  const candidates = allCandidates.filter((c) => c.within_cap);
+  const candidates = allCandidates.filter((c) => c.within_cap && (!opts.onlyRecordId || c.id === opts.onlyRecordId));
   const candidatesNotChecked = allCandidates.length - candidates.length;
 
   const { joined, lines } = await joinShop(db, shopId, { today: opts.today, failedMonths: opts.failedMonths });
@@ -191,13 +194,13 @@ export async function runShopCheck(
     }
     const dates = lines.map((l) => l.ordered_on).sort();
     const searchedFrom = dates[0] ?? null;
-    const { rows } = await tx.query<{ id: string }>(
+    const { rows } = opts.onlyRecordId ? { rows: [] } : await tx.query<{ id: string }>(
       `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched)
        values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10) returning id`,
       [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched],
     );
     return {
-      runId: rows[0].id,
+      runId: rows[0]?.id ?? null,
       recallsChecked: Number(counted[0].n),
       matches: counts.MATCH,
       scopeGaps: counts.SCOPE_GAP,
