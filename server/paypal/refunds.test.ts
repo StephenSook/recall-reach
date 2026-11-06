@@ -467,6 +467,54 @@ describe("refunds", () => {
       expect(pp.posts()).toEqual([]);
     });
 
+    it("a send past its lease does not go out: giving up on it may already be allowed", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const lapsed = afterReserving(async () => {
+        await db.query("update refunds set send_lease_until = $1::timestamptz", [new Date(NOW.getTime() - 1000).toISOString()]);
+      });
+      const r = await executeRefund(lapsed, pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW });
+      expect(r.status).toBe("reserved");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("giving up cannot overwrite a send that began while it was deciding", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow();
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      // The reader sees reserved and an expired lease, then a send moves the row before it writes.
+      const racing: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          await db.query("update refunds set status = 'unconfirmed' where id = $1", [rows[0].id]);
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      const later = new Date(NOW.getTime() + 7 * 60_000);
+      const rec = await reconcileRefund(db, racing, { shopId, refundId: rows[0].id, recordKey: key, now: later });
+      expect(rec.ledger.status).toBe("unconfirmed");
+      expect(await refusal(approve(m.id, SESSION, later, pp.client))).toBe("REFUND_ALREADY_IN_PROGRESS");
+    });
+
+    it("giving up cannot overwrite a reservation whose lease was renewed", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow();
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      const later = new Date(NOW.getTime() + 7 * 60_000);
+      const renewing: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          await db.query("update refunds set send_lease_until = $2::timestamptz where id = $1", [rows[0].id, new Date(later.getTime() + 60_000).toISOString()]);
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      const rec = await reconcileRefund(db, renewing, { shopId, refundId: rows[0].id, recordKey: key, now: later });
+      expect(rec.ledger.status).toBe("reserved");
+    });
+
     it("counts a reservation against the payment's balance", async () => {
       const m = await setUp(line({ unitPriceCents: 6000 }), { amountCents: 10000 });
       const a = await approve(m.id);

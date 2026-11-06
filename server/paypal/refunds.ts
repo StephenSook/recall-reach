@@ -290,10 +290,24 @@ export async function executeRefund(
   return sendRefund(
     db,
     client,
-    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false, holder: row.send_lease_id },
+    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false, holder: row.send_lease_id, startedAt },
     input.recordKey,
     now,
   );
+}
+
+/**
+ * A reservation moves to unconfirmed before it is sent, so one whose lease ran out was never sent. Both
+ * facts are checked as the row is written, because a send that begins meanwhile must keep the line blocked.
+ */
+async function giveUpIfNeverSent(q: Queryable, refundRowId: string, now: Date): Promise<RefundOutcome["status"]> {
+  await q.query(
+    `update refunds set status = 'failed', failure = 'Never sent to PayPal.', send_lease_until = null, send_lease_id = null, updated_at = $2::timestamptz
+     where id = $1 and status = 'reserved' and (send_lease_until is null or send_lease_until <= $2::timestamptz)`,
+    [refundRowId, now.toISOString()],
+  );
+  const { rows } = await q.query<{ status: RefundOutcome["status"] }>("select status from refunds where id = $1", [refundRowId]);
+  return rows[0].status;
 }
 
 /**
@@ -312,7 +326,7 @@ async function moveLedger(
        failure = case when $4::boolean then $5 else failure end,
        send_lease_until = case when $6::uuid is null then send_lease_until end,
        send_lease_id = case when $6::uuid is null then send_lease_id end
-     where id = $1 and status in ('reserved', 'pending', 'unconfirmed') and ($6::uuid is null or send_lease_id = $6::uuid)
+     where id = $1 and status in ('pending', 'unconfirmed') and ($6::uuid is null or send_lease_id = $6::uuid)
      returning status`,
     [refundRowId, to, now.toISOString(), extra.failure !== undefined, extra.failure ?? null, extra.holder ?? null],
   );
@@ -323,6 +337,8 @@ async function moveLedger(
 
 /** The checks before a send can take minutes when PayPal is slow, so a lease runs from when it is taken. */
 const leaseEnd = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt) + SEND_LEASE_MS).toISOString();
+/** The time now, on the same clock as `now` (tests set it), however long the checks since then have taken. */
+const timeSince = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt)).toISOString();
 
 /** Our ledger on one capture: what is settled as refunded, what may still land, and a refund PayPal can be asked about. */
 async function ledgerOnCapture(q: Queryable, captureId: string): Promise<{ refundedCents: number; openCents: number; knownRefundId: string | null }> {
@@ -412,7 +428,7 @@ function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date
 async function sendRefund(
   db: Queryable,
   client: PayPalClient,
-  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean; holder: string },
+  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean; holder: string; startedAt: number },
   recordKey: RecordKey,
   now: Date,
 ): Promise<RefundOutcome> {
@@ -426,12 +442,13 @@ async function sendRefund(
     return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure: status === answer ? failure : null };
   };
 
-  // From here the outcome is unknown. If this send no longer holds the row, it must not go out at all.
+  // From here the outcome is unknown. A send that lost the row or outlived its lease must not go out at all,
+  // because a reservation past its lease may be given up and the line freed.
   const sending = await db.query(
     `update refunds set status = 'unconfirmed', updated_at = $3::timestamptz
-     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed')
+     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $3::timestamptz
      returning id`,
-    [send.rowId, send.holder, now.toISOString()],
+    [send.rowId, send.holder, timeSince(send.startedAt, now)],
   );
   if (sending.rows.length === 0) {
     const { rows } = await db.query<{ status: RefundOutcome["status"]; failure: string | null }>("select status, failure from refunds where id = $1", [send.rowId]);
@@ -525,7 +542,7 @@ export async function askPayPalAgain(
   return sendRefund(
     db,
     client,
-    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true, holder },
+    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true, holder, startedAt },
     input.recordKey,
     now,
   );
@@ -589,10 +606,7 @@ export async function reconcileRefund(
 
   // Our ledger follows PayPal's own answer about the refund.
   let status = row.status;
-  // A reservation moves to unconfirmed before it is sent, so one whose lease ran out was never sent.
-  if (status === "reserved" && (row.send_lease_until === null || row.send_lease_until.getTime() <= now.getTime())) {
-    status = await moveLedger(db, input.refundId, "failed", now, { failure: "Never sent to PayPal." });
-  }
+  if (status === "reserved") status = await giveUpIfNeverSent(db, input.refundId, now);
   if (status === "pending" || status === "unconfirmed") {
     if (refund?.status === "COMPLETED") status = "refunded";
     else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") status = "failed";
