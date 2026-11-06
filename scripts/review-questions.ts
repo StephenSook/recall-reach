@@ -1,14 +1,19 @@
 // For a person, in a terminal: read each question Claude wrote and accept or reject it. Nothing is decided for you.
-//   DATABASE_URL=... pnpm review:questions [--limit 20]
+//   pnpm review:questions [--limit 20]
+// It asks for the database URL and hides it, because one pasted into a command stays in the shell's history.
 import { createInterface } from "node:readline/promises";
 import { pendingQuestions, reviewQuestion } from "../server/agent/questionReview";
 import { getDb } from "../server/db/pg";
+import { askHidden } from "./askHidden";
 import { FILM_RECALLS } from "./write-recall-questions";
 
 const limitArg = process.argv.indexOf("--limit");
 const limit = limitArg > 0 ? Number(process.argv[limitArg + 1]) : 20;
 
 async function main() {
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = await askHidden("Paste the database URL from the Neon console (it won't show): ", process.stdin, process.stdout);
+  }
   const db = getDb();
   const pending = await pendingQuestions(db, { limit, first: FILM_RECALLS });
   if (pending.length === 0) {
