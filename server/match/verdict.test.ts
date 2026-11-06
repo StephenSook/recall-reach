@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseRecalls, type Recall } from "../cpsc/schema";
-import { brandOf, fullScopeInRecord, modelTokens, salePath, verdictFor } from "./verdict";
+import { brandOf, fullScopeInRecord, limitedWithinModel, modelTokens, salePath, verdictFor } from "./verdict";
 
 // Real CPSC records (saved 2026-11-05). The matcher is tested on what CPSC actually wrote.
 const { valid } = parseRecalls(
@@ -125,6 +125,34 @@ describe("verdictFor", () => {
       expect(v.verdict).toBe("CLEARED");
       expect(v.strength).toBe("NO_SHARED_WORDS");
       expect(v.reason).toBe("Shares no product word with this recall, and does not name Baby Brezza.");
+    });
+  });
+
+  describe("a recall limited to part of a model", () => {
+    const DREO = recall("27054");
+
+    it("doesn't confirm on the model alone, when CPSC limits it by date, lot or serial", () => {
+      const v = verdictFor(DREO, { title: "DREO space heater DR-HSH015" }, { dateFilter: false });
+      expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
+      expect(v.missing.join(" ")).toContain("date, lot or serial");
+      expect(v.reason).toContain("DR-HSH015");
+    });
+
+    it("isn't confirmed by a date in the title either: a person reads that", () => {
+      expect(verdictFor(DREO, { title: "DREO space heater DR-HSH015 manufactured February 2026" }, { dateFilter: false }).verdict).toBe("SCOPE_GAP");
+    });
+
+    it.each(["27072", "27027", "27018"])("leaves recall %s alone, whose models CPSC doesn't limit", (number) => {
+      expect(limitedWithinModel(recall(number).description)).toBe(false);
+    });
+
+    it("reads the limits CPSC really writes, and isn't fooled by where a thing was made", () => {
+      expect(limitedWithinModel("Only units manufactured from April 2025 through January 2026 are included in this recall.")).toBe(true);
+      expect(limitedWithinModel("The following serial numbers are included in this recall.")).toBe(true);
+      expect(limitedWithinModel("Units with a date code between 2401 and 2412.")).toBe(true);
+      expect(limitedWithinModel("They were manufactured in March 2024.")).toBe(true);
+      expect(limitedWithinModel("They were manufactured in China and sold at stores.")).toBe(false);
+      expect(limitedWithinModel("The serial number is printed on a label on the base.")).toBe(false);
     });
   });
 

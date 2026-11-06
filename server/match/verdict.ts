@@ -135,6 +135,17 @@ export function fullScopeInRecord(recall: Pick<Recall, "description">): boolean 
   return !/listed below|included in this recall:/i.test(recall.description);
 }
 
+const IN_A_MONTH_OR_YEAR = "(?:\\d|january|february|march|april|may|june|july|august|september|october|november|december)";
+const PART_OF_A_MODEL = new RegExp(
+  `\\bonly\\b[^.]*\\b(?:manufactured|produced|made|date codes?|lot|serial|batch)\\b` +
+    `|\\bmanufactured\\s+(?:from|between|before|after|during|in\\s+${IN_A_MONTH_OR_YEAR})` +
+    `|\\b(?:date|lot|batch|serial)\\s*(?:code|number)s?\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b`,
+  "i",
+);
+
+/** CPSC limits the recall to part of a model: a date, a lot, a serial range. The model alone can't show this unit is in it. */
+export const limitedWithinModel = (description: string) => PART_OF_A_MODEL.test(description);
+
 /** A sale on the recall's own calendar date needs a human: it may have been before the announcement. */
 export function salePath(orderedOn: string, recallDate: string): SalePath {
   if (orderedOn < recallDate) return "NOTICE_ONLY";
@@ -172,6 +183,16 @@ export function verdictFor(
   const itemCodes = modelTokens(upper);
   const shownCodes = new Set(itemCodes.map(normalizeModel));
   const shown = recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
+  const limited = limitedWithinModel(recall.description);
+  if (shown.length > 0 && limited) {
+    return {
+      verdict: "SCOPE_GAP",
+      strength: "BRAND",
+      matched: [...matched, `model: ${shown.join(", ")}`],
+      missing: ["the unit's date, lot or serial number: CPSC recalled only part of this model"],
+      reason: `The shop's text names recalled model ${shown.join(", ")}, but CPSC limits the recall by date, lot or serial number.`,
+    };
+  }
   if (shown.length > 0) {
     return {
       verdict: "MATCH",
@@ -215,7 +236,7 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  if (hasBrand && recallModels.length === 1 && look.length >= 2) {
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",

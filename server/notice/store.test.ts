@@ -765,6 +765,12 @@ describe("what a family types, when CPSC's model list has more than our token ru
     expect(checkResult({ title: "X Recalls Heaters", description: "Heaters, model AB-100. The 1500W version is not included in the 2024 count." }, model, "1500W")).toBe("CANT_TELL");
   });
 
+  it("a listed model on a recall limited by date can't be called a match on the model alone", () => {
+    const dreo = { title: "DREO Recalls Space Heaters", description: "DREO space heaters, model number DR-HSH015. Only units manufactured from April 2025 through January 2026 are included in this recall." };
+    expect(checkResult(dreo, model, "DR-HSH015")).toBe("CANT_TELL");
+    expect(checkResult(dreo, model, "ZZ9000")).toBe("DOESNT_MATCH");
+  });
+
   it("words with no number in them are never a model that doesn't match", () => {
     for (const typed of ["not sure", "worn off", "no sticker", "UNKNOWN"]) expect(checkResult(bissell, model, typed), typed).toBe("CANT_TELL");
   });

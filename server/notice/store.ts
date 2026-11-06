@@ -3,7 +3,7 @@
 import { writtenQuestion, type WrittenQuestion } from "../agent/questionStore";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
-import { fullScopeInRecord, isVariantOf, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
+import { fullScopeInRecord, isVariantOf, limitedWithinModel, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
 import { refundedAmount } from "../paypal/refunds";
 import type { ContactCipher } from "../privacy/contactCipher";
 import { checkQuestion, composeCheckRequest, composeSafetyNotice, type CheckQuestion } from "./compose";
@@ -216,7 +216,8 @@ export function checkResult(
     const text = `${recall.title ?? ""} ${recall.description}`;
     const listed = [...modelTokens(text), ...modelsNamedInText(text)];
     const typed = unconfuse(normalizeModel(said));
-    if (listed.some((m) => unconfuse(normalizeModel(m)) === typed)) return "MATCHES"; // the record itself names this model
+    // The record names this model. If CPSC recalled only part of it, the model alone can't settle that.
+    if (listed.some((m) => unconfuse(normalizeModel(m)) === typed)) return limitedWithinModel(recall.description) ? "CANT_TELL" : "MATCHES";
     // Nobody is told it doesn't match over a typing slip, or something CPSC's record says elsewhere.
     if (isVariantOf(said, listed) || writtenApart(said).test(text.toUpperCase())) return "CANT_TELL";
     // "Not sure", "can't read it", "worn off": words with no number aren't a model, so they can't rule anything out.
