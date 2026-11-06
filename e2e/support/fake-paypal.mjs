@@ -6,6 +6,8 @@ import { writeFileSync } from "node:fs";
 
 const HOST = "api-m.sandbox.paypal.com";
 const realFetch = globalThis.fetch;
+// Real PayPal ids never repeat, and the ledger relies on that, so these differ from run to run.
+const run = Date.now().toString(36).toUpperCase();
 const orders = new Map();
 const captures = new Map();
 const refunds = new Map();
@@ -30,13 +32,13 @@ function fakePayPal(url, init) {
     const n = orders.size + 1;
     const unit = body.purchase_units[0];
     const capture = {
-      id: `FAKE-CAP-${n}`,
+      id: `FAKE-CAP-${run}-${n}`,
       status: "COMPLETED",
       create_time: new Date().toISOString(),
       amount: { currency_code: unit.amount.currency_code, value: unit.amount.value },
     };
     captures.set(capture.id, capture);
-    const order = { id: `FAKE-ORDER-${n}`, status: "COMPLETED", purchase_units: [{ ...unit, payments: { captures: [capture] } }] };
+    const order = { id: `FAKE-ORDER-${run}-${n}`, status: "COMPLETED", purchase_units: [{ ...unit, payments: { captures: [capture] } }] };
     orders.set(order.id, order);
     return json({ id: order.id, status: order.status }, 201);
   }
@@ -52,7 +54,7 @@ function fakePayPal(url, init) {
     requestIds.add(requestId);
     let made = refunds.get(requestId);
     if (!made) {
-      made = { id: `FAKE-REF-${refunds.size + 1}`, status: "COMPLETED", amount: body.amount };
+      made = { id: `FAKE-REF-${run}-${refunds.size + 1}`, status: "COMPLETED", amount: body.amount };
       refunds.set(requestId, made);
       captures.get(refund[1]).status = "REFUNDED";
     }
