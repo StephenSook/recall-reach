@@ -5,7 +5,7 @@ import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
-import { gridRows } from "./gridRows";
+import { gridRows, unidentifiedRows } from "./gridRows";
 import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -221,7 +221,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
 export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[] }> }) {
   const session = await currentSession();
   if (!session) redirect("/");
-  const { rows, shop, coverage, pendingLiveSales } = await loadQueue(getDb(), session.shopId, session.sessionId);
+  const { rows, shop, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
   const params = await searchParams;
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const shopName = shop?.name ?? "";
@@ -268,7 +268,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
-      <MatchGridLoader rows={gridRows(rows, cards)} />
+      <MatchGridLoader rows={[...gridRows(rows, cards), ...unidentifiedRows(unidentified)]} />
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; }`}</style>
       </noscript>
@@ -307,6 +307,20 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
               {unrelated} more {unrelated === 1 ? "recall" : "recalls"} came up in the search and {unrelated === 1 ? "shares" : "share"} no brand or product word.
             </p>
           ) : null}
+        </section>
+      ) : null}
+      {unidentified.length > 0 ? (
+        <section className="narrow-only" data-testid="unidentified">
+          <h2 className="section-title">Couldn&apos;t identify</h2>
+          <ul className="window cleared-list">
+            {unidentifiedRows(unidentified).map((p) => (
+              <li key={p.matchId}>
+                <strong>{p.itemTitle}</strong>
+                {p.soldOn ? <>, {p.soldOn}</> : null}
+                <span className="quiet">{p.reason}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
       {shopKind === "REAL" ? (

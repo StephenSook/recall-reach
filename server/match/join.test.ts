@@ -72,6 +72,7 @@ describe("joinOrderLines", () => {
 
   it("counts a payment with items that no line claims as unidentified", () => {
     expect(run([], [payment("P1", { items: [{ name: "x", sku: "S9" }] })]).unidentifiedPayments).toBe(1);
+    expect(run([], [payment("P1", { items: [{ name: "x", sku: "S9" }] })]).unidentifiedKeys).toEqual(["P1"]);
   });
 
   it("says history is unavailable for a line older than PayPal's three years", () => {

@@ -109,6 +109,12 @@ describe("loadQueue", () => {
     expect(q.shop).toEqual({ name: "DEMO SHOP", kind: "DEMO" });
   });
 
+  it("lists each payment it couldn't tie to an order, with only its date and amount", async () => {
+    const q = await loadQueue(db, shopId, "session-1");
+    expect(q.unidentified).toHaveLength(1);
+    expect(q.unidentified[0]).toEqual({ id: expect.any(String), paidOn: expect.any(String), amountCents: 4200, currency: "USD" });
+  });
+
   it("shows the notice's state and the family's report", async () => {
     const { matchId } = await row("27072");
     const { noticeId } = await prepareNotice(db, { shopId, matchId });

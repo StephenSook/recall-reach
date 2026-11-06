@@ -7,6 +7,8 @@ import type { Queryable } from "../db/types";
 import { checkQuestion, type CheckQuestion } from "../notice/compose";
 import { noticeState, type NoticeState } from "../notice/store";
 import type { Strength } from "../match/verdict";
+import { joinShop } from "../match/run";
+import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 
 /** What Claude found for this row. Text for a person to read: it changes no verdict, order or action. */
 export interface AgentFinding {
@@ -55,8 +57,17 @@ export interface QueueRow {
   refund: { id: string; status: string; amountCents: number; currency: string; failure: string | null } | null;
 }
 
+/** A payment that names no item or order. Only what a seller needs to find it in PayPal: its date and amount. */
+export interface UnidentifiedPayment {
+  id: string;
+  paidOn: string | null;
+  amountCents: number | null;
+  currency: string | null;
+}
+
 export interface QueueData {
   shop: { name: string; kind: string } | null;
+  unidentified: UnidentifiedPayment[];
   coverage: {
     recallsChecked: number;
     searchedFrom: string | null;
@@ -233,7 +244,14 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     [shopId],
   );
   const c = run.rows[0];
+  const { joined } = await joinShop(db, shopId, { today: businessDay(new Date()) });
+  const unidentified = await db.query<{ id: string; paid_on: string | null; amount_cents: number | null; currency: string | null }>(
+    `select id, (captured_at at time zone ${BUSINESS_TIME_ZONE_SQL})::date::text as paid_on, amount_cents, currency
+     from paypal_payments where shop_id = $1 and id = any($2::uuid[]) order by captured_at desc`,
+    [shopId, joined.unidentifiedKeys],
+  );
   return {
+    unidentified: unidentified.rows.map((p) => ({ id: p.id, paidOn: p.paid_on, amountCents: p.amount_cents, currency: p.currency })),
     shop: shop.rows[0] ?? null,
     coverage: c
       ? {

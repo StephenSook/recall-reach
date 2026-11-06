@@ -39,6 +39,7 @@ export interface JoinResult {
   lines: Record<string, LineJoin>;
   /** CANNOT_IDENTIFY_ITEMS: payments with nothing that ties them to any order line. Never cleared. */
   unidentifiedPayments: number;
+  unidentifiedKeys: string[];
 }
 
 const DAY_MS = 86_400_000;
@@ -130,5 +131,6 @@ export function joinOrderLines(
       result[l.id] = { state: "NO_PAYPAL_RECORD", paymentKey: null, linkedBy: null };
     }
   }
-  return { lines: result, unidentifiedPayments: payments.filter((p) => !claimed.has(p.key)).length };
+  const unidentifiedKeys = payments.filter((p) => !claimed.has(p.key)).map((p) => p.key);
+  return { lines: result, unidentifiedPayments: unidentifiedKeys.length, unidentifiedKeys };
 }

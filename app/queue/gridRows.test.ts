@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QueueRow } from "@/server/queue/queue";
 import { toCards } from "@/server/queue/queue";
-import { gridRows, inTab, TELL_CPSC_COLUMNS } from "./gridRows";
+import { gridRows, inTab, TELL_CPSC_COLUMNS, unidentifiedRows } from "./gridRows";
 
 const base: QueueRow = {
   matchId: "m1",
@@ -77,6 +77,37 @@ describe("the tabs", () => {
     expect(near.filter((r) => inTab(r, "shelf")).map((r) => r.matchId)).toEqual(["lead"]);
   });
   it("all shows every candidate, hiding nothing", () => expect(shown("all")).toEqual(["clear", "lead", "other", "shelf"]));
+});
+
+describe("a payment it couldn't tie to an order", () => {
+  const rows = unidentifiedRows([{ id: "p1", paidOn: "2026-11-05", amountCents: 4200, currency: "USD" }]);
+
+  it("says what is known, and that it is not cleared", () => {
+    expect(rows[0]).toMatchObject({ state: "Couldn't identify", itemTitle: "A PayPal payment of 42.00 USD", soldOn: "2026-11-05" });
+    expect(rows[0].reason).toBe("It names no item or order, so it can't be checked against a recall. It is not cleared.");
+  });
+
+  it("has its own tab, and nothing to approve, open or tell CPSC about", () => {
+    expect(inTab(rows[0], "unidentified")).toBe(true);
+    for (const tab of ["needs", "cleared", "shelf", "all"] as const) expect(inTab(rows[0], tab)).toBe(false);
+    expect(rows[0]).toMatchObject({ approvable: false, anchor: null, tellCpsc: false, isLead: false, listedOnShelf: false });
+  });
+
+  it("keeps a recall's rows out of that tab", () => {
+    expect(inTab(by(build([row({})]), "m1"), "unidentified")).toBe(false);
+  });
+
+  it("carries no payment id to the browser", () => {
+    expect(JSON.stringify(rows)).not.toContain("p1");
+  });
+
+  it("gives each row its own key, so two payments of one amount on one day stay two", () => {
+    const two = unidentifiedRows([
+      { id: "p1", paidOn: "2026-11-05", amountCents: 4200, currency: "USD" },
+      { id: "p2", paidOn: "2026-11-05", amountCents: 4200, currency: "USD" },
+    ]);
+    expect(new Set(two.map((r) => r.matchId)).size).toBe(2);
+  });
 });
 
 describe("what the grid holds", () => {

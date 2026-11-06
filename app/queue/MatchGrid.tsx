@@ -11,6 +11,7 @@ const TABS: { id: GridTab; label: string }[] = [
   { id: "needs", label: "Needs review" },
   { id: "cleared", label: "Cleared" },
   { id: "shelf", label: "Pull from the shelf" },
+  { id: "unidentified", label: "Couldn't identify" },
   { id: "all", label: "All candidates" },
 ];
 
@@ -47,7 +48,8 @@ export default function MatchGrid({ rows }: { rows: GridRow[] }) {
   const [tab, setTab] = useState<GridTab>("needs");
   const [selected, setSelected] = useState<string[]>([]);
   const [shown, setShown] = useState(() => rows.filter((r) => inTab(r, "needs")).length);
-  const totals = useMemo(() => [{ product: `${shown} of ${rows.length} shown` }], [shown, rows.length]);
+  const candidates = rows.filter((r) => r.verdict !== "UNIDENTIFIED").length;
+  const totals = useMemo(() => [{ product: `${shown} of ${candidates} shown` }], [shown, candidates]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
 
   const choose = (next: GridTab) => {

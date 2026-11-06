@@ -192,6 +192,12 @@ test.describe("on a wide screen", () => {
     const grid = page.getByTestId("match-grid");
     const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
     await expect(rows).toHaveCount(DEMO_CARDS);
+    // The payment that says only an amount is listed, and never counted as cleared.
+    await grid.getByRole("button", { name: "Couldn't identify (1)" }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("42.00 USD");
+    await grid.getByRole("button", { name: /^Needs review/ }).click();
+    await expect(rows).toHaveCount(DEMO_CARDS);
     await expectToFit(page, grid);
     // Sales in one order, the cards' order: the two confirmed, newest recall first.
     await expect(rows.nth(0)).toContainText("27072");

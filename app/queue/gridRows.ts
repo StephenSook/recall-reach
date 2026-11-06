@@ -1,16 +1,16 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
-import type { QueueCard, QueueRow } from "@/server/queue/queue";
+import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
 import { canNotify, needsApproval, NOTICE_STATE, pathChip, VERDICT_CHIP } from "./labels";
 
-export type GridTab = "needs" | "cleared" | "shelf" | "all";
+export type GridTab = "needs" | "cleared" | "shelf" | "unidentified" | "all";
 
 export interface GridRow {
   matchId: string;
   recallNumber: string;
   product: string;
   itemTitle: string;
-  verdict: QueueRow["verdict"];
+  verdict: QueueRow["verdict"] | "UNIDENTIFIED";
   state: string;
   path: string | null;
   soldOn: string | null;
@@ -66,7 +66,32 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
   });
 }
 
+/** Payments that name no item or order. They are not candidates for any recall, so they are in no other tab. */
+export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
+  return payments.map((p, i) => ({
+    matchId: `unidentified-${i + 1}`,
+    recallNumber: "",
+    product: "",
+    itemTitle: p.amountCents === null ? "A PayPal payment" : `A PayPal payment of ${(p.amountCents / 100).toFixed(2)} ${p.currency ?? ""}`.trim(),
+    verdict: "UNIDENTIFIED" as const,
+    state: "Couldn't identify",
+    path: null,
+    soldOn: p.paidOn,
+    recallDate: "",
+    reason: "It names no item or order, so it can't be checked against a recall. It is not cleared.",
+    noticeState: null,
+    isLead: false,
+    approvable: false,
+    weak: false,
+    tellCpsc: false,
+    listedOnShelf: false,
+    anchor: null,
+  }));
+}
+
 export function inTab(row: GridRow, tab: GridTab): boolean {
+  if (tab === "unidentified") return row.verdict === "UNIDENTIFIED";
+  if (row.verdict === "UNIDENTIFIED") return false;
   if (tab === "needs") return row.isLead;
   if (tab === "cleared") return row.verdict === "CLEARED";
   if (tab === "shelf") return row.listedOnShelf && row.isLead;
