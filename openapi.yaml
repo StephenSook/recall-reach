@@ -273,10 +273,17 @@ components:
           items: { type: integer }
     Health:
       type: object
-      required: [ok, checkedAt, checks, database]
+      required: [ok, checkedAt, checks, database, market]
       properties:
         ok: { type: boolean }
         checkedAt: { type: string, format: date-time }
+        market:
+          type: object
+          description: The search of the wider market. Not part of ok. Fresh means a search worked in the last 8 days.
+          required: [lastOkAt, fresh]
+          properties:
+            lastOkAt: { type: string, format: date-time, nullable: true }
+            fresh: { type: boolean }
         checks:
           type: object
           required: [database, webhook, lastPull, purge, poll, replay, logging]

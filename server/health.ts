@@ -46,6 +46,11 @@ export interface Health {
   /** The background poll's last run, held in memory: a quiet poll never touches the database. */
   poll: RecallPollStatus;
   replay: { lastRunAt: string | null };
+  /**
+   * The search of the wider market (Channel3). Not part of ok: it feeds one side page, whose rows carry their own dates,
+   * and a free tier going quiet is not the app being down.
+   */
+  market: { lastOkAt: string | null; fresh: boolean };
   paypal: {
     /** Webhook certificates are accepted only from PayPal sandbox hosts (server/paypal/webhooks.ts). */
     environment: "sandbox";
@@ -57,6 +62,8 @@ export interface Health {
 /** Two hourly heartbeats and a margin. */
 const MAX_PULL_AGE_MS = 2.5 * 3_600_000;
 const MAX_REPLAY_AGE_MS = 48 * 3_600_000;
+/** Each recall is searched again after 7 days and nothing is due until then, so a healthy search can go quiet for most of a week. */
+const MAX_MARKET_AGE_MS = 8 * 86_400_000;
 
 function recordKeyWorks(secret: string | undefined): boolean {
   if (!secret) return false;
@@ -101,6 +108,8 @@ export async function getHealth(
     const polledAt = iso(lastPoll.rows[0]?.finished_at);
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
+    const market = await db.query<{ at: unknown }>("select max(searched_at) as at from recall_sweeps where status = 'ok'");
+    const marketOkAt = iso(market.rows[0]?.at);
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
     const checks = {
@@ -133,6 +142,7 @@ export async function getHealth(
       },
       poll,
       replay: { lastRunAt },
+      market: { lastOkAt: marketOkAt, fresh: marketOkAt !== null && now.getTime() - Date.parse(marketOkAt) <= MAX_MARKET_AGE_MS },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
   } catch (err) {
@@ -145,6 +155,7 @@ export async function getHealth(
       cpsc: null,
       poll,
       replay: { lastRunAt: null },
+      market: { lastOkAt: null, fresh: false },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
   }

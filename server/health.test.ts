@@ -86,6 +86,51 @@ describe("getHealth", () => {
       expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
     });
 
+    describe("the market search", () => {
+      const swept = async (status: "ok" | "failed", at: string, recallNumber: string) => {
+        const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });
+        await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
+        await db.query(
+          "insert into recall_sweeps (recall_id, recall_sha256, query, status, listings, searched_at) select recall_id, raw_sha256, 'q', $1, '[]'::jsonb, $2::timestamptz from recalls where recall_number = $3",
+          [status, at, recallNumber],
+        );
+      };
+      const allElseWell = async () => {
+        await pulled("ok");
+        await replayed("2026-11-06T02:00:00Z");
+      };
+
+      it("says when it last worked", async () => {
+        await allElseWell();
+        await swept("ok", "2026-11-05T10:00:00Z", "27072");
+        expect(await check()).toMatchObject({ ok: true, market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true } });
+      });
+
+      it("stays fresh through the wait for a 7-day refresh", async () => {
+        await allElseWell();
+        await swept("ok", new Date(NOW.getTime() - 7.9 * 86_400_000).toISOString(), "27072");
+        expect(await check()).toMatchObject({ ok: true, market: { fresh: true } });
+      });
+
+      it("goes stale past 8 days, without calling the app down", async () => {
+        await allElseWell();
+        await swept("ok", new Date(NOW.getTime() - 8.1 * 86_400_000).toISOString(), "27072");
+        expect(await check()).toMatchObject({ ok: true, market: { fresh: false } });
+      });
+
+      it("doesn't count a search that failed", async () => {
+        await allElseWell();
+        await swept("ok", new Date(NOW.getTime() - 9 * 86_400_000).toISOString(), "27072");
+        await swept("failed", new Date(NOW.getTime() - 3_600_000).toISOString(), "27040");
+        expect(await check()).toMatchObject({ ok: true, market: { fresh: false } });
+      });
+
+      it("isn't fresh with no search yet", async () => {
+        await allElseWell();
+        expect(await check()).toMatchObject({ ok: true, market: { lastOkAt: null, fresh: false } });
+      });
+    });
+
     it("isn't, without the webhook id or a usable record key", async () => {
       await pulled("ok");
       expect((await getHealth(db, { RECORD_HMAC_SECRET: SECRET }, undefined, NOW)).checks?.webhook).toBe(false);
