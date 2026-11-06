@@ -4,6 +4,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
+import { modelTokens } from "../match/verdict";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { loadQueue } from "../queue/queue";
 import { buyAsFamily, catchLiveSale, LiveSaleRefused } from "./liveCatch";
@@ -74,6 +75,15 @@ describe("a sale as it happens", () => {
     it("has a recalled item still listed, on a real recall, which the queue says to pull", async () => {
       const row = (await loadQueue(db, shopId, "s")).rows.find((r) => r.isListing && r.verdict !== "CLEARED");
       expect(row).toMatchObject({ recallNumber: "27018", verdict: "MATCH", stillListed: true });
+    });
+
+    it("names a model CPSC's own record lists for that recall, so the match is real", async () => {
+      const { rows } = await db.query<{ title: string; description: string; item: string }>(
+        "select r.title, r.description, (select title from shop_items where shop_id = $1 and listed limit 1) as item from recalls r where r.recall_number = '27018'",
+        [shopId],
+      );
+      expect(modelTokens(`${rows[0].title} ${rows[0].description}`)).toContain("MY002");
+      expect(rows[0].item).toContain("MY002");
     });
   });
 

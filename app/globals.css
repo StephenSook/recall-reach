@@ -215,6 +215,30 @@ small,
   box-shadow: var(--shadow-hard-xs);
 }
 
+/* On a wide screen the grid is the list, and a row opens one window. Everything shows on a phone. */
+.cards-hint {
+  display: none;
+}
+@media (min-width: 768px) {
+  .cards-hint {
+    display: block;
+  }
+  .cards:has(.window:target) .cards-hint {
+    display: none;
+  }
+  .cards > .window:not(:target),
+  .narrow-only {
+    display: none;
+  }
+  html[data-no-grid] .cards > .window,
+  html[data-no-grid] .narrow-only {
+    display: block;
+  }
+  html[data-no-grid] .cards-hint {
+    display: none;
+  }
+}
+
 /* What the seller can count at a glance */
 .stats {
   display: grid;
@@ -375,6 +399,13 @@ small,
 }
 [data-testid="match-grid"] .ag-cell {
   word-break: normal;
+}
+[data-testid="match-grid"] .ag-row:not(.ag-row-pinned) {
+  cursor: pointer;
+}
+/* A chip that nearly fills its cell must not get the grid's overflow dots after it. */
+[data-testid="match-grid"] .chip-cell {
+  text-overflow: clip;
 }
 .sr-only {
   position: absolute;

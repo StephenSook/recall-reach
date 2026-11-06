@@ -22,20 +22,26 @@ export interface GridRow {
   weak: boolean;
   tellCpsc: boolean;
   listedOnShelf: boolean;
-  /** Where this row is on the page. Null for a recall that is only counted there. */
+  /** The window this row opens. Null when there is nothing to do on it: its row already says why it cleared. */
   anchor: string | null;
 }
 
 /** CPSC's words and the sale date. No shop text, and nothing about a buyer. */
 export const TELL_CPSC_COLUMNS = ["recallNumber", "product", "soldOn"] as const satisfies readonly (keyof GridRow)[];
 
-export function gridRows(rows: QueueRow[], { cards, cleared }: { cards: QueueCard[]; cleared: QueueRow[] }): GridRow[] {
+export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
   const cardOf = new Map<string, string>();
   for (const card of cards) for (const r of [card.lead, ...card.also]) cardOf.set(r.matchId, card.lead.matchId);
   const leads = new Set(cards.map((c) => c.lead.matchId));
-  const listed = new Set(cleared.map((r) => r.matchId));
+  // One order on the page: the cards' leads as they stand, then the other recalls on those sales, then the rest.
+  const rank = new Map<string, number>();
+  for (const [i, card] of cards.entries()) {
+    rank.set(card.lead.matchId, i);
+    for (const r of card.also) rank.set(r.matchId, cards.length);
+  }
+  const place = (r: QueueRow) => rank.get(r.matchId) ?? cards.length + 1;
 
-  return rows.map((r) => {
+  return [...rows].sort((a, b) => place(a) - place(b)).map((r) => {
     const isLead = leads.has(r.matchId);
     const card = cardOf.get(r.matchId);
     return {
@@ -55,7 +61,7 @@ export function gridRows(rows: QueueRow[], { cards, cleared }: { cards: QueueCar
       weak: r.strength === "PRODUCT_WORDS" || r.strength === "NO_SHARED_WORDS",
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED",
-      anchor: card ? `#sale-${card}` : listed.has(r.matchId) ? `#match-${r.matchId}` : null,
+      anchor: card ? `#sale-${card}` : null,
     };
   });
 }
@@ -63,6 +69,6 @@ export function gridRows(rows: QueueRow[], { cards, cleared }: { cards: QueueCar
 export function inTab(row: GridRow, tab: GridTab): boolean {
   if (tab === "needs") return row.isLead;
   if (tab === "cleared") return row.verdict === "CLEARED";
-  if (tab === "shelf") return row.listedOnShelf;
+  if (tab === "shelf") return row.listedOnShelf && row.isLead;
   return true;
 }

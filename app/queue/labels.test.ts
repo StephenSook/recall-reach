@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, coverageLine, needsApproval, queueCounts, traceLine } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, queueCounts, traceLine } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,11 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("counted", () => {
+  it("says one thing for one", () => expect(counted(1, "Scope gap", "Scope gaps")).toBe("Scope gap"));
+  it.each([0, 2])("says many for %d", (n) => expect(counted(n, "Scope gap", "Scope gaps")).toBe("Scope gaps"));
 });
 
 describe("queueCounts", () => {

@@ -32,7 +32,7 @@ const base: QueueRow = {
   refund: null,
 };
 const row = (over: Partial<QueueRow>): QueueRow => ({ ...base, ...over });
-const build = (rows: QueueRow[]) => gridRows(rows, toCards(rows));
+const build = (rows: QueueRow[]) => gridRows(rows, toCards(rows).cards);
 const by = (rows: ReturnType<typeof build>, id: string) => rows.find((r) => r.matchId === id)!;
 
 describe("which rows can be approved from the grid", () => {
@@ -69,14 +69,39 @@ describe("the tabs", () => {
   it("needs review shows what the cards show", () => expect(shown("needs")).toEqual(["lead", "shelf"]));
   it("cleared shows cleared", () => expect(shown("cleared")).toEqual(["clear"]));
   it("the shelf shows matched items still listed", () => expect(shown("shelf")).toEqual(["shelf"]));
+  it("the shelf shows an item once, however many recalls it comes near", () => {
+    const near = build([
+      row({ matchId: "lead", recordId: "listing-1", isListing: true, stillListed: true, orderedOn: null, salePath: null, verdict: "MATCH", strength: "CONFIRMED" }),
+      row({ matchId: "near", recordId: "listing-1", recallNumber: "25206", isListing: true, stillListed: true, orderedOn: null, salePath: null, strength: "BRAND" }),
+    ]);
+    expect(near.filter((r) => inTab(r, "shelf")).map((r) => r.matchId)).toEqual(["lead"]);
+  });
   it("all shows every candidate, hiding nothing", () => expect(shown("all")).toEqual(["clear", "lead", "other", "shelf"]));
 });
 
 describe("what the grid holds", () => {
+  it("lists sales in the order the cards do, so a seller sees one order", () => {
+    const sale = (matchId: string, recallNumber: string, over: Partial<QueueRow> = {}) => row({ matchId, recallNumber, recordId: `sale-${matchId}`, ...over });
+    const rows = [
+      sale("gap", "27040"),
+      sale("confirmed-older", "27027", { verdict: "MATCH", strength: "CONFIRMED", recallDate: "2026-10-15" }),
+      sale("confirmed-newer", "27072", { verdict: "MATCH", strength: "CONFIRMED", recallDate: "2026-11-05" }),
+      sale("cleared", "26059", { verdict: "CLEARED" }),
+    ];
+    const cards = toCards(rows).cards.map((c) => c.lead.matchId);
+    expect(cards).toEqual(["confirmed-newer", "confirmed-older", "gap"]);
+    expect(build(rows).map((r) => r.matchId)).toEqual([...cards, "cleared"]);
+  });
+
+  it("lists another recall on a sale after the leads, ahead of what cleared", () => {
+    const rows = [row({ matchId: "clear", recordId: "sale-2", verdict: "CLEARED" }), row({ matchId: "other", recallNumber: "25206", recallDate: "2020-01-01" }), row({ matchId: "lead" })];
+    expect(build(rows).map((r) => r.matchId)).toEqual(["lead", "other", "clear"]);
+  });
+
   it("links each row to where it is on the page", () => {
     const rows = build([row({ matchId: "lead" }), row({ matchId: "clear", recordId: "sale-2", verdict: "CLEARED" })]);
     expect(by(rows, "lead").anchor).toBe("#sale-lead");
-    expect(by(rows, "clear").anchor).toBe("#match-clear");
+    expect(by(rows, "clear").anchor).toBeNull(); // the row already says why it cleared, and there is nothing to do
   });
 
   it("links another recall on a sale to that sale's window, and a recall only counted on the page to nothing", () => {

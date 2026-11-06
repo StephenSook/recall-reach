@@ -63,7 +63,7 @@ const TABS: { id: GridTab; label: string }[] = [
   { id: "all", label: "All candidates" },
 ];
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
 
 type Row = Partial<GridRow>;
 
@@ -78,18 +78,18 @@ function OpenCell({ data }: ICellRendererParams<Row>) {
 }
 
 const columns: ColDef<Row>[] = [
-  { field: "recallNumber", headerName: "Recall", width: 84, cellClass: "id", filter: true },
-  { field: "product", headerName: "Product", flex: 2, minWidth: 140, wrapText: true, autoHeight: true, filter: true },
-  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 140, wrapText: true, autoHeight: true, filter: true },
-  { field: "state", headerName: "State", width: 126, cellRenderer: StateCell, filter: true },
-  { field: "path", headerName: "Path", width: 140, cellRenderer: PathCell, filter: true },
-  { field: "soldOn", headerName: "Sold", width: 100, cellDataType: "dateString", filter: "agDateColumnFilter" },
-  { field: "noticeState", headerName: "Message", width: 96, wrapText: true, autoHeight: true, filter: true },
-  { field: "reason", headerName: "Why", flex: 3, minWidth: 180, wrapText: true, autoHeight: true, filter: true },
-  { colId: "open", headerName: "", width: 54, cellRenderer: OpenCell, sortable: false, resizable: false },
+  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: true },
+  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
+  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
+  { field: "state", headerName: "State", width: 128, cellRenderer: StateCell, cellClass: "chip-cell", filter: true },
+  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: true },
+  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter" },
+  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: true },
+  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true },
+  { colId: "open", headerName: "", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false },
 ];
 
-/** The seller's queue as a table: every candidate, findable. The windows below stay where the work happens. */
+/** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
 export default function MatchGrid({ rows }: { rows: GridRow[] }) {
   const api = useRef<GridApi<Row> | null>(null);
   const tabRef = useRef<GridTab>("needs");
@@ -132,6 +132,11 @@ export default function MatchGrid({ rows }: { rows: GridRow[] }) {
         getRowId={(p) => String(p.data.matchId)}
         pinnedBottomRowData={totals}
         rowSelection={{ mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false, isRowSelectable: (n: IRowNode<Row>) => Boolean(n.data?.approvable) }}
+        selectionColumnDef={{ width: 44, minWidth: 44, maxWidth: 44, resizable: false, sortable: false }}
+        onCellClicked={(e) => {
+          // A row opens its window. The checkbox only picks it.
+          if (e.column.getColId() !== "ag-Grid-SelectionColumn" && e.data?.anchor) window.location.hash = e.data.anchor;
+        }}
         isExternalFilterPresent={() => tabRef.current !== "all"}
         doesExternalFilterPass={(n: IRowNode<Row>) => inTab(n.data as GridRow, tabRef.current)}
         onGridReady={(e) => {

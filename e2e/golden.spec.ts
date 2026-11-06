@@ -4,6 +4,9 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 
 const recall = (page: Page, number: string) => page.locator(`article[data-recall="${number}"]`);
 
+// A seller at a shop counter: every window shows. The wide-screen grid has its own test below.
+test.use({ viewport: { width: 390, height: 844 } });
+
 async function startDemoShop(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -21,6 +24,21 @@ async function mailLink(card: Locator) {
   expect(href.startsWith("mailto:")).toBe(true);
   const params = new URLSearchParams(href.slice(href.indexOf("?") + 1).replace(/\+/g, "%2B"));
   return { link, subject: params.get("subject") ?? "", body: params.get("body") ?? "" };
+}
+
+/** No sideways scrolling, nothing cut off at the edge, and no overflow dots in a chip's cell. */
+async function expectToFit(page: Page, grid: Locator) {
+  const link = grid.getByRole("link", { name: "Open" }).first();
+  await expect(link).toBeVisible();
+  const box = await grid.boundingBox();
+  const open = await link.boundingBox();
+  expect(open!.x + open!.width).toBeLessThanOrEqual(box!.x + box!.width);
+  const clipped = await grid.evaluate((el) => {
+    const columns = [...el.querySelectorAll(".ag-header-cell")].reduce((sum, c) => sum + c.getBoundingClientRect().width, 0);
+    const chips = [...el.querySelectorAll(".chip-cell")].filter((c) => c.scrollWidth > c.clientWidth);
+    return { sideways: columns === 0 || columns > el.clientWidth, chips: chips.length };
+  });
+  expect(clipped).toEqual({ sideways: false, chips: 0 });
 }
 
 async function streamToText(stream: NodeJS.ReadableStream): Promise<string> {
@@ -160,38 +178,70 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await expect(recall(page, "27040").getByTestId("check-result")).toHaveText("Family's answer matches the recall");
 });
 
-test("the grid finds every candidate, approves only a sale's lead, and exports no buyer data", async ({ page }) => {
-  await startDemoShop(page);
-  const grid = page.getByTestId("match-grid");
-  const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
-  await expect(rows).toHaveCount(4);
+test.describe("on a wide screen", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
 
-  await grid.getByRole("button", { name: /^All candidates/ }).click();
-  await expect.poll(() => rows.count()).toBeGreaterThan(3);
-  await grid.getByPlaceholder("Filter").fill("25206");
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("25206");
-  // Another recall on a sale that already has a lead. Approving it could send the wrong message, so it can't be picked.
-  await expect(rows.first().locator("input[type=checkbox]")).toBeDisabled();
-  await grid.getByPlaceholder("Filter").fill("");
+  test("the grid finds every candidate, approves only a sale's lead, and exports no buyer data", async ({ page }) => {
+    await startDemoShop(page);
+    const grid = page.getByTestId("match-grid");
+    const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
+    await expect(rows).toHaveCount(4);
+    await expectToFit(page, grid);
+    // Sales in one order, the cards' order: the two confirmed, newest recall first.
+    await expect(rows.nth(0)).toContainText("27072");
 
-  await grid.getByRole("button", { name: /^Pull from the shelf/ }).click();
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("27018");
-  await grid.getByRole("button", { name: /^Needs review/ }).click();
-  await expect(rows).toHaveCount(4);
-  const download = page.waitForEvent("download");
-  await grid.getByRole("button", { name: "Export Tell CPSC list" }).click();
-  const csv = await streamToText(await (await download).createReadStream());
-  expect(csv).toContain("27027");
-  expect(csv).not.toContain("27072"); // sold before the recall: not on this list
-  expect(csv).not.toContain("@");
-  expect(csv).not.toContain("gray stars"); // the shop's own words stay out
+    await grid.getByRole("button", { name: /^All candidates/ }).click();
+    await expect.poll(() => rows.count()).toBeGreaterThan(3);
+    await grid.getByPlaceholder("Filter").fill("25206");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("25206");
+    // Another recall on a sale that already has a lead. Approving it could send the wrong message, so it can't be picked.
+    await expect(rows.first().locator("input[type=checkbox]")).toBeDisabled();
+    await grid.getByPlaceholder("Filter").fill("");
 
-  const costway = grid.locator(".ag-row", { hasText: "27040" });
-  await costway.first().locator("input[type=checkbox]").first().check();
-  await grid.getByRole("button", { name: "Approve selected (1)" }).click();
-  await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Prepared");
+    await grid.getByRole("button", { name: /^Pull from the shelf/ }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("27018");
+    await grid.getByRole("button", { name: /^Needs review/ }).click();
+    await expect(rows).toHaveCount(4);
+    const download = page.waitForEvent("download");
+    await grid.getByRole("button", { name: "Export Tell CPSC list" }).click();
+    const csv = await streamToText(await (await download).createReadStream());
+    expect(csv).toContain("27027");
+    expect(csv).not.toContain("27072"); // sold before the recall: not on this list
+    expect(csv).not.toContain("@");
+    expect(csv).not.toContain("gray stars"); // the shop's own words stay out
+
+    // Nothing is printed twice: the windows wait until a row opens one.
+    await expect(recall(page, "27040")).toBeHidden();
+    const costway = rows.filter({ hasText: "27040" });
+    await costway.getByRole("link", { name: "Open" }).click();
+    await expect(recall(page, "27040")).toBeVisible();
+    await expect(recall(page, "27072")).toBeHidden();
+
+    // The whole row opens it too, and the checkbox only picks it.
+    await rows.filter({ hasText: "27072" }).getByText("SuperFast Sterilizer Dryers").click();
+    await expect(recall(page, "27072")).toBeVisible();
+    await expect(recall(page, "27040")).toBeHidden();
+    await costway.locator("input[type=checkbox]").first().check();
+    await expect(recall(page, "27072")).toBeVisible();
+
+    await grid.getByRole("button", { name: "Approve selected (1)" }).click();
+    await rows.filter({ hasText: "27040" }).getByRole("link", { name: "Open" }).click();
+    await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Prepared");
+
+    // An action keeps its window open.
+    await rows.filter({ hasText: "27072" }).getByRole("link", { name: "Open" }).click();
+    await recall(page, "27072").getByRole("button", { name: "Approve this notice" }).click();
+    await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("Prepared");
+    await expect(recall(page, "27072")).toBeVisible();
+  });
+
+  test("the grid fits a larger window too", async ({ page }) => {
+    await page.setViewportSize({ width: 1456, height: 900 });
+    await startDemoShop(page);
+    await expectToFit(page, page.getByTestId("match-grid"));
+  });
 });
 
 test.describe("on a phone", () => {

@@ -6,7 +6,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 import { WatchForSale } from "./WatchForSale";
@@ -21,6 +21,8 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
   const canApprove = notifiable && needsApproval(row);
   const canAskClaude = agentReady && !row.agent && row.verdict !== "CLEARED";
   const canBuy = shopKind === "DEMO" && row.isListing && row.stillListed && row.verdict !== "CLEARED";
+  // A form's fragment survives the redirect, so on a wide screen this window stays open after an action.
+  const here = `#sale-${row.matchId}`;
   return (
     <article className="window" id={`sale-${row.matchId}`} data-recall={row.recallNumber} data-verdict={row.verdict}>
       <header className="window-bar">
@@ -68,7 +70,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
               </form>
             ) : null}
             {canApprove ? (
-              <form action="/api/queue/notices" method="post">
+              <form action={`/api/queue/notices${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
                 <button type="submit" className="btn">
                   {row.verdict === "MATCH" ? "Approve this notice" : "Approve this check request"}
@@ -76,7 +78,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
               </form>
             ) : null}
             {canAskClaude ? (
-              <form action="/api/queue/agent" method="post">
+              <form action={`/api/queue/agent${here}`} method="post">
                 <input type="hidden" name="recordId" value={row.recordId} />
                 <button type="submit" className="btn btn-outline">
                   Check with Claude
@@ -96,7 +98,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
             {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
             {notifiable && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
             {row.notice.state === "OPENED_IN_MAIL" ? (
-              <form className="actions" action={`/api/queue/notices/${row.notice.id}/sent`} method="post">
+              <form className="actions" action={`/api/queue/notices/${row.notice.id}/sent${here}`} method="post">
                 <button type="submit" className="btn btn-outline">
                   I sent it
                 </button>
@@ -108,7 +110,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
         {row.verdict === "MATCH" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED" ? (
           <section className="state-line">
             {!row.refund && !row.approval ? (
-              <form action="/api/queue/refunds/approve" method="post">
+              <form action={`/api/queue/refunds/approve${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
                 <button type="submit" className="btn btn-outline">
                   Review refund
@@ -232,7 +234,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <header className="page-head">
         <h1>{shopName}</h1>
         <span className="quiet">
-          {counts.waiting} {counts.waiting === 1 ? "item waits" : "items wait"} for you
+          {counts.waiting} {counted(counts.waiting, "item waits", "items wait")} for you
         </span>
       </header>
       <p>Check each match, then approve what goes out. Nothing is sent without you.</p>
@@ -245,7 +247,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <div className="stats" data-testid="stats">
         <div className="stat">
           <span className="stat-value">{counts.recallsChecked ?? "None"}</span>
-          <span className="stat-label">Recalls checked</span>
+          <span className="stat-label">{counted(counts.recallsChecked ?? 0, "Recall checked", "Recalls checked")}</span>
         </div>
         <div className="stat stat-MATCH">
           <span className="stat-value">{counts.matched}</span>
@@ -253,33 +255,31 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </div>
         <div className="stat stat-SCOPE_GAP">
           <span className="stat-value">{counts.scopeGaps}</span>
-          <span className="stat-label">Scope gaps</span>
+          <span className="stat-label">{counted(counts.scopeGaps, "Scope gap", "Scope gaps")}</span>
         </div>
         <div className="stat stat-CLEARED">
           <span className="stat-value">{counts.cleared}</span>
           <span className="stat-label">Cleared</span>
         </div>
       </div>
-      {coverage ? (
-        <p data-testid="coverage" className="note">
-          {coverageLine(coverage)}
-        </p>
-      ) : null}
-      {shopKind === "DEMO" ? <p className="note">Demo shop. Order dates marked seeded are demo data; every sandbox capture is dated today.</p> : null}
-      {agentReady ? null : (
-        <p className="note" data-testid="agent-unavailable">
-          Claude check unavailable.
-        </p>
-      )}
-      <MatchGridLoader rows={gridRows(rows, { cards, cleared })} />
-      <section data-testid="needs">
-        <h2 className="section-title">Needs review</h2>
+      <p className="note">
+        {coverage ? <span data-testid="coverage">{coverageLine(coverage)} </span> : null}
+        {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
+        {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
+      </p>
+      <MatchGridLoader rows={gridRows(rows, cards)} />
+      <noscript>
+        <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; }`}</style>
+      </noscript>
+      <section data-testid="needs" className="cards">
+        <p className="cards-hint note">Open a row to work on it.</p>
+        <h2 className="section-title narrow-only">Needs review</h2>
         {cards.map((card) => (
           <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
       </section>
       {cleared.length > 0 || unrelated > 0 ? (
-        <section>
+        <section className="narrow-only">
           <h2 className="section-title">Checked and cleared</h2>
           {cleared.length > 0 ? (
             <div className="window" data-verdict="CLEARED" data-testid="cleared">
@@ -291,7 +291,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
               </header>
               <ul className="cleared-list">
                 {cleared.map((row) => (
-                  <li key={row.matchId} id={`match-${row.matchId}`} data-recall={row.recallNumber}>
+                  <li key={row.matchId} data-recall={row.recallNumber}>
                     <span className="id">CPSC recall {row.recallNumber}</span> <strong>{row.product}</strong>
                     <span className="quiet">
                       {row.itemTitle}: {row.reason}

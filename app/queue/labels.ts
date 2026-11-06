@@ -26,6 +26,9 @@ export const CHECK_RESULT: Record<string, string> = {
   CANT_TELL: "Family's answer could not settle it",
 };
 
+/** One word for one, another for any other number. */
+export const counted = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
 /** What the stat row shows. Each number is counted from what is on the page. */
 export function queueCounts(q: { cards: { lead: { verdict: string } }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
   const matched = q.cards.filter((c) => c.lead.verdict === "MATCH").length;
