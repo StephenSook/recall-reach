@@ -79,36 +79,39 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
   const { shopId, run, search } = await seedDemoShop(db, client, { today: input.today, secret: input.secret, now: input.now, freshCaptures: false, recallsFrom: REPLAY_FROM });
   try {
     const ms = Math.max(1, Math.round(performance.now() - started));
-    const { rows } = await db.query<{ id: string }>(
-      `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest, recall_years_missing)
-       values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6, $7::int[]) returning id`,
-      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest, recallYearsMissing],
-    );
-    const runId = rows[0].id;
-    // A recall's strongest outcome is what the replay reports for it. CLEARED means an item came near and was ruled out.
-    await db.query(
-      `insert into replay_rows (run_id, recall_number, recall_title, recall_date, outcome, sale_split, item_title, reason)
-       select distinct on (r.recall_id) $1::uuid, r.recall_number, r.title, r.recall_date, coalesce(m.verdict, 'NOT_NEAR'),
-         case when m.verdict = 'MATCH' then m.sale_path end, coalesce(l.title, i.title), m.reason
-       from recalls r
-       left join recall_matches m on m.recall_id = r.recall_id and m.shop_id = $2
-       left join order_lines l on l.id = m.order_line_id
-       left join shop_items i on i.id = m.shop_item_id
-       where r.recall_id = any($3::int[])
-       order by r.recall_id,
-         case m.verdict when 'MATCH' then 0 when 'SCOPE_GAP' then 1 when 'CLEARED' then 2 else 3 end,
-         case m.strength when 'CONFIRMED' then 0 when 'BRAND' then 1 when 'PRODUCT_WORDS' then 2 else 3 end,
-         case m.sale_path when 'REFUND_ELIGIBLE' then 0 when 'NOTICE_ONLY' then 1 else 2 end,
-         l.title`,
-      [runId, shopId, ids],
-    );
-    const c = await countsOf(db, runId);
-    await db.query(
-      "update replay_runs set checked = $2, matched = $3, scope_gaps = $4, cleared = $5, not_near = $6, notice_only = $7, refund_eligible = $8 where id = $1",
-      [runId, c.checked, c.matched, c.scopeGaps, c.cleared, c.notNear, c.noticeOnly, c.refundEligible],
-    );
-    await db.query("delete from replay_runs where id not in (select id from replay_runs order by created_at desc, id limit $1)", [REPLAYS_KEPT]);
-    return { runId };
+    // All at once, so nobody can read a run with no rows yet, and one that fails part way can't pass for a fresh one.
+    return await db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest, recall_years_missing)
+         values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6, $7::int[]) returning id`,
+        [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest, recallYearsMissing],
+      );
+      const runId = rows[0].id;
+      // A recall's strongest outcome is what the replay reports for it. CLEARED means an item came near and was ruled out.
+      await tx.query(
+        `insert into replay_rows (run_id, recall_number, recall_title, recall_date, outcome, sale_split, item_title, reason)
+         select distinct on (r.recall_id) $1::uuid, r.recall_number, r.title, r.recall_date, coalesce(m.verdict, 'NOT_NEAR'),
+           case when m.verdict = 'MATCH' then m.sale_path end, coalesce(l.title, i.title), m.reason
+         from recalls r
+         left join recall_matches m on m.recall_id = r.recall_id and m.shop_id = $2
+         left join order_lines l on l.id = m.order_line_id
+         left join shop_items i on i.id = m.shop_item_id
+         where r.recall_id = any($3::int[])
+         order by r.recall_id,
+           case m.verdict when 'MATCH' then 0 when 'SCOPE_GAP' then 1 when 'CLEARED' then 2 else 3 end,
+           case m.strength when 'CONFIRMED' then 0 when 'BRAND' then 1 when 'PRODUCT_WORDS' then 2 else 3 end,
+           case m.sale_path when 'REFUND_ELIGIBLE' then 0 when 'NOTICE_ONLY' then 1 else 2 end,
+           l.title`,
+        [runId, shopId, ids],
+      );
+      const c = await countsOf(tx, runId);
+      await tx.query(
+        "update replay_runs set checked = $2, matched = $3, scope_gaps = $4, cleared = $5, not_near = $6, notice_only = $7, refund_eligible = $8 where id = $1",
+        [runId, c.checked, c.matched, c.scopeGaps, c.cleared, c.notNear, c.noticeOnly, c.refundEligible],
+      );
+      await tx.query("delete from replay_runs where id not in (select id from replay_runs order by created_at desc, id limit $1)", [REPLAYS_KEPT]);
+      return { runId };
+    });
   } finally {
     await db.query("delete from shops where id = $1", [shopId]);
   }

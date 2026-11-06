@@ -4,6 +4,7 @@ import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
+import type { Db, Queryable } from "../db/types";
 import type { Method, PayPalClient } from "../paypal/client";
 import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
 
@@ -38,6 +39,44 @@ describe("Recall Replay", () => {
 
   const run = (client = fakePayPal().client) => runReplay(db, client, { today: TODAY, now: NOW, secret: "k".repeat(32) });
   const total = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from recalls")).rows[0].n);
+
+  /** The database, failing on any statement holding these words, inside a transaction or out. */
+  const failingOn = (words: string): typeof db => {
+    const guarded = <Q extends Queryable>(q: Q): Q =>
+      new Proxy(q, {
+        get(target, prop) {
+          if (prop === "query") {
+            return async (sql: string, params?: unknown[]) => {
+              if (sql.includes(words)) throw new Error("the database failed here");
+              return target.query(sql, params);
+            };
+          }
+          if (prop === "transaction") {
+            return (fn: (tx: Queryable) => Promise<unknown>) => (target as unknown as Db).transaction((tx) => fn(guarded(tx)));
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    return guarded(db);
+  };
+
+  describe("a run that fails part way", () => {
+    it("publishes nothing, so a broken run can't pass for a fresh one, and leaves no shop", async () => {
+      const client = fakePayPal().client;
+      await expect(runReplay(failingOn("insert into replay_rows"), client, { today: TODAY, now: NOW, secret: "k".repeat(32) })).rejects.toThrow("failed here");
+      expect((await db.query("select 1 from replay_runs")).rows).toEqual([]);
+      expect((await db.query("select 1 from shops")).rows).toEqual([]);
+    });
+
+    it("keeps the run it had", async () => {
+      const { runId } = await run();
+      const client = fakePayPal().client;
+      await expect(runReplay(failingOn("update replay_runs set checked"), client, { today: TODAY, now: NOW, secret: "k".repeat(32) })).rejects.toThrow("failed here");
+      expect((await latestReplay(db))?.runId).toBe(runId);
+      expect((await db.query("select 1 from replay_runs")).rows).toHaveLength(1);
+    });
+  });
 
   describe("keeping a run from the last day, for someone arriving in a quiet week", () => {
     const hoursBeforeNow = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
@@ -168,13 +207,15 @@ describe("Recall Replay", () => {
       let loaded = false;
       const during = new Proxy(db, {
         get(target, prop) {
-          if (prop === "query") {
-            return async (sql: string, params?: unknown[]) => {
-              if (!loaded && sql.includes("insert into replay_runs")) {
+          // Right after the check has finished, which is the transaction that writes the shop's run.
+          if (prop === "transaction") {
+            return async (fn: (tx: Queryable) => Promise<unknown>) => {
+              const answer = await target.transaction(fn);
+              if (!loaded && (await target.query("select 1 from shop_runs")).rows.length > 0) {
                 loaded = true;
                 await pullRecalls(target, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
               }
-              return target.query(sql, params);
+              return answer;
             };
           }
           const value = Reflect.get(target, prop);
