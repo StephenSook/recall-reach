@@ -52,8 +52,8 @@ export function readTextCheck(rawTitle: string | null | undefined, rawModel: str
   return { title, model };
 }
 
-/** The parts of a recall's text that stand alone as a code, written the way the caller's model is compared. */
-const standaloneCodes = (text: string) => new Set(text.toUpperCase().split(/[^A-Z0-9-]+/).map((t) => normalizeModel(t)));
+/** Numbers that stand alone in a recall's text. Punctuation separates them, so the pieces of a phone number stay pieces. */
+const standaloneNumbers = (text: string) => new Set(text.split(/[^A-Za-z0-9]+/));
 
 /** A model is only digits on some recalls, and the rules read codes with letters. Long enough not to be a year or a count. */
 const MIN_DIGITS_MODEL = 5;
@@ -90,7 +90,7 @@ export async function checkText(
   const judged = rows.map((recall) => {
     const verdict = verdictFor(recall, { title: text, description: "" });
     const digitsOnly = /^\d+$/.test(typedModel) && typedModel.length >= MIN_DIGITS_MODEL;
-    if (verdict.verdict === "CLEARED" && digitsOnly && standaloneCodes(`${recall.title} ${recall.description}`).has(typedModel)) {
+    if (verdict.verdict === "CLEARED" && digitsOnly && standaloneNumbers(`${recall.title} ${recall.description}`).has(typedModel)) {
       return {
         recall,
         verdict: {

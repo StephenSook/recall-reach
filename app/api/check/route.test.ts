@@ -112,6 +112,12 @@ describe("GET /api/check", () => {
     expect(body.results.map((r: { recallNumber: string }) => r.recallNumber)).not.toContain("27012");
   });
 
+  it.each(["1234567", "8001234567"])("doesn't take the pieces of a phone number for a model: %s", async (model) => {
+    await real.query("update recalls set description = 'Model LMP100 is recalled. Call (800) 123-4567 or 800-123-4567 for help.' where recall_number = '27012'");
+    const body = await results(`model=${model}`);
+    expect(body.results.map((r: { recallNumber: string }) => r.recallNumber)).not.toContain("27012");
+  });
+
   it("takes a model alone", async () => {
     expect((await results("model=BRZ0083")).results[0]).toMatchObject({ recallNumber: "27072" });
   });
