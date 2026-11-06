@@ -356,7 +356,7 @@ test.describe("a recall's refund windows", () => {
 
     // A scope gap isn't told it gets a notice.
     await page.goto("/queue/recalls/27040");
-    await expect(timeline.locator(".b-sch-event").first()).toContainText("a check comes first");
+    await expect(timeline.locator(".b-sch-event").first()).toContainText("Not a confirmed match");
 
     expect((await page.goto("/queue/recalls/00000"))?.status()).toBe(404);
   });

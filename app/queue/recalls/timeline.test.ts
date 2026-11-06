@@ -3,7 +3,7 @@ import type { QueueRow } from "@/server/queue/queue";
 import { REFUND_WINDOW_DAYS, timelineFor } from "./timeline";
 
 const row = (over: Partial<QueueRow>) =>
-  ({ matchId: "m1", recallNumber: "27027", recallTitle: "A recall", recallDate: "2026-10-15", itemTitle: "An item", orderedOn: "2026-11-06", salePath: "REFUND_ELIGIBLE", verdict: "MATCH", strength: "CONFIRMED", isListing: false, joinState: "IDENTIFIED", ...over }) as QueueRow;
+  ({ matchId: "m1", recallNumber: "27027", recallTitle: "A recall", recallDate: "2026-10-15", itemTitle: "An item", orderedOn: "2026-11-06", salePath: "REFUND_ELIGIBLE", verdict: "MATCH", strength: "CONFIRMED", isListing: false, joinState: "IDENTIFIED", refund: null, ...over }) as QueueRow;
 const TODAY = "2026-11-06";
 
 describe("timelineFor", () => {
@@ -72,23 +72,66 @@ describe("timelineFor", () => {
     expect(inside).toMatchObject({ tone: "refund", meaning: "Sold after the recall, within 180 days of its order date" });
   });
 
-  it.each([
-    ["on the last day, when the gate may already refuse by the hour", "2026-05-10"],
-    ["after it", "2026-01-01"],
-  ])("doesn't read as a refund %s", (_about, orderedOn) => {
-    const over = timelineFor([row({ orderedOn })], "27027", TODAY)?.sales[0];
-    expect(over).toMatchObject({ tone: "notice", meaning: "Sold after the recall, and 180 days from its order date have passed" });
+  it("on its last day by order date, leaves the answer to PayPal's date, because the gate counts by the hour", () => {
+    expect(timelineFor([row({ orderedOn: "2026-05-10" })], "27027", TODAY)?.sales[0]).toMatchObject({
+      tone: "refund",
+      meaning: "Sold after the recall, on day 180 from its order date: PayPal's date decides",
+    });
+  });
+
+  it("doesn't read as a refund after that", () => {
+    expect(timelineFor([row({ orderedOn: "2026-05-09" })], "27027", TODAY)?.sales[0]).toMatchObject({
+      tone: "notice",
+      meaning: "Sold after the recall, and 180 days from its order date have passed",
+    });
   });
 
   it.each([
     ["a scope gap", { verdict: "SCOPE_GAP" }],
     ["a match on product words", { strength: "PRODUCT_WORDS" }],
     ["a match on the brand alone", { strength: "BRAND" }],
-    ["a payment that could be either of two sales", { joinState: "AMBIGUOUS_JOIN" }],
-  ] as const)("says a check comes first for %s, whatever its dates say", (_about, over) => {
+  ] as const)("says %s isn't a confirmed match, whatever its dates say, and stays true once a family has answered", (_about, over) => {
     for (const salePath of ["NOTICE_ONLY", "REVIEW", "REFUND_ELIGIBLE"] as const) {
-      expect(timelineFor([row({ salePath, ...over })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "check", meaning: "Not confirmed yet: a check comes first" });
+      expect(timelineFor([row({ salePath, ...over })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "check", meaning: "Not a confirmed match: see its card" });
     }
+  });
+
+  it("uses the card's own words for a payment that could be either of two sales", () => {
+    for (const salePath of ["NOTICE_ONLY", "REVIEW", "REFUND_ELIGIBLE"] as const) {
+      expect(timelineFor([row({ salePath, joinState: "AMBIGUOUS_JOIN" })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "check", meaning: "Two possible orders: see its card" });
+    }
+  });
+
+  it.each(["HISTORY_UNAVAILABLE", "NO_PAYPAL_RECORD", null])("doesn't read as a refund with no payment to refund: %s", (joinState) => {
+    expect(timelineFor([row({ joinState })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "notice", meaning: "Sold after the recall, with no PayPal payment linked" });
+  });
+
+  it("still says sold before the recall with no payment linked: that needs none", () => {
+    expect(timelineFor([row({ salePath: "NOTICE_ONLY", joinState: "NO_PAYPAL_RECORD" })], "27027", TODAY)?.sales[0].meaning).toBe("Sold before the recall: a notice, not a refund");
+  });
+
+  describe("a sale that already has a refund", () => {
+    const refund = (status: string) => ({ id: "r1", status, amountCents: 100, currency: "USD", failure: null });
+
+    it("says it was refunded, and isn't offered again", () => {
+      expect(timelineFor([row({ refund: refund("refunded") })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "notice", meaning: "Refunded: see its card" });
+    });
+
+    it.each([
+      ["reserved", "Refund not sent yet: see its card"],
+      ["pending", "Refund pending at PayPal: see its card"],
+      ["unconfirmed", "Refund not confirmed: see its card"],
+    ])("says so in the card's words while it is %s", (status, meaning) => {
+      expect(timelineFor([row({ refund: refund(status) })], "27027", TODAY)?.sales[0]).toMatchObject({ tone: "check", meaning });
+    });
+
+    it("goes back to its dates after a failed one, which can be tried again", () => {
+      expect(timelineFor([row({ refund: refund("failed") })], "27027", TODAY)?.sales[0].tone).toBe("refund");
+    });
+
+    it("says so even if the recall has since changed what its match says", () => {
+      expect(timelineFor([row({ verdict: "SCOPE_GAP", refund: refund("refunded") })], "27027", TODAY)?.sales[0].meaning).toBe("Refunded: see its card");
+    });
   });
 
   it.each([

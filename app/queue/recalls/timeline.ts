@@ -2,6 +2,7 @@
 // date from PayPal. The app only offers a refund for a sale made after the recall and still inside its window, so this is
 // that rule, drawn.
 import type { QueueRow } from "@/server/queue/queue";
+import { JOIN_CHIP, REFUND_STATE } from "../labels";
 
 const DAY_MS = 86_400_000;
 export const REFUND_WINDOW_DAYS = 180;
@@ -38,13 +39,18 @@ const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00
 
 type Sold = QueueRow & { orderedOn: string; salePath: NonNullable<QueueRow["salePath"]> };
 
-/** The same bar the refund itself has to clear: a confirmed match. Dates alone never make a sale a notice or a refund. */
+/** What the sale's card offers, in its words. Dates alone never make a sale a notice or a refund. */
 function readingOf(row: Sold, windowEnds: string, today: string): Pick<TimelineSale, "tone" | "meaning"> {
-  if (row.verdict !== "MATCH" || row.strength !== "CONFIRMED" || row.joinState === "AMBIGUOUS_JOIN") return { tone: "check", meaning: "Not confirmed yet: a check comes first" };
+  // A failed refund can be tried again, so it falls through to the dates.
+  if (row.refund && row.refund.status !== "failed") return { tone: row.refund.status === "refunded" ? "notice" : "check", meaning: `${REFUND_STATE[row.refund.status]}: see its card` };
+  if (row.verdict !== "MATCH" || row.strength !== "CONFIRMED") return { tone: "check", meaning: "Not a confirmed match: see its card" };
+  if (row.joinState === "AMBIGUOUS_JOIN") return { tone: "check", meaning: `${JOIN_CHIP.AMBIGUOUS_JOIN}: see its card` };
   if (row.salePath === "NOTICE_ONLY") return { tone: "notice", meaning: "Sold before the recall: a notice, not a refund" };
   if (row.salePath === "REVIEW") return { tone: "check", meaning: "Sold on the recall date: a person checks the date" };
-  // The bar counts from the shop's order date, and PayPal's own date and time decide. So the last day doesn't read as inside.
-  if (windowEnds <= today) return { tone: "notice", meaning: "Sold after the recall, and 180 days from its order date have passed" };
+  if (row.joinState !== "IDENTIFIED") return { tone: "notice", meaning: "Sold after the recall, with no PayPal payment linked" };
+  if (windowEnds < today) return { tone: "notice", meaning: "Sold after the recall, and 180 days from its order date have passed" };
+  // The refund counts by the hour from PayPal's own date, so the last day by order date can go either way.
+  if (windowEnds === today) return { tone: "refund", meaning: "Sold after the recall, on day 180 from its order date: PayPal's date decides" };
   return { tone: "refund", meaning: "Sold after the recall, within 180 days of its order date" };
 }
 
