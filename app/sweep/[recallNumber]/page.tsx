@@ -45,11 +45,10 @@ export default async function SweepPage({ params }: { params: Promise<{ recallNu
               ))}
             </ul>
           ) : (
-            <p data-testid="no-candidates">No title to show for this recall&apos;s brand and product.</p>
+            <p data-testid="no-candidates">No title to show. That doesn&apos;t mean none is on sale.</p>
           )}
           <p className="note" data-testid="sweep-counts">
-            Searched for &quot;{sweep.query}&quot; {ranAt(sweep.searchedAt)}. {view.returned} {view.returned === 1 ? "product" : "products"} came back. {view.notListed} {view.notListed === 1 ? "isn't" : "aren't"} this recall&apos;s brand and product, so {view.notListed === 1 ? "it isn't" : "they aren't"} named.
-            {view.otherWording > 0 ? ` ${view.otherWording} more ${view.otherWording === 1 ? "is" : "are"} this brand and product in other words, so ${view.otherWording === 1 ? "its title isn't" : "their titles aren't"} shown.` : ""} We keep titles only, no sellers or prices.
+            Searched for &quot;{sweep.query}&quot; {ranAt(sweep.searchedAt)}. {view.returned} {view.returned === 1 ? "product" : "products"} came back. A title shows here only with the recalling firm&apos;s exact brand, in CPSC&apos;s own product name, so {view.notListed + view.otherWording} {view.notListed + view.otherWording === 1 ? "doesn't" : "don't"}. We keep titles only, no sellers or prices.
             {sweep.recallChanged ? " CPSC has edited this recall since this search." : ""}
           </p>
         </>

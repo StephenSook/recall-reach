@@ -1,9 +1,10 @@
 // What a page may say about a search result. Naming another company's product under a recall would read as that product
 // being recalled, and naming a seller would read as that seller selling it, so this lists very little. The brand must be the
-// recall's own, exactly. The rules must read the title as the recalled product. And every word of the title must already be
-// in CPSC's record, so no third party's words reach the page at all. Everything else is only counted.
+// recall's own, exactly. The rules must read the title as the recalled product. And the title may only use the brand, CPSC's
+// product name and the models CPSC lists, in plain letters, so no third party's words reach the page, and no claim about the
+// product either: "recalled" and "hazard" are CPSC's words, but they aren't the product's name. Everything else is only counted.
 import type { Recall } from "../cpsc/schema";
-import { brandOf, verdictFor } from "../match/verdict";
+import { brandOf, modelTokens, verdictFor } from "../match/verdict";
 import type { MarketListing } from "./channel3";
 
 export interface ReviewCandidate {
@@ -18,25 +19,28 @@ export interface ReviewCandidate {
 export interface SweepView {
   returned: number;
   candidates: ReviewCandidate[];
-  /** The recall's brand and product, in words of their own, so the title isn't printed. */
+  /** The recall's brand and product, in other words, so the title isn't printed. */
   otherWording: number;
-  /** Came back, and aren't the recall's brand and product, so they aren't named. */
+  /** Came back without the recalling firm's exact brand, or the rules didn't read them as its product, so they aren't named. */
   notListed: number;
 }
 
+/** Anything else could look like a word on the page while reading as no word here, such as full-width letters. */
+const PLAIN = /^[\x20-\x7E]+$/;
 const sameName = (a: string) => a.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const wordsOf = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map((w) => w.replace(/s$/, ""));
 
 export function sweepView(recall: Pick<Recall, "title" | "description" | "products" | "retailers">, listings: MarketListing[]): SweepView {
   const brand = brandOf(recall.title);
   const sellers = new Set(recall.retailers.flatMap(wordsOf));
-  const cpscWords = new Set(wordsOf(`${recall.title} ${recall.description} ${recall.products.map((p) => p.name ?? "").join(" ")}`).filter((w) => !sellers.has(w)));
+  const named = `${brand ?? ""} ${recall.products.map((p) => p.name ?? "").join(" ")} ${modelTokens(`${recall.title} ${recall.description}`).join(" ")}`;
+  const cpscWords = new Set(wordsOf(named).filter((w) => !sellers.has(w)));
   const same = listings.flatMap((listing) => {
     if (!brand || !listing.brand || sameName(listing.brand) !== sameName(brand)) return [];
     const verdict = verdictFor(recall, { title: `${listing.brand} ${listing.title}`, description: "" });
     return verdict.verdict === "CLEARED" ? [] : [{ listing, verdict }];
   });
-  const printable = same.filter(({ listing }) => wordsOf(listing.title).every((w) => cpscWords.has(w)));
+  const printable = same.filter(({ listing }) => PLAIN.test(listing.title) && wordsOf(listing.title).every((w) => cpscWords.has(w)));
   const byTitle = new Map<string, ReviewCandidate>();
   for (const { listing, verdict } of printable) {
     const key = listing.title.toLowerCase();

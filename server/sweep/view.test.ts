@@ -48,13 +48,15 @@ describe("sweepView", () => {
   it.each([
     ["names a seller", "Baby Brezza SuperFast Sterilizer Dryer sold by Retailer X"],
     ["has a word CPSC never used", "Superfast Sterilizer Dryer Machine"],
+    ["hides a seller's name in full-width letters", "Superfast Sterilizer Dryer \uFF37\uFF41\uFF4C\uFF4D\uFF41\uFF52\uFF54"],
+    ["says the product is recalled", "Recalled SuperFast Sterilizer Dryer"],
+    ["uses CPSC's words about the hazard", "SuperFast Sterilizer Dryer Burn Hazard"],
   ])("doesn't print a title that %s, only counts it", (_name, title) => {
     const view = sweepView(brezza, [listing(title, "Baby Brezza")]);
     expect(view.candidates).toEqual([]);
     expect(view.otherWording).toBe(1);
     expect(view.notListed).toBe(0);
-    expect(JSON.stringify(view)).not.toContain("Retailer X");
-    expect(JSON.stringify(view)).not.toContain("Machine");
+    expect(JSON.stringify(view)).not.toContain(title);
   });
 
   it("doesn't print a title with a seller CPSC itself names, since that would read as selling it now", () => {

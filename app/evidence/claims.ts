@@ -31,7 +31,7 @@ export const CHANNEL3_CLAIMS: Claim[] = [
   { what: "Calls Channel3's search_products over its MCP server, from the hourly job", file: "server/sweep/channel3.ts", find: "search_products" },
   { what: "Sends only the product name from CPSC's public record", file: "server/sweep/sweep.ts", find: "queryFor" },
   { what: "Keeps titles only: offers, sellers and prices stop at the door", file: "server/sweep/channel3.ts", find: "Offers hold the retailers" },
-  { what: "Lists only the recall's exact brand, read by the rules as its product, in words CPSC already used. It only counts the rest", file: "server/sweep/view.ts", find: "cpscWords" },
+  { what: "Shows a title only with the recalling firm's exact brand, read by the rules as its product, using CPSC's product name. It only counts the rest", file: "server/sweep/view.ts", find: "cpscWords" },
   { what: "Caches every search, so opening a page never calls anyone", file: "server/sweep/sweep.ts", find: "insert into recall_sweeps" },
 ];
 
