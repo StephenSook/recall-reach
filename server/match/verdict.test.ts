@@ -129,6 +129,13 @@ describe("verdictFor", () => {
   });
 
   describe("a printed look", () => {
+    it("doesn't count the pieces of a model code as a look: a different code ending stays a question", () => {
+      const oneModel = { ...PAPABLIC, title: "Lutron Recalls Power Interfaces", description: "This recall involves power interfaces for LED tape lights, model LU-PH3-B.", products: [{ name: "Lutron power interfaces for LED tape lights" }] } as Recall;
+      const v = verdictFor(oneModel, { title: "Lutron power interface for LED tape lights LU-PH3-C" }, { dateFilter: false });
+      expect(v.verdict).toBe("SCOPE_GAP");
+      expect(v.strength).not.toBe("CONFIRMED");
+    });
+
     it("confirms nothing without the brand, even when the title shows CPSC's exact look", () => {
       const v = verdictFor(PAPABLIC, { title: "Bedside sleeper, gray stars and moon" });
       expect(v.verdict).toBe("SCOPE_GAP");

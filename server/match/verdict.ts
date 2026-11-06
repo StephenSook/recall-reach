@@ -196,8 +196,9 @@ export function verdictFor(
 
   // A one-model recall with a printed look: the title's own words can pin the unit, but only with the
   // brand named. A confirmed match can lead to a refund, and ordinary words in common are not enough.
+  const modelParts = new Set(recallModels.flatMap((m) => [...words(m)]));
   const look = [...words(recall.description)]
-    .filter((w) => !brandWords.has(w) && !lineWords.has(w) && itemWords.has(w))
+    .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
   if (hasBrand && recallModels.length === 1 && look.length >= 2) {
     return {
