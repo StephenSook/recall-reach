@@ -424,8 +424,8 @@ describe("notices", () => {
     const WRITTEN = "Does your high chair turn into a table and chair set?";
     const write = (over: { question?: string; review?: string | null; every?: boolean } = {}) =>
       db.query(
-        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, review, model, input_tokens, output_tokens, cost_micros)
-         select raw_sha256, $1, recall_id, 'QUESTION', $2, 'convert into a table and chair set', $3, $4, 'm', 0, 0, 0 from recalls where recall_number = '27040'`,
+        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, scope_confirmed, review, model, input_tokens, output_tokens, cost_micros)
+         select raw_sha256, $1, recall_id, 'QUESTION', $2, 'convert into a table and chair set', $3, $3, $4, 'm', 0, 0, 0 from recalls where recall_number = '27040'`,
         [QUESTION_VERSION, over.question ?? WRITTEN, over.every ?? true, over.review ?? null],
       );
     const gap = (orderNumber: string) => matchFor("27040", line({ orderNumber, title: "Costway high chair" }));

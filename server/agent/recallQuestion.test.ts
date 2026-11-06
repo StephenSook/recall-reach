@@ -78,7 +78,8 @@ describe("the question Claude writes for a family", () => {
   it("makes it readable to the rest of the app", async () => {
     await write("27040", fakeClaude([[answer()]]).client);
     const { rows } = await db.query<{ raw_sha256: string }>("select raw_sha256 from recalls where recall_number = '27040'");
-    expect(await writtenQuestion(db, rows[0].raw_sha256)).toEqual({ question: QUESTION, evidence: SPAN, everyRecalledUnit: true, accepted: false });
+    // Claude's claim about every recalled unit means nothing until a person confirms it.
+    expect(await writtenQuestion(db, rows[0].raw_sha256)).toEqual({ question: QUESTION, evidence: SPAN, everyRecalledUnit: false, accepted: false });
   });
 
   it("offers one tool, and it can only record a question", async () => {
@@ -161,6 +162,25 @@ describe("the question Claude writes for a family", () => {
     ])("refuses %s", (_name, question) => refused(question));
   });
 
+  describe("a recall that lists several values", () => {
+    const LIST = "begins with any one of the following six digits: 083723, 078352, 084105, 078591, 078592, 084106, or 086409";
+    const sentBack = async (question: string) => {
+      const { client, requests } = fakeClaude([[answer({ question, evidence: LIST })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "Too many to ask." })]]);
+      await write("27065", client);
+      return lastReply(requests[1])[0];
+    };
+
+    // A real answer from the live test: an owner of one of the other five would have answered No.
+    it("refuses a question naming only some of them", async () => {
+      expect(await sentBack("Does your battery pack have a serial number starting with 083723 or 078352?")).toMatchObject({ is_error: true });
+    });
+
+    it("takes a question about the list that names none of them", async () => {
+      const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number on the bottom?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })]]);
+      expect(await write("27065", client)).toBe("WROTE");
+    });
+  });
+
   describe("when it has nothing specific to ask", () => {
     it("says so, and that answer is kept", async () => {
       const { client } = fakeClaude([[answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "Nothing in the text sets this apart." })]]);
@@ -240,8 +260,8 @@ describe("the question Claude writes for a family", () => {
 
     it("is what lets a no count against the recall", async () => {
       await write("27040", fakeClaude([[answer()]]).client);
-      await db.query("update recall_questions set review = 'ACCEPTED'");
-      expect((await writtenQuestion(db, await sha()))?.accepted).toBe(true);
+      await db.query("update recall_questions set review = 'ACCEPTED', scope_confirmed = true");
+      expect(await writtenQuestion(db, await sha())).toMatchObject({ accepted: true, everyRecalledUnit: true });
     });
 
     it("takes a rejected question out of use", async () => {

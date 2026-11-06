@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
+import { createShop, storeOrderLines } from "../import/store";
+import { runShopCheck } from "../match/run";
+import { familyView, prepareNotice, recordFamilyAnswer } from "../notice/store";
+import { createContactCipher } from "../privacy/contactCipher";
 import { pendingQuestions, reviewQuestion } from "./questionReview";
 import { QUESTION_VERSION, writtenQuestion } from "./questionStore";
 
@@ -41,6 +45,7 @@ describe("a person reviewing Claude's questions", () => {
         product: "Costway Convertible High Chairs",
         everyRecalledUnit: true,
         url: expect.stringContaining("cpsc.gov"),
+        description: expect.stringContaining("designed to convert into a table and chair set"),
       });
     });
 
@@ -70,17 +75,76 @@ describe("a person reviewing Claude's questions", () => {
   describe("a decision", () => {
     it("accepting lets the rest of the app treat a no as counting, and records when", async () => {
       await write("27040");
-      expect(await reviewQuestion(db, { recallNumber: "27040", question: "Does recall 27040 have this?", decision: "ACCEPTED" })).toBe(true);
-      expect((await writtenQuestion(db, await sha("27040")))?.accepted).toBe(true);
+      expect(await reviewQuestion(db, { recallNumber: "27040", question: "Does recall 27040 have this?", decision: "ACCEPTED", scopeConfirmed: true })).toBe(true);
+      expect(await writtenQuestion(db, await sha("27040"))).toMatchObject({ accepted: true, everyRecalledUnit: true });
       const { rows } = await db.query<{ reviewed_at: unknown }>("select reviewed_at from recall_questions");
       expect(rows[0].reviewed_at).not.toBeNull();
       expect(await numbers()).toEqual([]);
+    });
+
+    it("accepting the words does not accept Claude's claim about every recalled unit: a person says that separately", async () => {
+      await write("27040");
+      await reviewQuestion(db, { recallNumber: "27040", question: "Does recall 27040 have this?", decision: "ACCEPTED", scopeConfirmed: false });
+      expect(await writtenQuestion(db, await sha("27040"))).toMatchObject({ accepted: true, everyRecalledUnit: false });
+    });
+
+    it("a person can't confirm for every unit what Claude did not claim", async () => {
+      await write("27040");
+      await db.query("update recall_questions set every_recalled_unit = false");
+      await reviewQuestion(db, { recallNumber: "27040", question: "Does recall 27040 have this?", decision: "ACCEPTED", scopeConfirmed: true });
+      expect((await writtenQuestion(db, await sha("27040")))?.everyRecalledUnit).toBe(false);
     });
 
     it("rejecting takes the question out of use", async () => {
       await write("27040");
       await reviewQuestion(db, { recallNumber: "27040", question: "Does recall 27040 have this?", decision: "REJECTED" });
       expect(await writtenQuestion(db, await sha("27040"))).toBeNull();
+    });
+
+    describe("rejecting a question already on a message", () => {
+      const QUESTION = "Does your high chair turn into a table and chair set?";
+      const prepared = async () => {
+        await db.query(
+          `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, model, input_tokens, output_tokens, cost_micros)
+           select raw_sha256, $1, recall_id, 'QUESTION', $2, 'convert into a table and chair set', true, 'm', 0, 0, 0 from recalls where recall_number = '27040'`,
+          [QUESTION_VERSION, QUESTION],
+        );
+        const shopId = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+        const line = { orderNumber: "#1", lineNo: 1, title: "Costway high chair", sku: null, quantity: 1, unitPriceCents: 100, discountCents: 0, currency: "USD", orderedOn: "2026-09-30", paymentReference: null, buyerEmail: null };
+        await storeOrderLines(db, shopId, [line], createContactCipher("k".repeat(32), shopId), "test");
+        await runShopCheck(db, shopId, { today: "2026-11-06" });
+        const { rows } = await db.query<{ id: string }>("select m.id from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27040'", [shopId]);
+        return (await prepareNotice(db, { shopId, matchId: rows[0].id })).noticeId;
+      };
+      const reject = () => reviewQuestion(db, { recallNumber: "27040", question: QUESTION, decision: "REJECTED" });
+      const asked = async (noticeId: string) => (await familyView(db, noticeId))?.question?.question;
+
+      it("stops it being asked, on a message not sent yet", async () => {
+        const noticeId = await prepared();
+        expect(await asked(noticeId)).toBe(QUESTION);
+        await reject();
+        expect(await asked(noticeId)).not.toBe(QUESTION);
+      });
+
+      it("stops it being asked on the family's page even after the mail went out, since a person said it was wrong", async () => {
+        const noticeId = await prepared();
+        await db.query("update notices set sent_at = now() where id = $1", [noticeId]);
+        await reject();
+        expect(await asked(noticeId)).not.toBe(QUESTION);
+      });
+
+      it("leaves a message the family already answered as the record of what they were asked", async () => {
+        const noticeId = await prepared();
+        await recordFamilyAnswer(db, noticeId, "yes");
+        await reject();
+        expect((await db.query<{ written_question: { question: string } }>("select written_question from notices where id = $1", [noticeId])).rows[0].written_question.question).toBe(QUESTION);
+      });
+
+      it("touches no message when accepting", async () => {
+        const noticeId = await prepared();
+        await reviewQuestion(db, { recallNumber: "27040", question: QUESTION, decision: "ACCEPTED" });
+        expect(await asked(noticeId)).toBe(QUESTION);
+      });
     });
 
     it("applies only to the exact words the person read", async () => {

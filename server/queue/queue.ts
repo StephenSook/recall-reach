@@ -115,7 +115,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
             n.written_question,
             extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
-            q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit as stored_every, q.review as stored_review,
+            q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,

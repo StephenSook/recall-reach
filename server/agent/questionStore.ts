@@ -11,7 +11,7 @@ export interface WrittenQuestion {
   question: string;
   /** The exact CPSC words it rests on. */
   evidence: string;
-  /** Claude says every recalled unit has this trait, so a no would set the product apart. */
+  /** Claude says every recalled unit has this trait and a person checked that, so a no would set the product apart. */
   everyRecalledUnit: boolean;
   /** A person read it and accepted it. */
   accepted: boolean;
@@ -20,7 +20,7 @@ export interface WrittenQuestion {
 /** Null if none was written for this exact CPSC text, or a person rejected it. */
 export async function writtenQuestion(db: Queryable, recallSha256: string): Promise<WrittenQuestion | null> {
   const { rows } = await db.query<{ question: string; evidence: string; every_recalled_unit: boolean; review: string | null }>(
-    `select question, evidence, every_recalled_unit, review from recall_questions
+    `select question, evidence, every_recalled_unit and scope_confirmed as every_recalled_unit, review from recall_questions
      where recall_sha256 = $1 and agent_version = $2 and outcome = 'QUESTION' and review is distinct from 'REJECTED'`,
     [recallSha256, QUESTION_VERSION],
   );

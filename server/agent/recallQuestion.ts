@@ -24,6 +24,8 @@ The question must:
 - Not mention the recall, CPSC or safety. Use straight quotes and no dashes.
 - Rest on CPSC's exact words. Copy the words it depends on into evidence, exactly as written.
 
+If CPSC lists several values, such as serial number prefixes, lot codes or dates, name every one of them or ask about something else. Naming only some would tell the owner of another that theirs is fine.
+
 Set every_recalled_unit to true only if CPSC's text says every recalled unit has this trait. One color from a list of colors is not that.
 
 If nothing in the text sets this product apart from similar ones, do not invent something. Set question and evidence to null and give the reason in abstain_reason. No question is better than a wrong one.
@@ -63,6 +65,9 @@ const NOT_PLAIN = /[\u2013\u2014\u2018\u2019\u201C\u201D]/;
 /** A yes has to mean it matches, and a negative turns that around. */
 const NEGATIVE = /\b(not|never|without|lacks?|missing|no|none|isn't|doesn't|don't|aren't)\b/i;
 
+/** Serial prefixes, lot codes and the like: anything with a digit in it. */
+const codes = (text: string) => text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? [];
+
 const longWords = (text: string) => text.toLowerCase().match(/[a-z]{4,}/g) ?? [];
 const shareAWord = (a: string, b: string) => longWords(a).some((x) => longWords(b).some((y) => x.startsWith(y) || y.startsWith(x)));
 
@@ -72,7 +77,10 @@ function answerProblem(answer: Answer, recall: Snapshot): OurText | null {
   if (question === null) return answer.abstain_reason?.trim() ? null : ourText("Give the reason in abstain_reason, or write a question.");
   if (!evidence) return ourText("Copy the CPSC words the question rests on into evidence.");
   if (!quoted(recall.quotable, evidence)) return ourText("The evidence is not in CPSC's text. Copy the exact words.");
-  if (!shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
+  const listed = codes(evidence);
+  const named = listed.filter((c) => question.includes(c));
+  if (named.length > 0 && named.length < listed.length) return ourText("Name every value CPSC lists, or ask about something else.");
+  if (named.length === 0 && !shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
   const q = question.trim();
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
   if (!q.endsWith("?") || q.indexOf("?") !== q.length - 1 || !YES_OR_NO_OPENING.test(q)) return ourText("Write one question a parent can answer Yes or No.");

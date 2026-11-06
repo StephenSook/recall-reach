@@ -17,12 +17,13 @@ async function main() {
   }
   const terminal = createInterface({ input: process.stdin, output: process.stdout });
   const tally = { ACCEPTED: 0, REJECTED: 0, skipped: 0 };
-  console.log(`${pending.length} to read. Accept only if a parent could answer it by looking at the product, and Yes means it matches what CPSC describes.\n`);
+  console.log(`${pending.length} to read. Accept only if a parent could answer it by looking at the product, and Yes means it matches what CPSC describes.`);
+  console.log("Reject a question that names only some of what CPSC lists.\n");
   for (const [i, q] of pending.entries()) {
     console.log(`${i + 1} of ${pending.length}. CPSC recall ${q.recallNumber}: ${q.product}`);
     console.log(`  Question:  ${q.question}`);
-    console.log(`  CPSC says: "${q.evidence}"`);
-    console.log(`  Every recalled unit has this, according to Claude: ${q.everyRecalledUnit ? "yes, so a No would count" : "no, so a No stays can't tell"}`);
+    console.log(`  Rests on:  "${q.evidence}"`);
+    console.log(`  CPSC's description: ${q.description}`);
     console.log(`  ${q.url}`);
     const answer = (await terminal.question("  [a]ccept, [r]eject, [s]kip, [q]uit: ")).trim().toLowerCase();
     if (answer === "q") break;
@@ -32,7 +33,13 @@ async function main() {
       continue;
     }
     const decision = answer === "a" ? "ACCEPTED" : "REJECTED";
-    const saved = await reviewQuestion(db, { recallNumber: q.recallNumber, question: q.question, decision });
+    // A separate decision, because this is what lets a No tell a family theirs does not match.
+    let scopeConfirmed = false;
+    if (decision === "ACCEPTED" && q.everyRecalledUnit) {
+      const scope = await terminal.question("  Claude says every recalled unit has this. Does CPSC's text say so? A yes lets a No tell a family theirs doesn't match. [y/N]: ");
+      scopeConfirmed = scope.trim().toLowerCase() === "y";
+    }
+    const saved = await reviewQuestion(db, { recallNumber: q.recallNumber, question: q.question, decision, scopeConfirmed });
     if (saved) tally[decision]++;
     console.log(saved ? `  ${decision.toLowerCase()}\n` : "  Not saved: this question has changed or was already decided.\n");
   }
