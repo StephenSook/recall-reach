@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, queueCounts, traceLine } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, traceLine } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,21 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("paymentLine", () => {
+  it("says PayPal shows a payment when exactly one is linked to the sale", () => {
+    expect(paymentLine(row())).toBe("PayPal's records show a payment for this sale.");
+  });
+
+  it.each(["AMBIGUOUS_JOIN", "HISTORY_UNAVAILABLE", "NO_PAYPAL_RECORD", null])("says nothing when the join is %s", (joinState) => {
+    expect(paymentLine(row({ joinState }))).toBeNull();
+  });
+
+  it("says nothing about a listing or a cleared sale", () => {
+    expect(paymentLine(row({ isListing: true }))).toBeNull();
+    expect(paymentLine(row({ verdict: "CLEARED" }))).toBeNull();
+  });
 });
 
 describe("counted", () => {

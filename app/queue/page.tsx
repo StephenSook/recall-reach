@@ -7,7 +7,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 import { WatchForSale } from "./WatchForSale";
@@ -40,7 +40,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
         <h3>{row.product}</h3>
         <p className="sale">
           {row.isListing ? "Listed" : "Sold"}: <strong>{row.itemTitle}</strong>
-          {row.orderedOn ? <>, {row.orderedOn}</> : null}. Recalled {row.recallDate}.
+          {row.orderedOn ? <>, {row.orderedOn}</> : null}. Recalled {row.recallDate}. {paymentLine(row)}
         </p>
         <p className="quiet">{row.reason}</p>
         {row.caughtSeconds !== null ? <p data-testid="caught">Reached your queue {row.caughtSeconds} seconds after PayPal took the payment.</p> : null}

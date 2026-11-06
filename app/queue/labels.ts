@@ -90,6 +90,10 @@ export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolea
   return !safety && confirmed;
 }
 
+/** "A payment", not "paid": PayPal's search also lists pending and reversed payments, and a linked one can be any of them. */
+export const paymentLine = (row: Pick<QueueRow, "verdict" | "joinState" | "isListing">) =>
+  row.joinState === "IDENTIFIED" && !row.isListing && row.verdict !== "CLEARED" ? "PayPal's records show a payment for this sale." : null;
+
 /** A refund needs the payment. Sold after the recall is still worth saying when that payment isn't known. */
 export const pathChip = (row: Pick<QueueRow, "salePath" | "joinState">) =>
   row.salePath === "REFUND_ELIGIBLE" && row.joinState === "HISTORY_UNAVAILABLE" ? "Sold after the recall" : row.salePath ? PATH_CHIP[row.salePath] : "";
