@@ -90,6 +90,21 @@ describe("handleWebhookDelivery", () => {
       expect(await at(later, transmission, seen)).toEqual({ status: 200, body: { received: true, duplicate: true } });
       expect(await rows()).toHaveLength(0);
       expect(seen).not.toHaveBeenCalled();
+      expect((await db.query("select 1 from paypal_webhook_transmissions")).rows).toHaveLength(1);
+    });
+
+    it("isn't revived by a clock a little behind the one that ran the purge", async () => {
+      const seen = vi.fn(async () => undefined);
+      const first = Date.now();
+      await at(() => first, "t-old", seen);
+      seen.mockClear();
+      const purgedAt = first + 46 * 3_600_000 + 60_000;
+      await purgePayPalData(db, new Date(purgedAt));
+      expect(await rows()).toHaveLength(0);
+
+      expect(await at(() => purgedAt - 120_000, "t-old", seen)).toEqual({ status: 200, body: { received: true, duplicate: true } });
+      expect(await rows()).toHaveLength(0);
+      expect(seen).not.toHaveBeenCalled();
     });
 
     it("a delivery whose row is missing inside the window still goes through, so a crash between the two writes loses nothing", async () => {
@@ -124,10 +139,17 @@ describe("handleWebhookDelivery", () => {
       expect((await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"))).body).toEqual({ received: true, duplicate: true });
     });
 
-    it("goes through for a row kept from before the bytes were remembered", async () => {
-      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"));
+    it("acts on nothing for a row kept from before the bytes were remembered, because it can't tell they match", async () => {
+      const capture = Buffer.from(JSON.stringify({ id: "WH-LEGACY", event_type: "PAYMENT.CAPTURE.COMPLETED", resource_type: "capture", resource: { id: "CAPTURE-LEGACY" } }));
+      const seen = vi.fn(async () => undefined);
+      const send = () => handleWebhookDelivery({ rawBody: capture, headers: paypalHeaders(capture, WEBHOOK_ID, "t-legacy"), webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, onCaptureCompleted: seen });
+      await send();
       await db.query("update paypal_webhook_transmissions set body_hmac = null");
-      expect((await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"))).status).toBe(200);
+      await db.query("delete from paypal_webhook_events");
+      seen.mockClear();
+      expect(await send()).toEqual({ status: 200, body: { received: true, duplicate: true } });
+      expect(seen).not.toHaveBeenCalled();
+      expect(await rows()).toHaveLength(0);
     });
   });
 

@@ -69,6 +69,22 @@ export async function handleWebhookDelivery(input: {
   }
   const eventKey = key("paypal-event", event.id);
   const bodyKey = key("paypal-body", createHash("sha256").update(input.rawBody).digest("hex"));
+  const at = (input.now ?? Date.now)();
+
+  // The purge takes this event's row at its cutoff, and the transmissions table is what's left to remember it. Storing
+  // it again would restart its 48-hour clock, and an old delivery must not act as a new one, so it stores nothing at
+  // all. This goes an hour before the cutoff, so a clock a little behind the purge's can't bring one back. Inside that a
+  // missing row goes on to be stored: a crash between the two writes below has to be able to retry.
+  const seen = await input.db.query<{ finished: boolean | null }>(
+    `select min(received_at) < $2::timestamptz - make_interval(hours => $3) as finished
+     from paypal_webhook_transmissions where event_id_hmac = $1`,
+    [eventKey, new Date(at).toISOString(), PAYPAL_PURGE_CUTOFF_HOURS - 1],
+  );
+  if (seen.rows[0]?.finished) {
+    console.info(`PayPal webhook accepted: type=${event.event_type} already finished, nothing stored`);
+    return { status: 200, body: { received: true, duplicate: true } };
+  }
+
   // Verification guarantees the transmission id is present. A transmission already used for a different
   // event or different bytes is a replay of a captured signature over a CRC-matching body: refuse it.
   const transmissionId = transmission.transmissionId!;
@@ -88,27 +104,17 @@ export async function handleWebhookDelivery(input: {
       console.warn("PayPal webhook rejected: the transmission was already used for another event");
       return { status: 401, body: { error: "signature not verified" } };
     }
-    if (prior.rows[0].body_hmac !== null && prior.rows[0].body_hmac !== bodyKey) {
+    // From before the bytes were remembered, so there's no telling this is the same delivery. It acts on nothing.
+    if (prior.rows[0].body_hmac === null) {
+      console.info(`PayPal webhook accepted: type=${event.event_type} older transmission, nothing stored`);
+      return { status: 200, body: { received: true, duplicate: true } };
+    }
+    if (prior.rows[0].body_hmac !== bodyKey) {
       console.warn("PayPal webhook rejected: the transmission was already used for other bytes");
       return { status: 401, body: { error: "signature not verified" } };
     }
   }
   const transmissionNew = claimed.rows.length > 0;
-  const at = (input.now ?? Date.now)();
-
-  // Past the cutoff the purge has taken this event's row, and this table is what's left to remember it. Storing it
-  // again would restart its 48-hour clock, and an old delivery must not act as a new one. Inside the cutoff a missing
-  // row goes on to be stored: a crash between these two writes has to be able to retry.
-  const seen = await input.db.query<{ finished: boolean | null }>(
-    `select min(received_at) < $2::timestamptz - make_interval(hours => $3) as finished
-     from paypal_webhook_transmissions where event_id_hmac = $1`,
-    [eventKey, new Date(at).toISOString(), PAYPAL_PURGE_CUTOFF_HOURS],
-  );
-  if (seen.rows[0]?.finished) {
-    console.info(`PayPal webhook accepted: type=${event.event_type} already finished, nothing stored`);
-    return { status: 200, body: { received: true, duplicate: true } };
-  }
-
   const resourceId = typeof event.resource?.id === "string" ? event.resource.id : null;
   const { rows } = await input.db.query(
     `insert into paypal_webhook_events
