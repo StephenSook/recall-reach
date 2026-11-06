@@ -25,6 +25,28 @@ describe("the safety checks", () => {
   const run = () => runSafetyAttacks(db, { now: NOW, secret: SECRET });
   const outcomeOf = async (id: string) => (await run()).find((r) => r.id === id);
 
+  it("isn't thrown by a real webhook landing while the forged one is tried", async () => {
+    let landed = false;
+    const busy = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop !== "query") return Reflect.get(target, prop, receiver);
+        return async (sql: string, params?: unknown[]) => {
+          const answer = await target.query(sql, params);
+          if (!landed && sql.includes("paypal_webhook_events")) {
+            landed = true;
+            await target.query(
+              "insert into paypal_webhook_events (event_id_hmac, event_type, event_create_time, verification_method) values ('a-real-event', 'PAYMENT.CAPTURE.COMPLETED', now(), 'self')",
+            );
+          }
+          return answer;
+        };
+      },
+    });
+    const results = await runSafetyAttacks(busy, { now: NOW, secret: SECRET });
+    expect(landed).toBe(true);
+    expect(results.find((r) => r.id === "forged-webhook")?.outcome).toBe("REFUSED");
+  });
+
   describe("the hourly job's run", () => {
     const hoursLater = (h: number) => new Date(NOW.getTime() + h * 3_600_000);
     const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from safety_runs")).rows[0].n);

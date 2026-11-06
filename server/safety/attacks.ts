@@ -165,8 +165,8 @@ export async function runSafetyAttacks(db: Db, opts: { now: Date; secret: string
       await attack(
         { id: "forged-webhook", title: "A forged PayPal webhook", tried: "A delivery saying a payment completed, signed by nobody, pointing at a certificate on another host." },
         async () => {
-          const before = await db.query<{ n: number }>("select count(*)::int as n from paypal_webhook_events");
-          const body = JSON.stringify({ id: `WH-FORGED-${randomUUID()}`, event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { id: CAPTURE } });
+          const eventId = `WH-FORGED-${randomUUID()}`;
+          const body = JSON.stringify({ id: eventId, event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { id: CAPTURE } });
           const headers = new Headers({
             "paypal-transmission-id": randomUUID(),
             "paypal-transmission-time": opts.now.toISOString(),
@@ -185,8 +185,9 @@ export async function runSafetyAttacks(db: Db, opts: { now: Date; secret: string
               acted = true;
             },
           });
-          const after = await db.query<{ n: number }>("select count(*)::int as n from paypal_webhook_events");
-          return answer.status === 401 && !acted && after.rows[0].n === before.rows[0].n
+          // By this event's own key: a real webhook can land during the run.
+          const recorded = await db.query("select 1 from paypal_webhook_events where event_id_hmac = $1", [recordKey("paypal-event", eventId)]);
+          return answer.status === 401 && !acted && recorded.rows.length === 0
             ? { outcome: "REFUSED", detail: "Its signature did not verify, so it was answered 401. Nothing was recorded and nothing acted on it." }
             : { outcome: "LET_THROUGH", detail: `Answered ${answer.status}. Acted on it: ${acted}.` };
         },
