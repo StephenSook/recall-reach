@@ -270,16 +270,16 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
   if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");
   // An explicit "not sure" stays open, so the family can look and then answer. So does a typed model until it matches,
-  // because a label is easy to misread: the only change left is toward the recall, so a link holder can't talk it down.
+  // because a label is easy to misread. A typed model only ever moves toward the recall, so a link holder can't talk it down.
   const result = checkResult(notice, question, said);
   const staysOpen = question.kind === "model" ? result !== "MATCHES" : said === "not_sure";
   const saved = await db.query<{ check_result: CheckResult }>(
     `update notices set
-       check_result = case when check_result is null or check_open then $2 else check_result end,
+       check_result = case when check_result is null or (check_open and (not $4::boolean or array_position(array['DOESNT_MATCH', 'CANT_TELL', 'MATCHES'], $2::text) >= array_position(array['DOESNT_MATCH', 'CANT_TELL', 'MATCHES'], check_result))) then $2 else check_result end,
        check_open = case when check_result is null or check_open then $3::boolean else false end,
        responded_at = coalesce(responded_at, now())
      where id = $1 returning check_result`,
-    [noticeId, result, staysOpen],
+    [noticeId, result, staysOpen, question.kind === "model"],
   );
   return saved.rows[0].check_result;
 }

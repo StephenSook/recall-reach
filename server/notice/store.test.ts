@@ -647,6 +647,19 @@ describe("notices", () => {
         expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
       });
 
+      it("only moves toward the recall: a can't-tell can't be talked down to no", async () => {
+        const noticeId = await modelCheck("#T-RATCHET");
+        expect(await recordFamilyAnswer(db, noticeId, "can't read it")).toBe("CANT_TELL");
+        expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("CANT_TELL");
+        expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
+      });
+
+      it("a no can still rise to a can't-tell", async () => {
+        const noticeId = await modelCheck("#T-RISES");
+        expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("DOESNT_MATCH");
+        expect(await recordFamilyAnswer(db, noticeId, "can't read it")).toBe("CANT_TELL");
+      });
+
       it("once it matches, stays matched: nobody holding the link can talk it down", async () => {
         const noticeId = await modelCheck("#T-MATCHED");
         expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
