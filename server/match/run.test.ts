@@ -87,6 +87,16 @@ describe("runShopCheck", () => {
     expect(brezza).toMatchObject({ verdict: "CLEARED", reason: expect.stringMatching(/different product/) });
   });
 
+  it("stores how strong the evidence is", async () => {
+    await store([line("#S1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+    await runShopCheck(db, shopId, { today: TODAY });
+    const { rows: saved } = await db.query<{ strength: string }>(
+      `select m.strength from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27072'`,
+      [shopId],
+    );
+    expect(saved[0].strength).toBe("CONFIRMED");
+  });
+
   it("does not retrieve an unrelated item at all", async () => {
     await store([line("#Z1", "Handmade ceramic garden gnome", "2026-09-15")]);
     const summary = await runShopCheck(db, shopId, { today: TODAY });

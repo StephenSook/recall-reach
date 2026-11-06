@@ -8,7 +8,7 @@ import { createShop } from "../import/store";
 import { markOpened, prepareNotice, recordFamilyStopped } from "../notice/store";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { approveRefund } from "../paypal/refunds";
-import { loadQueue, tellCpscDraft } from "./queue";
+import { loadQueue, tellCpscDraft, toCards, type QueueRow } from "./queue";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -69,6 +69,16 @@ describe("loadQueue", () => {
     expect(await row("27040")).toMatchObject({ verdict: "SCOPE_GAP", missing: [expect.any(String)] });
   });
 
+  it("says which sale each row is about and how strong the evidence is, so sales stay apart on the page", async () => {
+    const { rows } = await loadQueue(db, shopId, "session-1");
+    const { rows: lines } = await db.query<{ id: string }>("select id from order_lines where shop_id = $1", [shopId]);
+    const ids = lines.map((l) => l.id);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(ids).toContain(r.recordId);
+    expect(new Set(rows.map((r) => r.recordId)).size).toBeGreaterThan(1);
+    expect(rows.find((r) => r.verdict === "MATCH")?.strength).toBe("CONFIRMED");
+  });
+
   it("orders what needs a person first: matches, then gaps, then cleared", async () => {
     const q = await loadQueue(db, shopId, "session-1");
     const order = q.rows.map((r) => r.verdict);
@@ -108,6 +118,98 @@ describe("loadQueue", () => {
   it("shows nothing for a shop with no records, and says no recall matched only with full coverage", async () => {
     const empty = await createShop(db, { name: "EMPTY", kind: "DEMO" });
     expect(await loadQueue(db, empty, "s")).toMatchObject({ rows: [], coverage: null });
+  });
+});
+
+describe("toCards", () => {
+  const row = (recallNumber: string, over: Partial<QueueRow> = {}): QueueRow => ({
+    matchId: `m-${recallNumber}`,
+    recordId: "line-1",
+    recallNumber,
+    recallTitle: "t",
+    recallDate: "2026-01-01",
+    recallUrl: "u",
+    product: "p",
+    itemTitle: "Costway high chair",
+    source: "s",
+    orderedOn: "2026-09-22",
+    verdict: "SCOPE_GAP",
+    strength: "PRODUCT_WORDS",
+    salePath: "REFUND_ELIGIBLE",
+    joinState: "IDENTIFIED",
+    matched: [],
+    missing: [],
+    reason: "r",
+    isListing: false,
+    stillListed: false,
+    notice: null,
+    approval: null,
+    refund: null,
+    ...over,
+  });
+
+  it("gives one sale one card, however many recalls it could belong to", () => {
+    const { cards } = toCards([row("25206"), row("25278"), row("26290"), row("27040", { strength: "BRAND" })]);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].lead.recallNumber).toBe("27040");
+    expect(cards[0].also.map((r) => r.recallNumber).sort()).toEqual(["25206", "25278", "26290"]);
+  });
+
+  it("leads with the strongest candidate, and the newest recall among equals", () => {
+    const { cards } = toCards([
+      row("25166", { strength: "BRAND", recallDate: "2025-02-27" }),
+      row("27040", { strength: "BRAND", recallDate: "2026-10-22" }),
+      row("25222", { strength: "BRAND", recallDate: "2025-04-10" }),
+    ]);
+    expect(cards[0].lead.recallNumber).toBe("27040");
+    expect(cards[0].also.map((r) => r.recallNumber)).toEqual(["25222", "25166"]);
+  });
+
+  it("keeps weak candidates visible, and never turns them into cleared rows", () => {
+    const { cards, cleared } = toCards([row("25206"), row("26290")]);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].lead.verdict).toBe("SCOPE_GAP");
+    expect(cleared).toEqual([]);
+  });
+
+  it("gives two different sales two cards", () => {
+    expect(toCards([row("27040"), row("27040", { recordId: "line-2", matchId: "m2" })]).cards).toHaveLength(2);
+  });
+
+  it("gives every confirmed recall on a sale its own card, because each is a separate hazard", () => {
+    const { cards } = toCards([
+      row("27072", { verdict: "MATCH", strength: "CONFIRMED" }),
+      row("27073", { verdict: "MATCH", strength: "CONFIRMED" }),
+      row("25206"),
+    ]);
+    expect(cards.map((c) => c.lead.recallNumber).sort()).toEqual(["27072", "27073"]);
+    expect(cards.flatMap((c) => c.also.map((r) => r.recallNumber))).toEqual(["25206"]);
+  });
+
+  it("keeps a row already acted on in front, so what was sent never drops out of sight", () => {
+    const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, result: null };
+    const { cards } = toCards([row("27040", { strength: "BRAND" }), row("25206", { notice })]);
+    expect(cards[0].lead.recallNumber).toBe("25206");
+  });
+
+  it("orders cards with confirmed matches first and weak ones last", () => {
+    const { cards } = toCards([
+      row("1", { recordId: "weak" }),
+      row("2", { recordId: "brand", strength: "BRAND" }),
+      row("3", { recordId: "match", verdict: "MATCH", strength: "CONFIRMED" }),
+    ]);
+    expect(cards.map((c) => c.lead.recordId)).toEqual(["match", "brand", "weak"]);
+  });
+
+  it("lists cleared rows with a reason, and only counts those sharing no word at all", () => {
+    const { cleared, unrelated, cards } = toCards([
+      row("25150", { verdict: "CLEARED", strength: "NO_SHARED_WORDS" }),
+      row("25343", { verdict: "CLEARED", strength: "NO_SHARED_WORDS" }),
+      row("27072", { verdict: "CLEARED", strength: "BRAND" }),
+    ]);
+    expect(cards).toEqual([]);
+    expect(unrelated).toBe(2);
+    expect(cleared.map((r) => r.recallNumber)).toEqual(["27072"]);
   });
 });
 

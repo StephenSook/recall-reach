@@ -158,11 +158,11 @@ export async function runShopCheck(
       const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
       const join = computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
-        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13)
+        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id, strength)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13, $14)
          on conflict (shop_id, recall_id, coalesce(order_line_id, shop_item_id)) do update set
            recall_sha256 = excluded.recall_sha256, verdict = excluded.verdict, matched = excluded.matched,
-           missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path,
+           missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path, strength = excluded.strength,
            -- Without a fresh PayPal read, keep what an earlier run established: PayPal's data ages out
            -- after 46 hours, and that must not turn an IDENTIFIED or AMBIGUOUS_JOIN into something else.
            join_state = case when $12::boolean then excluded.join_state
@@ -184,6 +184,7 @@ export async function runShopCheck(
           join,
           paypalSearched,
           c.kind === "order_line" ? joined.lines[c.id]?.paymentKey ?? null : null,
+          v.strength,
         ],
       );
     }

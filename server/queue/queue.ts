@@ -1,9 +1,12 @@
 // What the seller's queue shows. No raw PayPal id leaves this function: the page never needs one.
 import type { Queryable } from "../db/types";
 import { noticeState, type NoticeState } from "../notice/store";
+import type { Strength } from "../match/verdict";
 
 export interface QueueRow {
   matchId: string;
+  /** The one sale or listing this row is about. */
+  recordId: string;
   recallNumber: string;
   recallTitle: string;
   recallDate: string;
@@ -14,6 +17,7 @@ export interface QueueRow {
   source: string;
   orderedOn: string | null;
   verdict: "MATCH" | "SCOPE_GAP" | "CLEARED";
+  strength: Strength;
   salePath: "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE" | null;
   joinState: string | null;
   matched: string[];
@@ -56,7 +60,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     [shopId],
   );
   const { rows } = await db.query<Record<string, never>>(
-    `select m.id as match_id, m.verdict, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.shop_item_id,
+    `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id,
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
@@ -84,6 +88,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
   const out = (rows as unknown as Record<string, unknown>[]).map(
     (r): QueueRow => ({
       matchId: String(r.match_id),
+      recordId: String(r.order_line_id ?? r.shop_item_id),
       recallNumber: String(r.recall_number),
       recallTitle: String(r.recall_title),
       recallDate: String(r.recall_date),
@@ -95,6 +100,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       verdict: r.verdict as QueueRow["verdict"],
       salePath: (r.sale_path as QueueRow["salePath"]) ?? null,
       joinState: (r.join_state as string | null) ?? null,
+      strength: (r.strength as Strength | null) ?? "BRAND",
       matched: r.matched as string[],
       missing: r.missing as string[],
       reason: String(r.reason),
@@ -146,6 +152,48 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
         }
       : null,
     rows: out,
+  };
+}
+
+/** One sale or listing, and the recalls it could belong to. At most one thing goes out for it. */
+export interface QueueCard {
+  lead: QueueRow;
+  also: QueueRow[];
+}
+
+const STRENGTH_ORDER: Record<Strength, number> = { CONFIRMED: 0, BRAND: 1, PRODUCT_WORDS: 2, NO_SHARED_WORDS: 3 };
+const actedOn = (r: QueueRow) => r.notice !== null || r.approval !== null || r.refund !== null;
+const stronger = (a: QueueRow, b: QueueRow) =>
+  Number(actedOn(b)) - Number(actedOn(a)) ||
+  STRENGTH_ORDER[a.strength] - STRENGTH_ORDER[b.strength] ||
+  b.recallDate.localeCompare(a.recallDate) ||
+  b.recallNumber.localeCompare(a.recallNumber);
+
+/**
+ * Turns rows into what a seller reads: one card per sale, led by its strongest candidate, with the rest
+ * under it. A weak candidate stays visible and never becomes a cleared row to reduce noise. The exception
+ * is a confirmed match: each is a separate hazard the family should hear about, so each has its own card.
+ */
+export function toCards(rows: QueueRow[]): { cards: QueueCard[]; cleared: QueueRow[]; unrelated: number } {
+  const open = new Map<string, QueueRow[]>();
+  for (const row of rows) {
+    if (row.verdict === "CLEARED") continue;
+    open.set(row.recordId, [...(open.get(row.recordId) ?? []), row]);
+  }
+  const cards: QueueCard[] = [];
+  for (const candidates of open.values()) {
+    const sorted = [...candidates].sort(stronger);
+    const confirmed = sorted.filter((r) => r.verdict === "MATCH");
+    const others = sorted.filter((r) => r.verdict !== "MATCH");
+    if (confirmed.length === 0) cards.push({ lead: others[0], also: others.slice(1) });
+    confirmed.forEach((lead, i) => cards.push({ lead, also: i === 0 ? others : [] }));
+  }
+  cards.sort((a, b) => STRENGTH_ORDER[a.lead.strength] - STRENGTH_ORDER[b.lead.strength] || stronger(a.lead, b.lead));
+  const clearedRows = rows.filter((r) => r.verdict === "CLEARED");
+  return {
+    cards,
+    cleared: clearedRows.filter((r) => r.strength !== "NO_SHARED_WORDS"),
+    unrelated: clearedRows.filter((r) => r.strength === "NO_SHARED_WORDS").length,
   };
 }
 
