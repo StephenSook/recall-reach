@@ -141,7 +141,7 @@ describe("the eval on the real labels", () => {
     const stated = parsePairs(load("positives.csv")).filter((p) => p.label === "MATCH");
     expect(stated).toHaveLength(60);
     // Most of these titles end in the model, so a pair can't drop out because the tokenizer doesn't read it as one (4155L).
-    // Two don't (26611 ends in an airflow figure, 27064 in a masked VIN), so this also tries every model the record lists.
+    // Two don't (26611 ends in an airflow figure, 27064 in a masked VIN), so this also tries the models read from the record.
     const typed = stated.flatMap((p) => {
       const recall = byNumber.get(p.recallNumber)!;
       const last = p.title.trim().split(/\s+/).at(-1) ?? "";
@@ -151,6 +151,15 @@ describe("the eval on the real labels", () => {
     });
     const told = typed.filter(({ model, recall }) => checkResult(recall, { question: "Q", kind: "model" }, model) === "DOESNT_MATCH").map((t) => `${t.pair}: ${t.model}`);
     expect(told).toEqual([]);
+  });
+
+  it("a family typing a model CPSC writes with a space in it, which the tokenizer can't read, is never told it doesn't match", () => {
+    const { valid } = parseRecalls(JSON.parse(load("positives_recalls.json")));
+    const recall = valid.find((v) => v.recall.recallNumber === "26611")!.recall;
+    for (const model of ["KHB 6048-06", "KMS 1524-06"]) {
+      expect(recall.description).toContain(model);
+      expect(checkResult(recall, { question: "Q", kind: "model" }, model)).toBe("CANT_TELL");
+    }
   });
 
   it("keeps stated-model titles out of the held-out rates, and names none as real listings", () => {
