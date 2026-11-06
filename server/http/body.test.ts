@@ -61,6 +61,21 @@ describe("readCappedBody", () => {
     expect(cancelled.value).toBe(true);
   });
 
+  it("counts that wait across the whole body, so a trickle can't keep restarting it", async () => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        timer = setInterval(() => controller.enqueue(new Uint8Array(1)), 5);
+      },
+      cancel() {
+        clearInterval(timer);
+      },
+    });
+    const started = Date.now();
+    await expect(readCappedBody({ headers: new Headers(), body }, 100_000, { timeoutMs: 60 })).resolves.toEqual({ ok: false });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it("reads a body that finishes in time, when told how long to wait", async () => {
     const body = new Response("hello").body;
     const read = await readCappedBody({ headers: new Headers(), body }, 100, { timeoutMs: 1000 });
