@@ -104,14 +104,15 @@ const lineVersion = (l: LineFacts) =>
 async function approvedFactsHold(
   q: Queryable,
   approval: { recall_id: number; recall_sha256: string; order_line_id: string; line_sha256: string | null },
+  lock: "" | " for share" = "",
 ): Promise<{ recallDate: string; orderedOn: string }> {
   const recall = (
-    await q.query<{ raw_sha256: string; recall_date: string }>("select raw_sha256, recall_date from recalls where recall_id = $1", [approval.recall_id])
+    await q.query<{ raw_sha256: string; recall_date: string }>(`select raw_sha256, recall_date from recalls where recall_id = $1${lock}`, [approval.recall_id])
   ).rows[0];
   if (recall.raw_sha256 !== approval.recall_sha256) {
     throw new RefundRefused("RECALL_CHANGED", "CPSC changed this recall after the approval. Please review it again.");
   }
-  const line = (await q.query<LineFacts>(`select ${LINE_COLUMNS} from order_lines where id = $1`, [approval.order_line_id])).rows[0];
+  const line = (await q.query<LineFacts>(`select ${LINE_COLUMNS} from order_lines where id = $1${lock}`, [approval.order_line_id])).rows[0];
   if (lineVersion(line) !== approval.line_sha256) {
     throw new RefundRefused("LINE_CHANGED", "This order line changed after the approval. Please review it again.");
   }
@@ -264,13 +265,15 @@ export async function executeRefund(
   });
 
   // Spending the approval, reserving the line and recording the intent happen together or not at all.
-  // The lock serializes reservations on one capture, so two lines cannot both claim the same balance.
+  // The lock serializes reservations on one capture, so two lines cannot both claim the same balance. The facts
+  // are read only once it is held, and held still until this commits: waiting for the lock can take a while.
   const row = await db.transaction(async (tx) => {
-    await approvedFactsHold(tx, approval);
+    await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [captureId]);
+    await approvedFactsHold(tx, approval, " for share");
+    await tx.query("select 1 from paypal_payments where id = $1 for share", [approval.paypal_payment_id]);
     if ((await identifiedCapture(tx, input.shopId, approval.order_line_id, approval.paypal_payment_id, today)) !== captureId) {
       throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
     }
-    await tx.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [captureId]);
     refuseAboveRemaining(capture.amountCents, refundedByPayPal, await ledgerOnCapture(tx, captureId), approval.amount_cents, approval.currency);
     const consumed = await tx.query(
       `update approvals set consumed_at = $4::timestamptz

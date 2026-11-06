@@ -517,6 +517,68 @@ describe("refunds", () => {
     });
   });
 
+  describe("facts changing while the reservation is being made", () => {
+    /** Runs `during` inside the transaction, just as the capture lock is taken. */
+    const whileWaitingForTheLock = (during: (tx: { query: typeof db.query }) => Promise<unknown>): typeof db => ({
+      ...db,
+      transaction: (fn) =>
+        db.transaction((tx) =>
+          fn({
+            ...tx,
+            query: (async (sql: string, params?: unknown[]) => {
+              const answer = await tx.query(sql, params);
+              if (sql.includes("pg_advisory_xact_lock")) await during(tx);
+              return answer;
+            }) as typeof tx.query,
+          }),
+        ),
+    });
+    const run = (d: typeof db, approvalId: string, client: PayPalClient) => executeRefund(d, client, { shopId, sessionId: SESSION, approvalId, recordKey: key, now: NOW });
+
+    it("sees a line corrected while it waited for the capture lock", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const d = whileWaitingForTheLock((tx) => tx.query("update order_lines set unit_price_cents = 1000 where shop_id = $1", [shopId]));
+      expect(await refusal(run(d, a.approvalId, pp.client))).toBe("LINE_CHANGED");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("sees a recall changed while it waited for the capture lock", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const d = whileWaitingForTheLock((tx) => tx.query("update recalls set raw_sha256 = 'changed' where recall_number = '27027'"));
+      expect(await refusal(run(d, a.approvalId, pp.client))).toBe("RECALL_CHANGED");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("holds the line and the recall still until the reservation commits", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const seen: string[] = [];
+      const d: typeof db = {
+        ...db,
+        transaction: (fn) =>
+          db.transaction((tx) =>
+            fn({
+              ...tx,
+              query: ((sql: string, params?: unknown[]) => {
+                seen.push(sql);
+                return tx.query(sql, params);
+              }) as typeof tx.query,
+            }),
+          ),
+      };
+      await run(d, a.approvalId, fakePayPal().client);
+      const lockedReads = seen.filter((q) => /for share/i.test(q));
+      expect(lockedReads.some((q) => /from order_lines/.test(q))).toBe(true);
+      expect(lockedReads.some((q) => /from recalls/.test(q))).toBe(true);
+      expect(lockedReads.some((q) => /from paypal_payments/.test(q))).toBe(true);
+      expect(seen.findIndex((q) => q.includes("pg_advisory_xact_lock"))).toBeLessThan(seen.findIndex((q) => /for share/i.test(q)));
+    });
+  });
+
   describe("before anything is sent", () => {
     /** Wraps the database so something happens right after the reservation commits. */
     const afterReserving = (then: () => Promise<void>): typeof db => ({
