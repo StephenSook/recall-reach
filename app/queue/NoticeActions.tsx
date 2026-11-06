@@ -39,7 +39,13 @@ export function NoticeActions({ noticeId }: { noticeId: string }) {
   return (
     <div>
       <p>
-        To: {composed.to ?? "(you add the address)"} <small>({composed.toSource})</small>
+        {composed.to ? (
+          <>
+            To: {composed.to} <small>({composed.toSource})</small>
+          </>
+        ) : (
+          "To: (you add the address)"
+        )}
       </p>
       <div className="actions">
         <a
