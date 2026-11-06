@@ -455,6 +455,7 @@ pre {
   background: var(--color-field);
 }
 [data-testid="replay-grid"] .ag-cell-wrap-text,
+[data-testid="eval-wrong-grid"] .ag-cell-wrap-text,
 [data-testid="match-grid"] .ag-cell-wrap-text {
   padding-block: 8px;
   line-height: 1.3;
