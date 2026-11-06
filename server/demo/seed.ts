@@ -84,7 +84,7 @@ const CASES: DemoCase[] = [
 // CANNOT IDENTIFY has no line on purpose: the pool's $42 payment says only an amount, and is counted as unidentified.
 
 /** Still on the shelf, on a real recall: what a family can buy for the live catch. Recall 27018 lists model MY002. */
-const SHELF_ITEM = { title: "ONTHEWEI baby bath seat MY002", sku: "DEMO-ONTHEWEI", priceCents: 2800, currency: "USD", recallNumber: "27018", required: true };
+const SHELF_ITEM = { title: "ONTHEWEI baby bath seat MY002", sku: "DEMO-ONTHEWEI", priceCents: 1800, currency: "USD", recallNumber: "27018", required: true };
 
 const daysBefore = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
 
