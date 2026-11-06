@@ -35,14 +35,17 @@ test("times a full-size order file through the real upload, then deletes it", as
   await page.getByRole("button", { name: "Check my file" }).click();
   await expect(page).toHaveURL(/\/queue/, { timeout: 8 * 60_000 });
   const uploaded = Date.now() - started;
-  expect(await page.evaluate(() => sessionStorage.getItem("checking"))).toContain("couple of minutes");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Timing Test Shop");
-  console.log(`seconds to the queue: ${(uploaded / 1000).toFixed(1)}`);
-  console.log(await page.getByTestId("coverage").innerText());
-  console.log(await page.getByTestId("stats").innerText());
-  console.log(`cards: ${await page.getByTestId("needs").locator("article").count()}`);
-
-  await page.getByText("Delete my data").click();
-  await page.getByRole("button", { name: "Delete everything" }).click();
-  await expect(page.locator(".alert")).toHaveText("Your shop's data was deleted.");
+  // Once this page holds the shop's session, the shop gets deleted whatever else fails, so a bad run leaves nothing behind.
+  try {
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Timing Test Shop");
+    console.log(`seconds to the queue: ${(uploaded / 1000).toFixed(1)}`);
+    console.log(await page.getByTestId("coverage").innerText());
+    console.log(await page.getByTestId("stats").innerText());
+    console.log(`cards: ${await page.getByTestId("needs").locator("article").count()}`);
+    expect(await page.evaluate(() => sessionStorage.getItem("checking"))).toContain("couple of minutes");
+  } finally {
+    await page.getByText("Delete my data").click();
+    await page.getByRole("button", { name: "Delete everything" }).click();
+    await expect(page.locator(".alert")).toHaveText("Your shop's data was deleted.");
+  }
 });
