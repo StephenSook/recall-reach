@@ -12,6 +12,7 @@ import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, c
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
+import { PushRegister } from "./PushRegister";
 import { RefundForm } from "./RefundForm";
 import { WatchForSale } from "./WatchForSale";
 
@@ -254,6 +255,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="page">
+      <PushRegister />
       <header className="page-head">
         <h1>{shopName}</h1>
         <span className="quiet">{listed ? `${listed.needCheck} ${counted(listed.needCheck, "needs a check", "need a check")}` : `${waiting} ${counted(waiting, "item waits", "items wait")} for you`}</span>

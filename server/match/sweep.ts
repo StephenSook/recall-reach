@@ -1,8 +1,9 @@
 // Checks stored shops against recalls that arrived after their last check, so a shop hears about a recall
-// without uploading again. It shows in the queue on the shop's next visit. Rules only: no Claude, no PayPal call,
-// and no message goes anywhere.
+// without uploading again. It shows in the queue on the shop's next visit, and buzzes the shop's phone if it asked.
+// Rules only: no Claude, no PayPal call, and no message goes to a family.
 import { DEMO_SHOP_HOURS } from "../import/ownFile";
 import type { Db } from "../db/types";
+import { pushNewCards } from "../push/push";
 import { businessDay } from "../time/businessDay";
 import { CHECK_FROM, runShopCheck } from "./run";
 
@@ -18,7 +19,7 @@ export interface SweepSummary {
   shopsWaiting: number;
 }
 
-export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: number; budgetMs?: number }): Promise<SweepSummary> {
+export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: number; budgetMs?: number; pushFetch?: typeof fetch }): Promise<SweepSummary> {
   const started = Date.now();
   const budgetMs = opts.budgetMs ?? SWEEP_BUDGET_MS;
   // Compared inside the database: a marker read into a JS Date loses its microseconds and would never catch up.
@@ -39,8 +40,10 @@ export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: num
         "select r.recall_id from recalls r join shops s on r.first_seen_at > s.recalls_checked_through where s.id = $1 and r.recall_date >= $2::date",
         [id, CHECK_FROM],
       );
-      await runShopCheck(db, id, { today: businessDay(opts.now), onlyRecallIds: rows.map((r) => r.recall_id) });
+      const recallIds = rows.map((r) => r.recall_id);
+      await runShopCheck(db, id, { today: businessDay(opts.now), onlyRecallIds: recallIds });
       shopsChecked++;
+      await pushNewCards(db, id, { recallIds }, opts.pushFetch);
     } catch (err) {
       // One shop's failure stays with that shop. Its marker has not moved, so it is tried again next time.
       shopsFailed++;

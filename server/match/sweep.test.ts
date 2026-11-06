@@ -8,6 +8,7 @@ import type { ImportedOrderLine } from "../import/shopExport";
 import { createShop, storeOrderLines } from "../import/store";
 import { prepareNotice } from "../notice/store";
 import { createContactCipher } from "../privacy/contactCipher";
+import { registerPushToken } from "../push/push";
 import { runShopCheck } from "./run";
 import { checkStoredShops } from "./sweep";
 
@@ -236,5 +237,57 @@ describe("checking stored shops against new recalls", () => {
       const source = readFileSync(new URL(file, import.meta.url), "utf8");
       expect(source).not.toMatch(/^import (?!type)[^;]*from "[^"]*(agent|anthropic|paypal|notice)[^"]*"/im);
     }
+  });
+
+  describe("buzzing a phone", () => {
+    const TOKEN = "ExponentPushToken[phone]";
+    const expo = () => vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ data: [{ status: "ok" }] }), { status: 200 }));
+    const sweepWith = (f: ReturnType<typeof expo>) => checkStoredShops(db, { now: new Date(), pushFetch: f as unknown as typeof fetch });
+    const bodies = (f: ReturnType<typeof expo>) => f.mock.calls.flatMap((c) => (JSON.parse(String(c[1].body)) as { body: string }[]).map((m) => m.body));
+
+    it("says a new recall reached something the shop sold, once", async () => {
+      await registerPushToken(db, shopId, TOKEN);
+      await pull(brezza);
+      const f = expo();
+      await sweepWith(f);
+      expect(bodies(f)).toEqual(["Recall 27072: something you sold needs a look"]);
+      await sweepWith(f);
+      expect(f).toHaveBeenCalledTimes(1);
+    });
+
+    it("says listed for a store's listing", async () => {
+      const store = await createShop(db, { name: "A store", kind: "REAL" });
+      await db.query("insert into shop_items (shop_id, title, source) values ($1, 'Baby Brezza SuperFast Sterilizer Dryer BRZ0083', 'test')", [store]);
+      await runShopCheck(db, store, { today: TODAY });
+      await registerPushToken(db, store, TOKEN);
+      await pull(brezza);
+      const f = expo();
+      await sweepWith(f);
+      expect(bodies(f)).toEqual(["Recall 27072: something you listed needs a look"]);
+    });
+
+    it("stays quiet when a new recall only shares a word with what the shop sold", async () => {
+      const store = await createShop(db, { name: "A store", kind: "REAL" });
+      await storeOrderLines(db, store, [line("W-1", "Sterilizer Dryer")], createContactCipher("k".repeat(32), store), "test");
+      await runShopCheck(db, store, { today: TODAY });
+      await registerPushToken(db, store, TOKEN);
+      await pull(brezza);
+      const f = expo();
+      await sweepWith(f);
+      const { rows } = await db.query<{ strength: string }>("select m.strength from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27072' and m.verdict <> 'CLEARED'", [store]);
+      expect(rows.map((r) => r.strength)).toEqual(["PRODUCT_WORDS"]);
+      expect(f).not.toHaveBeenCalled();
+    });
+
+    it("still finishes the check when Expo is down", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await registerPushToken(db, shopId, TOKEN);
+      await pull(brezza);
+      const down = vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      });
+      expect(await checkStoredShops(db, { now: new Date(), pushFetch: down as unknown as typeof fetch })).toMatchObject({ shopsChecked: 1, shopsFailed: 0 });
+      expect(await brezzaRows(shopId)).toHaveLength(1);
+    });
   });
 });

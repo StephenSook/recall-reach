@@ -8,6 +8,7 @@ import { runShopCheck } from "../match/run";
 import type { PayPalClient } from "../paypal/client";
 import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
 import { createContactCipher } from "../privacy/contactCipher";
+import { pushNewCards } from "../push/push";
 import { businessDay } from "../time/businessDay";
 import { DEMO_LABEL, SANDBOX_TEST_CARD } from "./seed";
 
@@ -172,7 +173,7 @@ export type CatchResult = "CAUGHT" | "ALREADY" | "NOT_COMPLETED" | "NOT_A_LIVE_S
  * A capture PayPal says completed. Confirmed through PayPal's API, joined by the shop's invoice number, and checked
  * for that one line. Safe to repeat: PayPal delivers again if an attempt fails.
  */
-export async function catchLiveSale(db: Db, client: PayPalClient, input: { captureId: string; now: Date }): Promise<CatchResult> {
+export async function catchLiveSale(db: Db, client: PayPalClient, input: { captureId: string; now: Date; pushFetch?: typeof fetch }): Promise<CatchResult> {
   const orderId = await orderIdOfCapture(client, input.captureId);
   if (!orderId) return "NOT_A_LIVE_SALE";
   const order = await getOrder(client, orderId);
@@ -201,7 +202,7 @@ export async function catchLiveSale(db: Db, client: PayPalClient, input: { captu
   );
   await runShopCheck(db, line.shop_id, { today: businessDay(input.now), onlyRecordId: line.id });
 
-  const caught = await db.query(
+  const caught = await db.query<{ id: string }>(
     "update recall_matches set caught_at = $2 where order_line_id = $1 and verdict <> 'CLEARED' and caught_at is null returning id",
     [line.id, input.now.toISOString()],
   );
@@ -211,5 +212,6 @@ export async function catchLiveSale(db: Db, client: PayPalClient, input: { captu
     const seconds = Math.max(0, Math.round((input.now.getTime() - capturedAt) / 100) / 10);
     await db.query("insert into live_catch_runs (seconds, caught_at) values ($1, $2)", [seconds, input.now.toISOString()]);
   }
+  await pushNewCards(db, line.shop_id, { matchIds: caught.rows.map((r) => r.id) }, input.pushFetch);
   return "CAUGHT";
 }

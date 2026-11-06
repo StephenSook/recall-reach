@@ -7,6 +7,7 @@ import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
 import { modelTokens } from "../match/verdict";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
+import { registerPushToken } from "../push/push";
 import { loadQueue } from "../queue/queue";
 import { buyAsFamily, catchLiveSale, LiveSaleRefused } from "./liveCatch";
 import { seedDemoShop } from "./seed";
@@ -241,6 +242,59 @@ describe("a sale as it happens", () => {
       await catchIt();
       const { rows } = await db.query<Record<string, unknown>>("select * from live_catch_runs");
       expect(Object.keys(rows[0]).sort()).toEqual(["caught_at", "id", "seconds"]);
+    });
+  });
+
+  describe("the phone's buzz when the card lands", () => {
+    const TOKEN = "ExponentPushToken[phone]";
+    const BUYER = "sentinel-buyer@example.test";
+    const expo = () => vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ data: [{ status: "ok" }] }), { status: 200 }));
+    const buyWithEmail = () => buyAsFamily(db, paypal.client, { shopId, shopItemId: shelfItem, today: TODAY, secret: "k".repeat(32), demoEmail: BUYER });
+    const catchWith = (f: ReturnType<typeof expo>) => catchLiveSale(db, paypal.client, { captureId: paypal.captures.at(-1) ?? "", now: NOW, pushFetch: f as unknown as typeof fetch });
+
+    it("carries a public recall number and our own card id, and nothing PayPal returned or any buyer", async () => {
+      await registerPushToken(db, shopId, TOKEN);
+      await buyWithEmail();
+      const f = expo();
+      expect(await catchWith(f)).toBe("CAUGHT");
+      const wire = String(f.mock.calls[0][1].body);
+      const [message] = JSON.parse(wire) as { body: string; data: { path: string } }[];
+      expect(message.body).toBe("Recall 27018: something you sold needs a look");
+      const { id } = (await line()) as { id: string };
+      const cardId = (await loadQueue(db, shopId, "s")).rows.find((r) => r.recordId === id && r.verdict === "MATCH")?.matchId;
+      expect(message.data.path).toBe(`/queue#sale-${cardId}`);
+
+      const { order_number, title, sku } = (await line()) as { order_number: string; title: string; sku: string };
+      for (const secretWord of [PAYPAL_ITEM_NAME, "CAPTURE", "ORDER", BUYER, "sentinel", order_number, title, sku, "ONTHEWEI", "MY002", CAPTURED_AT, "2800", "1800", "18.00", "28.00"]) {
+        expect(wire, secretWord).not.toContain(secretWord);
+      }
+    });
+
+    it("doesn't buzz twice when PayPal delivers the same sale twice", async () => {
+      await registerPushToken(db, shopId, TOKEN);
+      await buyWithEmail();
+      const f = expo();
+      await catchWith(f);
+      expect(await catchWith(f)).toBe("ALREADY");
+      expect(f).toHaveBeenCalledTimes(1);
+    });
+
+    it("says nothing to anyone when no phone asked", async () => {
+      await buyWithEmail();
+      const f = expo();
+      expect(await catchWith(f)).toBe("CAUGHT");
+      expect(f).not.toHaveBeenCalled();
+    });
+
+    it("still catches the sale when Expo is down", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await registerPushToken(db, shopId, TOKEN);
+      await buyWithEmail();
+      const down = vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      });
+      expect(await catchLiveSale(db, paypal.client, { captureId: paypal.captures.at(-1) ?? "", now: NOW, pushFetch: down as unknown as typeof fetch })).toBe("CAUGHT");
+      expect((await queueRow((await line()).id))?.verdict).toBeDefined();
     });
   });
 });
