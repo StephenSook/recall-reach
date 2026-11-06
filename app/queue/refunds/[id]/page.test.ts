@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const readRefund = vi.fn();
+const clientFromEnv = vi.fn(() => ({}));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NOT FOUND");
@@ -12,7 +13,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
-vi.mock("@/server/paypal/client", () => ({ payPalClientFromEnv: () => ({}) }));
+vi.mock("@/server/paypal/client", async (original) => ({ ...(await original<object>()), payPalClientFromEnv: () => clientFromEnv() }));
 vi.mock("@/server/privacy/recordKey", () => ({ recordKeyFromEnv: () => () => "key" }));
 vi.mock("@/server/web/http", () => ({ currentSession: async () => ({ shopId: "s1", sessionId: "x" }) }));
 vi.mock("@/server/paypal/refunds", async (original) => ({ ...(await original<object>()), readRefund: (...args: unknown[]) => readRefund(...args) }));
@@ -21,6 +22,7 @@ vi.mock("../../LookAgain", async () => {
   return { LookAgain: () => h("i", { "data-testid": "looking-again" }) };
 });
 
+import { PayPalApiError } from "@/server/paypal/client";
 import { RefundRefused } from "@/server/paypal/refunds";
 import RefundPage from "./page";
 
@@ -47,21 +49,37 @@ describe("the refund page", () => {
     logged.mockReset();
   });
 
-  describe("when PayPal doesn't answer", () => {
-    beforeEach(() => readRefund.mockRejectedValue(new Error("PRIVATE-DETAIL from below")));
-
-    it("stays a page, says so, and goes on looking", async () => {
+  describe("when the records can't be read", () => {
+    it("stays a page, says so without blaming anyone, and goes on looking", async () => {
+      readRefund.mockRejectedValue(new Error("PRIVATE-DETAIL from below"));
       const html = await render();
-      expect(html).toContain("PayPal did not answer just now");
+      expect(html).toContain("The records can&#x27;t be read just now");
+      expect(html).not.toContain("PayPal did not answer");
       expect(html).toContain('data-testid="looking-again"');
       expect(html).toContain("Back to the queue");
     });
 
-    it("keeps what went wrong off the page and out of the log", async () => {
+    it("logs what kind of failure it was, and never what an unknown error says", async () => {
+      readRefund.mockRejectedValue(new TypeError("PRIVATE-DETAIL from below"));
       const html = await render();
       expect(html).not.toContain("PRIVATE-DETAIL");
+      expect(logged).toHaveBeenCalledWith("refund page could not read its records:", "TypeError");
       expect(JSON.stringify(logged.mock.calls)).not.toContain("PRIVATE-DETAIL");
     });
+
+    it("logs PayPal's own answer, whose message is written for logs", async () => {
+      readRefund.mockRejectedValue(new PayPalApiError(503, "GET", "/v2/payments/refunds/PRIVATE-ID"));
+      await render();
+      expect(logged).toHaveBeenCalledWith("refund page could not read its records:", "PayPal 503 on GET /v2/payments/refunds/:id");
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("PRIVATE-ID");
+    });
+  });
+
+  it("doesn't pass off a missing setting as a passing failure", async () => {
+    clientFromEnv.mockImplementationOnce(() => {
+      throw new Error("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be set");
+    });
+    await expect(render()).rejects.toThrow("must be set");
   });
 
   it("still says not found for a refund that isn't this shop's", async () => {

@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
-import { payPalClientFromEnv } from "@/server/paypal/client";
+import { payPalClientFromEnv, PayPalApiError } from "@/server/paypal/client";
 import { centsToValue } from "@/server/paypal/orders";
 import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
@@ -11,39 +11,9 @@ export const dynamic = "force-dynamic";
 
 const money = (x: { amountCents: number; currency: string } | null) => (x ? `${centsToValue(x.amountCents)} ${x.currency}` : "not held here");
 
-export default async function RefundPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await currentSession();
-  if (!session) redirect("/");
-  const recordKey = recordKeyFromEnv();
-  if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
-  const { id } = await params;
-  let rec: Reconciliation;
-  try {
-    rec = await readRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: id, recordKey });
-  } catch (err) {
-    if (err instanceof RefundRefused) notFound();
-    // A passing failure shouldn't take the page away from someone, least of all when the page looked again by itself.
-    console.error("refund page could not read PayPal:", err instanceof Error ? err.name : "unknown error");
-    return (
-      <main className="page">
-        <header className="page-head">
-          <h1>Refund against PayPal</h1>
-        </header>
-        <p role="alert" className="alert" data-testid="read-failed">
-          PayPal did not answer just now, so the records can&apos;t be compared yet. This page will look again.
-        </p>
-        <LookAgain everyMs={5_000} forMs={180_000} />
-        <p>
-          <a href="/queue">Back to the queue</a>
-        </p>
-      </main>
-    );
-  }
+function Records({ rec, id }: { rec: Reconciliation; id: string }) {
   return (
-    <main className="page">
-      <header className="page-head">
-        <h1>Refund against PayPal</h1>
-      </header>
+    <>
       <div className="window" style={{ marginTop: 16 }}>
       <table className="ledger">
         <thead>
@@ -111,10 +81,45 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
           <button type="submit" className="btn btn-outline">Ask PayPal again</button>
         </form>
       ) : null}
+    </>
+  );
+}
+
+export default async function RefundPage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await currentSession();
+  if (!session) redirect("/");
+  const recordKey = recordKeyFromEnv();
+  if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
+  const { id } = await params;
+  // Outside the try: a missing setting isn't a passing failure, and shouldn't read as one.
+  const db = getDb();
+  const client = payPalClientFromEnv();
+  let rec: Reconciliation | null = null;
+  try {
+    rec = await readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey });
+  } catch (err) {
+    if (err instanceof RefundRefused) notFound();
+    // A passing failure shouldn't take the page away from someone, least of all when the page looked again by itself.
+    console.error("refund page could not read its records:", err instanceof PayPalApiError ? err.message : err instanceof Error ? err.name : "unknown error");
+  }
+  // One page whichever happened, so LookAgain stays mounted and its time limit holds.
+  const looking = !rec || (!rec.webhook.seen && rec.ledger.status !== "failed");
+  return (
+    <main className="page">
+      <header className="page-head">
+        <h1>Refund against PayPal</h1>
+      </header>
+      {rec ? (
+        <Records rec={rec} id={id} />
+      ) : (
+        <p role="alert" className="alert" data-testid="read-failed">
+          The records can&apos;t be read just now, so they can&apos;t be compared yet. This page will look again.
+        </p>
+      )}
       {/* Each look reads PayPal again, so this one asks less often than the queue. */}
-      {!rec.webhook.seen && rec.ledger.status !== "failed" ? <LookAgain everyMs={5_000} forMs={180_000} /> : null}
+      {looking ? <LookAgain everyMs={5_000} forMs={180_000} /> : null}
       <p>
-        <a href={rec.matchId ? `/queue#sale-${rec.matchId}` : "/queue"}>Back to the queue</a>
+        <a href={rec?.matchId ? `/queue#sale-${rec.matchId}` : "/queue"}>Back to the queue</a>
       </p>
     </main>
   );
