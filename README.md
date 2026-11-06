@@ -31,6 +31,13 @@ From a terminal:
 ```bash
 curl https://recall-reach-web-e022.onrender.com/api/health
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
+curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"
+```
+
+For agents and marketplaces, the same check is an MCP tool, `check_recall`, on [`/api/mcp`](https://recall-reach-web-e022.onrender.com/evidence/api). A result names a recall to read, not a finding about the item. No key, and nothing sent is stored. The API is described in [`openapi.yaml`](openapi.yaml), and a test checks it against the code.
+
+```json
+{ "mcpServers": { "recall-reach": { "type": "http", "url": "https://recall-reach-web-e022.onrender.com/api/mcp" } } }
 ```
 
 ## What stays where

@@ -19,6 +19,14 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Sandbox only: webhook certificates are accepted from PayPal's sandbox hosts, and the API base is the sandbox", file: "server/paypal/client.ts", find: "PAYPAL_SANDBOX_BASE" },
 ];
 
+export const API_CLAIMS: Claim[] = [
+  { what: "Runs the rules a shop's sales get, on the text you send", file: "server/match/textCheck.ts", find: "verdictFor(" },
+  { what: "An MCP server over HTTP, with one read-only tool", file: "app/api/mcp/route.ts", find: "readOnlyHint: true" },
+  { what: "An OpenAPI file, and a test that the real answers fit it", file: "server/openapi.test.ts", find: "misfits" },
+  { what: "60 checks an hour per visitor, across the API and the tool", file: "server/web/publicCheck.ts", find: "limit: 60" },
+  { what: "Counts calls, and never keeps the text", file: "server/web/publicCalls.ts", find: "insert into public_calls (day, surface, calls)" },
+];
+
 export const AG_GRID_CLAIMS: Claim[] = [
   { what: "The seller's queue is a grid: every candidate, findable", file: "app/queue/MatchGrid.tsx", find: "AgGridReact" },
   { what: "Recall Replay is a grid: every recall in the run", file: "app/replay/ReplayGrid.tsx", find: "AgGridReact" },

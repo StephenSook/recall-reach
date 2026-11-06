@@ -31,9 +31,10 @@ export default function JudgeDoor() {
       </ol>
       <h2 className="section-title">From a terminal</h2>
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
-curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"`}</pre>
+curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
+curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"`}</pre>
       <p className="note">
-        <Link href="/check">Check your own order file</Link>. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/privacy">Privacy</Link>.
+        <Link href="/check">Check your own order file</Link>. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/privacy">Privacy</Link>.
       </p>
     </main>
   );

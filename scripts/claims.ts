@@ -79,6 +79,15 @@ export const CLAIMS: Claim[] = [
       { file: "app/replay/ReplayGrid.tsx", find: "<AgGridReact" },
     ],
   },
+  {
+    name: "Model Context Protocol",
+    status: "claimed",
+    evidence: [
+      { file: "app/api/mcp/route.ts", find: "new McpServer\\(" },
+      { file: "app/api/mcp/route.ts", find: "checkText\\(" },
+    ],
+  },
+  { name: "OpenAPI", status: "claimed", evidence: [{ file: "openapi.yaml", find: "openapi: 3" }, { file: "server/openapi.test.ts", find: "new Validator\\(" }] },
   { name: "Render", status: "claimed", evidence: [{ file: "render.yaml", find: "type: web" }] },
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", find: "new pg\\.Pool\\(" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },

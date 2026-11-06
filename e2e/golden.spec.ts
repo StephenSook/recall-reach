@@ -294,7 +294,7 @@ test.describe("Recall Replay", () => {
 for (const width of [1280, 390]) {
   test(`no page anyone can open logged out runs off the side at ${width} wide`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
-    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/privacy", "/check"]) {
+    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/evidence/api", "/privacy", "/check"]) {
       await page.goto(path);
       const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
       expect.soft(scroll, `${path} at ${width}`).toBeLessThanOrEqual(client);
@@ -332,6 +332,19 @@ test("the judge's door works logged out, and every page it names is there", asyn
   expect(day.ok()).toBe(true);
   expect((await day.json()).recalls.length).toBeGreaterThan(0);
   expect((await request.get("/api/recalls/today/matches?shop=other")).status()).toBe(400);
+
+  const checked = await (await request.get("/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083")).json();
+  expect(checked.results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH" });
+  const mcp = await request.post("/api/mcp", {
+    headers: { accept: "application/json, text/event-stream" },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "check_recall", arguments: { title: "Baby Brezza sterilizer", model: "BRZ0083" } } },
+  });
+  expect(mcp.ok()).toBe(true);
+  expect(JSON.parse((await mcp.json()).result.content[0].text).results[0].recallNumber).toBe("27072");
+  expect(await (await request.get("/openapi.yaml")).text()).toContain("openapi: 3");
+  await page.goto("/evidence/api");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("For agents and marketplaces");
+  await expect(page.getByTestId("public-calls")).toContainText("through the tool");
 });
 
 test.describe("on a phone", () => {
