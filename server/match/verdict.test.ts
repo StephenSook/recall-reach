@@ -343,6 +343,8 @@ describe("a record where the model alone can't settle it", () => {
   // Each is verbatim from the recall named: the model is only part of what decides it.
   it.each([
     ["26027, a serial prefix", "This recall includes model year 2017-2024 DR2A and DR2E Personal Transportation Vehicles (PTVs) with serial numbers that begin with J0D, J0E, and J2D."],
+    ["27047, batch values and where they are", "The brand name, model number NP4351 and batch numbers 202604, 202605 or 202606 are printed on an attached label."],
+    ["26070, a batch value and where it is", "Both models have batch number 062024, which can be found on the information sticker located on the bottom of the scooter."],
     ["26419, a serial prefix", "The recalled models have a serial number starting with EEV, ERV, EAV, EYV, EUV, ELV or RFV."],
     ["26388, a serial on the base that begins", "The Breez fans have a removable barrel power jack and have a serial number on the underside of the fan's wooden base that begins with BZ10 or BZ02."],
     ["26511, one serial", "This recall involves SLF Sauna Blankets, model number 30065TAR with serial number WF2236430065."],

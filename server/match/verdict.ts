@@ -186,8 +186,11 @@ const UNIT_ID = /\b(?:serial|lot|batch|date)\s*(?:numbers?|codes?|ranges?)\b|\bV
 const SAYS_WHICH = /\b(?:begin|begins|beginning|start|starts|starting|contain|contains|containing|range|ranges|ranging|within|between|through|following|one of|prefix|position|impacted)\b/i;
 const SAYS_WHERE = /\b(?:located|printed|stamped|molded|engraved|imprinted|displayed|displays|appears?|under|found|listed|lists|label|labels|sticker|plate|plates|regardless|all|visible|(?:is|are)\s+(?:on|in|at|inside))\b/i;
 
+/** The number itself, right after its name: batch number 062024, date code 2310. */
+const UNIT_VALUE = /\b(?:serial|lot|batch|date)\s*(?:numbers?|codes?)\b[\s:#"]*[A-Z]*\d/i;
+
 /** A sentence naming a serial, lot, batch, date code or VIN limits the recall, unless all it says is where that number is. */
-const tiedToAUnit = (sentence: string) => UNIT_ID.test(sentence) && (SAYS_WHICH.test(sentence) || !SAYS_WHERE.test(sentence));
+const tiedToAUnit = (sentence: string) => UNIT_ID.test(sentence) && (SAYS_WHICH.test(sentence) || UNIT_VALUE.test(sentence) || !SAYS_WHERE.test(sentence));
 
 /** CPSC limits the recall to part of a model: a date, a lot, a serial range, certain VINs. The model alone can't show this unit is in it. */
 export const limitedWithinModel = (description: string) =>
