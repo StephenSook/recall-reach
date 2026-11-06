@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
+import type { Queryable } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
@@ -160,6 +161,62 @@ describe("notices", () => {
       await storeOrderLines(db, shopId, [line({ orderNumber: "#L8", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
       await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
       expect((await prepareNotice(db, { shopId, matchId: m })).kind).toBe("SAFETY_NOTICE");
+    });
+
+    describe("a question, when the sale is confirmed after it was prepared", () => {
+      const NOT_NAMED = "Baby Brezza SuperFast Sterilizer Dryer";
+      const NAMED = "Baby Brezza SuperFast Sterilizer Dryer BRZ0083";
+      const question = async (orderNumber: string) => {
+        const m = await matchFor("27072", line({ orderNumber, title: NOT_NAMED }));
+        const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });
+        expect(kind).toBe("CHECK_REQUEST");
+        return { m, noticeId };
+      };
+      const confirm = async (orderNumber: string) => {
+        await storeOrderLines(db, shopId, [line({ orderNumber, title: NAMED })], cipher(), "test");
+        await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      };
+      const storedKind = async (noticeId: string) => (await db.query<{ kind: string }>("select kind from notices where id = $1", [noticeId])).rows[0].kind;
+
+      it("is not composed: it would ask a family what is already known", async () => {
+        const { m, noticeId } = await question("#S1");
+        await confirm("#S1");
+        expect(await refusal(compose(noticeId))).toBe("EVIDENCE_CHANGED");
+        expect(await prepareNotice(db, { shopId, matchId: m })).toEqual({ noticeId, kind: "SAFETY_NOTICE" });
+      });
+
+      it("can still be read back once it was sent: the record shows what went out", async () => {
+        const { noticeId } = await question("#S2");
+        await markSent(db, { shopId, noticeId });
+        await confirm("#S2");
+        expect((await compose(noticeId)).subject).toMatch(/^Quick safety check/);
+      });
+
+      it("stays what it was once the family answered, even if the seller never marked it sent", async () => {
+        const { m, noticeId } = await question("#S3");
+        await recordFamilyAnswer(db, noticeId, "BRZ0083");
+        await confirm("#S3");
+        expect(await prepareNotice(db, { shopId, matchId: m })).toEqual({ noticeId, kind: "CHECK_REQUEST" });
+        expect(await storedKind(noticeId)).toBe("CHECK_REQUEST");
+        expect((await compose(noticeId)).subject).toMatch(/^Quick safety check/);
+      });
+
+      it.each(["sent", "answered"])("is not rewritten when it was %s while being approved again", async (what) => {
+        const { m, noticeId } = await question(`#S4${what}`);
+        await confirm(`#S4${what}`);
+        const racing: Queryable = {
+          exec: (sql) => db.exec(sql),
+          query: (async (sql: string, params?: unknown[]) => {
+            if (sql.startsWith("update notices set kind")) {
+              if (what === "sent") await markSent(db, { shopId, noticeId });
+              else await db.query("update notices set responded_at = now() where id = $1", [noticeId]);
+            }
+            return db.query(sql, params);
+          }) as Queryable["query"],
+        };
+        expect(await prepareNotice(racing, { shopId, matchId: m })).toEqual({ noticeId, kind: "CHECK_REQUEST" });
+        expect(await storedKind(noticeId)).toBe("CHECK_REQUEST");
+      });
     });
 
     it("composes nothing if the evidence has weakened since the notice was prepared", async () => {

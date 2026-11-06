@@ -56,13 +56,13 @@ export async function prepareNotice(
   if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
   refuseWeakEvidence(m);
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
-  const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST"; sent_at: unknown }>(
-    "select id, kind, sent_at from notices where match_id = $1",
+  const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST"; sent_at: unknown; responded_at: unknown }>(
+    "select id, kind, sent_at, responded_at from notices where match_id = $1",
     [input.matchId],
   );
   const mine = existing.rows[0];
-  // What was sent stays on record as it was. Until then, the message follows the evidence as it stands now.
-  if (mine && (mine.kind === kind || mine.sent_at)) return { noticeId: mine.id, kind: mine.kind };
+  // What was sent or answered stays on record as it was. Until then, the message follows the evidence as it stands now.
+  if (mine && (mine.kind === kind || mine.sent_at || mine.responded_at)) return { noticeId: mine.id, kind: mine.kind };
   if (kind === "CHECK_REQUEST") {
     const taken = await db.query(
       `select 1 from notices where order_line_id = $1 and match_id <> $2
@@ -72,8 +72,12 @@ export async function prepareNotice(
     if (taken.rows.length > 0) throw alreadyAsked();
   }
   if (mine) {
-    await db.query("update notices set kind = $2, opened_at = null where id = $1", [mine.id, kind]);
-    return { noticeId: mine.id, kind };
+    // It can be sent or answered while this runs, and then it stays as it was.
+    const rewritten = await db.query(
+      "update notices set kind = $2, opened_at = null where id = $1 and shop_id = $3 and sent_at is null and responded_at is null returning id",
+      [mine.id, kind, input.shopId],
+    );
+    return { noticeId: mine.id, kind: rewritten.rows.length > 0 ? kind : mine.kind };
   }
   // The index settles a race between two requests. Here a second notice for the match is the same notice.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
@@ -124,6 +128,8 @@ export async function composeForSeller(
   const { rows } = await db.query<
     RecallRow & {
       kind: string;
+      sent_at: unknown;
+      responded_at: unknown;
       join_state: string | null;
       verdict: string;
       strength: string | null;
@@ -134,7 +140,7 @@ export async function composeForSeller(
       order_line_id: string;
     }
   >(
-    `select n.kind, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select n.kind, n.sent_at, n.responded_at, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
@@ -148,7 +154,10 @@ export async function composeForSeller(
   if (!n) throw noNotice();
   if (n.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
   refuseWeakEvidence(n); // the line may have been corrected since the notice was prepared
-  if (n.kind === "SAFETY_NOTICE" && n.verdict !== "MATCH") {
+  // A safety notice always needs a confirmed match. A question on a confirmed sale is stale until it has gone out.
+  const confirmed = n.verdict === "MATCH";
+  const staleQuestion = n.kind === "CHECK_REQUEST" && confirmed && !n.sent_at && !n.responded_at;
+  if ((n.kind === "SAFETY_NOTICE" && !confirmed) || staleQuestion) {
     throw new NoticeRefused("EVIDENCE_CHANGED", "The evidence changed since this was prepared. Approve it again to get the right message.");
   }
 
