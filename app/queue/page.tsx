@@ -222,10 +222,12 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const session = await currentSession();
   if (!session) redirect("/");
   const { rows, shop, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
+  // A session can outlast its shop, which is deleted with its data. There is no queue left to show.
+  if (!shop) redirect("/");
   const params = await searchParams;
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
-  const shopName = shop?.name ?? "";
-  const shopKind = shop?.kind ?? "DEMO";
+  const shopName = shop.name;
+  const shopKind = shop.kind;
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
