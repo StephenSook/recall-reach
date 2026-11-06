@@ -35,7 +35,8 @@ export default async function RecallTimelinePage({ params }: { params: Promise<{
         ))}
       </ul>
       <p className="note">
-        A refund is only offered for a sale made after the recall, within 180 days. Recall date {timeline.recallDate}. <a href="/queue">Back to the queue</a>
+        A refund is only offered for a sale made after the recall, within 180 days. Bars use your own order dates, and PayPal&apos;s payment date decides before a refund goes out. Recall date {timeline.recallDate}.{" "}
+        <a href="/queue">Back to the queue</a>
       </p>
       {shop.kind === "DEMO" ? (
         <div className="provenance">

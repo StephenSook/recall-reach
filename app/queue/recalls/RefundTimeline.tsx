@@ -12,11 +12,10 @@ const ROW_HEIGHT = 64;
 const HEADER_HEIGHT = 64;
 const DATES_ROW = "dates";
 // The app's own state colors, so a sale reads the same here as on its card.
-const COLOR: Record<NonNullable<TimelineSale["path"]> | "none", string> = {
-  NOTICE_ONLY: "#606060",
-  REVIEW: "#ffd31e",
-  REFUND_ELIGIBLE: "#d00416",
-  none: "#d2d2d2",
+const COLOR: Record<TimelineSale["tone"], string> = {
+  notice: "#606060",
+  check: "#ffd31e",
+  refund: "#d00416",
 };
 
 const localDay = (day: string) => new Date(`${day}T00:00:00`);
@@ -66,7 +65,8 @@ export default function RefundTimeline({ timeline }: { timeline: Timeline }) {
     name: s.meaning,
     startDate: localDay(s.orderedOn),
     endDate: localDay(s.windowEnds),
-    eventColor: COLOR[s.path ?? "none"],
+    eventColor: COLOR[s.tone],
+    cls: `timeline-${s.tone}`,
   }));
   return (
     <div className="refund-timeline" data-testid="refund-timeline" style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>

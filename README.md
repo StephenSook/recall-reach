@@ -34,7 +34,7 @@ curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"
 ```
 
-A recall's sales are drawn on a [Bryntum](https://bryntum.com/products/scheduler/) timeline, reached from a sale's card in the queue. Each bar is a sale's 180-day refund window, from the shop's own order date, with lines at the recall date and today, so you can see why a sale gets a notice or a refund.
+A recall's sales are drawn on a [Bryntum](https://bryntum.com/products/scheduler/) timeline, reached from a sale's card in the queue. Each bar is a sale's 180-day refund window, from the shop's own order date, with lines at the recall date and today, so you can see why a sale gets a notice, a check or a refund. PayPal's own payment date still decides before a refund goes out.
 
 Each recent recall's product name also goes to [Channel3](https://recall-reach-web-e022.onrender.com/evidence/channel3), from the hourly job, to see what the market lists under it. A page like [`/sweep/27072`](https://recall-reach-web-e022.onrender.com/sweep/27072) shows same-brand, same-product results as candidates for a person to review. None is called recalled, and no seller is kept. Only CPSC's public words go out.
 

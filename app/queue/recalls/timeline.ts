@@ -15,7 +15,8 @@ export interface TimelineSale {
   title: string;
   orderedOn: string;
   windowEnds: string;
-  path: "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE" | null;
+  /** How its bar reads: what can happen next, not only what the dates say. */
+  tone: "notice" | "check" | "refund";
   /** In words: what this sale's place on the line means. */
   meaning: string;
 }
@@ -35,23 +36,27 @@ export interface Timeline {
 
 const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
-function meaningOf(path: TimelineSale["path"], windowEnds: string, today: string): string {
-  if (path === "NOTICE_ONLY") return "Sold before the recall: a notice, not a refund";
-  if (path === "REVIEW") return "Sold on the recall date: a person checks the date";
-  if (path === "REFUND_ELIGIBLE") return windowEnds < today ? "Sold after the recall, and its 180 days are over" : "Sold after the recall, and inside its 180 days";
-  return "No sale date to place";
+type Sold = QueueRow & { orderedOn: string; salePath: NonNullable<QueueRow["salePath"]> };
+
+/** The same bar the refund itself has to clear: a confirmed match. Dates alone never make a sale a notice or a refund. */
+function readingOf(row: Sold, windowEnds: string, today: string): Pick<TimelineSale, "tone" | "meaning"> {
+  if (row.verdict !== "MATCH" || row.strength !== "CONFIRMED" || row.joinState === "AMBIGUOUS_JOIN") return { tone: "check", meaning: "Not confirmed yet: a check comes first" };
+  if (row.salePath === "NOTICE_ONLY") return { tone: "notice", meaning: "Sold before the recall: a notice, not a refund" };
+  if (row.salePath === "REVIEW") return { tone: "check", meaning: "Sold on the recall date: a person checks the date" };
+  // The bar counts from the shop's order date, and PayPal's own date and time decide. So the last day doesn't read as inside.
+  if (windowEnds <= today) return { tone: "notice", meaning: "Sold after the recall, and 180 days from its order date have passed" };
+  return { tone: "refund", meaning: "Sold after the recall, within 180 days of its order date" };
 }
 
-/** Null when this shop has no sale of this recall to draw. A listing that hasn't sold has no date, so it isn't on the line. */
+/** Null when this shop has no sale of this recall to draw. A cleared sale gets nothing, and a listing hasn't sold, so neither is on the line. */
 export function timelineFor(rows: QueueRow[], recallNumber: string, today: string): Timeline | null {
-  const mine = rows.filter((r) => r.recallNumber === recallNumber);
-  const sold = mine.filter((r): r is QueueRow & { orderedOn: string } => Boolean(r.orderedOn));
+  const sold = rows.filter((r): r is Sold => r.recallNumber === recallNumber && r.verdict !== "CLEARED" && !r.isListing && Boolean(r.orderedOn) && r.salePath !== null);
   const first = sold[0];
   if (!first) return null;
   const sales = sold
     .map((r) => {
       const windowEnds = addDays(r.orderedOn, REFUND_WINDOW_DAYS);
-      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, path: r.salePath, meaning: meaningOf(r.salePath, windowEnds, today) };
+      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, ...readingOf(r, windowEnds, today) };
     })
     .sort((a, b) => a.orderedOn.localeCompare(b.orderedOn));
   const dates = [first.recallDate, today, ...sales.flatMap((s) => [s.orderedOn, s.windowEnds])].sort();

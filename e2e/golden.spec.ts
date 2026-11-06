@@ -322,9 +322,14 @@ test.describe("a recall's refund windows", () => {
     const timeline = page.getByTestId("refund-timeline");
     await expect(timeline.locator(".b-sch-event")).toHaveCount(2);
     await expect(timeline.locator(".b-sch-event").first()).toContainText("Sold after the recall");
+    await expect(timeline).toHaveCSS("opacity", "1");
     const x = async (id: string) => (await page.getByTestId(id).boundingBox())?.x ?? 0;
     expect(await x("line-recall")).toBeGreaterThan(0);
     expect(await x("line-recall")).toBeLessThan(await x("line-today"));
+    // A sale made after the recall starts right of its line, and 180 days are most of a fitted axis.
+    const bar = await timeline.locator(".b-sch-event").first().boundingBox();
+    expect(bar?.x ?? 0).toBeGreaterThan(await x("line-recall"));
+    expect(bar?.width ?? 0).toBeGreaterThan(300);
     await expect(page.getByTestId("timeline-list").locator("li")).toHaveCount(2);
     expect(elsewhere).toEqual([]);
 
@@ -342,6 +347,16 @@ test.describe("a recall's refund windows", () => {
     await expect(page.getByTestId("match-grid")).toBeVisible();
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--b-primary"))).toBe("");
     expect(crashes).toEqual([]);
+
+    // A near miss that cleared gets nothing, so it isn't on the line.
+    await page.goto("/queue/recalls/27072");
+    await expect(timeline.locator(".b-sch-event")).toHaveCount(1);
+    await expect(timeline.locator(".b-sch-event").first()).toContainText("a notice, not a refund");
+    await expect(page.getByRole("main")).not.toContainText("Formula Pro");
+
+    // A scope gap isn't told it gets a notice.
+    await page.goto("/queue/recalls/27040");
+    await expect(timeline.locator(".b-sch-event").first()).toContainText("a check comes first");
 
     expect((await page.goto("/queue/recalls/00000"))?.status()).toBe(404);
   });

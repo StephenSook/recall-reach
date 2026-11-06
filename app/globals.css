@@ -388,6 +388,9 @@ pre {
   line-height: 1.25 !important;
   white-space: normal !important;
 }
+.refund-timeline .timeline-check {
+  color: var(--color-ink);
+}
 .timeline-line {
   position: absolute;
   z-index: 5;
