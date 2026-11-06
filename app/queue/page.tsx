@@ -11,6 +11,7 @@ import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, c
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
+import { RefundForm } from "./RefundForm";
 import { WatchForSale } from "./WatchForSale";
 
 export const dynamic = "force-dynamic";
@@ -121,12 +122,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
               </form>
             ) : null}
             {row.approval && !row.refund ? (
-              <form action="/api/queue/refunds/execute" method="post">
-                <input type="hidden" name="approvalId" value={row.approval.id} />
-                <button type="submit" className="btn">
-                  Refund {centsToValue(row.approval.amountCents)} {row.approval.currency}
-                </button>
-              </form>
+              <RefundForm approvalId={row.approval.id} label={`Refund ${centsToValue(row.approval.amountCents)} ${row.approval.currency}`} />
             ) : null}
             {row.refund ? (
               <p>
