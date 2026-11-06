@@ -20,10 +20,13 @@ export async function currentSession(): Promise<ShopSession | null> {
   return readSession(secret("SESSION_SECRET"), jar.get(SESSION_COOKIE)?.value);
 }
 
-/** A form on another site must not act for a signed-in shop. Same-site cookies do most of this already. */
+/**
+ * A state-changing POST must come from a page on this site. Browsers send Origin on every form POST, and a
+ * sandboxed frame sends "null", so no Origin and "null" are both refused. Demo start needs this most: it
+ * has no session to check, and each call makes real sandbox captures.
+ */
 export function fromThisSite(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  return origin === null || origin === baseUrl(request);
+  return request.headers.get("origin") === baseUrl(request);
 }
 
 export const seeOther = (request: Request, path: string) =>
