@@ -11,6 +11,15 @@ describe("shop session", () => {
     expect(sessionId).toMatch(/^[0-9a-f]{32}$/);
   });
 
+  it("lasts as long as it is asked to, so a shop can come back for as long as its file is kept", () => {
+    const start = new Date("2026-11-06T12:00:00Z");
+    const later = (days: number) => new Date(start.getTime() + days * 86_400_000);
+    const { value } = sessionCookie(SECRET, "shop-1", start, 7 * 86_400_000);
+    expect(readSession(SECRET, value, later(6))?.shopId).toBe("shop-1");
+    expect(readSession(SECRET, value, later(8))).toBeNull();
+    expect(readSession(SECRET, sessionCookie(SECRET, "shop-1", start).value, later(2))).toBeNull();
+  });
+
   it("gives every session its own id", () => {
     expect(sessionCookie(SECRET, SHOP).sessionId).not.toBe(sessionCookie(SECRET, SHOP).sessionId);
   });

@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
-import { importOwnFile, MAX_FILE_BYTES, OwnFileRefused } from "@/server/import/ownFile";
+import { importOwnFile, MAX_FILE_BYTES, OWN_FILE_DAYS, OwnFileRefused } from "@/server/import/ownFile";
 import { sessionCookie, SESSION_COOKIE } from "@/server/session/session";
 import { businessDay } from "@/server/time/businessDay";
 import { baseUrl, fromThisSite, refused, secret, seeOther, withMessage } from "@/server/web/http";
@@ -32,10 +32,12 @@ export async function POST(request: Request): Promise<Response> {
       secret: secret("SHOP_DATA_KEY"),
       today: businessDay(),
     });
-    const { value } = sessionCookie(secret("SESSION_SECRET"), shopId);
+    // As long as the file is kept, so the shop can come back and see a recall that arrived after it uploaded.
+    const lastsMs = OWN_FILE_DAYS * 86_400_000;
+    const { value } = sessionCookie(secret("SESSION_SECRET"), shopId, new Date(), lastsMs);
     const response = rejected > 0 ? withMessage(request, `Read ${lines} lines. ${rejected} ${rejected === 1 ? "row" : "rows"} could not be read.`) : seeOther(request, "/queue");
     const secure = baseUrl(request).startsWith("https:") ? "; Secure" : "";
-    response.headers.append("Set-Cookie", `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secure}`);
+    response.headers.append("Set-Cookie", `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lastsMs / 1000}${secure}`);
     return response;
   } catch (err) {
     if (err instanceof OwnFileRefused) return back(err.code);

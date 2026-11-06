@@ -15,10 +15,10 @@ const SESSION_MS = 24 * 3_600_000;
  * A signed cookie value naming the shop and this browser's session. Approvals are bound to it. The expiry is
  * inside what is signed: the cookie's Max-Age only tells a browser when to drop it, and a copied one is not bound by that.
  */
-export function sessionCookie(secret: string, shopId: string, now: Date = new Date()): { value: string; sessionId: string } {
+export function sessionCookie(secret: string, shopId: string, now: Date = new Date(), lastsMs: number = SESSION_MS): { value: string; sessionId: string } {
   if (secret.length < 32) throw new Error("session secret must be at least 32 characters");
   const sessionId = randomBytes(16).toString("hex");
-  const payload = `${shopId}.${sessionId}.${now.getTime() + SESSION_MS}`;
+  const payload = `${shopId}.${sessionId}.${now.getTime() + lastsMs}`;
   return { value: `${payload}.${sign(secret, payload)}`, sessionId };
 }
 
