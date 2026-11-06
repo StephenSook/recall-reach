@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPayPalClient } from "./client";
 import { refundReadsThroughServerSdk } from "./sdkRefundRead";
@@ -84,6 +85,36 @@ describe("refundReadsThroughServerSdk", () => {
     await through(SANDBOX_REFUND, { method: "POST", headers: { Authorization: "Bearer tok" } });
     expect(other).toHaveBeenCalledTimes(3);
     expect(calls).toEqual([]);
+  });
+
+  describe("when the call fails with no answer from PayPal", () => {
+    const failing = async () => {
+      vi.stubGlobal("fetch", async () => {
+        throw new TypeError("fetch failed");
+      });
+      return read(refundReadsThroughServerSdk(vi.fn()), "https://api-m.sandbox.paypal.com/v2/payments/refunds/PRIVATE-REFUND-ID", "SECRET-TOKEN").catch((e: unknown) => e);
+    };
+
+    it("keeps the token and the refund id out of the error, however it gets printed", async () => {
+      const err = await failing();
+      expect(err).toBeInstanceOf(Error);
+      for (const printed of [String(err), inspect(err, { depth: 10, showHidden: true }), JSON.stringify(err)]) {
+        expect(printed).not.toContain("SECRET-TOKEN");
+        expect(printed).not.toContain("PRIVATE-REFUND-ID");
+      }
+      expect((err as Error).cause).toBeUndefined();
+    });
+
+    it("is still a failure the client above retries", async () => {
+      let tries = 0;
+      vi.stubGlobal("fetch", async () => {
+        tries++;
+        throw new TypeError("fetch failed");
+      });
+      const client = createPayPalClient({ tokens: { get: async () => "tok", invalidate: () => {} }, fetchImpl: refundReadsThroughServerSdk(vi.fn()), sleep: async () => {} });
+      await expect(client.request("GET", "/v2/payments/refunds/R1")).rejects.toThrow();
+      expect(tries).toBe(3);
+    });
   });
 
   it("won't read without a token", async () => {

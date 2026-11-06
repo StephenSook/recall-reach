@@ -43,9 +43,10 @@ export function refundReadsThroughServerSdk(
       const answer = await payments.getRefund({ refundId: decodeURIComponent(read[1]) }, { abortSignal: init?.signal ?? undefined });
       return new Response(String(answer.body), { status: answer.statusCode, headers: { "content-type": "application/json" } });
     } catch (err) {
-      // An answer from PayPal, good or bad, is handled above like any other. Anything else is a failed call, which is retried above.
+      // An answer from PayPal, good or bad, is handled above like any other.
       if (err instanceof ApiError) return new Response(typeof err.body === "string" ? err.body : "", { status: err.statusCode, headers: { "content-type": "application/json" } });
-      throw err;
+      // A failed call is retried above. A new error, with no cause: axios's own carries the request, with its token and id.
+      throw new Error("the refund read got no answer from PayPal");
     }
   };
 }
