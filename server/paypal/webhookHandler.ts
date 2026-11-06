@@ -16,8 +16,11 @@ export interface WebhookResponse {
   body: Record<string, unknown>;
 }
 
+// PayPal's form. Date.parse also takes "1" and "Nov 5 2026 8pm", which either fail in Postgres or get stored as a guess.
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
 function eventCreateTime(event: WebhookEvent): string | null {
-  return typeof event.create_time === "string" && !Number.isNaN(Date.parse(event.create_time))
+  return typeof event.create_time === "string" && ISO_TIME.test(event.create_time) && !Number.isNaN(Date.parse(event.create_time))
     ? event.create_time
     : null;
 }

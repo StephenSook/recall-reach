@@ -154,6 +154,28 @@ describe("handleWebhookDelivery", () => {
   });
 
   describe("free text in a signed body", () => {
+    it("refuses an event with an empty id: there would be nothing to tell it apart by", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const raw = Buffer.from(JSON.stringify({ ...event, id: "" }));
+        expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID, "t-empty"))).status).toBe(401);
+        expect(await rows()).toHaveLength(0);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it.each(["1", "Nov 5 2026 8pm", "2026-13-45T00:00:00Z", 12345])("stores no create time from %s, and still takes the delivery", async (createTime) => {
+      const raw = Buffer.from(JSON.stringify({ ...event, create_time: createTime }));
+      expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID, "t-time"))).status).toBe(200);
+      expect((await rows())[0].event_create_time).toBeNull();
+    });
+
+    it("keeps a create time in PayPal's form", async () => {
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-good-time"));
+      expect((await rows())[0].event_create_time).not.toBeNull();
+    });
+
     it("refuses an event type that isn't shaped like one, and keeps it out of the store and the log", async () => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

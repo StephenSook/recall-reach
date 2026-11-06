@@ -9,7 +9,7 @@
 //   transmission_id | transmission_time | webhook_id | crc32(raw body, decimal)
 // with SHA256withRSA, and names the signing certificate in the paypal-cert-url header.
 // The CRC must be computed over the exact bytes received; re-serialized JSON will not match.
-import { createPublicKey, verify } from "node:crypto";
+import { createPublicKey, verify, type KeyObject } from "node:crypto";
 import { crc32 } from "node:zlib";
 import { readCappedBody } from "../http/body";
 
@@ -89,7 +89,7 @@ export function signedMessage(
 export function createCertFetcher(fetchImpl: typeof fetch = fetch, maxEntries = 16): CertFetcher {
   const cache = new Map<string, string>();
   return async (certUrl) => {
-    if (!isTrustedCertUrl(certUrl)) throw new Error(`untrusted certificate URL: ${certUrl}`);
+    if (!isTrustedCertUrl(certUrl)) throw new Error("untrusted certificate URL");
     const { origin, pathname } = new URL(certUrl);
     const key = origin + pathname;
     const cached = cache.get(key);
@@ -99,11 +99,13 @@ export function createCertFetcher(fetchImpl: typeof fetch = fetch, maxEntries = 
     const read = await readCappedBody(res, MAX_CERT_BYTES);
     if (!read.ok) throw new Error("signing certificate download is too large");
     const pem = Buffer.from(read.body).toString("utf8");
+    let downloaded: KeyObject;
     try {
-      createPublicKey(pem);
+      downloaded = createPublicKey(pem);
     } catch {
       throw new Error("signing certificate download is not a usable public key");
     }
+    if (downloaded.asymmetricKeyType !== "rsa") throw new Error("signing certificate's key is not RSA");
     if (cache.size >= maxEntries) cache.delete(cache.keys().next().value as string);
     cache.set(key, pem);
     return pem;
@@ -114,7 +116,7 @@ const defaultCertFetcher = createCertFetcher();
 
 function isWebhookEvent(value: unknown): value is WebhookEvent {
   const v = value as Record<string, unknown> | null;
-  return typeof v === "object" && v !== null && typeof v.id === "string" && typeof v.event_type === "string";
+  return typeof v === "object" && v !== null && typeof v.id === "string" && v.id.length > 0 && typeof v.event_type === "string" && v.event_type.length > 0;
 }
 
 /**
@@ -132,13 +134,17 @@ export async function verifyWebhook(
     .filter(([, v]) => !v)
     .map(([k]) => k);
   if (missing.length > 0) return { verified: false, reason: `missing PayPal transmission header(s): ${missing.join(", ")}` };
-  if (authAlgo !== AUTH_ALGO) return { verified: false, reason: `unexpected auth algorithm: ${authAlgo}` };
-  if (!isTrustedCertUrl(certUrl!)) return { verified: false, reason: `untrusted certificate URL: ${certUrl}` };
+  // Fixed words: these reasons go to the log, and these headers come from whoever is calling.
+  if (authAlgo !== AUTH_ALGO) return { verified: false, reason: "unexpected auth algorithm" };
+  if (!isTrustedCertUrl(certUrl!)) return { verified: false, reason: "untrusted certificate URL" };
 
   try {
     const pem = await (deps.fetchCert ?? defaultCertFetcher)(certUrl!);
     const message = signedMessage(transmissionId!, transmissionTime!, webhookId, rawBody);
-    const ok = verify("sha256", Buffer.from(message), createPublicKey(pem), Buffer.from(transmissionSig!, "base64"));
+    const signingKey = createPublicKey(pem);
+    // The algorithm named is RSA, and an EC key would otherwise verify under it.
+    if (signingKey.asymmetricKeyType !== "rsa") return { verified: false, reason: "signing key is not RSA" };
+    const ok = verify("sha256", Buffer.from(message), signingKey, Buffer.from(transmissionSig!, "base64"));
     if (!ok) return { verified: false, reason: "signature did not match (wrong webhook id, or a forged event)" };
   } catch (err) {
     return { verified: false, reason: `verification error: ${err instanceof Error ? err.message : String(err)}` };

@@ -1,4 +1,5 @@
 import { createSign, generateKeyPairSync } from "node:crypto";
+import { crc32 } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   createCertFetcher,
@@ -122,6 +123,44 @@ describe("verifyWebhook", () => {
     const other = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" });
     const result = await verifyWebhook(body, signedHeaders(body), WEBHOOK_ID, certFrom(other.toString()));
     expect(result.verified).toBe(false);
+  });
+
+  describe("what a caller can make it say or accept", () => {
+    const headers = (over: { certUrl?: string; authAlgo?: string }) => ({
+      transmissionId: "t",
+      transmissionTime: "2026-11-05T20:00:00Z",
+      transmissionSig: "c2ln",
+      certUrl: "https://api-m.sandbox.paypal.com/v1/notifications/certs/CERT-test",
+      authAlgo: "SHA256withRSA",
+      ...over,
+    });
+
+    it("puts no header text in its reason, so an anonymous caller can't write to the log", async () => {
+      const text = "ATTACKER-TEXT";
+      for (const over of [{ authAlgo: text }, { certUrl: `https://evil.example/${text}` }]) {
+        const result = await verifyWebhook(Buffer.from("{}"), headers(over), "ID");
+        expect(result.verified).toBe(false);
+        expect(JSON.stringify(result)).not.toContain(text);
+      }
+    });
+
+    it("refuses a key that isn't RSA, which would otherwise verify under the algorithm named", async () => {
+      const ec = generateKeyPairSync("ec", { namedCurve: "P-256" });
+      const raw = Buffer.from(JSON.stringify({ id: "WH-EC", event_type: "PAYMENT.CAPTURE.COMPLETED" }));
+      const crc = crc32(raw);
+      const signer = createSign("sha256");
+      signer.update(`t|2026-11-05T20:00:00Z|ID|${crc}`);
+      const transmissionSig = signer.sign(ec.privateKey).toString("base64");
+      const pem = ec.publicKey.export({ type: "spki", format: "pem" }).toString();
+      const result = await verifyWebhook(raw, { ...headers({}), transmissionSig }, "ID", { fetchCert: async () => pem });
+      expect(result.verified).toBe(false);
+    });
+
+    it("won't download or keep a certificate whose key isn't RSA", async () => {
+      const pem = generateKeyPairSync("ec", { namedCurve: "P-256" }).publicKey.export({ type: "spki", format: "pem" }).toString();
+      const fetcher = createCertFetcher((async () => new Response(pem)) as typeof fetch);
+      await expect(fetcher(headers({}).certUrl)).rejects.toThrow("RSA");
+    });
   });
 
   it("refuses an untrusted certificate URL without fetching it", async () => {
