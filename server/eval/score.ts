@@ -112,10 +112,12 @@ export function scoreClaude(pairs: EvalPair[], findings: Record<string, ClaudeFi
 export interface StatedModelScore {
   recalls: number;
   confirmed: Rate;
+  /** Stated titles it asked about because CPSC limits the recall within the model: the model alone can't settle these. */
+  limitedAsks: number;
   offByOneConfirmed: Rate;
 }
 
-export function scoreStatedModels(pairs: EvalPair[], decide: (p: EvalPair) => Decision | null): StatedModelScore {
+export function scoreStatedModels(pairs: EvalPair[], decide: (p: EvalPair) => Decision | null, limited: ReadonlySet<string> = new Set()): StatedModelScore {
   const confirmed = (p: EvalPair) => {
     const d = decide(p);
     return d?.verdict === "MATCH" && d.strength === "CONFIRMED";
@@ -125,6 +127,7 @@ export function scoreStatedModels(pairs: EvalPair[], decide: (p: EvalPair) => De
   return {
     recalls: new Set(pairs.map((p) => p.recallNumber)).size,
     confirmed: rate(stated.filter(confirmed).length, stated.length),
+    limitedAsks: stated.filter((p) => !confirmed(p) && limited.has(p.recallNumber)).length,
     offByOneConfirmed: rate(offByOne.filter(confirmed).length, offByOne.length),
   };
 }

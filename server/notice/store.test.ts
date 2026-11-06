@@ -558,6 +558,11 @@ describe("notices", () => {
   });
 
   describe("the family's answer", () => {
+    it("nor when the family has to look their VIN up", () => {
+      const description = "Affected models are TF450-C, TF450-E, TF450-X and TF450RC Edition. Consumers can check if their VIN is included in this recall at https://www.triumphmotorcycles.com/owners/recalls.";
+      expect(checkResult({ description }, { question: "Q", kind: "model" }, "TF450-C")).toBe("CANT_TELL");
+    });
+
     it("a model CPSC names can't settle it when only certain units of it are recalled, the same as the verdict", () => {
       const description = "This recall involves certain VINs of Model Year 2023 Polaris RANGER XP 1000 / XP 1000 Crew, RANGER 1000 / 1000 Crew and Model Year 2024 Polaris Pro XD Full-Size Diesel Crew, Model Year 2024 Gravely ATLAS JSV-3400 and Model Year 2024 Bobcat UV34XL Gas off road vehicles.";
       expect(checkResult({ description }, { question: "Q", kind: "model" }, "JSV-3400")).toBe("CANT_TELL");

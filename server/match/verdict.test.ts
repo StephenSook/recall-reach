@@ -327,6 +327,44 @@ describe("a record that recalls only certain units of a model it names", () => {
   });
 });
 
+describe("a record where the model alone can't settle it", () => {
+  // Each is verbatim from the recall named.
+  it.each([
+    ["26763, check the VIN", "Consumers can check if their VIN is included in this recall at https://www.triumphmotorcycles.com/owners/recalls."],
+    ["27064, a VIN range", "The VIN Numbers for the recalled vehicles range from"],
+    ["24196, a serial range", "The serial range of the recalled Intimidator UTVs is 000000 to 014034."],
+    ["24745, dates", "Only these models sold during the dates identified below are included in this recall."],
+    ["24360, manufacturing dates", "The following models and manufacturing dates are included in this recall:"],
+    ["25307, a purchase history", 'Consumers can identify whether they have a recalled faucet by searching their Amazon purchase history for "Vfauosit"'],
+  ])("reads %s as limited", (_about, description) => {
+    expect(limitedWithinModel(description)).toBe(true);
+  });
+
+  it("makes naming a model in 26763 a scope gap", () => {
+    const description = "Affected models are TF450-C, TF450-E, TF450-X and TF450RC Edition. Consumers can check if their VIN is included in this recall at https://www.triumphmotorcycles.com/owners/recalls.";
+    expect(verdictFor({ ...BREZZA, title: "Triumph Recalls Motorcycles", description }, { title: "Triumph TF450-C motorcycle" })).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
+  });
+
+  it("doesn't call a recall one model when its list is elsewhere", () => {
+    const description = "This recall involves Acme swings, model SW100, sold in black and white. Additional model numbers can be found at www.acme.example.";
+    const verdict = verdictFor({ ...BREZZA, title: "Acme Recalls Swings", description, products: [{ ...BREZZA.products[0], name: "Swings" }] }, { title: "Acme black white swing" });
+    expect(verdict.verdict).toBe("SCOPE_GAP");
+  });
+});
+
+describe("fullScopeInRecord, on wordings CPSC hasn't used yet", () => {
+  it.each([
+    "The affected model numbers are posted at https://acme.example/recall.",
+    "Visit https://acme.example/recall to see the affected model numbers.",
+  ])("reads an address beside the numbers as incomplete: %s", (description) => {
+    expect(fullScopeInRecord({ description })).toBe(false);
+  });
+
+  it("doesn't count an address that says nothing about which units", () => {
+    expect(fullScopeInRecord({ description: "The products are sold in stainless steel, white and 13 other colors, which can be found at www.agarangeusa.com and www.lacornueusa.com." })).toBe(true);
+  });
+});
+
 describe("fullScopeInRecord, on CPSC's own words", () => {
   // Each is verbatim from the recall named. Read against all 1,855 descriptions from 2022 on.
   it.each([

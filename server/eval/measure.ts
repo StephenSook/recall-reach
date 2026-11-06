@@ -9,6 +9,8 @@ import { runShopCheck } from "../match/run";
 import type { Strength, Verdict } from "../match/verdict";
 import { createContactCipher } from "../privacy/contactCipher";
 import { score, scoreStatedModels, type Decision, type EvalPair, type EvalResults } from "./score";
+import { parseRecalls } from "../cpsc/schema";
+import { limitedWithinModel } from "../match/verdict";
 
 export * from "./score";
 
@@ -59,10 +61,15 @@ export async function runEval(db: Db, input: { pairs: EvalPair[]; recalls: unkno
   };
   // Run after the rates above are settled, so these can't touch them.
   const stated = input.statedModels ? await decidePairs(db, input.statedModels.pairs, input.statedModels.recalls) : null;
+  const limited = new Set(
+    parseRecalls(input.statedModels?.recalls ?? [])
+      .valid.filter((v) => limitedWithinModel(v.recall.description))
+      .map((v) => v.recall.recallNumber),
+  );
   const statedModels = input.statedModels && stated
     ? {
         statedModels: {
-          matcher: scoreStatedModels(input.statedModels.pairs, (p) => stated.get(p.pairId) ?? null),
+          matcher: scoreStatedModels(input.statedModels.pairs, (p) => stated.get(p.pairId) ?? null, limited),
           baseline: scoreStatedModels(input.statedModels.pairs, (p) => (stated.has(p.pairId) ? { verdict: "MATCH", strength: "CONFIRMED" } : null)),
         },
       }

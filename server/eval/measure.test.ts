@@ -104,9 +104,11 @@ describe("the eval on the real labels", () => {
     expect(load("pairs.csv").split("\n")[0]).toBe("pair_id,recall_number,listing_title,label,split");
   });
 
-  it("a title stating a recalled model is confirmed, and one a character off is not", () => {
+  it("a title stating a recalled model is confirmed unless CPSC limits the recall within that model, and one a character off is not", () => {
     const { matcher, baseline } = JSON.parse(load("results.json")).statedModels;
-    expect(matcher.confirmed.k / matcher.confirmed.n).toBeGreaterThan(0.9);
+    expect((matcher.confirmed.k + matcher.limitedAsks) / matcher.confirmed.n).toBeGreaterThan(0.9);
+    expect(matcher.limitedAsks).toBeGreaterThan(0);
+    expect(baseline.limitedAsks).toBe(0); // word match never asks
     expect(matcher.offByOneConfirmed.k).toBe(0);
     expect(baseline.offByOneConfirmed.k).toBe(baseline.offByOneConfirmed.n); // word match can't tell them apart
   });

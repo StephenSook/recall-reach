@@ -132,8 +132,17 @@ function words(text: string): Set<string> {
   return out;
 }
 
-/** Part of a line, by an identifier CPSC doesn't list. It says the list is elsewhere, and that a model alone can't settle it. */
-const CERTAIN_UNITS = String.raw`\bcertain\s+(?:models?|VINs?|vehicle identification numbers?|serial numbers?|lots?|lot codes?|date codes?|units)\b|\bqualifying serial\b`;
+// One unit at a time: CPSC's text sends you to check this unit, or says only certain units are in. The list isn't in the
+// record and a model named in it doesn't settle it, so these feed both fullScopeInRecord and limitedWithinModel.
+const ONE_UNIT_AT_A_TIME: RegExp[] = [
+  // Go and look it up.
+  /\b(?:to see if|to determine (?:if|whether|which)|determine (?:if|whether)|to verify|to confirm|verify (?:if|whether|that)|(?:can|should|must|need to)\s+(?:also\s+)?check\b|check (?:if|whether|to see|to determine|for VINs?)|identify whether|unable to determine whether)\b/i,
+  /\benter (?:their|your|the)\b[^.]{0,40}\b(?:VIN|serial|model)\b|\btype in\b|\blook-?up tool\b|\bverification tool\b|\bonline questionnaire\b|\bmust be identified through\b|\brecall links?\b/i,
+  // Only the firm can say.
+  /\bcontact\b[^.]{0,80}\bto (?:confirm|determine|verify|identify)\b|\bby contacting\b/i,
+  // Part of a line, by an identifier CPSC doesn't list.
+  /\bcertain\s+(?:models?|VINs?|vehicle identification numbers?|serial numbers?|lots?|lot codes?|date codes?|units)\b|\bqualifying serial\b/i,
+];
 
 // The ways CPSC's text says the real list isn't in it, read against all 1,855 descriptions from 2022 on. A false
 // "incomplete" costs a question. A false "full" can tell a family a recalled product doesn't match, so unsure reads incomplete.
@@ -145,16 +154,14 @@ const SCOPE_ELSEWHERE: RegExp[] = [
   /\bthe following\b[^.:\d]*\.\s*$/i,
   /\b(?:table|chart)\s+below\b|\bfollowing (?:table|chart)\b/i,
   /\b(?:identified|shown)\s+below\b|\bsee below\b|\b(?:numbers?|models?|codes?|ranges?)\s+below\b|\bthe below\b|\b(?:photos?|photographs?|images?|pictures?)\s+below\b/i,
-  // Go and look it up.
-  /\b(?:to see if|to determine (?:if|whether|which)|determine (?:if|whether)|to verify|to confirm|verify (?:if|whether|that)|(?:can|should|must|need to)\s+(?:also\s+)?check\b|check (?:if|whether|to see|to determine|for VINs?)|identify whether|unable to determine whether)\b/i,
-  /\benter (?:their|your|the)\b[^.]{0,40}\b(?:VIN|serial|model)\b|\btype in\b|\blook-?up tool\b|\bverification tool\b|\bonline questionnaire\b|\bmust be identified through\b|\brecall links?\b/i,
+  ...ONE_UNIT_AT_A_TIME,
   // The list or the details are on someone's site.
   /\bfor a (?:full |complete )?list\b|\b(?:full|complete|entire) list\b[^.]{0,100}(?:\bavailable\b|\bfound\b|\bweb ?site\b|www\.|https?:)|\blist of\b[^.]{0,80}\b(?:available|found)\b/i,
   /\b(?:numbers?|models?|codes?|units?)\b[^.]{0,80}\b(?:can be found|are|is) (?:at|on) (?:www\.|https?:|the firm|[^.]{0,30}web ?site)/i,
   /\b(?:information|photos|images|details|instructions)\b[^.]{0,80}\b(?:available|found) (?:at|on)\b[^.]{0,60}(?:www\.|https?:|web ?site)|\brecall web ?site\b/i,
-  // Only the firm can say.
-  /\bcontact\b[^.]{0,80}\bto (?:confirm|determine|verify|identify)\b|\bby contacting\b/i,
-  new RegExp(CERTAIN_UNITS, "i"),
+  // An address beside the words for which units, in either order.
+  /\b(?:models?|serials?|lots?|VINs?|numbers?|codes?|units?|lists?)\b[^.]{0,120}(?:www\.|https?:)/i,
+  /(?:www\.|https?:)\S*[^.]{0,80}\b(?:models?|serials?|lots?|VINs?|numbers?|codes?|units?|lists?)\b/i,
 ];
 
 /** False when CPSC's text points somewhere else for the models or lots, so the API text is not the whole scope. */
@@ -167,15 +174,14 @@ export function fullScopeInRecord(recall: Pick<Recall, "description">): boolean 
 
 const IN_A_MONTH_OR_YEAR = "(?:\\d|january|february|march|april|may|june|july|august|september|october|november|december)";
 const PART_OF_A_MODEL = new RegExp(
-  `\\bonly\\b[^.]*\\b(?:manufactured|produced|made|date codes?|lot|serial|batch)\\b` +
+  `\\bonly\\b[^.]*\\b(?:manufactured|produced|made|dates?|date codes?|lot|serial|batch)\\b` +
     `|\\bmanufactured\\s+(?:from|between|before|after|during|in\\s+${IN_A_MONTH_OR_YEAR})` +
-    `|\\b(?:date|lot|batch|serial)\\s*(?:code|number)s?\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b` +
-    `|${CERTAIN_UNITS}`,
+    `|\\b(?:(?:date|lot|batch|serial)\\s*(?:code|number)s?|VINs?|serial\\s+ranges?|manufacturing\\s+dates?)\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b`,
   "i",
 );
 
 /** CPSC limits the recall to part of a model: a date, a lot, a serial range, certain VINs. The model alone can't show this unit is in it. */
-export const limitedWithinModel = (description: string) => PART_OF_A_MODEL.test(description);
+export const limitedWithinModel = (description: string) => PART_OF_A_MODEL.test(description) || ONE_UNIT_AT_A_TIME.some((pointer) => pointer.test(description));
 
 /** A sale on the recall's own calendar date needs a human: it may have been before the announcement. */
 export function salePath(orderedOn: string, recallDate: string): SalePath {
@@ -267,7 +273,7 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited) {
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",
