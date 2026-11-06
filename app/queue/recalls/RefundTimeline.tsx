@@ -69,7 +69,9 @@ export default function RefundTimeline({ timeline }: { timeline: Timeline }) {
     cls: `timeline-${s.tone}`,
   }));
   return (
-    <div className="refund-timeline" data-testid="refund-timeline" style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
+    // Read-only, and the list under it says the same in words, so that's what a screen reader or keyboard gets. Bryntum's
+    // own markup puts buttons inside a grid role, which a screen reader can't make sense of.
+    <div className="refund-timeline" data-testid="refund-timeline" inert style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
       <BryntumScheduler
         ref={setScheduler}
         readOnly

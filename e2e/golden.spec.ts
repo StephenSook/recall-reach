@@ -395,6 +395,10 @@ test.describe("a recall's refund windows", () => {
     await expect(timeline.locator(".b-sch-event")).toHaveCount(2);
     await expect(timeline.locator(".b-sch-event").first()).toContainText("Sold after the recall");
     await expect(timeline).toHaveCSS("opacity", "1");
+    // The chart is out of the accessibility tree, so the words must be there for anyone who needs them.
+    await expect(timeline).toHaveAttribute("inert", "");
+    await expect(page.getByTestId("timeline-list")).toBeVisible();
+    await expect(page.getByTestId("timeline-list")).toContainText("180 days end");
     const x = async (id: string) => (await page.getByTestId(id).boundingBox())?.x ?? 0;
     expect(await x("line-recall")).toBeGreaterThan(0);
     expect(await x("line-recall")).toBeLessThan(await x("line-today"));
