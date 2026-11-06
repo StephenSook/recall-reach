@@ -472,6 +472,28 @@ describe("refunds", () => {
       expect(pp.posts()).toEqual([]);
     });
 
+    it("holds when another repeat is refused while this one is getting ready", async () => {
+      const { r } = await noAnswer();
+      const pp = fakePayPal();
+      const racing: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "GET") await db.query("update refunds set repeat_refused_at = $2::timestamptz where id = $1", [r.refundId, SOON.toISOString()]);
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      expect(await refusal(again(r.refundId, racing, SOON))).toBe("CHECK_IN_PAYPAL");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("stays with PayPal even if a late answer replaces the words on the row", async () => {
+      const { r } = await noAnswer();
+      await again(r.refundId, fakePayPal({ refundSteps: [422] }).client, SOON);
+      await db.query("update refunds set failure = 'No clear answer from PayPal. Check it before trying again.' where id = $1", [r.refundId]);
+      const pp = fakePayPal();
+      expect(await read(r.refundId, pp.client, SOON)).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1" } });
+      expect(await refusal(again(r.refundId, pp.client, SOON))).toBe("CHECK_IN_PAYPAL");
+    });
+
     it("never frees the line: a new request id could refund the same sale twice", async () => {
       const { m, r } = await noAnswer();
       await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: SOON });
