@@ -22,7 +22,22 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
     rec = await readRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: id, recordKey });
   } catch (err) {
     if (err instanceof RefundRefused) notFound();
-    throw err;
+    // A passing failure shouldn't take the page away from someone, least of all when the page looked again by itself.
+    console.error("refund page could not read PayPal:", err instanceof Error ? err.name : "unknown error");
+    return (
+      <main className="page">
+        <header className="page-head">
+          <h1>Refund against PayPal</h1>
+        </header>
+        <p role="alert" className="alert" data-testid="read-failed">
+          PayPal did not answer just now, so the records can&apos;t be compared yet. This page will look again.
+        </p>
+        <LookAgain everyMs={5_000} forMs={180_000} />
+        <p>
+          <a href="/queue">Back to the queue</a>
+        </p>
+      </main>
+    );
   }
   return (
     <main className="page">
