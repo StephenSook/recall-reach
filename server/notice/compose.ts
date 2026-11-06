@@ -4,7 +4,7 @@
 import type { WrittenQuestion } from "../agent/questionStore";
 import { quoted, recallWords } from "../agent/quote";
 import type { Recall } from "../cpsc/schema";
-import { modelsNamedInText, modelTokens } from "../match/verdict";
+import { fullScopeInRecord, modelsNamedInText, modelTokens } from "../match/verdict";
 
 export interface NoticeContext {
   recall: Pick<Recall, "recallNumber" | "url" | "products" | "hazards" | "remedies">;
@@ -88,16 +88,19 @@ export function checkQuestion(
   recall: Pick<Recall, "recallNumber" | "title" | "description"> & Partial<Pick<Recall, "products" | "hazards" | "remedies">>,
   written?: WrittenQuestion | null,
 ): CheckQuestion {
-  if (written && quoted(recallWords(recall), written.evidence)) {
+  // With CPSC's list elsewhere no answer about a feature can settle it, so only the page with the list is worth asking about.
+  const full = fullScopeInRecord(recall);
+  if (full && written && quoted(recallWords(recall), written.evidence)) {
     return { question: written.question, kind: "written", evidence: written.evidence, noRulesOut: written.everyRecalledUnit && written.accepted };
   }
   const curated = CURATED[recall.recallNumber];
-  if (curated && recall.description.includes(curated.evidence)) return { question: curated.question, kind: "yes_no" };
+  if (full && curated && recall.description.includes(curated.evidence)) return { question: curated.question, kind: "yes_no" };
   // A partial list would read as "yours isn't on it", so it says all CPSC names when it says any.
   const text = `${recall.title} ${recall.description}`;
   if (modelTokens(text).length > 0) {
     const models = [...new Set([...modelTokens(text), ...modelsNamedInText(text)])];
-    return { question: `What model number is on the label? CPSC lists ${models.join(", ")}.`, kind: "model" };
+    const named = full ? `CPSC lists ${models.join(", ")}.` : `This record names ${models.join(", ")}. CPSC's notice has the full list.`;
+    return { question: `What model number is on the label? ${named}`, kind: "model" };
   }
   return { question: "Does yours look like the product on CPSC's recall page?", kind: "general" };
 }

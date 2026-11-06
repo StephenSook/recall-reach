@@ -72,6 +72,29 @@ describe("composeCheckRequest", () => {
 });
 
 describe("checkQuestion", () => {
+  describe("when CPSC's list is elsewhere", () => {
+    // 26724's own words.
+    const LIST_CUT_OFF = "The following model numbers and date codes are included in the recall:";
+    const elsewhere = (n: string) => ({ ...recall(n), description: `${recall(n).description} ${LIST_CUT_OFF}` });
+    const stored = { question: "Does your high chair convert into a table and chair set?", evidence: "convert into a table and chair set", everyRecalledUnit: true, accepted: true };
+    const PLAIN = { question: "Does yours look like the product on CPSC's recall page?", kind: "general" };
+
+    it("doesn't ask a question Claude wrote earlier: no answer to it could settle anything", () => {
+      expect(checkQuestion(recall("27040"), stored).kind).toBe("written");
+      expect(checkQuestion(elsewhere("27040"), stored)).toEqual(PLAIN);
+    });
+
+    it("nor a hand-written one", () => {
+      expect(checkQuestion(recall("27040")).kind).toBe("yes_no");
+      expect(checkQuestion(elsewhere("27040"))).toEqual(PLAIN);
+    });
+
+    it("asks for the model number without reading as the whole list", () => {
+      const q = checkQuestion({ recallNumber: "1", title: "Acme Recalls Swings", description: `Model 4M-005. ${LIST_CUT_OFF}` });
+      expect(q).toEqual({ question: "What model number is on the label? This record names 4M-005. CPSC's notice has the full list.", kind: "model" });
+    });
+  });
+
   it("lists every model CPSC names, including those that read like a measure or have no letter", () => {
     const q = checkQuestion({ recallNumber: "1", title: "4moms Recalls Swings", description: "MamaRoo versions 1.0 and 2.0, model 4M-005 or 4M-012; version 3.0, model 1026; and version 4.0, model 1037." });
     expect(q).toMatchObject({ kind: "model" });
