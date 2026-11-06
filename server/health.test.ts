@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchTestCert, paypalHeaders } from "../test/paypalSigner";
 import { testDb } from "../test/pglite";
 import { pullRecalls } from "./cpsc/pull";
@@ -123,6 +123,23 @@ describe("getHealth", () => {
         await swept("ok", new Date(NOW.getTime() - 9 * 86_400_000).toISOString(), "27072");
         await swept("failed", new Date(NOW.getTime() - 3_600_000).toISOString(), "27040");
         expect(await check()).toMatchObject({ ok: true, market: { fresh: false } });
+      });
+
+      it("doesn't call the app down when only this query fails", async () => {
+        await allElseWell();
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const flaky: Queryable = {
+            exec: (sql) => db.exec(sql),
+            query: async (sql: string, params?: unknown[]) => {
+              if (sql.includes("recall_sweeps")) throw new Error("statement timeout");
+              return db.query(sql, params) as never;
+            },
+          };
+          expect(await getHealth(flaky, env, undefined, NOW)).toMatchObject({ ok: true, checks: { database: true }, market: { lastOkAt: null, fresh: false } });
+        } finally {
+          error.mockRestore();
+        }
       });
 
       it("isn't fresh with no search yet", async () => {

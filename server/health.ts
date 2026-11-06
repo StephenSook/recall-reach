@@ -65,6 +65,17 @@ const MAX_REPLAY_AGE_MS = 48 * 3_600_000;
 /** Each recall is searched again after 7 days and nothing is due until then, so a healthy search can go quiet for most of a week. */
 const MAX_MARKET_AGE_MS = 8 * 86_400_000;
 
+/** Its own try, so this query failing can't call the rest of the app down. */
+async function lastMarketSearch(db: Queryable): Promise<string | null> {
+  try {
+    const { rows } = await db.query<{ at: unknown }>("select max(searched_at) as at from recall_sweeps where status = 'ok'");
+    return iso(rows[0]?.at);
+  } catch (err) {
+    console.error("health check: market query failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 function recordKeyWorks(secret: string | undefined): boolean {
   if (!secret) return false;
   try {
@@ -108,8 +119,7 @@ export async function getHealth(
     const polledAt = iso(lastPoll.rows[0]?.finished_at);
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
-    const market = await db.query<{ at: unknown }>("select max(searched_at) as at from recall_sweeps where status = 'ok'");
-    const marketOkAt = iso(market.rows[0]?.at);
+    const marketOkAt = await lastMarketSearch(db);
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
     const checks = {
