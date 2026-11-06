@@ -51,6 +51,8 @@ export function brandOf(title: string): string | null {
   if (!m) return null;
   const firm = m[1].split(",")[0].trim();
   const words = firm.split(/\s+/).filter((w) => !COMPANY_WORDS.has(w.toLowerCase().replace(/\.$/, "")));
+  // "Little Loves & Co." loses "Co.", and the "&" that joined it goes too.
+  while (/^(?:&|and)$/i.test(words.at(-1) ?? "")) words.pop();
   return words.length > 0 ? words.join(" ") : null;
 }
 
@@ -130,9 +132,35 @@ function words(text: string): Set<string> {
   return out;
 }
 
-/** False when CPSC says the models or lots are listed elsewhere, so the API text is not the whole scope. */
+// The ways CPSC's text says the real list isn't in it, read against all 1,855 descriptions from 2022 on. A false
+// "incomplete" costs a question. A false "full" can tell a family a recalled product doesn't match, so unsure reads incomplete.
+const SCOPE_ELSEWHERE: RegExp[] = [
+  // A list announced, then missing.
+  /listed below|included in this recall:/i,
+  /:\s*$/,
+  /\b[Ii]ncluded in the recall:\s+(?:The|A|An|All|Each|Consumers)\b/,
+  /\bthe following\b[^.:\d]*\.\s*$/i,
+  /\b(?:table|chart)\s+below\b|\bfollowing (?:table|chart)\b/i,
+  /\b(?:identified|shown)\s+below\b|\bsee below\b|\b(?:numbers?|models?|codes?|ranges?)\s+below\b|\bthe below\b|\b(?:photos?|photographs?|images?|pictures?)\s+below\b/i,
+  // Go and look it up.
+  /\b(?:to see if|to determine (?:if|whether|which)|determine (?:if|whether)|to verify|to confirm|verify (?:if|whether|that)|(?:can|should|must|need to)\s+(?:also\s+)?check\b|check (?:if|whether|to see|to determine|for VINs?)|identify whether|unable to determine whether)\b/i,
+  /\benter (?:their|your|the)\b[^.]{0,40}\b(?:VIN|serial|model)\b|\btype in\b|\blook-?up tool\b|\bverification tool\b|\bonline questionnaire\b|\bmust be identified through\b|\brecall links?\b/i,
+  // The list or the details are on someone's site.
+  /\bfor a (?:full |complete )?list\b|\b(?:full|complete|entire) list\b[^.]{0,100}(?:\bavailable\b|\bfound\b|\bweb ?site\b|www\.|https?:)|\blist of\b[^.]{0,80}\b(?:available|found)\b/i,
+  /\b(?:numbers?|models?|codes?|units?)\b[^.]{0,80}\b(?:can be found|are|is) (?:at|on) (?:www\.|https?:|the firm|[^.]{0,30}web ?site)/i,
+  /\b(?:information|photos|images|details|instructions)\b[^.]{0,80}\b(?:available|found) (?:at|on)\b[^.]{0,60}(?:www\.|https?:|web ?site)|\brecall web ?site\b/i,
+  // Only the firm can say.
+  /\bcontact\b[^.]{0,80}\bto (?:confirm|determine|verify|identify)\b|\bby contacting\b/i,
+  // Part of a line, by an identifier CPSC doesn't list.
+  /\bcertain\s+(?:models?|VINs?|vehicle identification numbers?|serial numbers?|lots?|lot codes?|date codes?|units)\b|\bqualifying serial\b/i,
+];
+
+/** False when CPSC's text points somewhere else for the models or lots, so the API text is not the whole scope. */
 export function fullScopeInRecord(recall: Pick<Recall, "description">): boolean {
-  return !/listed below|included in this recall:/i.test(recall.description);
+  const text = recall.description;
+  if (SCOPE_ELSEWHERE.some((pointer) => pointer.test(text))) return false;
+  // "Certain" of a product, with no model number anywhere to say which.
+  return !(/\binvolves certain\b/i.test(text) && modelTokens(text).length === 0);
 }
 
 const IN_A_MONTH_OR_YEAR = "(?:\\d|january|february|march|april|may|june|july|august|september|october|november|december)";

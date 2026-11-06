@@ -21,6 +21,7 @@ describe("brandOf", () => {
     expect(brandOf(BREZZA.title)).toBe("Baby Brezza");
     expect(brandOf(PAPABLIC.title)).toBe("Papablic");
     expect(brandOf(COSTWAY.title)).toBe("Costway");
+    expect(brandOf("Little Loves & Co. Recalls Youth Clothing with Drawstrings")).toBe("Little Loves");
   });
 
   it("returns null when the title names no firm", () => {
@@ -300,6 +301,67 @@ describe("verdictFor", () => {
       { dateFilter: false },
     );
     expect(v.verdict).toBe("MATCH");
+  });
+});
+
+describe("fullScopeInRecord, on CPSC's own words", () => {
+  // Each is verbatim from the recall named. Read against all 1,855 descriptions from 2022 on.
+  it.each([
+    ["26724, a list cut off", "The model number and date code are printed on the neck tag. The following model numbers and date codes are included in the recall:"],
+    ["26735, a list cut off", "The following SKUs are included in the recall and are located on the side of the product packaging:"],
+    ["26734, a list cut off", "Recalled units have a model number beginning with PB. The model numbers in the recall include:"],
+    ["23156, a new sentence where the list should start", "The following 15 scents of candles are included in the recall: The bag containing potassium hydroxide has a blue label"],
+    ["26731, ends on the following", "and the following FD numbers which are visible on the underside of the Bluetooth speakers (sold in pairs)."],
+    ["26763, a look-up", "Consumers can check if their VIN is included in this recall at https://www.triumphmotorcycles.com/owners/recalls"],
+    ["26458, a look-up", "Consumers can check if their VIN is included in the recall at https://powersports.honda.com/recalls."],
+    ["24288, a look-up with no address", "Consumers can check if their VIN is included in the recall at Honda Powersports & Motorcycle Recalls."],
+    ["25338, a look-up", "Consumers should check their serial number at https://www.anker.com/product-recalls to determine whether their power bank is included in the recall."],
+    ["24260, a look-up", "To see if your product is subject to this recall, visit www.goodmanmfg.com/package-recall."],
+    ["23710, enter a number", "Consumers can enter their VIN at www.polaris.com/en-us/off-road-recalls/ to see if their snowmobile is included in any recalls."],
+    ["24069, a tool", 'are subject to the recall must be identified through the use of the "Is my BlendJet 2 Recalled?" tool located at www.blendjet.com/safetyandrecall.'],
+    ["23073, a questionnaire", "by completing the online questionnaire at www.simu.com/us/dmi6hzrecall or by contacting SIMU."],
+    ["99036, the firm will say", "The manufacturers will help consumers determine if the nets need to be replaced."],
+    ["24021, a dealer", "Consumers should visit authorized dealers who will disassemble and verify if a binding is included in this recall."],
+    ["24377, numbers at a site", "The serial numbers of tractors included in this recall can be found at www.deere.com."],
+    ["25124, a list at a site", "Consumers are urged to visit https://www.ariensco.com/safetyrecall for a list of recalled units."],
+    ["24256, a list at a site", "A full list of serial numbers included in this recall are on the firm's website at www.kawasakienginesusa.com/product-recall.html."],
+    ["23172, a list at a site", "This recall involves The Laundress Fabric Conditioner products, a complete list of which is available at www.TheLaundressRecall.com."],
+    ["24314, a list at a site", "A list of affected special order numbers can be found at www.grandrapidschair.com/customer-service/product-safety-recall"],
+    ["27055, details at a site", "Additional photos and model-identifying information are available on the recall website."],
+    ["25157, directions at a site", "Please visit the Triangle Tube recall website for directions on identifying if you have a recalled boiler by serial number"],
+    ["27041, ask the firm", "Consumers should contact Lithonia Lighting to confirm their Luminaire with adjustable tilt mounting arms are included in the recall."],
+    ["23076, ask the firm", "Consumers can identify whether their Nomad is included in the recall by contacting BLU3 and providing the serial number for their Nomad."],
+    ["26776, numbers below that never come", "The model and serial number are located inside the air conditioners. Only some serial numbers below have motors that are included in this recall."],
+    ["24745, dates below that never come", "Only these models sold during the dates identified below are included in this recall."],
+    ["26372, a table", "Only products with serial numbers listed in the table below are subject to recall."],
+    ["25009, a chart", "The following chart includes a complete list of Snuga Swing models included in the recall."],
+    ["26054, certain VINs", "This recall involves certain VINs of Polaris Model Year 2025-2026 Ranger XP 1000 NorthStar and Ranger Crew XP 1000 NorthStar ROVs."],
+    ["26203, certain serial numbers", "Vision models T9800, TF20, T40, and T80 treadmills with certain serial numbers."],
+    ["23132, certain models", "This recall involves certain models of Zinus SmartBase Euro Slats metal mattress platform bed frames."],
+    ["24127, certain, and no model number anywhere", 'This recall involves certain Awesafe biometric gun safes. The recalled gun safes are black, can fit two pistols, and have the brand name "Awesafe" on the front.'],
+    ["25338, qualifying", "Only model number A1263 power banks sold in the U.S. with qualifying serial numbers are included in the recall."],
+  ])("reads %s as incomplete", (_about, description) => {
+    expect(fullScopeInRecord({ description })).toBe(false);
+  });
+
+  it.each([
+    ["26688, the list right there", "The following model numbers are included in the recall: Product Name Model Number Baby Jumper jumper-01 Baby Swing swing-1 2-in-1 Jumper & Swing-A jumper-01"],
+    ["27076, a table right there", "The following styles and models are included in the recall:  Style Name\tModel Number Darkhouse\tMAT-030 Arean\tMAT-031"],
+    ["22047, names and no digits", "Models include: Eclipse, Infinity, Kwiklift, MR and HR. Model names are located on the"],
+    ["24209, numbers in the sentence", 'The cribs have one of the following SKU numbers 246898, 534758, 534987, 535020 and 405394 along with the brand "Crate&Barrel" listed on a label located on the mattress support board.'],
+    ["27010, certain, with its models named", "This recall involves certain Walmart Expert Grill metal wire bristle grill brushes. The brushes have black plastic or stainless-steel handles. Some brushes come with metal scraper attached. The following model numbers are included in this recall and can be found on the product packaging or a sticker/tag attached to the brush: Model No. Brush Description Distribution Dates EX5607031616002"],
+    ["25109, certain, with its models named", "This recall involves certain Matrix-brand Training Cycles models CXP-03, CXC-02, CXM-03, CXV and CXM-02."],
+    ["26791, battery disposal", "Before taking your battery or device to a HHW collection center, contact it ahead of time and ask whether it accepts recalled lithium-ion batteries."],
+    ["26340, CPSC's own site", "CPSC's Anchor It! website, www.anchorit.gov/, has educational materials available to the public"],
+    ["23121, an address printed on the label", 'The sewn-in neck label displays the garment size and "The Oaks Apparel," "Est. 2014" and "www.oaksapparel.com."'],
+    ["26756, colors at a site", "The products are sold in stainless steel, white and 13 other colors, which can be found at www.agarangeusa.com and www.lacornueusa.com."],
+    ["26699, a site mentioned", "The model number LTBBHG006 does not appear on the product but it was included in the Best Buy website listing."],
+    ["25036, where the model is printed", "The model number is located on the manufacturer's label on the underside of each unit."],
+    ["24013, a safety step", "Consumers should always check that the inner pot is not filled beyond two-thirds capacity when pressure cooking,"],
+    ["26330, an app that also says which model", "You can also determine which model you have by connecting your bicycle to the Specialized app."],
+    ["26623, a word that happens to be below", 'and a picture of the Space king characters below it. Only the copper cups are included in this recall.'],
+  ])("reads %s as full", (_about, description) => {
+    expect(fullScopeInRecord({ description })).toBe(true);
   });
 });
 

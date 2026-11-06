@@ -182,6 +182,11 @@ describe("seedDemoShop", () => {
       expect(row.verdict).toBe("SCOPE_GAP");
     });
 
+    it("the clothing lot asks rather than clears, against a recall of youth clothing with its list cut off", async () => {
+      const { shopId } = await seed(fakePayPal().client);
+      expect((await lineFor(shopId, "26724", /clothing lot/))[0]).toMatchObject({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+    });
+
     it("NEAR MISS: the same brand, a different product, clears with its reason", async () => {
       const { shopId } = await seed(fakePayPal().client);
       expect((await lineFor(shopId, "27072", /Formula Pro/))[0]).toMatchObject({ verdict: "CLEARED", join_state: "IDENTIFIED" });
