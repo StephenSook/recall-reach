@@ -5,6 +5,7 @@ import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 import { BUSINESS_TIME_ZONE_SQL } from "../time/businessDay";
+import type { SearchCoverage } from "../paypal/transactions";
 
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
 const TOP_CANDIDATES = 20;
@@ -106,6 +107,8 @@ export async function runShopCheck(
     dateFilter?: boolean;
     /** True only if PayPal was read for this run. Otherwise an absent payment proves nothing. */
     paypalSearched?: boolean;
+    /** What PayPal's search really covered, when one ran. */
+    search?: SearchCoverage;
     /** Check this one record only. It says nothing about the shop's coverage, so no run is recorded. */
     onlyRecordId?: string;
     failedMonths?: string[];
@@ -193,11 +196,12 @@ export async function runShopCheck(
       );
     }
     const dates = lines.map((l) => l.ordered_on).sort();
-    const searchedFrom = dates[0] ?? null;
+    const searchedFrom = opts.search?.from.slice(0, 10) ?? dates[0] ?? null;
+    const searchedTo = opts.search?.to.slice(0, 10) ?? opts.today;
     const { rows } = opts.onlyRecordId ? { rows: [] } : await tx.query<{ id: string }>(
-      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched)
-       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10) returning id`,
-      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, opts.today, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched],
+      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read)
+       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13) returning id`,
+      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0],
     );
     return {
       runId: rows[0]?.id ?? null,
@@ -206,7 +210,7 @@ export async function runShopCheck(
       scopeGaps: counts.SCOPE_GAP,
       cleared: counts.CLEARED,
       searchedFrom,
-      searchedTo: opts.today,
+      searchedTo,
       unidentifiedPayments: joined.unidentifiedPayments,
       candidatesNotChecked,
     };

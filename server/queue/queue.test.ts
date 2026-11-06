@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { QUESTION_VERSION } from "../agent/questionStore";
 import { readItem } from "../agent/sources";
@@ -19,6 +20,8 @@ function fakePayPal(): PayPalClient {
   const orders = new Map<string, unknown>();
   return {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
+      const found = answerSearch(path, opts);
+      if (found) return found;
       if (method === "POST") {
         const id = `RAWORDERID${orders.size}`;
         const unit = (opts.body as { purchase_units: { amount: unknown }[] }).purchase_units[0];
@@ -93,9 +96,8 @@ describe("loadQueue", () => {
     expect(order).toEqual([...order].sort((a, b) => ["MATCH", "SCOPE_GAP", "CLEARED"].indexOf(a) - ["MATCH", "SCOPE_GAP", "CLEARED"].indexOf(b)));
   });
 
-  it("links each demo sale to the capture the seed made, with PayPal's history not searched", async () => {
+  it("links each demo sale to its payment, from PayPal's history or the capture just made", async () => {
     const q = await loadQueue(db, shopId, "session-1");
-    expect(q.coverage?.paypalSearched).toBe(false);
     const sales = q.rows.filter((r) => !r.isListing);
     expect(sales.length).toBeGreaterThanOrEqual(3);
     for (const r of sales) expect(r.joinState, r.recallNumber).toBe("IDENTIFIED");
@@ -103,7 +105,7 @@ describe("loadQueue", () => {
 
   it("carries the run's coverage", async () => {
     const q = await loadQueue(db, shopId, "session-1");
-    expect(q.coverage).toMatchObject({ recallsChecked: 55, searchedTo: TODAY, unidentifiedPayments: 0, paypalSearched: false, candidatesNotChecked: 0 });
+    expect(q.coverage).toMatchObject({ recallsChecked: 55, searchedTo: TODAY, unidentifiedPayments: 1, paypalSearched: true, candidatesNotChecked: 0 });
     expect(q.shop).toEqual({ name: "DEMO SHOP", kind: "DEMO" });
   });
 
@@ -233,8 +235,8 @@ describe("loadQueue", () => {
 
   describe("a sale with a question and then a safety notice", () => {
     const untilConfirmed = async () => {
-      await db.query("update recall_matches set verdict = 'SCOPE_GAP', strength = 'BRAND' where recall_id = (select recall_id from recalls where recall_number = '27072') and shop_id = $1", [shopId]);
       const { matchId } = await row("27072");
+      await db.query("update recall_matches set verdict = 'SCOPE_GAP', strength = 'BRAND' where id = $1", [matchId]);
       const asked = await prepareNotice(db, { shopId, matchId });
       await markSent(db, { shopId, noticeId: asked.noticeId });
       await db.query("update recall_matches set verdict = 'MATCH', strength = 'CONFIRMED' where id = $1", [matchId]);
@@ -243,7 +245,7 @@ describe("loadQueue", () => {
 
     it("is one row, showing the question until the seller approves the notice", async () => {
       const { asked } = await untilConfirmed();
-      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072");
+      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072" && r.verdict !== "CLEARED"); // the near miss clears
       expect(rows).toHaveLength(1);
       expect(rows[0].notice).toMatchObject({ id: asked.noticeId, kind: "CHECK_REQUEST" });
     });
@@ -252,7 +254,7 @@ describe("loadQueue", () => {
       const { matchId, asked } = await untilConfirmed();
       await db.query("update notices set check_result = 'MATCHES', responded_at = now() where id = $1", [asked.noticeId]);
       const notice = await prepareNotice(db, { shopId, matchId });
-      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072");
+      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072" && r.verdict !== "CLEARED"); // the near miss clears
       expect(rows).toHaveLength(1);
       expect(rows[0].notice).toMatchObject({ id: notice.noticeId, kind: "SAFETY_NOTICE", state: "PREPARED" });
       expect(rows[0].earlierQuestionResult).toBe("MATCHES");

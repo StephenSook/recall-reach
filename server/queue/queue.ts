@@ -64,6 +64,8 @@ export interface QueueData {
     unidentifiedPayments: number;
     paypalSearched: boolean;
     candidatesNotChecked: number;
+    searchWindows: number;
+    failedWindows: number;
   } | null;
   rows: QueueRow[];
   /** Sales made just now that PayPal has not told us about yet. */
@@ -101,8 +103,10 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     unidentified_payments: number;
     paypal_searched: boolean;
     candidates_not_checked: number;
+    search_windows: number;
+    failed_windows: number;
   }>(
-    `select recalls_checked, searched_from, searched_to, unidentified_payments, paypal_searched, candidates_not_checked
+    `select recalls_checked, searched_from, searched_to, unidentified_payments, paypal_searched, candidates_not_checked, search_windows, failed_windows
      from shop_runs where shop_id = $1 order by finished_at desc limit 1`,
     [shopId],
   );
@@ -233,6 +237,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
           unidentifiedPayments: c.unidentified_payments,
           paypalSearched: c.paypal_searched,
           candidatesNotChecked: c.candidates_not_checked,
+          searchWindows: c.search_windows,
+          failedWindows: c.failed_windows,
         }
       : null,
     rows: out,

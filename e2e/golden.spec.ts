@@ -2,7 +2,13 @@
 // makes real sandbox captures and one real sandbox refund.
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
-const recall = (page: Page, number: string) => page.locator(`article[data-recall="${number}"]`);
+/** A notice, a refund, a mixed basket, a scope gap, a can't-tell, two sales that could be one order, and the shelf item. */
+const DEMO_CARDS = 8;
+
+const recall = (page: Page, number: string) => {
+  const cards = page.locator(`article[data-recall="${number}"]`);
+  return number === "27027" ? cards.filter({ hasNotText: "like new" }) : cards; // the mixed basket is the same recall
+};
 
 // A seller at a shop counter: every window shows. The wide-screen grid has its own test below.
 test.use({ viewport: { width: 390, height: 844 } });
@@ -68,7 +74,7 @@ async function asFamily<T>(browser: Browser, url: string, act: (page: Page) => P
 
 test("a real recall reaches the queue, the family is told, and one eligible sale is refunded", async ({ page, browser }) => {
   await startDemoShop(page);
-  await expect(page.getByTestId("coverage")).toContainText("PayPal's history was not searched.");
+  await expect(page.getByTestId("coverage")).toContainText(/Searched \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\. \d+ payments? couldn't be identified\./);
 
   // NOTICE ONLY: this week's real Baby Brezza recall, sold before it.
   const brezza = recall(page, "27072");
@@ -149,7 +155,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await startDemoShop(page);
   // One card per sale. "Costway high chair" also comes close to other high chair recalls, and they stay
   // under its one card rather than each asking the family a question.
-  await expect(page.getByTestId("needs").locator("article")).toHaveCount(4); // three sales, and one item still on the shelf
+  await expect(page.getByTestId("needs").locator("article")).toHaveCount(DEMO_CARDS);
   await expect(page.locator('article[data-recall="27040"]').getByTestId("also")).toContainText("25206");
 
   const costway = recall(page, "27040");
@@ -185,7 +191,7 @@ test.describe("on a wide screen", () => {
     await startDemoShop(page);
     const grid = page.getByTestId("match-grid");
     const rows = grid.locator(".ag-row[row-id]:not(.ag-row-pinned)");
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(DEMO_CARDS);
     await expectToFit(page, grid);
     // Sales in one order, the cards' order: the two confirmed, newest recall first.
     await expect(rows.nth(0)).toContainText("27072");
@@ -203,7 +209,7 @@ test.describe("on a wide screen", () => {
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText("27018");
     await grid.getByRole("button", { name: /^Needs review/ }).click();
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(DEMO_CARDS);
     const download = page.waitForEvent("download");
     await grid.getByRole("button", { name: "Export Tell CPSC list" }).click();
     const csv = await streamToText(await (await download).createReadStream());

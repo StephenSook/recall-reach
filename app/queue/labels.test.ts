@@ -64,7 +64,7 @@ describe("how Claude checked it, in words", () => {
 });
 
 describe("coverageLine", () => {
-  const coverage = { recallsChecked: 934, searchedFrom: "2026-09-01", searchedTo: "2026-11-06", unidentifiedPayments: 2, paypalSearched: true, candidatesNotChecked: 0 };
+  const coverage = { recallsChecked: 934, searchedFrom: "2026-09-01", searchedTo: "2026-11-06", unidentifiedPayments: 2, paypalSearched: true, candidatesNotChecked: 0, searchWindows: 3, failedWindows: 0 };
 
   it("says what was searched when PayPal's history was really read", () => {
     expect(coverageLine(coverage)).toBe("Searched 2026-09-01 to 2026-11-06. 2 payments couldn't be identified. Checked 934 recalls.");
@@ -74,6 +74,16 @@ describe("coverageLine", () => {
     const line = coverageLine({ ...coverage, paypalSearched: false });
     expect(line).toBe("PayPal's history was not searched. Checked 934 recalls.");
     expect(line).not.toMatch(/Searched|2026|identified/);
+  });
+
+  it("says one payment for one", () => {
+    expect(coverageLine({ ...coverage, unidentifiedPayments: 1 })).toContain("1 payment couldn't be identified.");
+  });
+
+  it("says when only part of PayPal's history was read, and which part failed", () => {
+    const line = coverageLine({ ...coverage, paypalSearched: false, failedWindows: 1 });
+    expect(line).toBe("PayPal's history was only partly read: 1 of 3 searches failed. Checked 934 recalls.");
+    expect(line).not.toMatch(/^Searched/);
   });
 
   it("says when candidates were left unchecked, either way", () => {

@@ -56,3 +56,10 @@ export const HISTORY_POOL: HistoryPoolPayment[] = [
   // never cleared. The invoice id is only how a search finds it again.
   { requestId: "8f6a4c10-5e0b-4d57-9a01-000000000008", orderNumber: "DEMO-HIST-NO-ITEMS", lines: [], amountCents: 4200 },
 ];
+
+const POOL_SKUS = new Set(HISTORY_POOL.flatMap((p) => p.lines.map((l) => l.sku)));
+
+/** Picks the pool's rows out of everything in the account: another session's sale is not this shop's. */
+export function poolPayments<T extends { invoiceId: string | null; items: { sku: string | null }[] }>(payments: T[]): T[] {
+  return payments.filter((p) => p.invoiceId?.startsWith(`${HISTORY_POOL_MARKER}-`) || (!p.invoiceId && p.items.some((i) => i.sku !== null && POOL_SKUS.has(i.sku))));
+}

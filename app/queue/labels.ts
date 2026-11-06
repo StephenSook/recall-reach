@@ -61,11 +61,13 @@ export function traceLine(step: { tool: string; ok: boolean; item?: string; quer
   return "Recorded its finding";
 }
 
-/** Says "Searched" only when PayPal's history was really read. No search means no dates and no payment count. */
+/** Says "Searched" only when all of PayPal's history was read. Anything less means no dates and no payment count. */
 export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
   const searched = c.paypalSearched
-    ? `Searched ${c.searchedFrom ?? c.searchedTo} to ${c.searchedTo}. ${c.unidentifiedPayments} payments couldn't be identified.`
-    : "PayPal's history was not searched.";
+    ? `Searched ${c.searchedFrom ?? c.searchedTo} to ${c.searchedTo}. ${c.unidentifiedPayments} ${counted(c.unidentifiedPayments, "payment", "payments")} couldn't be identified.`
+    : c.failedWindows > 0
+      ? `PayPal's history was only partly read: ${c.failedWindows} of ${c.searchWindows} searches failed.`
+      : "PayPal's history was not searched.";
   const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
   return `${searched} Checked ${c.recallsChecked} recalls.${left}`;
 }

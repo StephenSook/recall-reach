@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
@@ -24,6 +25,8 @@ function fakePayPal(over: { captureStatus?: string; failCreate?: boolean } = {})
   let next = 0;
   const client: PayPalClient = {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
+      const found = answerSearch(path, opts);
+      if (found) return found;
       if (method === "POST") {
         if (over.failCreate) throw new Error("PayPal said no");
         const id = `ORDER${next}`;
@@ -108,7 +111,7 @@ describe("a sale as it happens", () => {
     it("only works on a demo shop", async () => {
       await db.query("update shops set kind = 'REAL' where id = $1", [shopId]);
       await expect(buy()).rejects.toBeInstanceOf(LiveSaleRefused);
-      expect(paypal.captures).toHaveLength(3); // only the seed's
+      expect(paypal.captures).toHaveLength(2); // only the seed's
     });
 
     it("only works on this shop's own listing", async () => {
