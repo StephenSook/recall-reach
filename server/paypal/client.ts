@@ -123,8 +123,15 @@ export function createPayPalClient(opts: {
           }
           if (res.status === 429 || res.status >= 500) throw new Retryable(await readError(res, method, path));
           if (!res.ok) throw await readError(res, method, path);
-          const text = await res.text();
-          return { status: res.status, data: (text ? JSON.parse(text) : undefined) as T };
+          let data: T;
+          try {
+            const text = await res.text();
+            data = (text ? JSON.parse(text) : undefined) as T;
+          } catch {
+            // Fixed words: a parser's message quotes the bytes it was reading.
+            throw new Error("PayPal's answer could not be read");
+          }
+          return { status: res.status, data };
         } catch (err) {
           if (!(err instanceof Retryable)) {
             if (err instanceof PayPalApiError) err.uncertain = uncertain;

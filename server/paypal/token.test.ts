@@ -89,6 +89,15 @@ describe("createTokenProvider", () => {
     expect(await tokens.get()).toBe("token-ok");
   });
 
+  it("leaves with fixed words, not the bytes, when the token answer isn't JSON", async () => {
+    const fetchImpl = (async () => new Response("PRIVATE-TOKEN-BODY", { status: 200 })) as unknown as typeof fetch;
+    const err = await createTokenProvider({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, fetchImpl })
+      .get()
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toBe("PayPal's token answer could not be read");
+    expect(inspect(err, { depth: 10, showHidden: true })).not.toContain("PRIVATE-TOKEN-BODY");
+  });
+
   it("holds no credentials in the error when Node's own fetch can't connect", async () => {
     const closedPort = await new Promise<number>((resolve) => {
       const server = createServer().listen(0, "127.0.0.1", () => {

@@ -38,7 +38,13 @@ export function createTokenProvider(opts: {
     });
     // The error never echoes the request, so the secret cannot leak into a message or log.
     if (!res.ok) throw new Error(`PayPal token request failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { access_token?: unknown; expires_in?: unknown };
+    let body: { access_token?: unknown; expires_in?: unknown };
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      // Fixed words: a parser's message quotes the bytes it was reading, and these could hold a token.
+      throw new Error("PayPal's token answer could not be read");
+    }
     if (typeof body.access_token !== "string" || typeof body.expires_in !== "number") {
       throw new Error("PayPal token response is missing access_token or expires_in");
     }

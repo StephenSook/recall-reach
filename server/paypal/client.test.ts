@@ -113,6 +113,29 @@ describe("PayPal client", () => {
       }
     });
 
+    it.each([
+      ["isn't JSON", () => new Response("PRIVATE-ORDER-DATA", { status: 200 })],
+      [
+        "breaks off while it is read",
+        () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("PRIVATE-ORDER-DATA"));
+              },
+            }),
+            { status: 200 },
+          ),
+      ],
+    ])("an answer that %s leaves with fixed words, not the bytes", async (_about, answer) => {
+      const s = scripted([answer()]);
+      const err = await s.client.request("GET", "/v2/checkout/orders/O1").catch((e: unknown) => e);
+      expect(s.calls).toHaveLength(1);
+      expect((err as Error).message).toBe("PayPal's answer could not be read");
+      expect((err as Error).cause).toBeUndefined();
+      expect(inspect(err, { depth: 10, showHidden: true })).not.toContain("PRIVATE-ORDER-DATA");
+    });
+
     it("keeps PayPal's own answer when the last try got one", async () => {
       const s = scripted([holdsTheRequest(), fail(503), fail(500)]);
       const err = await s.client.request("GET", "/v2/payments/refunds/PRIVATE-ID").catch((e: unknown) => e);
