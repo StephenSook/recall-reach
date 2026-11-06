@@ -96,6 +96,11 @@ describe("the refund page", () => {
     expect(await render()).not.toContain('data-testid="looking-again"');
   });
 
+  it("says what the page does", async () => {
+    readRefund.mockResolvedValue(record());
+    expect(await render()).toContain("<h1>Refund, checked against PayPal</h1>");
+  });
+
   it("leads back to the card the refund came from", async () => {
     readRefund.mockResolvedValue(record());
     expect(await render()).toContain('href="/queue#sale-m1"');

@@ -107,7 +107,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   return (
     <main className="page">
       <header className="page-head">
-        <h1>Refund against PayPal</h1>
+        <h1>Refund, checked against PayPal</h1>
       </header>
       {rec ? (
         <Records rec={rec} id={id} />
