@@ -29,6 +29,8 @@ export const CLAIMS: Claim[] = [
       { file: "server/paypal/orders.ts", find: "/v2/checkout/orders" },
       { file: "server/demo/seed.ts", call: "createCardOrder" },
       { file: "server/demo/liveCatch.ts", call: "getOrder" },
+      { file: "server/demo/liveCatch.ts", call: "createPayPalOrder" },
+      { file: "server/demo/liveCatch.ts", call: "captureOrder" },
     ],
   },
   {
