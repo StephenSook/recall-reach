@@ -1,26 +1,530 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Black outlines and hard shadows give the structure. Color only ever means a state. */
+@theme {
+  --font-sans: var(--font-jost), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --color-ink: #000000;
+  --color-paper: #ffffff;
+  --color-field: #e8e8e8;
+  --color-rule: #d2d2d2;
+  --color-body: #606060;
+
+  --color-needs-review: #f3670e;
+  --color-scope-gap: #ffd31e;
+  --color-cleared: #84ebb4;
+  --color-refund: #d00416;
+  --color-hazard-soft: #fbccaf;
+  --color-cobalt: #002af0;
+  --color-lavender: #a5b5ff;
+  --color-door-stripe: #be4f09;
+
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+
+  --shadow-hard-xs: 2px 2px 0 0 #000;
+  --shadow-hard: 4px 4px 0 0 #000;
+  --shadow-hard-lg: 6px 6px 0 0 #000;
+
+  --text-title: 34px;
+  --text-title--line-height: 1.05;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.25;
+  --text-lead: 18px;
+  --text-lead--line-height: 1.5;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (max-width: 640px) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --text-title: 28px;
+    --text-heading: 20px;
   }
 }
 
+html {
+  color-scheme: light;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-field);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+a {
+  color: var(--color-cobalt);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+small,
+.quiet {
+  color: var(--color-body);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-cobalt);
+  outline-offset: 2px;
+}
+
+/* Buttons press into their shadow. */
+.btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 0 var(--color-rule);
+  transition:
+    translate 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+.btn:hover,
+.btn:active {
+  translate: 3px 3px;
+  box-shadow: none;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.btn-outline {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-hard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+  .btn:hover,
+  .btn:active {
+    translate: none;
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 16px;
+}
+@media (max-width: 640px) {
+  .actions > * {
+    flex: 1 1 100%;
+  }
+  .actions .btn {
+    width: 100%;
+  }
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-chip);
+  background: var(--color-paper);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.chip-refund {
+  border-color: var(--color-refund);
+  color: var(--color-refund);
+}
+.chip-real {
+  background: var(--color-cobalt);
+  color: var(--color-paper);
+}
+.chip-sandbox {
+  background: var(--color-lavender);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.id {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* The page frame */
+.page {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+  padding: 24px 16px 64px;
+}
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.page-head h1 {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  font-weight: 800;
+}
+.section-title {
+  margin-block: 32px 12px;
+  font-size: var(--text-heading);
+  line-height: var(--text-heading--line-height);
+  font-weight: 800;
+}
+.note {
+  margin-block: 8px;
+  font-size: 14px;
+  color: var(--color-body);
+}
+.alert {
+  margin-block: 12px;
+  padding: 10px 14px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-paper);
+  font-weight: 600;
+  box-shadow: var(--shadow-hard-xs);
+}
+
+/* What the seller can count at a glance */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-block: 16px;
+}
+@media (max-width: 640px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.stat {
+  padding: 10px 12px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-hard);
+}
+.stat-value {
+  display: block;
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.stat-MATCH {
+  background: var(--color-needs-review);
+}
+.stat-SCOPE_GAP {
+  background: var(--color-scope-gap);
+}
+.stat-CLEARED {
+  background: var(--color-cleared);
+}
+
+/* One sale is one window. Its title bar says its state, so the queue reads by color. */
+.window {
+  margin-block: 0 20px;
+  overflow: hidden;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-hard-lg);
+}
+.window-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--color-ink);
+  background: var(--color-paper);
+}
+[data-verdict="MATCH"] > .window-bar {
+  background: var(--color-needs-review);
+}
+[data-verdict="SCOPE_GAP"] > .window-bar {
+  background: var(--color-scope-gap);
+}
+[data-verdict="CLEARED"] > .window-bar {
+  background: var(--color-cleared);
+}
+.window-body {
+  padding: 14px 16px 16px;
+}
+.window-body h3 {
+  font-size: var(--text-heading);
+  line-height: var(--text-heading--line-height);
+  font-weight: 800;
+}
+.window-body p {
+  margin-block: 6px;
+}
+.sale {
+  font-size: 15px;
+}
+.ask {
+  margin-block: 14px;
+  padding: 10px 12px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-field);
+}
+.ask strong {
+  display: block;
+  font-size: var(--text-lead);
+  line-height: 1.3;
+}
+.state-line {
+  margin-block: 12px;
+  padding-top: 12px;
+  border-top: 2px dashed var(--color-rule);
+}
+.window details {
+  margin-block: 8px;
+  border-top: 2px dashed var(--color-rule);
+  padding-top: 8px;
+}
+.window summary {
+  min-height: 28px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.window details ul,
+.window details ol {
+  margin-block: 6px;
+  padding-left: 22px;
+  list-style: revert;
+}
+.window pre {
+  margin-block: 8px;
+  padding: 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 2px solid var(--color-rule);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 14px;
+}
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.cleared-list {
+  padding-inline: 16px;
+}
+.cleared-list li {
+  padding-block: 10px;
+  border-bottom: 2px dashed var(--color-rule);
+}
+.cleared-list li:last-child {
+  border-bottom: 0;
+}
+.cleared-list .quiet {
+  display: block;
+  font-size: 14px;
+}
+
+/* The three records beside each other */
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ledger th,
+.ledger td {
+  padding: 10px 12px;
+  border-bottom: 2px dashed var(--color-rule);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.ledger th {
+  font-weight: 700;
+}
+.ledger tr:last-child td {
+  border-bottom: 0;
+}
+
+/* The family's page: one quiet column, nothing but what they need. */
+.family {
+  min-height: 100vh;
+  background: var(--color-paper);
+}
+.column {
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  padding: 28px 16px 64px;
+  font-size: var(--text-lead);
+  line-height: var(--text-lead--line-height);
+}
+.column h1 {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  font-weight: 800;
+}
+.column h2 {
+  margin-block: 28px 8px;
+  font-size: var(--text-heading);
+  line-height: var(--text-heading--line-height);
+  font-weight: 800;
+}
+.column p {
+  margin-block: 10px;
+}
+.product {
+  font-weight: 600;
+}
+.photo {
+  margin-block: 16px;
+}
+.photo img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+}
+.photo figcaption {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--color-body);
+}
+.question {
+  margin-block: 20px;
+  padding: 16px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hard);
+}
+.question-text {
+  font-size: var(--text-heading);
+  line-height: 1.25;
+  font-weight: 700;
+}
+.answers {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+@media (min-width: 480px) {
+  .answers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.answers .btn,
+.big {
+  width: 100%;
+  min-height: 56px;
+  font-size: var(--text-lead);
+}
+.field {
+  display: block;
+  margin-block: 12px;
+  font-weight: 600;
+}
+.field input {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  font-size: var(--text-lead);
+}
+.result {
+  margin-block: 20px;
+  padding: 14px 16px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.hazard {
+  position: relative;
+  padding: 12px 16px 12px 30px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-hazard-soft);
+  color: var(--color-ink);
+}
+.hazard::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 14px;
+  border-right: 2px solid var(--color-ink);
+  background: repeating-linear-gradient(45deg, #000 0 1px, transparent 1px 6px);
+}
+.family footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 2px dashed var(--color-rule);
+  font-size: 14px;
+  color: var(--color-body);
+}
+
+/* The door: the one loud place. */
+.door {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px 16px;
+  background: repeating-linear-gradient(135deg, var(--color-needs-review) 0 28px, var(--color-door-stripe) 28px 56px);
+}
+.door-card {
+  width: 100%;
+  max-width: 720px;
+  padding: clamp(24px, 6vw, 48px);
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  box-shadow: 8px 8px 0 0 #000;
+}
+.door-card h1 {
+  font-size: clamp(30px, 6vw, 48px);
+  line-height: 1.05;
+  font-weight: 800;
+}
+.door-card .lead {
+  margin-block: 14px 24px;
+  font-size: var(--text-lead);
+  color: var(--color-body);
+}
+.door-card footer {
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--color-body);
 }

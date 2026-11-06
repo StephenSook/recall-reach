@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipsFor, coverageLine, needsApproval, traceLine } from "./labels";
+import { agentHeadline, chipClass, chipsFor, coverageLine, needsApproval, queueCounts, traceLine } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,26 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("queueCounts", () => {
+  const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: { verdict } });
+
+  it("counts what waits on the seller, and only what is on the page", () => {
+    expect(queueCounts({ cards: [card("MATCH"), card("MATCH"), card("SCOPE_GAP")], cleared: [{}], recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 1, waiting: 3 });
+  });
+
+  it("shows no recall count when no check has run", () => {
+    expect(queueCounts({ cards: [], cleared: [], recallsChecked: null })).toEqual({ recallsChecked: null, matched: 0, scopeGaps: 0, cleared: 0, waiting: 0 });
+  });
+});
+
+describe("chipClass", () => {
+  it("gives refund eligible its own red, and every other chip the plain one", () => {
+    expect(chipClass("Refund eligible")).toBe("chip chip-refund");
+    expect(chipClass("Notice only")).toBe("chip");
+    expect(chipClass("History unavailable")).toBe("chip");
+  });
 });
 
 describe("how Claude checked it, in words", () => {

@@ -41,16 +41,22 @@ export function NoticeActions({ noticeId }: { noticeId: string }) {
       <p>
         To: {composed.to ?? "(you add the address)"} <small>({composed.toSource})</small>
       </p>
-      <p>Subject: {composed.subject}</p>
-      <pre style={{ whiteSpace: "pre-wrap" }}>{composed.body}</pre>
-      <a
-        href={href}
-        onClick={() => {
-          void fetch(`/api/queue/notices/${noticeId}/opened`, { method: "POST", keepalive: true }).then(() => router.refresh());
-        }}
-      >
-        Open in mail
-      </a>
+      <div className="actions">
+        <a
+          className="btn"
+          href={href}
+          onClick={() => {
+            void fetch(`/api/queue/notices/${noticeId}/opened`, { method: "POST", keepalive: true }).then(() => router.refresh());
+          }}
+        >
+          Open in mail
+        </a>
+      </div>
+      <details>
+        <summary>Read the message</summary>
+        <p>Subject: {composed.subject}</p>
+        <pre>{composed.body}</pre>
+      </details>
     </div>
   );
 }

@@ -278,6 +278,8 @@ export interface FamilyView {
   shopName: string;
   recallNumber: string;
   product: string;
+  /** CPSC's own photo, so a family can compare it with theirs. Only ever from cpsc.gov. */
+  image: { url: string; caption: string } | null;
   recallUrl: string;
   hazards: string[];
   remedies: string[];
@@ -292,12 +294,21 @@ export interface FamilyView {
 
 /** All the family page gets. No buyer, order or payment data, so none can reach the page. */
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
+  const fromCpsc = (image: { url: string } | undefined) => {
+    if (!image) return false;
+    try {
+      const { protocol, hostname } = new URL(image.url);
+      return protocol === "https:" && (hostname === "cpsc.gov" || hostname.endsWith(".cpsc.gov"));
+    } catch {
+      return false;
+    }
+  };
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
-    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null }
+    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null; images: { url: string; caption: string }[] }
   >(
     `select n.kind, n.family_stopped, n.check_result, n.check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
-            r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
+            r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies, r.images
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
      where n.id = $1`,
@@ -310,6 +321,7 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     shopName: n.shop_name,
     recallNumber: n.recall_number,
     product: n.products[0]?.name ?? n.title,
+    image: fromCpsc(n.images[0]) ? n.images[0] : null,
     recallUrl: n.url,
     hazards: n.hazards,
     remedies: n.remedies,

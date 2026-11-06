@@ -667,6 +667,26 @@ describe("notices", () => {
       for (const absent of ["test-buyer", "SECRET-ORDER", "9000", "2026-09-15"]) expect(text, absent).not.toContain(absent);
     });
 
+    describe("the product photo", () => {
+      const notice = async (orderNumber: string) => (await prepareNotice(db, { shopId, matchId: await matchFor("27040", line({ orderNumber, title: "Costway high chair" })) })).noticeId;
+
+      it("shows CPSC's own photo and caption, so a family can compare it with theirs", async () => {
+        expect((await familyView(db, await notice("#P1")))?.image).toEqual({ url: "https://www.cpsc.gov/s3fs-public/Costway1.jpg", caption: "Recalled Costway High Chair (brown and white)" });
+      });
+
+      it.each([
+        ["no photo", "[]"],
+        ["a photo not on cpsc.gov", JSON.stringify([{ url: "https://elsewhere.example/a.jpg", caption: "c" }])],
+        ["a name that only looks like cpsc.gov", JSON.stringify([{ url: "https://www.cpsc.gov.elsewhere.example/a.jpg", caption: "c" }])],
+        ["a photo not over https", JSON.stringify([{ url: "http://www.cpsc.gov/a.jpg", caption: "c" }])],
+        ["something that is not a web address", JSON.stringify([{ url: "javascript:alert(1)", caption: "c" }])],
+      ])("shows none for %s", async (_name, images) => {
+        const noticeId = await notice(`#P2${images.length}`);
+        await db.query("update recalls set images = $1::jsonb where recall_number = '27040'", [images]);
+        expect((await familyView(db, noticeId))?.image).toBeNull();
+      });
+    });
+
     it("returns nothing for an unknown notice", async () => {
       expect(await familyView(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
     });

@@ -10,14 +10,20 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
   const { demo } = await searchParams;
   const message = typeof demo === "string" && Object.hasOwn(DEMO_MESSAGES, demo) ? DEMO_MESSAGES[demo] : null;
   return (
-    <main>
-      <h1>Help your resale shop check past sales for recalls and reach the families who bought them.</h1>
-      <p>For small kids&apos; resale shops.</p>
-      {message && <p role="alert">{message}</p>}
-      <StartDemoButton />
-      <footer>
-        <p>Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.</p>
-      </footer>
+    <main className="door">
+      <div className="door-card">
+        <h1>Help your resale shop check past sales for recalls and reach the families who bought them.</h1>
+        <p className="lead">For small kids&apos; resale shops.</p>
+        {message && (
+          <p role="alert" className="alert">
+            {message}
+          </p>
+        )}
+        <StartDemoButton />
+        <footer>
+          <p>Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.</p>
+        </footer>
+      </div>
     </main>
   );
 }

@@ -24,9 +24,12 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
     throw err;
   }
   return (
-    <main>
-      <h1>Refund against PayPal</h1>
-      <table>
+    <main className="page">
+      <header className="page-head">
+        <h1>Refund against PayPal</h1>
+      </header>
+      <div className="window" style={{ marginTop: 16 }}>
+      <table className="ledger">
         <thead>
           <tr>
             <th>Record</th>
@@ -57,19 +60,20 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
           </tr>
         </tbody>
       </table>
+      </div>
       {rec.exceptions.length > 0 ? (
-        <ul data-testid="exceptions">
+        <ul data-testid="exceptions" className="alert">
           {rec.exceptions.map((e) => (
             <li key={e}>{e}</li>
           ))}
         </ul>
       ) : (
-        <p data-testid="no-exceptions">All four records agree.</p>
+        <p data-testid="no-exceptions" className="alert">All four records agree.</p>
       )}
       {rec.newerAnswer ? (
         <form action="/api/queue/refunds/update" method="post" data-testid="newer-answer">
           <input type="hidden" name="refundId" value={id} />
-          <button type="submit">Update from PayPal</button>
+          <button type="submit" className="btn">Update from PayPal</button>
         </form>
       ) : null}
       {rec.stuck ? (
@@ -79,7 +83,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
           </p>
           <form action="/api/queue/refunds/open-paypal" method="post">
             <input type="hidden" name="refundId" value={id} />
-            <button type="submit">Open PayPal</button>
+            <button type="submit" className="btn">Open PayPal</button>
           </form>
           {rec.stuck.sentToPayPal ? <p>Seller sent to PayPal</p> : null}
         </section>
@@ -88,7 +92,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
         <form action="/api/queue/refunds/ask-again" method="post">
           <input type="hidden" name="refundId" value={id} />
           <p>This repeats the same request. If PayPal already made the refund, it answers with that refund and makes no second one. Don&apos;t use this if you refunded this sale in PayPal yourself.</p>
-          <button type="submit">Ask PayPal again</button>
+          <button type="submit" className="btn btn-outline">Ask PayPal again</button>
         </form>
       ) : null}
       <p>

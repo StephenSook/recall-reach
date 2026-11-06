@@ -26,6 +26,15 @@ export const CHECK_RESULT: Record<string, string> = {
   CANT_TELL: "Family's answer could not settle it",
 };
 
+/** What the stat row shows. Each number is counted from what is on the page. */
+export function queueCounts(q: { cards: { lead: { verdict: string } }[]; cleared: unknown[]; recallsChecked: number | null }) {
+  const matched = q.cards.filter((c) => c.lead.verdict === "MATCH").length;
+  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length, waiting: q.cards.length };
+}
+
+/** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */
+export const chipClass = (chip: string) => (chip === PATH_CHIP.REFUND_ELIGIBLE ? "chip chip-refund" : "chip");
+
 const AGENT_HEADLINE: Record<string, string> = {
   SAME_PRODUCT: "Claude: the words point to this product",
   CANT_TELL: "Claude: can't tell from the words",
