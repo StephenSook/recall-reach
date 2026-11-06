@@ -81,12 +81,50 @@ describe("loadYears", () => {
       expect(await missingRecallYears(db, 2022, TODAY)).toEqual([]);
     });
 
-    it("counts the running year as held once a pull from its first day has worked, whatever day that reached", async () => {
+    describe("the running year", () => {
       const held = (start: string, end: string) => db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched) values ('RecallDate', $1, $2, 'ok', 1)", [start, end]);
-      await held("2024-10-01", "2024-11-05");
-      expect(await missingRecallYears(db, 2024, TODAY)).toEqual([2024]);
-      await held("2024-01-01", "2024-06-01");
-      expect(await missingRecallYears(db, 2024, TODAY)).toEqual([]);
+      const polled = (start: string, end: string, status = "ok") => db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched) values ('LastPublishDate', $1, $2, $3, 0)", [start, end, status]);
+      const missing = () => missingRecallYears(db, 2024, TODAY);
+
+      it("isn't held by a pull that doesn't start on its first day", async () => {
+        await held("2024-10-01", "2024-11-05");
+        expect(await missing()).toEqual([2024]);
+      });
+
+      it("is held by a pull from its first day that reaches today", async () => {
+        await held("2024-01-01", TODAY);
+        expect(await missing()).toEqual([]);
+      });
+
+      it("isn't held when that pull stopped months ago and nothing carried on from there", async () => {
+        await held("2024-01-01", "2024-06-01");
+        expect(await missing()).toEqual([2024]);
+      });
+
+      it("isn't held when the poll starts months after that pull stopped: the months between are a gap", async () => {
+        await held("2024-01-01", "2024-06-01");
+        await polled("2024-11-04", TODAY);
+        expect(await missing()).toEqual([2024]);
+      });
+
+      it("is held once a catch-up closes the gap, in any order the rows arrived", async () => {
+        await held("2024-01-01", "2024-06-01");
+        await polled("2024-11-04", TODAY);
+        await polled("2024-05-31", "2024-11-04");
+        expect(await missing()).toEqual([]);
+      });
+
+      it("isn't carried forward by a poll that failed", async () => {
+        await held("2024-01-01", "2024-06-01");
+        await polled("2024-05-31", TODAY, "failed");
+        expect(await missing()).toEqual([2024]);
+      });
+
+      it("stays held through a few quiet days, and stops once the poll is well behind", async () => {
+        await held("2024-01-01", "2024-11-02");
+        expect(await missing()).toEqual([]);
+        expect(await missingRecallYears(db, 2024, "2024-11-06")).toEqual([2024]);
+      });
     });
 
     it("costs nothing once they are in", async () => {

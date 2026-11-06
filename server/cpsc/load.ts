@@ -30,22 +30,46 @@ export async function loadYears(
   return { pulls, countsByYear: await recallCountsByYear(db) };
 }
 
+const DAY_MS = 86_400_000;
+/** The poll runs hourly, so being this far behind means an outage. The year then says it isn't fully held until it catches up. */
+const RUNNING_YEAR_BEHIND_DAYS = 3;
+const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
+
+interface HeldPull {
+  range_field: string;
+  range_start: string;
+  range_end: string;
+}
+
+/** A pull from the year's first day, then polls with no gap between them from where it stopped, up to about today. */
+function runningYearHeld(pulls: HeldPull[], year: number, today: string): boolean {
+  const whole = pulls.filter((p) => p.range_field === "RecallDate" && p.range_start === `${year}-01-01`);
+  if (whole.length === 0) return false;
+  let reached = whole.map((p) => p.range_end).sort().at(-1) ?? "";
+  const polls = pulls.filter((p) => p.range_field === "LastPublishDate").sort((a, b) => a.range_start.localeCompare(b.range_start));
+  for (const poll of polls) {
+    if (poll.range_start <= nextDay(reached) && poll.range_end > reached) reached = poll.range_end;
+  }
+  return Date.parse(today) - Date.parse(reached) <= RUNNING_YEAR_BEHIND_DAYS * DAY_MS;
+}
+
 /**
  * Years from `fromYear` that aren't held. A past year needs a whole-year pull that returned recalls. The running year needs
- * one from its first day, whatever day that reached, because the poll keeps it current from there. An empty answer for a
- * whole year is a bad answer, and a partial pull doesn't count.
+ * one from its first day that the poll has carried on from without a gap. An empty answer for a whole year is a bad answer,
+ * and a partial pull doesn't count as loading a year.
  */
 export async function missingRecallYears(db: Queryable, fromYear: number, today: string): Promise<number[]> {
-  const { rows } = await db.query<{ range_start: string; range_end: string }>(
-    "select range_start::text as range_start, range_end::text as range_end from cpsc_pulls where range_field = 'RecallDate' and status = 'ok' and fetched > 0",
+  const { rows } = await db.query<HeldPull>(
+    `select range_field, range_start::text as range_start, range_end::text as range_end from cpsc_pulls
+     where (range_field = 'RecallDate' and status = 'ok' and fetched > 0) or (range_field = 'LastPublishDate' and status in ('ok', 'partial'))`,
   );
-  const loaded = new Set(rows.map((r) => `${r.range_start}..${r.range_end}`));
+  const loaded = new Set(rows.filter((r) => r.range_field === "RecallDate").map((r) => `${r.range_start}..${r.range_end}`));
   const thisYear = Number(today.slice(0, 4));
   const missing: number[] = [];
   for (let year = fromYear; year < thisYear; year++) {
     if (!loaded.has(`${year}-01-01..${year}-12-31`)) missing.push(year);
   }
-  if (thisYear >= fromYear && !rows.some((r) => r.range_start === `${thisYear}-01-01`)) missing.push(thisYear);
+  if (thisYear >= fromYear && !runningYearHeld(rows, thisYear, today)) missing.push(thisYear);
   return missing;
 }
 
