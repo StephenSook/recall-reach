@@ -6,7 +6,7 @@ import { z } from "zod";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import { channel3Search, CHANNEL3_MCP_URL, type SearchMarket } from "./channel3";
+import { channel3Search, CHANNEL3_MCP_URL, MAX_ANSWER_BYTES, MAX_LISTINGS, type SearchMarket } from "./channel3";
 import { queryFor, readSweep, SWEEP_PER_RUN, sweepRecalls } from "./sweep";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -62,14 +62,28 @@ describe("the market sweep", () => {
     expect((await sweepRecalls(db, search, new Date(NOW.getTime() + 8 * 86_400_000), 3)).searched).toBe(3);
   });
 
-  it("stops at the first failure, since it may be a limit, and tries again next time", async () => {
+  it("stops at the first failure, since it may be a limit, and the others go next time", async () => {
     const failing = vi.fn<SearchMarket>(async () => {
       throw new Error("429");
     });
     expect(await sweepRecalls(db, failing, NOW)).toMatchObject({ searched: 0, failed: 1 });
     expect(failing).toHaveBeenCalledTimes(1);
-    expect(await sweepRecalls(db, async () => found("Back"), NOW, 60)).toMatchObject({ searched: 55, failed: 0, left: 0 });
-    expect((await readSweep(db, "27072"))?.status).toBe("ok");
+    expect(await sweepRecalls(db, async () => found("Back"), NOW, 60)).toMatchObject({ searched: 54, failed: 0, left: 0 });
+  });
+
+  it("doesn't let one failing recall hold up the others: it waits a day before trying that one again", async () => {
+    const tried: string[] = [];
+    const first = (await db.query<{ title: string; products: { name?: string }[] }>("select title, products from recalls order by recall_date desc, recall_number desc limit 1")).rows[0];
+    const search: SearchMarket = async (query) => {
+      tried.push(query);
+      if (query === queryFor(first)) throw new Error("this one fails");
+      return found("A title");
+    };
+    for (let run = 0; run < 3; run++) await sweepRecalls(db, search, new Date(NOW.getTime() + run * 3_600_000), 1);
+    expect(tried.filter((q) => q === queryFor(first))).toHaveLength(1);
+    expect(tried).toHaveLength(3);
+    await sweepRecalls(db, search, new Date(NOW.getTime() + 25 * 3_600_000), 60);
+    expect(tried.filter((q) => q === queryFor(first))).toHaveLength(2);
   });
 
   it("keeps what it had when a refresh fails", async () => {
@@ -127,6 +141,47 @@ describe("the market sweep", () => {
         ],
       });
       expect(JSON.stringify(answer)).not.toContain("RETAILER");
+    });
+
+    const answering = (structuredContent: Record<string, unknown>) =>
+      (async (_url: string | URL, init?: RequestInit) => {
+        const server = new McpServer({ name: "fake", version: "1.0.0" });
+        server.registerTool("search_products", { inputSchema: { query: z.string() } }, async () => ({ content: [{ type: "text" as const, text: "x" }], structuredContent }));
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        await server.connect(transport);
+        return transport.handleRequest(new Request(CHANNEL3_MCP_URL, init));
+      }) as typeof fetch;
+
+    it.each(["infinity", "not a time", ""])("doesn't keep %j as a time: it would break the page that reads it", async (asOf) => {
+      expect((await channel3Search(answering({ as_of: asOf, products: [] }))("x")).asOf).toBeNull();
+    });
+
+    it("keeps a sane number of listings, and drops an id or title that isn't sane", async () => {
+      const many = Array.from({ length: 500 }, (_, i) => ({ id: `p${i}`, title: `Title ${i}`, brands: [] }));
+      const { listings } = await channel3Search(answering({ products: [{ id: "x".repeat(4096), title: "Long id", brands: [] }, ...many] }))("x");
+      expect(listings).toHaveLength(MAX_LISTINGS);
+      expect(listings[0].id).toBe("p0");
+    });
+
+    it("gives up on an answer that is too large, rather than holding it all", async () => {
+      const huge = { products: [{ id: "a", title: "x".repeat(MAX_ANSWER_BYTES + 1000), brands: [] }] };
+      await expect(channel3Search(answering(huge))("x")).rejects.toThrow();
+    });
+
+    it("gives up on time however far it got, including on the step after initialize", async () => {
+      let posts = 0;
+      const stalls = (async (_url: string | URL, init?: RequestInit) => {
+        if ((init?.method ?? "GET") !== "POST") return new Response(null, { status: 405 });
+        posts++;
+        if (posts >= 2) return new Promise<Response>(() => {}); // never answers, and ignores the abort
+        const server = new McpServer({ name: "fake", version: "1.0.0" });
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        await server.connect(transport);
+        return transport.handleRequest(new Request(CHANNEL3_MCP_URL, init));
+      }) as typeof fetch;
+      const started = Date.now();
+      await expect(channel3Search(stalls, { timeoutMs: 200 })("x")).rejects.toThrow("gave up");
+      expect(Date.now() - started).toBeLessThan(2_000);
     });
 
     it("fails plainly when an answer has no product list", async () => {

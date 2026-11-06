@@ -8,6 +8,8 @@ import type { MarketListing, SearchMarket } from "./channel3";
 export const SWEEP_PER_RUN = 5;
 const LOOK_BACK_DAYS = 120;
 const REFRESH_DAYS = 7;
+/** Long enough that one recall Channel3 keeps failing on can't hold up the rest. */
+const RETRY_FAILED_DAYS = 1;
 
 export interface SweepRun {
   searched: number;
@@ -26,7 +28,9 @@ interface Due {
 const DUE_SQL = `
   from recalls r left join recall_sweeps s using (recall_id)
   where r.recall_date >= $1::timestamptz - make_interval(days => $2)
-    and (s.recall_id is null or s.status = 'failed' or s.searched_at < $1::timestamptz - make_interval(days => $3))`;
+    and (s.recall_id is null
+      or (s.status = 'failed' and s.searched_at <= $1::timestamptz - make_interval(days => ${RETRY_FAILED_DAYS}))
+      or s.searched_at < $1::timestamptz - make_interval(days => $3))`;
 
 /** Only CPSC's public words go out: the recall's first product name, or its title. */
 export const queryFor = (recall: Pick<Due, "title" | "products">) => (recall.products[0]?.name?.trim() || recall.title).slice(0, 200);
@@ -52,10 +56,10 @@ export async function sweepRecalls(db: Queryable, search: SearchMarket, now: Dat
       searched++;
     } catch (err) {
       failed++;
-      // A refresh that fails keeps what it had. Only a first try leaves a failed row.
+      // A refresh that fails keeps what it had. A row that has only ever failed notes when, so it waits its turn.
       await db.query(
         `insert into recall_sweeps (recall_id, recall_sha256, query, status, searched_at) values ($1, $2, $3, 'failed', $4::timestamptz)
-         on conflict (recall_id) do nothing`,
+         on conflict (recall_id) do update set searched_at = $4::timestamptz where recall_sweeps.status = 'failed'`,
         [recall.recall_id, recall.raw_sha256, query, at],
       );
       console.error(`market search failed: ${err instanceof Error ? err.message : "unknown error"}`);
