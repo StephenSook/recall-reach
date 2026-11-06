@@ -392,11 +392,12 @@ async function readCapture(client: PayPalClient, captureId: string): Promise<Cap
 
 /** Within 180 days of the payment, and paid after the recall date, whatever the order date says. */
 function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date): void {
-  const paidOn = (capture.createTime ?? "").slice(0, 10);
-  if (!paidOn) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no date for this payment.");
-  if (now.getTime() - Date.parse(`${paidOn}T00:00:00Z`) > REFUND_WINDOW_DAYS * 86_400_000) {
+  const paidAt = Date.parse(capture.createTime ?? "");
+  if (Number.isNaN(paidAt)) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no readable date for this payment.");
+  if (now.getTime() - paidAt > REFUND_WINDOW_DAYS * 86_400_000) {
     throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed. Check the recall page for the next steps.");
   }
+  const paidOn = new Date(paidAt).toISOString().slice(0, 10); // UTC, the calendar the join uses
   if (paidOn <= recallDate) {
     throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
   }

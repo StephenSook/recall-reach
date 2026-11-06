@@ -387,6 +387,33 @@ describe("refunds", () => {
     });
   });
 
+  describe("the payment's date", () => {
+    const LATE = new Date("2027-04-14T15:00:00Z");
+    const tryAt = async (createTime: string, now = LATE) => {
+      const m = await setUp();
+      const pp = fakePayPal({ createTime });
+      const a = await approve(m.id, SESSION, now, pp.client);
+      return execute(a.approvalId, pp.client, SESSION, now);
+    };
+
+    it("counts 180 days from the moment of payment: 179 days and 15.5 hours is still inside", async () => {
+      expect((await tryAt("2026-10-16T23:30:00Z")).status).toBe("refunded");
+    });
+
+    it("closes once 180 days have truly passed", async () => {
+      expect(await refusal(tryAt("2026-10-16T14:00:00Z"))).toBe("REFUND_WINDOW_CLOSED");
+    });
+
+    it("reads a time zone offset rather than dropping it", async () => {
+      // 23:30 at -07:00 on the recall's date is already the next day in UTC, the calendar the join uses.
+      expect((await tryAt("2026-10-15T23:30:00-07:00", NOW)).status).toBe("refunded");
+    });
+
+    it("refuses a date it cannot read: nothing moves on a guess", async () => {
+      expect(await refusal(tryAt("not a date", NOW))).toBe("PAYPAL_FACTS_CHANGED");
+    });
+  });
+
   describe("executing", () => {
     it("refunds the bound amount on the original capture, with a request id, and records it", async () => {
       const m = await setUp(line({ quantity: 2, unitPriceCents: 3000, discountCents: 750 }));
