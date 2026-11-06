@@ -83,7 +83,7 @@ describe("loadYears", () => {
     it("costs nothing once they are in", async () => {
       await loadMissingYears(db, 2022, TODAY, answering(aRecallForTheYear).deps);
       const again = answering(aRecallForTheYear);
-      expect(await loadMissingYears(db, 2022, TODAY, again.deps)).toEqual({ pulls: [], failed: [] });
+      expect(await loadMissingYears(db, 2022, TODAY, again.deps)).toEqual({ pulls: [], failed: [], deferred: [] });
       expect(again.requested).toEqual([]);
     });
 
@@ -98,6 +98,13 @@ describe("loadYears", () => {
       await loadMissingYears(db, 2022, TODAY, second.deps);
       expect(second.requested).toHaveLength(1);
       expect(await missingRecallYears(db, 2022, TODAY)).toEqual([]);
+    });
+
+    it("starts no new year once its time is up, and the rest wait for next time", async () => {
+      const { requested, deps } = answering(aRecallForTheYear);
+      expect(await loadMissingYears(db, 2022, TODAY, deps, { budgetMs: -1 })).toEqual({ pulls: [], failed: [], deferred: [2022, 2023] });
+      expect(requested).toEqual([]);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
     });
 
     it("doesn't take a poll's pull, or a failed one, for a year being loaded", async () => {

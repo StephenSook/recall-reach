@@ -46,16 +46,26 @@ export async function missingRecallYears(db: Queryable, fromYear: number, today:
   return missing;
 }
 
-/** Pulls only the missing years. One year's failure is reported, the others still run, and it is tried again next time. */
+/**
+ * Pulls only the missing years. One year's failure is reported, the others still run, and it is tried again next time.
+ * With a budget, no new year starts once it is spent, and those years are named as deferred.
+ */
 export async function loadMissingYears(
   db: Db,
   fromYear: number,
   today: string,
   deps: FetchDeps = {},
-): Promise<{ pulls: PullSummary[]; failed: { year: number; error: string }[] }> {
+  opts: { budgetMs?: number } = {},
+): Promise<{ pulls: PullSummary[]; failed: { year: number; error: string }[]; deferred: number[] }> {
+  const started = Date.now();
   const pulls: PullSummary[] = [];
   const failed: { year: number; error: string }[] = [];
+  const deferred: number[] = [];
   for (const year of await missingRecallYears(db, fromYear, today)) {
+    if (opts.budgetMs !== undefined && Date.now() - started > opts.budgetMs) {
+      deferred.push(year);
+      continue;
+    }
     try {
       const pull = await pullRecalls(db, yearRange(year, today), deps);
       if (pull.fetched === 0) failed.push({ year, error: "CPSC returned no recalls for this year" });
@@ -64,5 +74,5 @@ export async function loadMissingYears(
       failed.push({ year, error: err instanceof Error ? err.message : String(err) });
     }
   }
-  return { pulls, failed };
+  return { pulls, failed, deferred };
 }

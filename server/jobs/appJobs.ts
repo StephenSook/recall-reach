@@ -1,14 +1,21 @@
 import { fetchRecalls, type FetchDeps } from "../cpsc/fetch";
+import { loadMissingYears } from "../cpsc/load";
 import { recordPull, snapshotHash } from "../cpsc/pull";
 import type { Db } from "../db/types";
 import { purgeOldOwnShops } from "../import/ownFile";
-import { checkStoredShops, type SweepSummary } from "../match/sweep";
+import { checkStoredShops, SWEEP_BUDGET_MS, type SweepSummary } from "../match/sweep";
 import { purgePayPalData } from "../privacy/retention";
 import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
 
 export const POLL_MS = 15 * 60_000;
 /** Every 4th poll (hourly) is a heartbeat: it writes even if nothing changed, and purges PayPal data. */
 export const HEARTBEAT_TICKS = 4;
+/** A job past its deadline is released while it may still be running, so its parts must fit inside it. */
+const JOB_DEADLINE_MS = 10 * 60_000;
+const JOB_BUDGET_MS = 8 * 60_000;
+/** Past years don't need the poll's patience: what doesn't load now is tried again in an hour. */
+const BACKFILL_TIMEOUT_MS = 20_000;
+const BACKFILL_BUDGET_MS = 2 * 60_000;
 
 export interface RecallPollStatus {
   lastPollAt: string | null;
@@ -43,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPerSweep?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -58,6 +65,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
   let sweepOwed = false;
 
   const poll = async () => {
+    const started = Date.now();
     const heartbeat = ticks % HEARTBEAT_TICKS === 0;
     ticks++;
     const at = now();
@@ -120,6 +128,26 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
       polledThrough = range.end; // the same answer as the one already stored
     }
 
+    // Past years that aren't all here. The first tick after a deploy is a heartbeat, so they load straight away, and a
+    // failed year is tried again each hour. Nothing waits for another deploy: the repo freezes, and CPSC can have a bad day.
+    let loaded = "";
+    if (heartbeat && deps.backfillFromYear !== undefined) {
+      try {
+        const { pulls, failed, deferred } = await loadMissingYears(
+          db,
+          deps.backfillFromYear,
+          at.toISOString().slice(0, 10),
+          { ...deps, timeoutMs: deps.timeoutMs ?? BACKFILL_TIMEOUT_MS },
+          { budgetMs: deps.backfillBudgetMs ?? BACKFILL_BUDGET_MS },
+        );
+        for (const f of failed) console.warn(`cpsc-load: recall year ${f.year} did not load: ${f.error}`);
+        if (pulls.length > 0) loaded = `, loaded ${pulls.length} ${pulls.length === 1 ? "year" : "years"} (${pulls.reduce((n, p) => n + p.inserted, 0)} new)`;
+        if (deferred.length > 0) loaded += `, ${deferred.length} ${deferred.length === 1 ? "year" : "years"} left for the next hour`;
+      } catch (err) {
+        console.warn(`cpsc-load: could not load past years: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Only when the database is awake anyway, so a quiet poll stays off it. The first tick after a deploy is a heartbeat,
     // which is what catches recalls the deploy loaded. A failed shop is tried again on the next touched tick.
     const earlier = holder.__recallReachPoll;
@@ -128,7 +156,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
     let sweepError: unknown = null;
     if (touchDb) {
       try {
-        sweep = await checkStoredShops(db, { now: at, maxShops: deps.maxShopsPerSweep });
+        sweep = await checkStoredShops(db, {
+          now: at,
+          maxShops: deps.maxShopsPerSweep,
+          budgetMs: Math.max(0, Math.min(SWEEP_BUDGET_MS, JOB_BUDGET_MS - (Date.now() - started))),
+        });
         sweepOk = true;
         sweepOwed = sweep.shopsWaiting > 0;
       } catch (err) {
@@ -144,6 +176,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
     console.info(
       `cpsc-poll ${range.start}..${range.end}: ${fetched}, db=${touchDb ? `touched${why}` : "untouched"}` +
         (purged ? `, purged ${JSON.stringify(purged)}` : "") +
+        loaded +
         (touchDb && sweep && sweep.shopsChecked > 0 ? `, checked ${sweep.shopsChecked} ${sweep.shopsChecked === 1 ? "shop" : "shops"} against new recalls` : "") +
         (touchDb && sweep && sweep.shopsFailed > 0 ? `, ${sweep.shopsFailed} failed` : "") +
         (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : ""),
@@ -153,5 +186,5 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPe
     if (failure) throw failure;
   };
 
-  return [{ name: "cpsc-poll", everyMs: POLL_MS, deadlineMs: 10 * 60_000, run: poll }];
+  return [{ name: "cpsc-poll", everyMs: POLL_MS, deadlineMs: JOB_DEADLINE_MS, run: poll }];
 }

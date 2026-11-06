@@ -7,11 +7,12 @@ export async function register(): Promise<void> {
     console.warn("background jobs not started: DATABASE_URL is not set");
     return;
   }
-  const [{ getDb }, { appJobs }, { startScheduler }] = await Promise.all([
+  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }] = await Promise.all([
     import("./server/db/pg"),
     import("./server/jobs/appJobs"),
     import("./server/jobs/scheduler"),
+    import("./server/match/run"),
   ]);
-  startScheduler(appJobs(getDb()));
+  startScheduler(appJobs(getDb(), { backfillFromYear: Number(CHECK_FROM.slice(0, 4)) }));
   console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");
 }

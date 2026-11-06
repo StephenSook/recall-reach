@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import type { Db } from "../db/types";
+import { missingRecallYears } from "../cpsc/load";
 import { createShop, storeOrderLines } from "../import/store";
 import { createContactCipher } from "../privacy/contactCipher";
 import { appJobs, HEARTBEAT_TICKS, POLL_MS, recallPollStatus } from "./appJobs";
@@ -374,6 +375,93 @@ describe("the recall poll job", () => {
       expect(await pulls()).toBeGreaterThan(0);
       expect(errors.mock.calls.flat().join(" ")).toContain("no connection");
       expect(await matches(shopId)).toEqual([]);
+    });
+  });
+
+  describe("loading past years that are missing", () => {
+    const real: Record<string, unknown> = JSON.parse(readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8"))[0];
+    /** CPSC, answering a year's question with that year's records and a poll's question with today's. */
+    const cpsc = (failYear?: number) => {
+      const asked: string[] = [];
+      const fetchImpl = async (url: string | URL | Request) => {
+        const yearAsked = /RecallDateStart=(\d{4})/.exec(String(url))?.[1];
+        if (yearAsked) asked.push(yearAsked);
+        if (yearAsked && Number(yearAsked) === failYear) return new Response("error", { status: 400 });
+        const body = !yearAsked
+          ? nov5
+          : yearAsked === "2022"
+            ? [real]
+            : [{ ...real, RecallID: Number(yearAsked), RecallNumber: yearAsked, Title: `Other recall from ${yearAsked}`, RecallDate: `${yearAsked}-08-15T00:00:00`, LastPublishDate: `${yearAsked}-08-15T00:00:00` }];
+        return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      };
+      return { asked, deps: { fetchImpl: fetchImpl as typeof fetch, sleep: async () => {}, now: () => NOW, backfillFromYear: 2022 } };
+    };
+    const storedSwing = async () => {
+      const shopId = await createShop(db, { name: "A shop", kind: "REAL" });
+      const sale = { orderNumber: "1", lineNo: 1, title: "4moms MamaRoo Multi-Motion Swing", sku: null, quantity: 1, unitPriceCents: 8500, discountCents: 0, currency: "USD", orderedOn: "2022-05-17", paymentReference: null, buyerEmail: null };
+      await storeOrderLines(db, shopId, [sale], createContactCipher("k".repeat(32), shopId), "test");
+      return shopId;
+    };
+    const has22200 = async (shopId: string) => (await db.query("select 1 from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '22200'", [shopId])).rows.length;
+    const warnings = () => vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    it("loads them on the first tick after a deploy, and a stored shop gets those recalls on that same tick", async () => {
+      const shopId = await storedSwing();
+      const { asked, deps } = cpsc();
+      const [poll] = appJobs(db, deps);
+      await poll.run();
+      expect(asked).toEqual(["2022", "2023", "2024", "2025"]);
+      expect(await has22200(shopId)).toBe(1);
+      expect(info[0]).toContain("loaded 4 years");
+    });
+
+    it("asks nothing further once they are in, and a quiet poll still costs the database nothing", async () => {
+      const { asked, deps } = cpsc();
+      const { counted, calls } = counting(db);
+      const [poll] = appJobs(counted, deps);
+      await poll.run();
+      asked.length = 0;
+      calls.n = 0;
+      await poll.run();
+      expect(calls.n).toBe(0);
+      for (let i = 1; i < HEARTBEAT_TICKS - 1; i++) await poll.run();
+      await poll.run(); // the next heartbeat
+      expect(asked).toEqual([]);
+    });
+
+    it("tries a failed year again on the next heartbeat, with no deploy, and the poll carries on", async () => {
+      warnings();
+      const first = cpsc(2023);
+      const [poll] = appJobs(db, first.deps);
+      await poll.run();
+      expect(await missingRecallYears(db, 2022, "2026-11-05")).toEqual([2023]);
+
+      first.asked.length = 0;
+      const healed = cpsc();
+      const [later] = appJobs(db, healed.deps);
+      await later.run();
+      expect(healed.asked).toEqual(["2023"]);
+      expect(await missingRecallYears(db, 2022, "2026-11-05")).toEqual([]);
+    });
+
+    it("says which year didn't load", async () => {
+      const warn = warnings();
+      const [poll] = appJobs(db, cpsc(2023).deps);
+      await poll.run();
+      expect(warn.mock.calls.flat().join(" ")).toContain("recall year 2023 did not load");
+    });
+
+    it("says when years were left for the next hour", async () => {
+      const [poll] = appJobs(db, { ...cpsc().deps, backfillBudgetMs: -1 });
+      await poll.run();
+      expect(info[0]).toContain("4 years left for the next hour");
+    });
+
+    it("stays out of it when not asked to load anything", async () => {
+      const { asked, deps } = cpsc();
+      const [poll] = appJobs(db, { ...deps, backfillFromYear: undefined });
+      await poll.run();
+      expect(asked).toEqual([]);
     });
   });
 

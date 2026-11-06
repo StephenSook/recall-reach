@@ -78,7 +78,7 @@ const CASES: DemoCase[] = [
   // AMBIGUOUS JOIN: two lines reuse one SKU and one payment could belong to either, so nothing goes out on either.
   { recallNumber: "26688", seededNearPaymentSku: "DEMO-TALECO", label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
   { recallNumber: "26688", seededNearPaymentSku: "DEMO-TALECO", label: SEEDED, lines: [{ title: "G Taleco Gear Baby Jumper", sku: "DEMO-TALECO", priceCents: 3500 }] },
-  // A real listing with a strong real-world scope gap. It reaches the queue once recall 22200 (2022) is loaded.
+  // A real listing with a strong real-world scope gap: the recall covers only the 3-point harness.
   { recallNumber: "22200", poolOrderNumber: "DEMO-HIST-MAMAROO", seededDaysBeforeRecall: 90, label: SEEDED, lines: [{ title: "4moms MamaRoo Multi-Motion Swing", sku: "DEMO-MAMAROO", priceCents: 8500 }] },
 ];
 // CANNOT IDENTIFY has no line on purpose: the pool's $42 payment says only an amount, and is counted as unidentified.

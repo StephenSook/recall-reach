@@ -2,8 +2,8 @@
 // makes real sandbox captures and one real sandbox refund.
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
-/** A notice, a refund, a mixed basket, a scope gap, a can't-tell, two sales that could be one order, and the shelf item. */
-const DEMO_CARDS = 8;
+/** A notice, a refund, a mixed basket, two scope gaps, a can't-tell, two sales that could be one order, and the shelf item. */
+const DEMO_CARDS = 9;
 
 const recall = (page: Page, number: string) => {
   const cards = page.locator(`article[data-recall="${number}"]`);
