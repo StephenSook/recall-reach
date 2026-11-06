@@ -25,7 +25,10 @@ export interface QueueRow {
   reason: string;
   isListing: boolean;
   stillListed: boolean;
+  /** The newest message for this row. */
   notice: { id: string; kind: string; state: NoticeState; stopped: boolean; result: string | null } | null;
+  /** What the family said to a question, when a safety notice has since followed it. */
+  earlierQuestionResult: string | null;
   approval: { id: string; amountCents: number; currency: string; expiresAt: string } | null;
   refund: { id: string; status: string; amountCents: number; currency: string; failure: string | null } | null;
 }
@@ -65,13 +68,16 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.check_result,
+            (select q.check_result from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
             a.id as approval_id, a.amount_cents as approval_amount, a.currency as approval_currency, a.expires_at as approval_expires,
             rf.id as refund_id, rf.status as refund_status, rf.amount_cents as refund_amount, rf.currency as refund_currency, rf.failure as refund_failure
      from recall_matches m
      join recalls r on r.recall_id = m.recall_id
      left join order_lines l on l.id = m.order_line_id
      left join shop_items i on i.id = m.shop_item_id
-     left join notices n on n.match_id = m.id
+     left join lateral (
+       select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1
+     ) n on true
      left join lateral (
        select * from approvals x
        where x.order_line_id = m.order_line_id and x.recall_id = m.recall_id and x.session_id = $2
@@ -115,6 +121,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             result: (r.check_result as string | null) ?? null,
           }
         : null,
+      earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,
       approval: r.approval_id
         ? {
             id: String(r.approval_id),

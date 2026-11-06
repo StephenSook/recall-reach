@@ -61,9 +61,13 @@ export async function prepareNotice(
     "select id, kind, sent_at, responded_at from notices where match_id = $1",
     [input.matchId],
   );
-  const mine = existing.rows[0];
+  const same = existing.rows.find((n) => n.kind === kind);
+  if (same) return { noticeId: same.id, kind };
+  const other = existing.rows[0];
   // What was sent or answered stays on record as it was. Until then, the message follows the evidence as it stands now.
-  if (mine && (mine.kind === kind || mine.sent_at || mine.responded_at)) return { noticeId: mine.id, kind: mine.kind };
+  // After it, a confirmed recall still has to reach the family, but a safety notice is not walked back with a question.
+  const otherWentOut = other && (other.sent_at || other.responded_at);
+  if (otherWentOut && kind === "CHECK_REQUEST") return { noticeId: other.id, kind: other.kind };
   if (kind === "CHECK_REQUEST") {
     const taken = await db.query(
       `select 1 from notices where order_line_id = $1 and match_id <> $2
@@ -74,23 +78,26 @@ export async function prepareNotice(
   }
   const written = kind === "CHECK_REQUEST" ? await writtenQuestion(db, m.recall_sha256) : null;
   const frozen = written ? JSON.stringify(written) : null;
-  if (mine) {
+  if (other && !otherWentOut) {
     // It can be sent or answered while this runs, and then it stays as it was.
     const rewritten = await db.query(
       "update notices set kind = $2, opened_at = null, written_question = $4::jsonb where id = $1 and shop_id = $3 and sent_at is null and responded_at is null returning id",
-      [mine.id, kind, input.shopId, frozen],
+      [other.id, kind, input.shopId, frozen],
     );
-    return { noticeId: mine.id, kind: rewritten.rows.length > 0 ? kind : mine.kind };
+    if (rewritten.rows.length > 0) return { noticeId: other.id, kind };
+    if (kind === "CHECK_REQUEST") return { noticeId: other.id, kind: other.kind };
   }
-  // The index settles a race between two requests. Here a second notice for the match is the same notice.
+  // The indexes settle a race between two requests: one message of each kind per match, one question per sale.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
     `insert into notices (shop_id, match_id, kind, order_line_id, written_question) values ($1, $2, $3, $4, $5::jsonb)
      on conflict do nothing
      returning id, kind`,
     [input.shopId, input.matchId, kind, m.order_line_id, frozen],
   );
-  if (!saved.rows[0]) throw alreadyAsked();
-  return { noticeId: saved.rows[0].id, kind: saved.rows[0].kind };
+  if (saved.rows[0]) return { noticeId: saved.rows[0].id, kind: saved.rows[0].kind };
+  const raced = await db.query<{ id: string }>("select id from notices where match_id = $1 and kind = $2", [input.matchId, kind]);
+  if (!raced.rows[0]) throw alreadyAsked();
+  return { noticeId: raced.rows[0].id, kind };
 }
 
 async function mark(db: Queryable, column: "opened_at" | "sent_at", input: { shopId: string; noticeId: string }): Promise<void> {

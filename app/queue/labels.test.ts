@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipsFor } from "./labels";
+import { chipsFor, needsApproval } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,29 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("needsApproval", () => {
+  const notice = (kind: string, state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED") => ({ id: "n", kind, state, stopped: false, result: null });
+
+  it("asks for approval when nothing has been prepared", () => {
+    expect(needsApproval({ verdict: "MATCH", notice: null })).toBe(true);
+    expect(needsApproval({ verdict: "SCOPE_GAP", notice: null })).toBe(true);
+  });
+
+  it.each([
+    ["MATCH", "SAFETY_NOTICE", "PREPARED", false],
+    ["SCOPE_GAP", "CHECK_REQUEST", "OPENED_IN_MAIL", false],
+    ["MATCH", "CHECK_REQUEST", "PREPARED", true],
+    ["SCOPE_GAP", "SAFETY_NOTICE", "OPENED_IN_MAIL", true],
+    ["MATCH", "CHECK_REQUEST", "MARKED_SENT", true],
+    ["MATCH", "CHECK_REQUEST", "FAMILY_RESPONDED", true],
+    ["SCOPE_GAP", "CHECK_REQUEST", "MARKED_SENT", false],
+    ["MATCH", "SAFETY_NOTICE", "MARKED_SENT", false],
+    ["SCOPE_GAP", "SAFETY_NOTICE", "MARKED_SENT", false],
+  ] as const)("%s with a %s in state %s: %s", (verdict, kind, state, expected) => {
+    expect(needsApproval({ verdict, notice: notice(kind, state) })).toBe(expected);
+  });
 });
 
 describe("chipsFor", () => {

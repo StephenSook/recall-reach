@@ -5,7 +5,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { seedDemoShop } from "../demo/seed";
 import { createShop } from "../import/store";
-import { markOpened, prepareNotice, recordFamilyStopped } from "../notice/store";
+import { markOpened, markSent, prepareNotice, recordFamilyStopped } from "../notice/store";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { approveRefund } from "../paypal/refunds";
 import { loadQueue, tellCpscDraft, toCards, type QueueRow } from "./queue";
@@ -125,6 +125,40 @@ describe("loadQueue", () => {
     const empty = await createShop(db, { name: "EMPTY", kind: "DEMO" });
     expect(await loadQueue(db, empty, "s")).toMatchObject({ rows: [], coverage: null });
   });
+
+  describe("a sale with a question and then a safety notice", () => {
+    const untilConfirmed = async () => {
+      await db.query("update recall_matches set verdict = 'SCOPE_GAP', strength = 'BRAND' where recall_id = (select recall_id from recalls where recall_number = '27072') and shop_id = $1", [shopId]);
+      const { matchId } = await row("27072");
+      const asked = await prepareNotice(db, { shopId, matchId });
+      await markSent(db, { shopId, noticeId: asked.noticeId });
+      await db.query("update recall_matches set verdict = 'MATCH', strength = 'CONFIRMED' where id = $1", [matchId]);
+      return { matchId, asked };
+    };
+
+    it("is one row, showing the question until the seller approves the notice", async () => {
+      const { asked } = await untilConfirmed();
+      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].notice).toMatchObject({ id: asked.noticeId, kind: "CHECK_REQUEST" });
+    });
+
+    it("is still one row after that, showing the notice, and keeps what the family said", async () => {
+      const { matchId, asked } = await untilConfirmed();
+      await db.query("update notices set check_result = 'MATCHES', responded_at = now() where id = $1", [asked.noticeId]);
+      const notice = await prepareNotice(db, { shopId, matchId });
+      const rows = (await loadQueue(db, shopId, "session-1")).rows.filter((r) => r.recallNumber === "27072");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].notice).toMatchObject({ id: notice.noticeId, kind: "SAFETY_NOTICE", state: "PREPARED" });
+      expect(rows[0].earlierQuestionResult).toBe("MATCHES");
+    });
+
+    it("has no earlier answer when there was no question", async () => {
+      const { matchId } = await row("27072");
+      await prepareNotice(db, { shopId, matchId });
+      expect((await row("27072")).earlierQuestionResult).toBeNull();
+    });
+  });
 });
 
 describe("toCards", () => {
@@ -149,6 +183,7 @@ describe("toCards", () => {
     isListing: false,
     stillListed: false,
     notice: null,
+    earlierQuestionResult: null,
     approval: null,
     refund: null,
     ...over,

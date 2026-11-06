@@ -161,7 +161,7 @@ describe("notices", () => {
       await markSent(db, { shopId, noticeId: first.noticeId });
       await storeOrderLines(db, shopId, [line({ orderNumber: "#L8", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
       await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
-      expect((await prepareNotice(db, { shopId, matchId: m })).kind).toBe("SAFETY_NOTICE");
+      expect(await prepareNotice(db, { shopId, matchId: m })).toEqual(first);
     });
 
     describe("a question, when the sale is confirmed after it was prepared", () => {
@@ -197,12 +197,67 @@ describe("notices", () => {
         const { m, noticeId } = await question("#S3");
         await recordFamilyAnswer(db, noticeId, "BRZ0083");
         await confirm("#S3");
-        expect(await prepareNotice(db, { shopId, matchId: m })).toEqual({ noticeId, kind: "CHECK_REQUEST" });
+        await prepareNotice(db, { shopId, matchId: m });
         expect(await storedKind(noticeId)).toBe("CHECK_REQUEST");
         expect((await compose(noticeId)).subject).toMatch(/^Quick safety check/);
       });
 
-      it.each(["sent", "answered"])("is not rewritten when it was %s while being approved again", async (what) => {
+      describe("once it has gone out", () => {
+        const wentOut: [string, (noticeId: string) => Promise<unknown>][] = [
+          ["sent", (noticeId) => markSent(db, { shopId, noticeId })],
+          ["answered", (noticeId) => recordFamilyAnswer(db, noticeId, "BRZ0083")],
+        ];
+
+        it.each(wentOut)("%s: the family can still be told, in a safety notice of its own", async (what, goOut) => {
+          const { m, noticeId } = await question(`#S5${what}`);
+          await goOut(noticeId);
+          await confirm(`#S5${what}`);
+          const notice = await prepareNotice(db, { shopId, matchId: m });
+          expect(notice.kind).toBe("SAFETY_NOTICE");
+          expect(notice.noticeId).not.toBe(noticeId);
+          expect((await compose(notice.noticeId)).subject).toMatch(/^Safety recall/);
+        });
+
+        it("keeps what the family said on the question", async () => {
+          const { m, noticeId } = await question("#S6");
+          await recordFamilyAnswer(db, noticeId, "BRZ0083");
+          await confirm("#S6");
+          await prepareNotice(db, { shopId, matchId: m });
+          const { rows } = await db.query<{ check_result: string }>("select check_result from notices where id = $1", [noticeId]);
+          expect(rows[0].check_result).toBe("MATCHES");
+        });
+
+        it("is one notice however many times it is approved", async () => {
+          const { m, noticeId } = await question("#S7");
+          await markSent(db, { shopId, noticeId });
+          await confirm("#S7");
+          const first = await prepareNotice(db, { shopId, matchId: m });
+          expect(await prepareNotice(db, { shopId, matchId: m })).toEqual(first);
+          const { rows } = await db.query("select 1 from notices where match_id = $1", [m]);
+          expect(rows).toHaveLength(2);
+        });
+
+        it("holds that line when two approvals race", async () => {
+          const { m, noticeId } = await question("#S8");
+          await markSent(db, { shopId, noticeId });
+          await confirm("#S8");
+          const [a, b] = await Promise.all([prepareNotice(db, { shopId, matchId: m }), prepareNotice(db, { shopId, matchId: m })]);
+          expect(a).toEqual(b);
+        });
+
+        it("does not follow a safety notice with a question if the evidence later weakens", async () => {
+          const m = await matchFor("27072", line({ orderNumber: "#S9", title: NAMED }));
+          const safety = await prepareNotice(db, { shopId, matchId: m });
+          await markSent(db, { shopId, noticeId: safety.noticeId });
+          await storeOrderLines(db, shopId, [line({ orderNumber: "#S9", title: NOT_NAMED })], cipher(), "test");
+          await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+          expect(await prepareNotice(db, { shopId, matchId: m })).toEqual(safety);
+          const { rows } = await db.query("select 1 from notices where match_id = $1", [m]);
+          expect(rows).toHaveLength(1);
+        });
+      });
+
+      it.each(["sent", "answered"])("is not rewritten when it was %s while being approved again, and the notice follows it", async (what) => {
         const { m, noticeId } = await question(`#S4${what}`);
         await confirm(`#S4${what}`);
         const racing: Queryable = {
@@ -215,8 +270,10 @@ describe("notices", () => {
             return db.query(sql, params);
           }) as Queryable["query"],
         };
-        expect(await prepareNotice(racing, { shopId, matchId: m })).toEqual({ noticeId, kind: "CHECK_REQUEST" });
+        const notice = await prepareNotice(racing, { shopId, matchId: m });
         expect(await storedKind(noticeId)).toBe("CHECK_REQUEST");
+        expect(notice.kind).toBe("SAFETY_NOTICE");
+        expect(notice.noticeId).not.toBe(noticeId);
       });
     });
 

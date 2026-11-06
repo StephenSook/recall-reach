@@ -3,7 +3,7 @@ import { getDb } from "@/server/db/pg";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession } from "@/server/web/http";
-import { CHECK_RESULT, chipsFor, NOTICE_STATE, REFUND_STATE } from "./labels";
+import { CHECK_RESULT, chipsFor, needsApproval, NOTICE_STATE, REFUND_STATE } from "./labels";
 import { NoticeActions } from "./NoticeActions";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,6 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
   const blocked = row.joinState === "AMBIGUOUS_JOIN";
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const canNotify = row.verdict !== "CLEARED" && !row.isListing && !blocked && !productWordsOnly;
-  // The evidence changed before this went out, so it needs approving again as the right message.
-  const staleNotice = row.notice !== null && (row.notice.state === "PREPARED" || row.notice.state === "OPENED_IN_MAIL") && (row.notice.kind === "SAFETY_NOTICE") !== (row.verdict === "MATCH");
   const provenance = shopKind === "DEMO" ? "REAL CPSC, SANDBOX PAYPAL, DEMO SHOP" : "REAL CPSC, SANDBOX PAYPAL, REAL SHOP";
   return (
     <article data-recall={row.recallNumber} data-verdict={row.verdict}>
@@ -44,7 +42,7 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
         </p>
       ) : null}
 
-      {canNotify && (!row.notice || staleNotice) ? (
+      {canNotify && needsApproval(row) ? (
         <form action="/api/queue/notices" method="post">
           <input type="hidden" name="matchId" value={row.matchId} />
           <button type="submit">{row.verdict === "MATCH" ? "Approve this notice" : "Approve this check request"}</button>
@@ -58,7 +56,8 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
           </p>
           {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it</p> : null}
           {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
-          {canNotify && !staleNotice ? <NoticeActions noticeId={row.notice.id} /> : null}
+          {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
+          {canNotify && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
           {row.notice.state === "OPENED_IN_MAIL" ? (
             <form action={`/api/queue/notices/${row.notice.id}/sent`} method="post">
               <button type="submit">I sent it</button>

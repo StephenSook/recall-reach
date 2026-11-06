@@ -26,6 +26,18 @@ export const CHECK_RESULT: Record<string, string> = {
   CANT_TELL: "Family's answer could not settle it",
 };
 
+/** Whether a message for this row is waiting on the seller's approval. */
+export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolean {
+  const n = row.notice;
+  if (!n) return true;
+  const safety = n.kind === "SAFETY_NOTICE";
+  const confirmed = row.verdict === "MATCH";
+  // The evidence changed before it went out, so it needs approving again as the right message.
+  if (n.state === "PREPARED" || n.state === "OPENED_IN_MAIL") return safety !== confirmed;
+  // A question went out and the recall has since been confirmed: the family still has to be told.
+  return !safety && confirmed;
+}
+
 /** The chips on a card. A sale path is a claim about a confirmed match, so it shows on nothing else. */
 export function chipsFor(row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "isListing" | "stillListed">): string[] {
   const chips: string[] = [VERDICT_CHIP[row.verdict]];
