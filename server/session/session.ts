@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { requireSecret } from "../privacy/secrets";
 
 export const SESSION_COOKIE = "rr_session";
 
@@ -16,7 +17,7 @@ export const SESSION_MS = 24 * 3_600_000;
  * inside what is signed: the cookie's Max-Age only tells a browser when to drop it, and a copied one is not bound by that.
  */
 export function sessionCookie(secret: string, shopId: string, now: Date = new Date(), lastsMs: number = SESSION_MS): { value: string; sessionId: string } {
-  if (secret.length < 32) throw new Error("session secret must be at least 32 characters");
+  requireSecret(secret, "session");
   const sessionId = randomBytes(16).toString("hex");
   const payload = `${shopId}.${sessionId}.${now.getTime() + lastsMs}`;
   return { value: `${payload}.${sign(secret, payload)}`, sessionId };

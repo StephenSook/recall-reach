@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { requireSecret } from "./secrets";
 
 export interface ContactCipher {
   seal(plain: string): string;
@@ -11,7 +12,7 @@ export interface ContactCipher {
  * is bound into every value. Deleting a shop's rows when it disconnects removes the data itself.
  */
 export function createContactCipher(masterSecret: string, shopId: string): ContactCipher {
-  if (masterSecret.length < 32) throw new Error("contact cipher secret must be at least 32 characters");
+  requireSecret(masterSecret, "contact cipher");
   const key = Buffer.from(hkdfSync("sha256", masterSecret, shopId, "recall-reach buyer contact v1", 32));
   const aad = Buffer.from(shopId);
   return {

@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { requireSecret } from "./secrets";
 
 /**
  * Keys for storing a reference to a PayPal id without storing the id. Whether a plain hash of a
@@ -9,7 +10,7 @@ import { createHmac } from "node:crypto";
 export type RecordKey = (kind: string, value: string) => string;
 
 export function createRecordKey(secret: string): RecordKey {
-  if (secret.length < 32) throw new Error("record key secret must be at least 32 characters");
+  requireSecret(secret, "record key");
   return (kind, value) => createHmac("sha256", secret).update(`${kind}\u0000${value}`).digest("hex");
 }
 
