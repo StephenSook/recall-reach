@@ -56,6 +56,20 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "PayPal Server SDK",
+    status: "claimed",
+    evidence: [
+      { file: "package.json", find: '"@paypal/paypal-server-sdk":' },
+      { file: "server/paypal/sdkRefundRead.ts", call: "getRefund" },
+      { file: "server/paypal/client.ts", call: "refundReadsThroughServerSdk" },
+    ],
+  },
+  {
+    name: "APIMatic Context Plugin",
+    status: "claimed",
+    evidence: [{ file: "docs/apimatic-context-plugin.md", find: "server-sdk-context-plugin-preview" }],
+  },
+  {
     name: "Claude",
     status: "claimed",
     evidence: [
@@ -104,7 +118,6 @@ export const CLAIMS: Claim[] = [
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
 
-  { name: "APIMatic", status: "cut", why: "Needs an account Stephen hasn't created.", mentions: ["apimatic"] },
   { name: "AG Studio", status: "cut", why: "Needs a trial licence Stephen hasn't requested.", mentions: ["ag studio", "ag-studio"] },
   { name: "Bryntum", status: "cut", why: "Not built yet.", mentions: ["bryntum"] },
   { name: "Render Workflows", status: "cut", why: "Skipped: a daily job does this.", mentions: ["render workflows"] },

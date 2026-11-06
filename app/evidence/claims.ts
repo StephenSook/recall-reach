@@ -12,6 +12,7 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Sends each refund through PayPal Agent Toolkit, server side", file: "server/paypal/toolkitRefund.ts", find: "refundsThroughToolkit" },
   { what: "Sends one request id per refund, so a retry gets the same refund back", file: "server/paypal/client.ts", find: "PayPal-Request-Id" },
   { what: "Reads the refund back from PayPal to reconcile it", file: "server/paypal/refunds.ts", find: "/v2/payments/refunds/" },
+  { what: "That read goes through PayPal's Server SDK, with a real time limit and one layer of retries", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
   { what: "Verifies each webhook's signature and certificate before believing it", file: "server/paypal/webhooks.ts", find: "isTrustedCertUrl" },
   { what: "Puts a sale in the queue when a verified capture webhook arrives", file: "server/demo/liveCatch.ts", find: "catchLiveSale" },
   { what: "Is built to follow the 48-hour deletion rule, and purges hourly at 46 hours", file: "server/privacy/retention.ts", find: "PAYPAL_PURGE_CUTOFF_HOURS = 46" },

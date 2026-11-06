@@ -111,6 +111,6 @@ describe("this repo", () => {
   it("gives the Built With list, with nothing cut in it", () => {
     const list = builtWith(CLAIMS);
     expect(list).toContain("PayPal Transaction Search");
-    expect(list).not.toContain("APIMatic");
+    expect(list).not.toContain("Bryntum");
   });
 });
