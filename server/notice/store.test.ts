@@ -9,6 +9,7 @@ import { QUESTION_VERSION } from "../agent/questionStore";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
+import { loadQueue } from "../queue/queue";
 import { checkResult, composeForSeller, familyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -494,6 +495,16 @@ describe("notices", () => {
       expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("DOESNT_MATCH");
     });
 
+    it("opens a closed no again when CPSC edits the recall", async () => {
+      await write({ review: "ACCEPTED" });
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q6-EDITED") });
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("DOESNT_MATCH");
+      expect((await familyView(db, noticeId))?.answerOpen).toBe(false);
+      await db.query("update recalls set raw_sha256 = 'edited' where recall_id = (select r.recall_id from notices n join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id where n.id = $1)", [noticeId]);
+      expect(await familyView(db, noticeId)).toMatchObject({ result: "CANT_TELL", answerOpen: true });
+      expect(await recordFamilyAnswer(db, noticeId, "not_sure")).toBe("CANT_TELL");
+    });
+
     it("is dropped when the message becomes a safety notice, and picked up when it becomes a question", async () => {
       const m = await matchFor("27072", line({ orderNumber: "#Q7", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
       const safety = await prepareNotice(db, { shopId, matchId: m });
@@ -658,6 +669,43 @@ describe("notices", () => {
         const noticeId = await modelCheck("#T-RISES");
         expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("DOESNT_MATCH");
         expect(await recordFamilyAnswer(db, noticeId, "can't read it")).toBe("CANT_TELL");
+      });
+
+      describe("when CPSC edits the recall after a no", () => {
+        const edit = () => db.query("update recalls set description = description || ' Also model BRZ9999.', raw_sha256 = 'edited' where recall_number = '27072'");
+
+        it("the no stops standing beside the new record, and the new record decides the next answer", async () => {
+          const noticeId = await modelCheck("#T-EDITED");
+          expect(await recordFamilyAnswer(db, noticeId, "BRZ9999")).toBe("DOESNT_MATCH");
+          expect((await familyView(db, noticeId))?.result).toBe("DOESNT_MATCH");
+          await edit();
+          expect(await familyView(db, noticeId)).toMatchObject({ result: "CANT_TELL", answerOpen: true });
+          expect(await recordFamilyAnswer(db, noticeId, "BRZ9999")).toBe("MATCHES");
+        });
+
+        it("the seller's queue reads it the same way", async () => {
+          const noticeId = await modelCheck("#T-EDITED-QUEUE");
+          await recordFamilyAnswer(db, noticeId, "BRZ9999");
+          const result = async () => (await loadQueue(db, shopId, "session-1")).rows.find((r) => r.notice?.id === noticeId)?.notice?.result;
+          expect(await result()).toBe("DOESNT_MATCH");
+          await edit();
+          expect(await result()).toBe("CANT_TELL");
+        });
+
+        it("a no given on the new record stands again", async () => {
+          const noticeId = await modelCheck("#T-EDITED-AGAIN");
+          await recordFamilyAnswer(db, noticeId, "ZZ9000");
+          await edit();
+          expect(await recordFamilyAnswer(db, noticeId, "ZZ9000")).toBe("DOESNT_MATCH");
+          expect((await familyView(db, noticeId))?.result).toBe("DOESNT_MATCH");
+        });
+
+        it("leaves a match alone", async () => {
+          const noticeId = await modelCheck("#T-EDITED-MATCH");
+          expect(await recordFamilyAnswer(db, noticeId, "BRZ0083")).toBe("MATCHES");
+          await edit();
+          expect(await familyView(db, noticeId)).toMatchObject({ result: "MATCHES", answerOpen: false });
+        });
       });
 
       it("once it matches, stays matched: nobody holding the link can talk it down", async () => {

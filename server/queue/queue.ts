@@ -5,7 +5,7 @@ import { readItem } from "../agent/sources";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
 import { checkQuestion, type CheckQuestion } from "../notice/compose";
-import { noticeState, type NoticeState } from "../notice/store";
+import { currentCheckResultSql, noticeState, type NoticeState } from "../notice/store";
 import type { Strength } from "../match/verdict";
 import { joinShop } from "../match/run";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
@@ -137,8 +137,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
-            n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.check_result,
-            (select q.check_result from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
+            n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result,
+            (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
             a.id as approval_id, a.amount_cents as approval_amount, a.currency as approval_currency, a.expires_at as approval_expires,
             rf.id as refund_id, rf.status as refund_status, rf.amount_cents as refund_amount, rf.currency as refund_currency, rf.failure as refund_failure
      from recall_matches m

@@ -203,6 +203,12 @@ function askedOf(n: Pick<RecallRow, "recall_number" | "title" | "description" | 
 
 export type CheckResult = "MATCHES" | "DOESNT_MATCH" | "CANT_TELL";
 
+const staleNo = (notice: string, recallSha: string) => `(${notice}check_result = 'DOESNT_MATCH' and ${notice}check_recall_sha is distinct from ${recallSha})`;
+
+/** A no only holds against the record it was given on, because CPSC can widen a recall later. This is what an answer reads as now. */
+export const currentCheckResultSql = (notice: string, recall: string) =>
+  `case when ${staleNo(`${notice}.`, `${recall}.raw_sha256`)} then 'CANT_TELL' else ${notice}.check_result end`;
+
 /** "Doesn't match" is only ever said when CPSC's full scope is in the record. */
 export function checkResult(
   recall: { title?: string; description: string },
@@ -254,8 +260,9 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
     kind: string;
     check_result: CheckResult | null;
     expired: boolean;
+    raw_sha256: string;
   }>(
-    `select r.recall_number, r.title, r.description, r.products, r.hazards, r.remedies, n.written_question, n.kind, n.check_result, n.family_link_expires_at <= now() as expired from notices n
+    `select r.raw_sha256, r.recall_number, r.title, r.description, r.products, r.hazards, r.remedies, n.written_question, n.kind, n.check_result, n.family_link_expires_at <= now() as expired from notices n
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id where n.id = $1`,
     [noticeId],
   );
@@ -273,13 +280,16 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   // because a label is easy to misread. A typed model only ever moves toward the recall, so a link holder can't talk it down.
   const result = checkResult(notice, question, said);
   const staysOpen = question.kind === "model" ? result !== "MATCHES" : said === "not_sure";
+  const open = `(check_result is null or check_open or ${staleNo("", "$5")})`;
+  const rank = (result: string) => `array_position(array['DOESNT_MATCH', 'CANT_TELL', 'MATCHES'], ${result})`;
   const saved = await db.query<{ check_result: CheckResult }>(
     `update notices set
-       check_result = case when check_result is null or (check_open and (not $4::boolean or array_position(array['DOESNT_MATCH', 'CANT_TELL', 'MATCHES'], $2::text) >= array_position(array['DOESNT_MATCH', 'CANT_TELL', 'MATCHES'], check_result))) then $2 else check_result end,
-       check_open = case when check_result is null or check_open then $3::boolean else false end,
+       check_result = case when check_result is null or (${open} and (not $4::boolean or ${rank("$2::text")} >= ${rank("check_result")})) then $2 else check_result end,
+       check_open = case when ${open} then $3::boolean else false end,
+       check_recall_sha = case when ${open} then $5 else check_recall_sha end,
        responded_at = coalesce(responded_at, now())
      where id = $1 returning check_result`,
-    [noticeId, result, staysOpen, question.kind === "model"],
+    [noticeId, result, staysOpen, question.kind === "model", notice.raw_sha256],
   );
   return saved.rows[0].check_result;
 }
@@ -318,7 +328,7 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
   const { rows } = await db.query<
     RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null; images: { url: string; caption: string }[] }
   >(
-    `select n.kind, n.family_stopped, n.check_result, n.check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
+    `select n.kind, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result, (n.check_open or ${staleNo("n.", "r.raw_sha256")}) as check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies, r.images
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
