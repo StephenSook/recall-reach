@@ -52,7 +52,7 @@ The service is defined in `render.yaml` (a Render Blueprint): one Node web servi
 
 - Live: https://recall-reach-web-e022.onrender.com (`/api/live`, `/api/health`). Render added the `-e022` suffix to the Blueprint's service name `recall-reach-web`.
 - The server runs one background job (`instrumentation.ts`): it asks CPSC for recalls every 15 minutes, and touches the database only when the answer changes or on the hourly heartbeat, which also purges PayPal data past a 46-hour cutoff. A quiet poll is HTTP only, so the free-tier database can sleep.
-- The PayPal sandbox app's webhook points at `/api/paypal/webhook` for `PAYMENT.CAPTURE.COMPLETED`, `.REFUNDED`, `.REVERSED`, `.DENIED` and `CUSTOMER.DISPUTE.CREATED`, `.UPDATED`, `.RESOLVED`.
+- The PayPal sandbox app's webhook points at `/api/paypal/webhook` for `PAYMENT.CAPTURE.COMPLETED`, `.REFUNDED`, `.REVERSED`, and `.DENIED`.
 
 ### Maintainer checklist
 
