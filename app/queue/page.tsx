@@ -8,6 +8,7 @@ import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
 import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
+import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 import { WatchForSale } from "./WatchForSale";
@@ -253,7 +254,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           {message}
         </p>
       ) : null}
-      {pendingLiveSales > 0 ? <WatchForSale /> : null}
+      {pendingLiveSales > 0 ? <WatchForSale /> : rows.some((r) => r.notice && r.notice.state !== "FAMILY_RESPONDED") ? <LookAgain everyMs={3_000} forMs={180_000} /> : null}
       <div className="stats" data-testid="stats">
         <div className="stat">
           <span className="stat-value">{counts.recallsChecked ?? "None"}</span>

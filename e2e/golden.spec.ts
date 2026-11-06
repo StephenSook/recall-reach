@@ -113,8 +113,8 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
     await expect(family.locator("body")).not.toContainText("DEMO-"); // no order data on the family's page
   });
 
-  await page.reload();
-  await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("Family responded");
+  // No reload: the seller's page sees it by itself.
+  await expect(recall(page, "27072").getByTestId("notice-state")).toHaveText("Family responded", { timeout: 15_000 });
   await expect(recall(page, "27072").getByTestId("family-report")).toHaveText("Family says they stopped using it");
 
   // REFUND ELIGIBLE: a real sandbox capture made today, truly after the recall date.
@@ -136,11 +136,8 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
   await expect(page.getByTestId("refund")).toContainText("90.00 USD");
   await expect(page.getByTestId("capture")).toContainText("REFUNDED");
 
-  // PayPal's signed webhook arrives on its own time; reconciliation is complete once it does.
-  await expect(async () => {
-    await page.reload();
-    await expect(page.getByTestId("webhook")).toContainText("received and verified", { timeout: 2_000 });
-  }).toPass({ timeout: 5 * 60_000, intervals: [10_000] });
+  // PayPal's signed webhook arrives on its own time; reconciliation is complete once it does. No reload: the page sees it by itself.
+  await expect(page.getByTestId("webhook")).toContainText("received and verified", { timeout: 170_000 });
   await expect(page.getByTestId("no-exceptions")).toHaveText("All four records agree.");
 
   // The refund line appears only now that PayPal has confirmed it.
@@ -181,8 +178,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
     );
   });
 
-  await page.reload();
-  await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Family responded");
+  await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Family responded", { timeout: 15_000 });
   await expect(recall(page, "27040").getByTestId("check-result")).toHaveText("Family's answer matches the recall");
 });
 

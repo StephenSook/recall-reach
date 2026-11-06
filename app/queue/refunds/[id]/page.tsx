@@ -5,6 +5,7 @@ import { centsToValue } from "@/server/paypal/orders";
 import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { currentSession } from "@/server/web/http";
+import { LookAgain } from "../../LookAgain";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,8 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
           <button type="submit" className="btn btn-outline">Ask PayPal again</button>
         </form>
       ) : null}
+      {/* Each look reads PayPal again, so this one asks less often than the queue. */}
+      {!rec.webhook.seen && rec.ledger.status !== "failed" ? <LookAgain everyMs={5_000} forMs={180_000} /> : null}
       <p>
         <a href={rec.matchId ? `/queue#sale-${rec.matchId}` : "/queue"}>Back to the queue</a>
       </p>
