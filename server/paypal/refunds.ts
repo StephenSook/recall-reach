@@ -363,20 +363,6 @@ function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date
   }
 }
 
-/**
- * Whether a repeat's refusal proves the earlier send made no refund. "Failed" frees the line for a new
- * approval with a new request id, so it needs proof: PayPal judged this request (401, 403 and 404 say
- * nothing about the earlier send), and the capture shows no refund on it at all.
- */
-async function repeatProvesNothingLanded(client: PayPalClient, captureId: string, refusal: PayPalApiError): Promise<boolean> {
-  if (refusal.status !== 400 && refusal.status !== 422) return false;
-  try {
-    return (await getCapture(client, captureId)).status === "COMPLETED";
-  } catch {
-    return false;
-  }
-}
-
 /** Sends one stored refund and records PayPal's answer. Repeating it with the same request id makes no second refund. */
 async function sendRefund(
   db: Queryable,
@@ -403,8 +389,11 @@ async function sendRefund(
     const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);
   } catch (err) {
-    if (clearlyRefused(err) && (!send.repeat || (await repeatProvesNothingLanded(client, send.captureId, err)))) {
-      return settle("failed", err.issue ?? `HTTP ${err.status}`);
+    // "Failed" frees the line for a new request id. A repeat's refusal cannot prove the earlier send made
+    // nothing, not even with the capture reading COMPLETED while a refund settles, so a person checks.
+    if (clearlyRefused(err)) {
+      if (!send.repeat) return settle("failed", err.issue ?? `HTTP ${err.status}`);
+      return settle("unconfirmed", `PayPal refused the repeat (${err.issue ?? `HTTP ${err.status}`}). Check PayPal directly before doing anything else.`);
     }
     return settle("unconfirmed", "No clear answer from PayPal. Check it before trying again.");
   }
