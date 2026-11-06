@@ -45,7 +45,7 @@ describe("loadQueue", () => {
     const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });
     await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
     paypal = fakePayPal();
-    ({ shopId } = await seedDemoShop(db, paypal, { today: TODAY, secret: "k".repeat(32) }));
+    ({ shopId } = await seedDemoShop(db, paypal, { today: TODAY, secret: "k".repeat(32), now: new Date(`${TODAY}T15:00:00Z`) }));
   });
   afterEach(async () => {
     await db.close();

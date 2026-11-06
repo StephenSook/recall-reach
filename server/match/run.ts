@@ -4,7 +4,7 @@ import type { Recall, RecallProduct } from "../cpsc/schema";
 import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
-import { BUSINESS_TIME_ZONE_SQL } from "../time/businessDay";
+import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 import type { SearchCoverage } from "../paypal/transactions";
 
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
@@ -196,8 +196,9 @@ export async function runShopCheck(
       );
     }
     const dates = lines.map((l) => l.ordered_on).sort();
-    const searchedFrom = opts.search?.from.slice(0, 10) ?? dates[0] ?? null;
-    const searchedTo = opts.search?.to.slice(0, 10) ?? opts.today;
+    // PayPal's search runs on UTC. A seller reads dates on the US calendar, like every other date on the page.
+    const searchedFrom = opts.search ? businessDay(new Date(opts.search.from)) : (dates[0] ?? null);
+    const searchedTo = opts.search ? businessDay(new Date(opts.search.to)) : opts.today;
     const { rows } = opts.onlyRecordId ? { rows: [] } : await tx.query<{ id: string }>(
       `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read)
        values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13) returning id`,

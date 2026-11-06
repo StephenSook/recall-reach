@@ -166,6 +166,14 @@ describe("seedDemoShop", () => {
       expect(run.unidentifiedPayments).toBe(1); // the payment that says only an amount
     });
 
+    it("shows the dates it searched on the US calendar, like every other date on the page", async () => {
+      const lateEvening = new Date("2026-11-06T03:49:00Z"); // 10:49 PM on Nov 5 in New York
+      const { shopId } = await seedDemoShop(db, fakePayPal().client, { today: "2026-11-05", secret: SECRET, now: lateEvening });
+      const { rows } = await db.query<{ searched_from: string; searched_to: string }>("select searched_from, searched_to from shop_runs where shop_id = $1", [shopId]);
+      expect(rows[0].searched_to).toBe("2026-11-05");
+      expect(rows[0].searched_from).toBe("2026-09-04");
+    });
+
     it("takes only the demo's standing payments: another session's sale is not this shop's", async () => {
       const { shopId } = await seed(fakePayPal().client);
       const { rows } = await db.query<{ order_number: string | null }>("select order_number from paypal_payments where shop_id = $1", [shopId]);
