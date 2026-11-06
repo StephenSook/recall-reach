@@ -11,7 +11,7 @@ type Tab = ReplayOutcome | "ALL";
 const TABS: { id: Tab; label: string }[] = [
   { id: "ALL", label: "All" },
   { id: "MATCH", label: "Matched" },
-  { id: "SCOPE_GAP", label: "Scope gap" },
+  { id: "SCOPE_GAP", label: "Can't tell yet" },
   { id: "CLEARED", label: "Cleared" },
   { id: "NOT_NEAR", label: "Nothing near" },
 ];

@@ -166,7 +166,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await expect(page.locator('article[data-recall="27040"]').getByTestId("also")).toContainText("25206");
 
   const costway = recall(page, "27040");
-  await expect(costway).toContainText("Scope gap");
+  await expect(costway).toContainText("Can't tell yet");
   await expect(costway).toContainText("Missing:");
   await costway.getByRole("button", { name: "Approve this check request" }).click();
 
@@ -189,7 +189,7 @@ test("a scope gap is settled by a check request that asks what this recall needs
   await expect(recall(page, "27040").getByTestId("notice-state")).toHaveText("Family responded", { timeout: 15_000 });
   await expect(recall(page, "27040").getByTestId("check-result")).toHaveText("Family's answer matches the recall");
   await expect(recall(page, "27040").locator(".chips")).toContainText("Family's answer matches");
-  await expect(recall(page, "27040").locator(".chips")).not.toContainText("Scope gap");
+  await expect(recall(page, "27040").locator(".chips")).not.toContainText("Can't tell yet");
   await expect(recall(page, "27040").locator(".chips")).not.toContainText(/confirmed/i);
   await expect(page.locator(".page-head")).toContainText("8 items wait for you");
 });

@@ -191,7 +191,7 @@ components:
         reason: { type: string }
         missing:
           type: array
-          description: What it would take to settle a scope gap.
+          description: What it would take to settle a SCOPE_GAP verdict.
           items: { type: string }
     CheckAnswer:
       type: object

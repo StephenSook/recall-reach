@@ -1,7 +1,7 @@
-// The exact words on the seller's screen (research/COPY-DECK.md).
+// The exact words on the seller's screen.
 import type { QueueData, QueueRow } from "@/server/queue/queue";
 
-export const VERDICT_CHIP = { MATCH: "Needs review", SCOPE_GAP: "Scope gap", CLEARED: "Cleared" } as const;
+export const VERDICT_CHIP = { MATCH: "Needs review", SCOPE_GAP: "Can't tell yet", CLEARED: "Cleared" } as const;
 export const PATH_CHIP = { NOTICE_ONLY: "Notice only", REVIEW: "Review date", REFUND_ELIGIBLE: "Refund eligible" } as const;
 export const JOIN_CHIP: Record<string, string | undefined> = {
   AMBIGUOUS_JOIN: "Two possible orders",

@@ -271,7 +271,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </div>
         <div className="stat stat-SCOPE_GAP">
           <span className="stat-value">{counts.scopeGaps}</span>
-          <span className="stat-label">{counted(counts.scopeGaps, "Scope gap", "Scope gaps")}</span>
+          <span className="stat-label">Can&apos;t tell yet</span>
         </div>
         <div className="stat stat-CLEARED">
           <span className="stat-value">{counts.cleared}</span>

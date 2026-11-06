@@ -254,7 +254,7 @@ describe("saleWaits: a card is a sale, not only its lead", () => {
 describe("stateChip: what has happened on this row, not only what the check found", () => {
   it("says what the check found until anything has", () => {
     expect(stateChip(row())).toBe("Needs review");
-    expect(stateChip(row({ verdict: "SCOPE_GAP" }))).toBe("Scope gap");
+    expect(stateChip(row({ verdict: "SCOPE_GAP" }))).toBe("Can't tell yet");
     expect(stateChip(row({ verdict: "CLEARED" }))).toBe("Cleared");
   });
 
@@ -313,16 +313,16 @@ describe("chipsFor", () => {
   });
 
   it("never claims a refund path on a scope gap: nothing is confirmed yet", () => {
-    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND" }))).toEqual(["Scope gap"]);
+    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND" }))).toEqual(["Can't tell yet"]);
   });
 
   it("marks a match that rests on product words alone as that", () => {
-    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" }))).toEqual(["Scope gap", "Product words only"]);
+    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" }))).toEqual(["Can't tell yet", "Product words only"]);
   });
 
   it("carries the join state, and the shelf for a listing", () => {
     expect(chipsFor(row({ joinState: "AMBIGUOUS_JOIN" }))).toEqual(["Needs review", "Sold after the recall", "Two possible orders"]);
-    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: true }))).toEqual(["Scope gap", "Pull from the shelf"]);
+    expect(chipsFor(row({ verdict: "SCOPE_GAP", strength: "BRAND", joinState: null, salePath: null, isListing: true, stillListed: true }))).toEqual(["Can't tell yet", "Pull from the shelf"]);
   });
 
   it("shows only that it is cleared on a cleared row", () => {
