@@ -34,7 +34,8 @@ async function asFamily<T>(browser: Browser, url: string, act: (page: Page) => P
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const page = await context.newPage();
-    await page.goto(url);
+    const response = await page.goto(url);
+    expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
     return await act(page);
   } finally {
     await context.close();
