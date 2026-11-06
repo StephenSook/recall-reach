@@ -288,6 +288,15 @@ test.describe("Recall Replay", () => {
   });
 });
 
+test("the safety checks run live, and every one is refused", async ({ page }) => {
+  await page.goto("/safety");
+  await page.getByRole("button", { name: /^Run them/ }).click();
+  await expect(page).toHaveURL(/\/safety$/, { timeout: 60_000 });
+  await expect(page.getByTestId("safety-clock")).toContainText("5 of 5 refused");
+  await expect(page.locator('article[data-outcome="REFUSED"]')).toHaveCount(5);
+  await expect(page.locator('article[data-attack="forged-webhook"]')).toContainText("401");
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
