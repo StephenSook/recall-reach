@@ -678,7 +678,8 @@ pre {
 .photo img {
   display: block;
   width: 100%;
-  max-height: 340px;
+  /* A fixed height, not a limit: CPSC's photo arrives late, and the words below must not jump when it does. */
+  height: 340px;
   object-fit: contain;
   border: 2px solid var(--color-ink);
   border-radius: var(--radius-card);
