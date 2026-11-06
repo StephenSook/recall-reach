@@ -43,6 +43,9 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
         A Shopify order export works as it is. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on. <a href="/sample-order-file.csv">Try a sample file</a>.
       </p>
       <p className="note">
+        We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.
+      </p>
+      <p className="note">
         We keep only those columns, and buyer emails are encrypted. No PayPal account is connected, so this can&apos;t refund anything. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
       </p>
       <p className="note">
