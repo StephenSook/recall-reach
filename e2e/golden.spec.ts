@@ -294,11 +294,11 @@ test.describe("on a wide screen", () => {
     await page.goto("/eval");
     const grid = page.getByTestId("eval-wrong-grid");
     await expect(grid.getByRole("button", { name: "All (38)" })).toBeVisible({ timeout: 20_000 });
-    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(38);
+    await expect(grid.locator(".ag-row[row-id]")).toHaveCount(38);
     await grid.getByRole("button", { name: "Misses it (1)" }).click();
-    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(1);
+    await expect(grid.locator(".ag-row[row-id]")).toHaveCount(1);
     await grid.getByRole("button", { name: "A seller could message a family (2)" }).click();
-    await expect(grid.locator(".ag-center-cols-container .ag-row")).toHaveCount(2);
+    await expect(grid.locator(".ag-row[row-id]")).toHaveCount(2);
   });
 
   test("the grid fits a larger window too", async ({ page }) => {
