@@ -1,10 +1,24 @@
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
 import type { RecallPollStatus } from "./jobs/appJobs";
+import { createRecordKey } from "./privacy/recordKey";
+import { PAYPAL_RETENTION_HOURS, PAYPAL_SOURCED } from "./privacy/retention";
 
 export interface Health {
   ok: boolean;
   checkedAt: string;
+  /** What ok is made of. It is true only when every one of these is. */
+  checks: {
+    database: boolean;
+    /** The webhook id is set and the record key works, so a delivery can be verified and recorded. */
+    webhook: boolean;
+    /** The last finished CPSC pull worked and isn't old: the heartbeat writes one hourly. */
+    lastPull: boolean;
+    /** No PayPal row has outlived the 48-hour rule, so the purge is running. */
+    purge: boolean;
+    /** The background poll's last run didn't fail. */
+    poll: boolean;
+  };
   database: { ok: boolean };
   cpsc: {
     recalls: number;
@@ -28,28 +42,58 @@ export interface Health {
   };
 }
 
+/** Two hourly heartbeats and a margin. */
+const MAX_PULL_AGE_MS = 2.5 * 3_600_000;
+
+function recordKeyWorks(secret: string | undefined): boolean {
+  if (!secret) return false;
+  try {
+    createRecordKey(secret);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const iso = (value: unknown): string | null =>
   value instanceof Date ? value.toISOString() : typeof value === "string" ? new Date(value).toISOString() : null;
 
 /** Public status for /api/health. Never includes secrets or database error text. */
 export async function getHealth(
   db: Queryable,
-  env: { PAYPAL_WEBHOOK_ID?: string },
+  env: { PAYPAL_WEBHOOK_ID?: string; RECORD_HMAC_SECRET?: string },
   poll: RecallPollStatus = { lastPollAt: null, lastPollOk: null, dbTouched: null },
+  now: Date = new Date(),
 ): Promise<Health> {
-  const checkedAt = new Date().toISOString();
-  const paypalBase = { environment: "sandbox" as const, webhookConfigured: Boolean(env.PAYPAL_WEBHOOK_ID) };
+  const checkedAt = now.toISOString();
+  const webhookOk = Boolean(env.PAYPAL_WEBHOOK_ID) && recordKeyWorks(env.RECORD_HMAC_SECRET);
+  const pollOk = poll.lastPollOk !== false;
+  const paypalBase = { environment: "sandbox" as const, webhookConfigured: webhookOk };
   try {
     const byYear = await recallCountsByYear(db);
     const pulls = await db.query<Record<string, unknown>>(
       `select id, status, range_field, range_start, range_end, finished_at
        from cpsc_pulls where status <> 'running' order by finished_at desc limit 1`,
     );
-    const webhook = await db.query<{ at: unknown }>("select max(received_at) as at from paypal_webhook_events");
+    // The purge takes the event rows, so this table is what remembers when one was last verified.
+    const webhook = await db.query<{ at: unknown }>("select max(received_at) as at from paypal_webhook_transmissions");
+    const overdue = await db.query<{ any: boolean }>(
+      `select ${PAYPAL_SOURCED.map(({ table, receivedAt }) => `exists (select 1 from ${table} where ${receivedAt} < $1::timestamptz - make_interval(hours => $2))`).join(" or ")} as any`,
+      [checkedAt, PAYPAL_RETENTION_HOURS],
+    );
     const p = pulls.rows[0];
+    const pulledAt = p ? iso(p.finished_at) : null;
+    const checks = {
+      database: true,
+      webhook: webhookOk,
+      lastPull: p?.status === "ok" && pulledAt !== null && now.getTime() - Date.parse(pulledAt) <= MAX_PULL_AGE_MS,
+      purge: !overdue.rows[0]?.any,
+      poll: pollOk,
+    };
     return {
-      ok: true,
+      ok: Object.values(checks).every(Boolean),
       checkedAt,
+      checks,
       database: { ok: true },
       cpsc: {
         recalls: Object.values(byYear).reduce((a, b) => a + b, 0),
@@ -61,7 +105,7 @@ export async function getHealth(
               rangeField: String(p.range_field),
               rangeStart: String(p.range_start),
               rangeEnd: String(p.range_end),
-              finishedAt: iso(p.finished_at) ?? "",
+              finishedAt: pulledAt ?? "",
             }
           : null,
       },
@@ -73,6 +117,7 @@ export async function getHealth(
     return {
       ok: false,
       checkedAt,
+      checks: { database: false, webhook: webhookOk, lastPull: false, purge: false, poll: pollOk },
       database: { ok: false },
       cpsc: null,
       poll,
