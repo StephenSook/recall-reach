@@ -2,27 +2,18 @@
 // records a finding with quotes. A finding adds evidence and ordering for a person to read. It cannot change
 // a verdict, clear a row, send a message or move money, and none of its tools can.
 import Anthropic from "@anthropic-ai/sdk";
-import type { BetaContentBlock, BetaMessage, BetaMessageParam, BetaTextBlockParam, BetaToolResultBlockParam, BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { BetaContentBlock, BetaMessageParam, BetaTextBlockParam, BetaToolResultBlockParam, BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
 import type { Queryable } from "../db/types";
-import { businessDay } from "../time/businessDay";
 import { ourText, toolResult, type OurText } from "./boundary";
+import { askClaude, nothingSpent, OverBudget, withFallback, type Spent } from "./claude";
+import { normalized, quoted } from "./quote";
 import { readItem, readRecall, searchItems, type ShopRecord, type Snapshot } from "./sources";
 
 export const AGENT_VERSION = "1";
-export const DAILY_CAP_MICROS = 5_000_000;
 const MAX_STEPS = 8;
 const MAX_RECALLS_PER_RECORD = 5;
 const TARGET = "item-1";
-
-const MODEL = "claude-sonnet-5-5";
-const FALLBACK_MODEL = "claude-haiku-5-5";
-
-/** Dollars per million tokens is micro-dollars per token. */
-const PRICE: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
-  [MODEL]: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
-  [FALLBACK_MODEL]: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
-};
 
 const SYSTEM = `You check one item a resale shop sold against one CPSC recall, and record what the two texts support.
 
@@ -98,26 +89,12 @@ type Finding = z.infer<typeof findingInput>;
 export type TraceEntry = { tool: string; ok: boolean; item?: string; query?: string; found?: number; note?: string };
 type Outcome = "FINDING" | "NO_FINDING" | "REFUSED" | "STEP_LIMIT";
 
-/** Spacing and typography may differ from CPSC's. Words, order and case may not. */
-const normalized = (text: string) =>
-  text
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/–/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const contains = (texts: string[], quote: string) => {
-  const wanted = normalized(quote);
-  return wanted.length >= 3 && texts.some((t) => normalized(t).includes(wanted));
-};
-
 /** Null means it passed. */
 function findingProblem(finding: Finding, recall: Snapshot, item: Snapshot): OurText | null {
   if (finding.item_id !== TARGET) return ourText("Record the finding for item-1.");
   for (const e of finding.evidence) {
-    if (e.source === "recall" && !contains(recall.quotable, e.quote)) return ourText("A recall quote is not in the recall's text. Copy the exact words.");
-    if (e.source === "item" && !contains(item.quotable, e.quote)) return ourText("An item quote is not in the text of item-1. Copy the exact words.");
+    if (e.source === "recall" && !quoted(recall.quotable, e.quote)) return ourText("A recall quote is not in the recall's text. Copy the exact words.");
+    if (e.source === "item" && !quoted(item.quotable, e.quote)) return ourText("An item quote is not in the text of item-1. Copy the exact words.");
   }
   const sources = new Set(finding.evidence.map((e) => e.source));
   if (!sources.has("recall")) return ourText("Include a quote from the recall.");
@@ -125,38 +102,11 @@ function findingProblem(finding: Finding, recall: Snapshot, item: Snapshot): Our
   return sources.has("item") ? null : ourText("Include a quote from the item.");
 }
 
-class OverBudget extends Error {}
-
-export async function spentToday(db: Queryable, now: Date): Promise<number> {
-  const { rows } = await db.query<{ cost: string }>("select cost_micros::text as cost from agent_spend where day = $1::date", [businessDay(now)]);
-  return Number(rows[0]?.cost ?? 0);
-}
-
-function costOf(message: BetaMessage): number {
-  const price = PRICE[message.model] ?? PRICE[MODEL];
-  const u = message.usage;
-  return Math.ceil(
-    u.input_tokens * price.input +
-      u.output_tokens * price.output +
-      (u.cache_read_input_tokens ?? 0) * price.cacheRead +
-      (u.cache_creation_input_tokens ?? 0) * price.cacheWrite,
-  );
-}
-
-const canTryAnotherModel = (err: unknown) =>
-  err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError;
-
 interface RunResult {
   outcome: Outcome;
   finding: Finding | null;
   trace: TraceEntry[];
   model: string;
-}
-
-interface Spent {
-  input: number;
-  output: number;
-  cost: number;
 }
 
 interface Pair {
@@ -221,28 +171,8 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, pair: Pa
   };
 
   while (steps.used < MAX_STEPS) {
-    if ((await spentToday(db, pair.now)) >= DAILY_CAP_MICROS) throw new OverBudget();
     steps.used++;
-    const response = await client.beta.messages.create({
-      model,
-      max_tokens: 8000,
-      system: SYSTEM,
-      tools: AGENT_TOOLS,
-      tool_choice: { type: "auto" },
-      output_config: { effort: "medium" },
-      cache_control: { type: "ephemeral" },
-      messages,
-      ...(model === MODEL ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-    });
-    const cost = costOf(response);
-    spent.input += response.usage.input_tokens;
-    spent.output += response.usage.output_tokens;
-    spent.cost += cost;
-    await db.query(
-      `insert into agent_spend (day, cost_micros) values ($1::date, $2)
-       on conflict (day) do update set cost_micros = agent_spend.cost_micros + excluded.cost_micros`,
-      [businessDay(pair.now), cost],
-    );
+    const response = await askClaude(db, client, { model, system: SYSTEM, tools: AGENT_TOOLS, messages, now: pair.now }, spent);
 
     const served = response.model || model;
     if (response.stop_reason === "refusal") return { outcome: "REFUSED", finding: null, trace, model: served };
@@ -272,15 +202,9 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, pair: Pa
 }
 
 async function checkPair(db: Queryable, client: Anthropic, pair: Pair): Promise<RunResult & { spent: Spent }> {
-  const steps = { used: 0 };
-  const spent: Spent = { input: 0, output: 0, cost: 0 };
-  // Haiku can't read Sonnet's thinking, so the fallback starts over. Both share the same eight steps.
-  try {
-    return { ...(await runLoop(db, client, MODEL, pair, steps, spent)), spent };
-  } catch (err) {
-    if (!canTryAnotherModel(err)) throw err;
-  }
-  return { ...(await runLoop(db, client, FALLBACK_MODEL, pair, steps, spent)), spent };
+  const steps = { used: 0 }; // both models share the same eight steps
+  const spent = nothingSpent();
+  return { ...(await withFallback((model) => runLoop(db, client, model, pair, steps, spent))), spent };
 }
 
 export interface AgentSummary {
@@ -363,10 +287,4 @@ export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: 
     }),
   );
   return summary;
-}
-
-/** Null when no key is set: the queue then has no button, and everything else works without Claude. */
-export function agentClientFromEnv(env: Record<string, string | undefined> = process.env): Anthropic | null {
-  const apiKey = env.ANTHROPIC_API_KEY?.trim();
-  return apiKey ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 2 }) : null;
 }

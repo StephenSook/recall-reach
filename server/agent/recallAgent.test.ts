@@ -10,7 +10,8 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { ourText, publicText, toolResult } from "./boundary";
-import { AGENT_TOOLS, agentClientFromEnv, DAILY_CAP_MICROS, runAgentOnRecord, spentToday } from "./recallAgent";
+import { agentClientFromEnv, DAILY_CAP_MICROS, spentToday } from "./claude";
+import { AGENT_TOOLS, runAgentOnRecord } from "./recallAgent";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";

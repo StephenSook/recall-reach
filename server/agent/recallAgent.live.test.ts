@@ -9,7 +9,8 @@ import { migrate } from "../db/migrate";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
-import { agentClientFromEnv, runAgentOnRecord, spentToday } from "./recallAgent";
+import { agentClientFromEnv, spentToday } from "./claude";
+import { runAgentOnRecord } from "./recallAgent";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date();
