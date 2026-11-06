@@ -264,6 +264,7 @@ describe("a sale as it happens", () => {
       expect(f).toHaveBeenCalledTimes(1);
       const [url, init] = f.mock.calls[0];
       expect(url).toBe("https://exp.host/--/api/v2/push/send");
+      expect(Object.keys(init).sort()).toEqual(["body", "headers", "method", "signal"]);
       expect(init.method).toBe("POST");
       expect(init.headers).toEqual({ "content-type": "application/json", accept: "application/json" });
       expect(JSON.parse(String(init.body))).toEqual([

@@ -2,7 +2,6 @@
 // public recall number and our own card id. It is built from those two values, so nothing else can reach the wire.
 import type { Queryable } from "../db/types";
 import { readCappedBody } from "../http/body";
-import { loadQueue, toCards } from "../queue/queue";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const TOKEN = /^Expo(?:nent)?PushToken\[[A-Za-z0-9_-]{1,200}\]$/;
@@ -17,7 +16,8 @@ const MAX_ANSWER_BYTES = 64_000;
 
 export interface CardPush {
   recallNumber: string;
-  matchId: string;
+  /** The card to open. Only a match is sure to have its own card: anything else may sit under a stronger one, so it opens the queue. */
+  matchId: string | null;
   kind: "sold" | "listed";
 }
 
@@ -32,20 +32,19 @@ export interface PushMessage {
 }
 
 export function pushMessage(card: CardPush, token: string): PushMessage | null {
-  if (!RECALL_NUMBER.test(card.recallNumber) || !UUID.test(card.matchId)) return null;
+  if (!RECALL_NUMBER.test(card.recallNumber) || (card.matchId !== null && !UUID.test(card.matchId))) return null;
   const what = card.kind === "listed" ? "something you listed" : "something you sold";
-  return { to: token, title: "Recall Reach", body: `Recall ${card.recallNumber}: ${what} needs a look`, data: { path: `/queue#sale-${card.matchId}` }, sound: "default", priority: "high", channelId: "cards" };
+  return { to: token, title: "Recall Reach", body: `Recall ${card.recallNumber}: ${what} needs a look`, data: { path: card.matchId ? `/queue#sale-${card.matchId}` : "/queue" }, sound: "default", priority: "high", channelId: "cards" };
 }
 
-/** A phone follows the shop it's on now. A token is on one shop at a time, so it stops hearing about one it has left. */
+/** A phone follows the shop it's on now. The token is the table's key, so it's on one shop at a time, and moving it is one statement. */
 export async function registerPushToken(db: Queryable, shopId: string, token: string): Promise<boolean> {
   if (!TOKEN.test(token)) return false;
   const { rows } = await db.query(
-    "insert into push_tokens (shop_id, token) select id, $2 from shops where id = $1 on conflict (shop_id, token) do update set created_at = now() returning 1",
+    "insert into push_tokens (token, shop_id) select $2, id from shops where id = $1 on conflict (token) do update set shop_id = excluded.shop_id, created_at = now() returning 1",
     [shopId, token],
   );
   if (rows.length === 0) return false;
-  await db.query("delete from push_tokens where token = $1 and shop_id <> $2", [token, shopId]);
   await db.query(
     "delete from push_tokens where shop_id = $1 and token not in (select token from push_tokens where shop_id = $1 order by created_at desc, token desc limit $2)",
     [shopId, MAX_TOKENS_PER_SHOP],
@@ -62,8 +61,8 @@ export async function pushNewCards(db: Queryable, shopId: string, matchIds: stri
     if (matchIds.length === 0) return 0;
     const { rows: phones } = await db.query<{ token: string }>("select token from push_tokens where shop_id = $1", [shopId]);
     if (phones.length === 0) return 0;
-    const { rows: cards } = await db.query<{ id: string; recall_number: string; listed: boolean }>(
-      `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed
+    const { rows: cards } = await db.query<{ id: string; recall_number: string; listed: boolean; matched: boolean }>(
+      `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed, m.verdict = 'MATCH' as matched
        from recall_matches m join recalls r on r.recall_id = m.recall_id
        where m.shop_id = $1 and m.id = any($2::uuid[]) and m.verdict <> 'CLEARED' and m.strength in ('CONFIRMED', 'BRAND')
        order by r.recall_number desc, (m.strength = 'CONFIRMED') desc, (m.shop_item_id is null) desc
@@ -71,12 +70,7 @@ export async function pushNewCards(db: Queryable, shopId: string, matchIds: stri
       [shopId, matchIds, MAX_PUSHES],
     );
     if (cards.length === 0) return 0;
-    // Only a card's lead has an anchor on the page, so a recall nested under a stronger one opens that card.
-    const leadOf = new Map<string, string>();
-    for (const card of toCards((await loadQueue(db, shopId, "push")).rows).cards) {
-      for (const row of [card.lead, ...card.also]) leadOf.set(row.matchId, card.lead.matchId);
-    }
-    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: leadOf.get(c.id) ?? c.id, kind: c.listed ? "listed" : "sold" }, p.token) ?? []));
+    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: c.matched ? c.id : null, kind: c.listed ? "listed" : "sold" }, p.token) ?? []));
     if (messages.length === 0) return 0;
     const res = await fetchImpl(EXPO_PUSH_URL, {
       method: "POST",

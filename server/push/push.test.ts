@@ -22,6 +22,7 @@ describe("what a push may say", () => {
       channelId: "cards",
     });
     expect(pushMessage({ recallNumber: "27018", matchId: MATCH_ID, kind: "listed" }, TOKEN)?.body).toBe("Recall 27018: something you listed needs a look");
+    expect(pushMessage({ recallNumber: "27018", matchId: null, kind: "sold" }, TOKEN)?.data.path).toBe("/queue");
   });
 
   it("can't carry anything else, whatever it's handed", () => {
@@ -76,6 +77,13 @@ describe("a phone's token", () => {
     await registerPushToken(db, other, TOKEN);
     expect(await tokens()).toEqual([]);
     expect(await tokens(other)).toEqual([TOKEN]);
+  });
+
+  it("ends up on one shop when two ask at once, never on none", async () => {
+    const other = await createShop(db, { name: "Other", kind: "REAL" });
+    await Promise.all([registerPushToken(db, shopId, TOKEN), registerPushToken(db, other, TOKEN)]);
+    const { rows } = await db.query<{ n: string }>("select count(*)::text as n from push_tokens where token = $1", [TOKEN]);
+    expect(rows[0].n).toBe("1");
   });
 
   it("leaves another phone on the old shop alone", async () => {
@@ -138,11 +146,11 @@ describe("a phone's token", () => {
       const some = expo();
       expect(await pushNewCards(db, shopId, [matchId], some as unknown as typeof fetch)).toBe(1);
       expect(some.mock.calls[0][0]).toBe("https://exp.host/--/api/v2/push/send");
-      expect(JSON.parse(String(some.mock.calls[0][1].body))).toEqual([expect.objectContaining({ to: TOKEN, body: "Recall 27018: something you listed needs a look", data: { path: `/queue#sale-${matchId}` } })]);
+      expect(JSON.parse(String(some.mock.calls[0][1].body))).toEqual([expect.objectContaining({ to: TOKEN, body: "Recall 27018: something you listed needs a look", data: { path: "/queue" } })]);
       expect(String(some.mock.calls[0][1].body)).not.toContain("SENTINEL");
     });
 
-    it("opens the card the seller can see, when this recall sits under a stronger one on the same item", async () => {
+    it("opens the queue when a brand-only recall may sit under a stronger one, and that card when it's a match", async () => {
       const stronger = fixture.filter((r) => r.RecallNumber === "27072");
       await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(JSON.stringify(stronger), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
       const other = await db.query<{ recall_id: number; raw_sha256: string }>("select recall_id, raw_sha256 from recalls where recall_number = '27072'");
@@ -156,7 +164,13 @@ describe("a phone's token", () => {
       await pushNewCards(db, shopId, [matchId], f as unknown as typeof fetch);
       const [message] = JSON.parse(String(f.mock.calls[0][1].body)) as { body: string; data: { path: string } }[];
       expect(message.body).toBe("Recall 27018: something you listed needs a look");
-      expect(message.data.path).toBe(`/queue#sale-${rows[0].id}`);
+      expect(message.data.path).toBe("/queue");
+
+      const g = expo();
+      await pushNewCards(db, shopId, [rows[0].id], g as unknown as typeof fetch);
+      const [matched] = JSON.parse(String(g.mock.calls[0][1].body)) as { body: string; data: { path: string } }[];
+      expect(matched.body).toBe("Recall 27072: something you listed needs a look");
+      expect(matched.data.path).toBe(`/queue#sale-${rows[0].id}`);
     });
 
     it("stays quiet about a card that only shares a word with a recall", async () => {
