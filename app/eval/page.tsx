@@ -227,6 +227,9 @@ export default function EvalPage() {
       <p className="note">
         Run it yourself with <code>pnpm eval</code>. A test fails if these numbers stop matching what the code produces. <Link href="/">Home</Link>
       </p>
+      <p className="note">
+        Separate from these numbers: <Link href="/eval/sellers">what sellers said about its flags</Link>.
+      </p>
     </main>
   );
 }

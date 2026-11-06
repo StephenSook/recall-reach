@@ -298,7 +298,7 @@ describe("toCards", () => {
     notice: null,
     earlierQuestionResult: null,
     question: null,
-    agent: null,
+    agent: null, sellerAnswer: null,
     caughtSeconds: null,
     approval: null,
     refund: null,

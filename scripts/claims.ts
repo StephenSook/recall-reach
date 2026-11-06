@@ -83,6 +83,15 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Seller answers",
+    status: "claimed",
+    evidence: [
+      { file: "app/queue/SellerAnswerForm.tsx", find: "/api/queue/answers" },
+      { file: "app/api/queue/answers/route.ts", call: "recordSellerAnswer" },
+      { file: "app/eval/sellers/page.tsx", call: "sellerTally" },
+    ],
+  },
+  {
     name: "APIMatic Context Plugin",
     status: "claimed",
     evidence: [{ file: "docs/apimatic-context-plugin.md", find: "server-sdk-context-plugin-preview" }],

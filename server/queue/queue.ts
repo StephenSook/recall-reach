@@ -8,6 +8,7 @@ import { checkQuestion, type CheckQuestion } from "../notice/compose";
 import { currentCheckResultSql, noticeState, type NoticeState } from "../notice/store";
 import type { Strength } from "../match/verdict";
 import { joinShop } from "../match/run";
+import type { SellerAnswer } from "../match/sellerAnswers";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 
 /** What Claude found for this row. Text for a person to read: it changes no verdict, order or action. */
@@ -51,6 +52,8 @@ export interface QueueRow {
   question: CheckQuestion | null;
   /** Null until Claude has checked exactly this text. */
   agent: AgentFinding | null;
+  /** What the seller said when asked if this is the recalled product. It changes nothing else on the card. */
+  sellerAnswer: SellerAnswer | null;
   /** Seconds from PayPal's capture to this queue, while the payment is held. PayPal's time itself never reaches the page. */
   caughtSeconds: number | null;
   approval: { id: string; amountCents: number; currency: string; expiresAt: string } | null;
@@ -140,7 +143,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
-            coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,
+            coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result,
             (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
@@ -150,6 +153,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      join recalls r on r.recall_id = m.recall_id
      left join order_lines l on l.id = m.order_line_id
      left join shop_items i on i.id = m.shop_item_id
+     left join seller_answers sa on sa.shop_id = m.shop_id and sa.recall_number = r.recall_number and sa.listing_title = coalesce(l.title, i.title)
      left join lateral (
        select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1
      ) n on true
@@ -202,6 +206,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,
       question: askedFor(r),
       agent: null,
+      sellerAnswer: (r.seller_answer as SellerAnswer | null) ?? null,
       caughtSeconds: r.caught_seconds === null || r.caught_seconds === undefined ? null : Math.max(0, Math.round(Number(r.caught_seconds))),
       approval: r.approval_id
         ? {

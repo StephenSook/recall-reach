@@ -14,13 +14,14 @@ import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 import { PushRegister } from "./PushRegister";
+import { SellerAnswerForm } from "./SellerAnswerForm";
 import { RefundForm } from "./RefundForm";
 import { WatchForSale } from "./WatchForSale";
 
 export const dynamic = "force-dynamic";
 
 /** One sale that needs a person. Cleared recalls are a plain list on the page: there is nothing to do on them. */
-function Card({ card, shopName, shopKind, agentReady, saleOnItsWay }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean; saleOnItsWay: boolean }) {
+function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean; saleOnItsWay: boolean; answered: unknown }) {
   const row = card.lead;
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const notifiable = canNotify(row);
@@ -174,7 +175,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay }: { card: Qu
         ) : null}
 
         {row.verdict !== "CLEARED" ? (
-          <details>
+          <details open={answered === row.matchId}>
             <summary>Why this came up</summary>
             {row.matched.length > 0 ? <p>Shared: {row.matched.join("; ")}</p> : null}
             {row.missing.length > 0 ? <p>Missing: {row.missing.join("; ")}</p> : null}
@@ -187,6 +188,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay }: { card: Qu
                 </>
               ) : null}
             </p>
+            <SellerAnswerForm matchId={row.matchId} answer={row.sellerAnswer} demo={shopKind === "DEMO"} />
           </details>
         ) : null}
 
@@ -219,7 +221,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay }: { card: Qu
   );
 }
 
-export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[] }> }) {
+export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[]; answered?: string | string[] }> }) {
   const session = await currentSession();
   if (!session) redirect("/");
   const { rows, shop, listings, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
@@ -332,7 +334,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>
             {real && sitsApart(card) && (i === 0 || !sitsApart(cards[i - 1])) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
-            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} saleOnItsWay={pendingLiveSales > 0} />
+            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} saleOnItsWay={pendingLiveSales > 0} answered={params.answered} />
           </Fragment>
         ))}
       </section>
