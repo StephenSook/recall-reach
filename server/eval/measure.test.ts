@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
-import { decidePairs, parsePairs, rate, runEval, score, scoreClaude, wilson, type ClaudeFinding, type Decision, type EvalPair } from "./measure";
+import { parseRecalls } from "../cpsc/schema";
+import { modelTokens } from "../match/verdict";
+import { checkResult } from "../notice/store";
+import { decidePairs, parsePairs, rate, runEval, score, scoreClaude, scoreStatedModels, wilson, type ClaudeFinding, type Decision, type EvalPair } from "./measure";
 
 const pair = (pairId: string, label: EvalPair["label"], split: EvalPair["split"] = "held_out"): EvalPair => ({ pairId, recallNumber: "1", title: "t", label, split });
 const decision = (verdict: Decision["verdict"], strength: Decision["strength"] = "BRAND"): Decision => ({ verdict, strength });
@@ -78,6 +81,22 @@ describe("scoreClaude", () => {
   });
 });
 
+describe("scoreStatedModels", () => {
+  const pair = (pairId: string, recallNumber: string): EvalPair => ({ pairId, recallNumber, title: "T", label: "MATCH", split: "held_out" });
+  const pairs = [pair("confirmed", "1"), pair("asks", "2"), pair("cleared", "2"), pair("missing", "2")];
+  const decisions: Record<string, Decision | null> = {
+    confirmed: { verdict: "MATCH", strength: "CONFIRMED" },
+    asks: { verdict: "SCOPE_GAP", strength: "BRAND" },
+    cleared: { verdict: "CLEARED", strength: "BRAND" },
+    missing: null,
+  };
+  const limited = new Set(["2"]);
+
+  it("counts a clear or a title never found as cleared, even on a limited recall", () => {
+    expect(scoreStatedModels(pairs, (p) => decisions[p.pairId], limited)).toMatchObject({ asks: 1, limitedAsks: 1, cleared: 2, confirmed: { k: 1, n: 4 } });
+  });
+});
+
 describe("parsePairs", () => {
   it("reads titles with commas and quotes", () => {
     expect(parsePairs('pair_id,recall_number,listing_title,label,split\n1-1,1,"A, ""B"" C",NO_MATCH,train\n')[0]).toEqual({ pairId: "1-1", recallNumber: "1", title: 'A, "B" C', label: "NO_MATCH", split: "train" });
@@ -104,13 +123,27 @@ describe("the eval on the real labels", () => {
     expect(load("pairs.csv").split("\n")[0]).toBe("pair_id,recall_number,listing_title,label,split");
   });
 
-  it("a title stating a recalled model is confirmed unless CPSC limits the recall within that model, and one a character off is not", () => {
+  it("a title stating a recalled model is confirmed or asks, never clears, and one a character off is not confirmed", () => {
     const { matcher, baseline } = JSON.parse(load("results.json")).statedModels;
-    expect((matcher.confirmed.k + matcher.limitedAsks) / matcher.confirmed.n).toBeGreaterThan(0.9);
-    expect(matcher.limitedAsks).toBeGreaterThan(0);
-    expect(baseline.limitedAsks).toBe(0); // word match never asks
+    // Exact on purpose. A drop in either fails here, and regenerating the results can't hide it.
+    expect(matcher.confirmed).toMatchObject({ k: 53, n: 60 });
+    expect(matcher.asks).toBe(7);
+    expect(matcher.limitedAsks).toBe(5);
+    expect(matcher.cleared).toBe(0);
+    expect(baseline.asks).toBe(0); // word match never asks
     expect(matcher.offByOneConfirmed.k).toBe(0);
     expect(baseline.offByOneConfirmed.k).toBe(baseline.offByOneConfirmed.n); // word match can't tell them apart
+  });
+
+  it("a family typing a model the title states is never told it doesn't match", () => {
+    const { valid } = parseRecalls(JSON.parse(load("positives_recalls.json")));
+    const byNumber = new Map(valid.map((v) => [v.recall.recallNumber, v.recall]));
+    const typed = parsePairs(load("positives.csv"))
+      .filter((p) => p.label === "MATCH")
+      .flatMap((p) => modelTokens(p.title).map((model) => ({ pair: p.pairId, model, recall: byNumber.get(p.recallNumber)! })));
+    expect(typed.length).toBeGreaterThanOrEqual(60);
+    const told = typed.filter(({ model, recall }) => checkResult(recall, { question: "Q", kind: "model" }, model) === "DOESNT_MATCH").map((t) => `${t.pair}: ${t.model}`);
+    expect(told).toEqual([]);
   });
 
   it("keeps stated-model titles out of the held-out rates, and names none as real listings", () => {

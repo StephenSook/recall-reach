@@ -112,8 +112,12 @@ export function scoreClaude(pairs: EvalPair[], findings: Record<string, ClaudeFi
 export interface StatedModelScore {
   recalls: number;
   confirmed: Rate;
-  /** Stated titles it asked about because CPSC limits the recall within the model: the model alone can't settle these. */
+  /** Stated titles it asked about: a scope gap goes to a person, and says neither yes nor no. */
+  asks: number;
+  /** Of those, where CPSC limits the recall within the model, so the model alone can't settle it. */
   limitedAsks: number;
+  /** Stated titles cleared or never found: a recalled product waved through. */
+  cleared: number;
   offByOneConfirmed: Rate;
 }
 
@@ -122,12 +126,15 @@ export function scoreStatedModels(pairs: EvalPair[], decide: (p: EvalPair) => De
     const d = decide(p);
     return d?.verdict === "MATCH" && d.strength === "CONFIRMED";
   };
+  const asks = (p: EvalPair) => decide(p)?.verdict === "SCOPE_GAP";
   const stated = pairs.filter((p) => p.label === "MATCH");
   const offByOne = pairs.filter((p) => p.label === "NEAR_MISS");
   return {
     recalls: new Set(pairs.map((p) => p.recallNumber)).size,
     confirmed: rate(stated.filter(confirmed).length, stated.length),
-    limitedAsks: stated.filter((p) => !confirmed(p) && limited.has(p.recallNumber)).length,
+    asks: stated.filter(asks).length,
+    limitedAsks: stated.filter((p) => asks(p) && limited.has(p.recallNumber)).length,
+    cleared: stated.filter((p) => !confirmed(p) && !asks(p)).length,
     offByOneConfirmed: rate(offByOne.filter(confirmed).length, offByOne.length),
   };
 }

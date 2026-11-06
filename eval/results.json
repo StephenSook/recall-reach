@@ -613,7 +613,9 @@
     "low": 0.7782097940014185,
     "high": 0.9423235259654994
    },
+   "asks": 7,
    "limitedAsks": 5,
+   "cleared": 0,
    "offByOneConfirmed": {
     "k": 0,
     "n": 53,
@@ -631,7 +633,9 @@
     "low": 0.939826069522067,
     "high": 1
    },
+   "asks": 0,
    "limitedAsks": 0,
+   "cleared": 0,
    "offByOneConfirmed": {
     "k": 53,
     "n": 53,

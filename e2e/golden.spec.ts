@@ -304,6 +304,9 @@ test("the eval card shows held-out numbers, with their limits on the page", asyn
   await expect(page.getByText("One labeller")).toBeVisible();
   // The limit sits with the number, in the very next row.
   await expect(page.getByRole("row", { name: /A look-alike could reach a family/ }).locator("xpath=following-sibling::tr[1]")).toContainText("One labeller");
+  // The true count, with why the rest ask.
+  await expect(page.getByTestId("eval-stated-table")).toContainText("53 of 60");
+  await expect(page.getByTestId("eval-stated-limited")).toContainText("The other 7 ask instead. On 5 of them CPSC limits the recall within the model");
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll).toBeLessThanOrEqual(client);
 });

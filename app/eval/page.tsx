@@ -165,7 +165,7 @@ export default function EvalPage() {
             </table>
           </div>
           <p className="note" data-testid="eval-stated-limited">
-            The other {stated.matcher.confirmed.n - stated.matcher.confirmed.k} ask instead. On {stated.matcher.limitedAsks} of them CPSC limits the recall within the model, by VIN, a code or a look-up, so the model alone can&apos;t settle it.
+            The other {stated.matcher.asks} ask instead. On {stated.matcher.limitedAsks} of them CPSC limits the recall within the model, by VIN, a code or a look-up, so the model alone can&apos;t settle it.
           </p>
         </>
       ) : null}
