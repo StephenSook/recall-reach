@@ -16,6 +16,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     await finishPayPalBuy(getDb(), payPalClientFromEnv(), {
       shopId: session.shopId,
+      sessionId: session.sessionId,
       state: params.get("state") ?? "",
       orderId: params.get("token") ?? "",
       today: businessDay(),

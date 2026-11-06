@@ -5,7 +5,7 @@ import type { Db } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
-import { PayPalApiError, type PayPalClient } from "../paypal/client";
+import type { PayPalClient } from "../paypal/client";
 import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
 import { createContactCipher } from "../privacy/contactCipher";
 import { businessDay } from "../time/businessDay";
@@ -91,8 +91,12 @@ const ORDER_NUMBER = /^DEMO-LIVE-[0-9a-f]{12}$/;
 const PAYPAL_ID = /^[A-Za-z0-9-]+$/;
 
 /** Each part has a fixed shape, checked before this is compared, so joining them can't make two states read alike. */
-const stateSignature = (sessionSecret: string, shopId: string, shopItemId: string, orderNumber: string) =>
-  createHmac("sha256", sessionSecret).update(`paypal-return:${shopId}:${shopItemId}:${orderNumber}`).digest("base64url");
+const stateSignature = (sessionSecret: string, shopId: string, sessionId: string, shopItemId: string, orderNumber: string) =>
+  createHmac("sha256", sessionSecret).update(`paypal-return:${shopId}:${sessionId}:${shopItemId}:${orderNumber}`).digest("base64url");
+
+/** What the return address carries, tied to this shop in this browser. */
+export const checkoutState = (sessionSecret: string, shopId: string, sessionId: string, shopItemId: string, orderNumber: string) =>
+  `${shopItemId}.${orderNumber}.${stateSignature(sessionSecret, shopId, sessionId, shopItemId, orderNumber)}`;
 
 /**
  * The same sale through PayPal's own approval page, where a person logs in. Nothing is stored here: the buyer may never
@@ -101,11 +105,11 @@ const stateSignature = (sessionSecret: string, shopId: string, shopItemId: strin
 export async function startPayPalBuy(
   db: Db,
   client: PayPalClient,
-  input: { shopId: string; shopItemId: string; siteUrl: string; sessionSecret: string },
+  input: { shopId: string; sessionId: string; shopItemId: string; siteUrl: string; sessionSecret: string },
 ): Promise<{ orderId: string; approveUrl: string; returnUrl: string }> {
   const item = await listedItem(db, input.shopId, input.shopItemId);
   const orderNumber = newOrderNumber();
-  const state = `${input.shopItemId}.${orderNumber}.${stateSignature(input.sessionSecret, input.shopId, input.shopItemId, orderNumber)}`;
+  const state = checkoutState(input.sessionSecret, input.shopId, input.sessionId, input.shopItemId, orderNumber);
   const returnUrl = `${input.siteUrl}${PAYPAL_RETURN}?state=${encodeURIComponent(state)}`;
   const { orderId, approveUrl } = await createPayPalOrder(client, {
     orderNumber,
@@ -120,11 +124,11 @@ export async function startPayPalBuy(
 }
 
 /** The state's parts, if this server signed them for this shop. */
-function readState(state: string, shopId: string, sessionSecret: string): { shopItemId: string; orderNumber: string } | null {
+function readState(state: string, shopId: string, sessionId: string, sessionSecret: string): { shopItemId: string; orderNumber: string } | null {
   const [shopItemId = "", orderNumber = "", signature = ""] = state.split(".");
   if (!UUID.test(shopItemId) || !ORDER_NUMBER.test(orderNumber)) return null;
   const given = Buffer.from(signature);
-  const expected = Buffer.from(stateSignature(sessionSecret, shopId, shopItemId, orderNumber));
+  const expected = Buffer.from(stateSignature(sessionSecret, shopId, sessionId, shopItemId, orderNumber));
   return given.length === expected.length && timingSafeEqual(given, expected) ? { shopItemId, orderNumber } : null;
 }
 
@@ -135,22 +139,28 @@ function readState(state: string, shopId: string, sessionSecret: string): { shop
 export async function finishPayPalBuy(
   db: Db,
   client: PayPalClient,
-  input: { shopId: string; state: string; orderId: string; today: string; secret: string; sessionSecret: string; demoEmail?: string },
+  input: { shopId: string; sessionId: string; state: string; orderId: string; today: string; secret: string; sessionSecret: string; demoEmail?: string },
 ): Promise<void> {
-  const signed = readState(input.state, input.shopId, input.sessionSecret);
+  const signed = readState(input.state, input.shopId, input.sessionId, input.sessionSecret);
   if (!signed || !PAYPAL_ID.test(input.orderId)) throw new LiveSaleRefused();
   const item = await listedItem(db, input.shopId, signed.shopItemId);
   const order = await getOrder(client, input.orderId);
-  const atListedPrice = order.items.length === 1 && order.items[0].quantity === 1 && order.items[0].unitCents === item.price_cents;
+  const atListedPrice =
+    order.items.length === 1 && order.items[0].quantity === 1 && order.items[0].unitCents === item.price_cents && order.amountCents === item.price_cents && order.currency === item.currency;
   if (order.invoiceId !== signed.orderNumber || !atListedPrice || (order.status !== "APPROVED" && order.status !== "COMPLETED")) throw new LiveSaleRefused();
 
-  await writeLiveSale(db, input, item, signed.orderNumber);
-  if (order.status === "COMPLETED") return; // a reload
+  // Only once: a reload must not change the sale.
+  const written = await db.query("select 1 from order_lines where shop_id = $1 and order_number = $2", [input.shopId, signed.orderNumber]);
+  if (written.rows.length === 0) await writeLiveSale(db, input, item, signed.orderNumber);
+  if (order.status === "COMPLETED") return;
   try {
-    await captureOrder(client, input.orderId, `capture-${signed.orderNumber}`);
+    await captureOrder(client, input.orderId, `capture-${input.orderId}`);
   } catch (err) {
-    // With no clear answer the capture may have happened, and its webhook needs this line.
-    if (err instanceof PayPalApiError && !err.uncertain) await db.query("delete from order_lines where shop_id = $1 and order_number = $2", [input.shopId, signed.orderNumber]);
+    // The error alone can't say: another return may have captured it, or this try may have. PayPal's order can.
+    const after = await getOrder(client, input.orderId).catch(() => null);
+    if (after?.status === "COMPLETED") return;
+    // Not paid, so nothing is sold. With no answer at all, a capture's webhook may still need this line.
+    if (after) await db.query("delete from order_lines where shop_id = $1 and order_number = $2", [input.shopId, signed.orderNumber]);
     throw err;
   }
 }

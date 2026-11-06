@@ -28,11 +28,12 @@ interface FakeOrder {
 }
 
 /** PayPal as measured on 2026-11-06: no capture until a person approves, and approving adds the payer's details. */
-function fakePayPal(over: { approveHost?: string; failCapture?: boolean; firstOrder?: number } = {}) {
+function fakePayPal(over: { approveHost?: string; failCapture?: boolean; firstOrder?: number; captureError?: (order: FakeOrder) => Error; failReadAfterCapture?: boolean } = {}) {
   const orders = new Map<string, FakeOrder>();
   const captures: { id: string; order: string; requestId?: string }[] = [];
   const bodies: Record<string, unknown>[] = [];
   let next = over.firstOrder ?? 0;
+  let capturesFailed = false;
   const client: PayPalClient = {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
       const found = answerSearch(path);
@@ -40,6 +41,10 @@ function fakePayPal(over: { approveHost?: string; failCapture?: boolean; firstOr
       const capturing = /^\/v2\/checkout\/orders\/([^/]+)\/capture$/.exec(path);
       if (method === "POST" && capturing) {
         const order = orders.get(capturing[1]);
+        if (order && over.captureError) {
+          capturesFailed = true;
+          throw over.captureError(order);
+        }
         if (!order || order.status !== "APPROVED" || over.failCapture) throw new PayPalApiError(422, method, path, "ORDER_NOT_APPROVED");
         const id = `CAPTURE-${order.id}`;
         const unit = order.purchase_units[0];
@@ -63,6 +68,7 @@ function fakePayPal(over: { approveHost?: string; failCapture?: boolean; firstOr
         return { status: 200, data: { id, status: "PAYER_ACTION_REQUIRED", links: [{ rel: "self", href: `https://api.sandbox.paypal.com/v2/checkout/orders/${id}`, method: "GET" }, { rel: "payer-action", href: `https://${host}/checkoutnow?token=${id}`, method: "GET" }] } };
       }
       const id = path.split("/").pop() ?? "";
+      if (capturesFailed && over.failReadAfterCapture) throw new Error("PayPal gave no answer");
       const order = orders.get(id);
       if (order) return { status: 200, data: order };
       const capture = captures.find((c) => c.id === id);
@@ -98,9 +104,10 @@ describe("buying through PayPal's own approval page", () => {
     await db.close();
   });
 
-  const start = (client = paypal.client, shop = shopId, item = shelfItem) => startPayPalBuy(db, client, { shopId: shop, shopItemId: item, siteUrl: SITE, sessionSecret: SESSION_KEY });
+  const SESSION = "browser-a";
+  const start = (client = paypal.client, shop = shopId, item = shelfItem) => startPayPalBuy(db, client, { shopId: shop, sessionId: SESSION, shopItemId: item, siteUrl: SITE, sessionSecret: SESSION_KEY });
   const stateOf = (approveFor: { returnUrl: string }) => new URL(approveFor.returnUrl).searchParams.get("state") ?? "";
-  const finish = (state: string, orderId: string, shop = shopId) => finishPayPalBuy(db, paypal.client, { shopId: shop, state, orderId, today: TODAY, secret: KEY, sessionSecret: SESSION_KEY });
+  const finish = (state: string, orderId: string, shop = shopId, today = TODAY, sessionId = SESSION) => finishPayPalBuy(db, paypal.client, { shopId: shop, sessionId, state, orderId, today, secret: KEY, sessionSecret: SESSION_KEY });
   const liveLines = async () => (await db.query<Record<string, unknown>>("select * from order_lines where shop_id = $1 and live_sale", [shopId])).rows;
   const approved = async () => {
     const started = await start();
@@ -171,6 +178,41 @@ describe("buying through PayPal's own approval page", () => {
       expect(await liveLines()).toHaveLength(1);
     });
 
+    it("a reload the next day doesn't change the sale", async () => {
+      const started = await approved();
+      await finish(stateOf(started), started.orderId);
+      await finish(stateOf(started), started.orderId, shopId, "2026-11-07");
+      expect(String((await liveLines())[0].ordered_on)).toContain(TODAY);
+    });
+
+    it("keeps the sale when a second return loses the race to capture it", async () => {
+      paypal = fakePayPal({ captureError: (order) => {
+        order.status = "COMPLETED";
+        return new PayPalApiError(422, "POST", "/v2/checkout/orders/x/capture", "ORDER_ALREADY_CAPTURED");
+      } });
+      const started = await approved();
+      await finish(stateOf(started), started.orderId);
+      expect(await liveLines()).toHaveLength(1);
+    });
+
+    it("removes the sale when PayPal gave no clear answer and the order still isn't paid", async () => {
+      paypal = fakePayPal({ captureError: () => {
+        const err = new PayPalApiError(500, "POST", "/v2/checkout/orders/x/capture");
+        err.uncertain = true;
+        return err;
+      } });
+      const started = await approved();
+      await expect(finish(stateOf(started), started.orderId)).rejects.toThrow();
+      expect(await liveLines()).toEqual([]);
+    });
+
+    it("keeps the sale when it can't find out: the capture may have happened, and its webhook needs the line", async () => {
+      paypal = fakePayPal({ failReadAfterCapture: true, captureError: () => new PayPalApiError(500, "POST", "/v2/checkout/orders/x/capture") });
+      const started = await approved();
+      await expect(finish(stateOf(started), started.orderId)).rejects.toThrow();
+      expect(await liveLines()).toHaveLength(1);
+    });
+
     it("never stores the payer's email or name, and a sale here has no address to write to", async () => {
       const started = await approved();
       await finish(stateOf(started), started.orderId);
@@ -213,6 +255,11 @@ describe("buying through PayPal's own approval page", () => {
       await refusesWithoutTouchingAnything(() => finish(stateOf(started), started.orderId, other));
     });
 
+    it("the same shop in another browser", async () => {
+      const started = await approved();
+      await refusesWithoutTouchingAnything(() => finish(stateOf(started), started.orderId, shopId, TODAY, "browser-b"));
+    });
+
     it("an order that isn't the one this state started", async () => {
       const first = await approved();
       const second = await approved();
@@ -228,6 +275,20 @@ describe("buying through PayPal's own approval page", () => {
       const started = await approved();
       const unit = paypal.orders.get(started.orderId)!.purchase_units[0] as { items: { unit_amount: { value: string } }[] };
       unit.items[0].unit_amount.value = "0.01";
+      await refusesWithoutTouchingAnything(() => finish(stateOf(started), started.orderId));
+    });
+
+    it("an order whose total was discounted below the listed price", async () => {
+      const started = await approved();
+      const unit = paypal.orders.get(started.orderId)!.purchase_units[0] as { amount: { value: string } };
+      unit.amount.value = "0.01";
+      await refusesWithoutTouchingAnything(() => finish(stateOf(started), started.orderId));
+    });
+
+    it("an order in another currency", async () => {
+      const started = await approved();
+      const unit = paypal.orders.get(started.orderId)!.purchase_units[0] as { amount: { currency_code: string } };
+      unit.amount.currency_code = "EUR";
       await refusesWithoutTouchingAnything(() => finish(stateOf(started), started.orderId));
     });
 

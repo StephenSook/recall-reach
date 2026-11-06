@@ -59,6 +59,8 @@ describe("getOrder", () => {
       status: "COMPLETED",
       invoiceId: "#T1",
       customId: "#T1",
+      amountCents: null,
+      currency: null,
       items: [
         { name: "Stroller", sku: "SKU-1", quantity: 2, unitCents: 1500 },
         { name: "No SKU item", sku: null, quantity: 1, unitCents: 550 },

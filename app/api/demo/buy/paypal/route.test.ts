@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkoutState } from "@/server/demo/liveCatch";
 import { sessionCookie } from "@/server/session/session";
 import { POST } from "./route";
 import { GET } from "./return/route";
@@ -61,9 +62,16 @@ describe("the PayPal buy routes", () => {
   });
 
   it("keeps PayPal's ids out of what it logs when something fails", async () => {
-    signedIn();
-    const res = await back(`state=${"a".repeat(8)}-aaaa-4aaa-8aaa-${"a".repeat(12)}.DEMO-LIVE-${"a".repeat(12)}.sig&token=ORDER1`);
-    expect(res.status).toBe(303);
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("ORDER1");
+    const item = `${"a".repeat(8)}-aaaa-4aaa-8aaa-${"a".repeat(12)}`;
+    const { value, sessionId } = sessionCookie(SECRET, SHOP, new Date(), 3_600_000);
+    cookie = value;
+    const state = checkoutState(SECRET, SHOP, sessionId, item, `DEMO-LIVE-${"a".repeat(12)}`);
+    // A valid state against a database that isn't there, so this really reaches the failure path.
+    const res = await back(`state=${encodeURIComponent(state)}&token=ORDER1SENTINEL&PayerID=PAYER1SENTINEL`);
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain("The sale did not go through.");
+    expect(console.error).toHaveBeenCalled();
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).not.toContain("ORDER1SENTINEL");
+    expect(logged).not.toContain("PAYER1SENTINEL");
   });
 });

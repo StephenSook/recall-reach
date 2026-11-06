@@ -18,6 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { approveUrl } = await startPayPalBuy(getDb(), payPalClientFromEnv(), {
       shopId: session.shopId,
+      sessionId: session.sessionId,
       shopItemId: String(form.get("shopItemId") ?? ""),
       siteUrl: baseUrl(request),
       sessionSecret: secret("SESSION_SECRET"),

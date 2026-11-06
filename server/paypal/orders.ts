@@ -18,6 +18,7 @@ const orderSchema = z.object({
       z.object({
         invoice_id: z.string().optional(),
         custom_id: z.string().optional(),
+        amount: money.optional(),
         items: z
           .array(z.object({ name: z.string(), sku: z.string().optional(), quantity: z.string(), unit_amount: money }))
           .optional(),
@@ -49,6 +50,9 @@ export interface OrderFacts {
   /** The shop's own order number, as the shop set it at checkout. */
   invoiceId: string | null;
   customId: string | null;
+  /** What the order charges in all, after any discount. */
+  amountCents: number | null;
+  currency: string | null;
   items: { name: string; sku: string | null; quantity: number; unitCents: number }[];
   capture: CaptureFacts | null;
 }
@@ -91,6 +95,8 @@ export async function getOrder(client: PayPalClient, orderId: string): Promise<O
     status: order.status,
     invoiceId: unit.invoice_id ?? null,
     customId: unit.custom_id ?? null,
+    amountCents: unit.amount ? valueToCents(unit.amount.value) : null,
+    currency: unit.amount?.currency_code ?? null,
     items: (unit.items ?? []).map((i) => ({
       name: i.name,
       sku: i.sku ?? null,
