@@ -156,6 +156,22 @@ export async function latestReplay(db: Queryable): Promise<{ runId: string } | n
   return rows[0] ? { runId: rows[0].id } : null;
 }
 
+/** The newest day of recalls in the latest run, for the public API. */
+export async function latestRecallDay(db: Queryable) {
+  const latest = await latestReplay(db);
+  if (!latest) return null;
+  const { rows } = await db.query<{ recall_number: string; recall_title: string; recall_date: string; outcome: ReplayOutcome; item_title: string | null; reason: string | null }>(
+    `select recall_number, recall_title, recall_date::text as recall_date, outcome, item_title, reason from replay_rows
+     where run_id = $1 and recall_date = (select max(recall_date) from replay_rows where run_id = $1) order by recall_number`,
+    [latest.runId],
+  );
+  return {
+    runId: latest.runId,
+    recallDate: rows[0]?.recall_date ?? null,
+    recalls: rows.map((r) => ({ recallNumber: r.recall_number, recallTitle: r.recall_title, outcome: r.outcome, itemTitle: r.item_title, reason: r.reason })),
+  };
+}
+
 /** Recounts the headline numbers from the run's own rows, and says whether CPSC's records are still the ones it read. */
 export async function proveReplay(db: Queryable, runId: string) {
   const run = await readRun(db, runId);

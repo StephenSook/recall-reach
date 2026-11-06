@@ -5,7 +5,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Method, PayPalClient } from "../paypal/client";
-import { latestReplay, loadReplay, proveReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
+import { latestRecallDay, latestReplay, loadReplay, proveReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -81,6 +81,27 @@ describe("Recall Replay", () => {
         const { runId } = await run();
         await loadOlder();
         expect((await proveReplay(db, runId))?.sameRecalls).toBe(true);
+      });
+    });
+
+    describe("the newest day of recalls, for the public API", () => {
+      it("has nothing to say before a run", async () => {
+        expect(await latestRecallDay(db)).toBeNull();
+      });
+
+      it("gives that day's recalls from the latest run, with what each one found", async () => {
+        const { runId } = await run();
+        const day = await latestRecallDay(db);
+        expect(day).toMatchObject({ runId, recallDate: "2026-11-05" });
+        expect(day?.recalls.map((r) => r.recallNumber)).toContain("27072");
+        expect(day?.recalls.find((r) => r.recallNumber === "27072")).toMatchObject({ outcome: "MATCH", itemTitle: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" });
+      });
+
+      it("carries nothing from PayPal", async () => {
+        await run();
+        const text = JSON.stringify(await latestRecallDay(db));
+        expect(text).not.toContain("POOLTXN");
+        expect(text).not.toContain("DEMO-HIST");
       });
     });
 
