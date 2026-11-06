@@ -67,7 +67,10 @@ function load(): Loaded {
 function refundToolkit(call: CreateRefundCall): Toolkit {
   const { PayPalMCPToolkit, debug } = load();
   // With DEBUG set, its logger prints the capture id, and logs outlive the 48-hour rule. So off, whatever DEBUG says.
+  // disable() also deletes DEBUG, and the health check has to go on seeing it, since other libraries read it too.
+  const wanted = process.env.DEBUG;
   debug.disable();
+  if (wanted !== undefined) process.env.DEBUG = wanted;
   return new PayPalMCPToolkit({
     accessToken: call.accessToken,
     configuration: { actions: { payments: { createRefund: true } }, context: { sandbox: true, request_id: call.requestId } },

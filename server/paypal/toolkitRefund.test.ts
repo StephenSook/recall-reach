@@ -334,6 +334,16 @@ describe("create_refund through the toolkit", () => {
       expect(logged).toEqual([]);
     });
 
+    it("leaves DEBUG in the environment, so the health check goes on seeing it", async () => {
+      vi.stubEnv("DEBUG", "something");
+      try {
+        await toStub(call());
+        expect(process.env.DEBUG).toBe("something");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it("loads no stray .env file and prints nothing when it is loaded", async () => {
       const dir = mkdtempSync(join(tmpdir(), "toolkit-env-"));
       writeFileSync(join(dir, ".env"), "STRAY_FROM_ENV_FILE=leaked\n");
