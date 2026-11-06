@@ -35,27 +35,44 @@ const CHECK_CHIP: Record<string, string> = {
 /** One word for one, another for any other number. */
 export const counted = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
+/** A refund the seller can start now. One that failed can be tried again, because PayPal refused it. Anything else could pay twice. */
+export function refundOnOffer(row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "refund">): boolean {
+  const eligible = row.verdict === "MATCH" && row.strength === "CONFIRMED" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED";
+  return eligible && (!row.refund || row.refund.status === "failed");
+}
+
 /**
- * Whether there is still something only the seller can do. The one rule behind the wait count, the Needs review tab
- * and Done. Telling the family comes first: a refund made with no notice sent still waits, because it is still a recall.
+ * Whether there is still something only the seller can do. Telling the family comes first: a refund made with no
+ * notice sent still waits, because it is still a recall. A refund isn't finished until PayPal has refunded it.
  */
 export function waitsOnSeller(row: Pick<QueueRow, "verdict" | "strength" | "salePath" | "joinState" | "isListing" | "stillListed" | "notice" | "refund">): boolean {
+  if (row.refund && row.refund.status !== "refunded") return true;
   if (row.verdict === "CLEARED") return false;
   if (row.isListing) return row.stillListed;
-  const canRefund = row.verdict === "MATCH" && row.strength === "CONFIRMED" && row.salePath === "REFUND_ELIGIBLE" && row.joinState === "IDENTIFIED";
-  if (canRefund && (!row.refund || row.refund.status === "failed" || row.refund.status === "unconfirmed")) return true;
+  if (refundOnOffer(row)) return true;
   // Nothing can go out on this row, so nobody else will ever settle it.
   if (!canNotify(row)) return true;
+  // Sold on the recall date: the family can be told, and a person still has to decide about the money.
+  if (row.verdict === "MATCH" && row.salePath === "REVIEW") return true;
   const told = row.notice?.state === "MARKED_SENT" || row.notice?.state === "FAMILY_RESPONDED";
-  return !told || needsApproval(row);
+  if (!told || needsApproval(row)) return true;
+  return row.notice?.result === "CANT_TELL";
 }
 
 type CountedRow = Parameters<typeof waitsOnSeller>[0];
 
+/**
+ * The one rule behind the wait count, the Needs review tab and Done. A card is a sale: a family's no about its lead
+ * doesn't settle the other recalls that came near it, and they can't be asked about from here.
+ */
+export function saleWaits(card: { lead: CountedRow; also: unknown[] }): boolean {
+  return waitsOnSeller(card.lead) || (card.lead.notice?.result === "DOESNT_MATCH" && card.also.length > 0);
+}
+
 /** What the stat row shows. The tiles are what the check found, so they stay. The wait count goes down as work gets done. */
-export function queueCounts(q: { cards: { lead: CountedRow }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
+export function queueCounts(q: { cards: { lead: CountedRow; also: unknown[] }[]; cleared: unknown[]; unrelated: number; recallsChecked: number | null }) {
   const matched = q.cards.filter((c) => c.lead.verdict === "MATCH").length;
-  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.filter((c) => waitsOnSeller(c.lead)).length };
+  return { recallsChecked: q.recallsChecked, matched, scopeGaps: q.cards.length - matched, cleared: q.cleared.length + q.unrelated, waiting: q.cards.filter(saleWaits).length };
 }
 
 /** Color carries meaning, and red means a refund is possible. Everything else on a chip is plain. */

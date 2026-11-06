@@ -7,7 +7,7 @@ import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queu
 import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine, saleWaits } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -235,8 +235,8 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const { cards, cleared, unrelated } = toCards(rows);
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
-  const waiting = cards.filter((c) => waitsOnSeller(c.lead));
-  const done = cards.filter((c) => !waitsOnSeller(c.lead));
+  const waiting = cards.filter(saleWaits);
+  const done = cards.filter((c) => !saleWaits(c));
 
   return (
     <main className="page">

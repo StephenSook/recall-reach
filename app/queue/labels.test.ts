@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, refundOnOffer, saleWaits, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -36,10 +36,10 @@ describe("counted", () => {
 });
 
 describe("queueCounts", () => {
-  const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: row({ verdict, salePath: "NOTICE_ONLY" }) });
+  const card = (verdict: "MATCH" | "SCOPE_GAP") => ({ lead: row({ verdict, salePath: "NOTICE_ONLY" }), also: [] });
 
   it("counts what the check found in the tiles, and only what still waits in the wait count", () => {
-    const cards = [card("MATCH"), card("SCOPE_GAP"), { lead: row({ salePath: "NOTICE_ONLY", notice: told("MARKED_SENT") }) }];
+    const cards = [card("MATCH"), card("SCOPE_GAP"), { lead: row({ salePath: "NOTICE_ONLY", notice: told("MARKED_SENT") }), also: [] }];
     expect(queueCounts({ cards, cleared: [], unrelated: 0, recallsChecked: 934 })).toEqual({ recallsChecked: 934, matched: 2, scopeGaps: 1, cleared: 0, waiting: 2 });
   });
 
@@ -175,14 +175,18 @@ describe("waitsOnSeller: there is still something only the seller can do", () =>
     ["a refund on offer, with the family told", row({ notice: told("MARKED_SENT") }), true],
     ["a refund made, with the family not told: it is still a recall", row({ refund: refund("refunded") }), true],
     ["a refund made and the family told", row({ refund: refund("refunded"), notice: told("MARKED_SENT") }), false],
-    ["a refund at PayPal, with the family told: that waits on PayPal", row({ refund: refund("pending"), notice: told("MARKED_SENT") }), false],
-    ["a refund being sent, with the family told", row({ refund: refund("reserved"), notice: told("MARKED_SENT") }), false],
+    ["a refund at PayPal, with the family told: not finished until it's refunded", row({ refund: refund("pending"), notice: told("MARKED_SENT") }), true],
+    ["a refund reserved, with the family told: it may never have gone", row({ refund: refund("reserved"), notice: told("MARKED_SENT") }), true],
+    ["a refund with no clear answer, after the evidence changed: the seller still has to check", row({ verdict: "SCOPE_GAP", strength: "BRAND", refund: refund("unconfirmed"), notice: told("MARKED_SENT") }), true],
+    ["sold on the recall date, with the family told: a person still has to decide about the money", row({ salePath: "REVIEW", notice: told("MARKED_SENT") }), true],
     ["a refund with no clear answer: only the seller can check", row({ refund: refund("unconfirmed"), notice: told("MARKED_SENT") }), true],
     ["a refund that failed: it can be tried again", row({ refund: refund("failed"), notice: told("MARKED_SENT") }), true],
     ["no payment to refund, with the family told", row({ joinState: "HISTORY_UNAVAILABLE", notice: told("MARKED_SENT") }), false],
     ["a scope gap with no question yet", row({ verdict: "SCOPE_GAP", strength: "BRAND", salePath: "NOTICE_ONLY" }), true],
     ["a scope gap's question sent", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("MARKED_SENT", "CHECK_REQUEST") }), false],
-    ["a scope gap's question answered", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", "MATCHES") }), false],
+    ["a scope gap's question answered yes", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", "MATCHES") }), false],
+    ["a scope gap's question answered no", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", "DOESNT_MATCH") }), false],
+    ["a family that couldn't settle it: nothing else will", row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", "CANT_TELL") }), true],
     ["product words only: nothing can go out, so it's the seller's to check", row({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" }), true],
     ["two possible orders: nothing can go out, so it's the seller's to check", row({ joinState: "AMBIGUOUS_JOIN" }), true],
     ["an item still on the shelf", row({ isListing: true, stillListed: true, salePath: null, joinState: null }), true],
@@ -190,6 +194,44 @@ describe("waitsOnSeller: there is still something only the seller can do", () =>
     ["cleared", row({ verdict: "CLEARED" }), false],
   ])("%s", (_about, r, waits) => {
     expect(waitsOnSeller(r)).toBe(waits);
+  });
+});
+
+describe("refundOnOffer", () => {
+  it("offers a refund on a confirmed sale after the recall, with its payment linked", () => expect(refundOnOffer(row())).toBe(true));
+  it("offers it again after one failed: PayPal refused it, so nothing went out", () => expect(refundOnOffer(row({ refund: refund("failed") }))).toBe(true));
+  it.each(["refunded", "pending", "reserved", "unconfirmed"])("doesn't while one is %s: that could pay twice", (status) => {
+    expect(refundOnOffer(row({ refund: refund(status) }))).toBe(false);
+  });
+  it.each<[string, Partial<ReturnType<typeof row>>]>([
+    ["no payment linked", { joinState: "HISTORY_UNAVAILABLE" }],
+    ["a sale before the recall", { salePath: "NOTICE_ONLY" }],
+    ["a sale on the recall date", { salePath: "REVIEW" }],
+  ])("doesn't with %s", (_about, over) => {
+    expect(refundOnOffer(row(over))).toBe(false);
+  });
+  it("doesn't on a scope gap", () => expect(refundOnOffer(row({ verdict: "SCOPE_GAP" as never }))).toBe(false));
+  it("doesn't on a match resting on the brand alone: the server would refuse it", () => expect(refundOnOffer(row({ strength: "BRAND" as never }))).toBe(false));
+});
+
+describe("saleWaits: a card is a sale, not only its lead", () => {
+  const answered = (result: string) => row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", result) });
+  const other = row({ verdict: "SCOPE_GAP", strength: "BRAND" });
+
+  it("a family's no on one recall doesn't settle the others that came near this sale", () => {
+    expect(saleWaits({ lead: answered("DOESNT_MATCH"), also: [other] })).toBe(true);
+  });
+  it("a no with nothing else near it does", () => {
+    expect(saleWaits({ lead: answered("DOESNT_MATCH"), also: [] })).toBe(false);
+  });
+  it("a yes does: this is the product, and the family knows", () => {
+    expect(saleWaits({ lead: answered("MATCHES"), also: [other] })).toBe(false);
+  });
+  it("a question still out waits on the family, whatever else is near", () => {
+    expect(saleWaits({ lead: row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("MARKED_SENT", "CHECK_REQUEST") }), also: [other] })).toBe(false);
+  });
+  it("follows the lead otherwise", () => {
+    expect(saleWaits({ lead: other, also: [] })).toBe(true);
   });
 });
 

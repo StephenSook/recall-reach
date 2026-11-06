@@ -1,7 +1,7 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
-import { canNotify, needsApproval, NOTICE_STATE, pathNow, stateChip, waitsOnSeller } from "./labels";
+import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, stateChip } from "./labels";
 
 export type GridTab = "needs" | "done" | "cleared" | "shelf" | "unidentified" | "all";
 
@@ -35,6 +35,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
   const cardOf = new Map<string, string>();
   for (const card of cards) for (const r of [card.lead, ...card.also]) cardOf.set(r.matchId, card.lead.matchId);
   const leads = new Set(cards.map((c) => c.lead.matchId));
+  const waiting = new Set(cards.filter(saleWaits).map((c) => c.lead.matchId));
   // One order on the page: the cards' leads as they stand, then the other recalls on those sales, then the rest.
   const rank = new Map<string, number>();
   for (const [i, card] of cards.entries()) {
@@ -59,7 +60,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[]): GridRow[] {
       reason: r.reason,
       noticeState: r.notice ? NOTICE_STATE[r.notice.state] : null,
       isLead,
-      waits: isLead && waitsOnSeller(r),
+      waits: waiting.has(r.matchId),
       approvable: isLead && canNotify(r) && needsApproval(r),
       weak: r.strength === "PRODUCT_WORDS" || r.strength === "NO_SHARED_WORDS",
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",

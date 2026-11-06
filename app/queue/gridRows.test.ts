@@ -63,6 +63,12 @@ describe("needs review and done", () => {
   const inIt = (tab: Parameters<typeof inTab>[1]) => rows.filter((r) => inTab(r, tab)).map((r) => r.matchId).sort();
 
   it("needs review holds only sales that still wait on the seller", () => expect(inIt("needs")).toEqual(["waiting"]));
+  it("a family's no keeps a sale with other possible recalls in needs review", () => {
+    const answeredNo = row({ matchId: "lead", notice: { id: "n", kind: "CHECK_REQUEST", state: "FAMILY_RESPONDED", stopped: false, result: "DOESNT_MATCH" } });
+    const near = row({ matchId: "near", recallNumber: "25206", recallDate: "2020-01-01" });
+    const built = build([answeredNo, near]);
+    expect(built.filter((r) => inTab(r, "needs")).map((r) => r.matchId)).toEqual(["lead"]);
+  });
   it("done holds the sales that don't", () => expect(inIt("done")).toEqual(["sent"]));
   it("a sale's other recalls are in neither: its lead speaks for it", () => expect([...inIt("needs"), ...inIt("done")]).not.toContain("other"));
   it("all still shows every one", () => expect(inIt("all")).toEqual(["other", "sent", "waiting"]));
