@@ -62,11 +62,11 @@ const CASES: DemoCase[] = [
     recallNumber: "27027",
     required: true,
     freshCapture: true,
-    label: "one order with a clothing lot and a discount, sold today",
+    label: "one order with a picture book lot and a discount, sold today",
     orderDiscountCents: 1000,
     lines: [
       { title: "Papablic bedside sleeper, gray stars and moon, like new", sku: "DEMO-PAPABLIC-2", priceCents: 9000, discountCents: 750 },
-      { title: "Boys clothing lot, size 4", sku: "DEMO-LOT", priceCents: 3000, discountCents: 250 },
+      { title: "Picture book lot", sku: "DEMO-LOT", priceCents: 3000, discountCents: 250 },
     ],
   },
   // SCOPE GAP: the shop's words can't show whether this unit is covered.

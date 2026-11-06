@@ -159,7 +159,7 @@ describe("seedDemoShop", () => {
       expect((await lineFor(shopId, "27027", /moon$/))[0]).toMatchObject({ verdict: "MATCH", sale_path: "REFUND_ELIGIBLE", join_state: "IDENTIFIED", ordered_on: TODAY });
     });
 
-    it("MIXED BASKET: one order with a clothing lot and a discount, which refunds the sleeper's share only", async () => {
+    it("MIXED BASKET: one order with an unrelated lot and a discount, which refunds the sleeper's share only", async () => {
       const pp = fakePayPal();
       const { shopId } = await seed(pp.client);
       const [sleeper] = await lineFor(shopId, "27027", /like new/);
@@ -182,9 +182,12 @@ describe("seedDemoShop", () => {
       expect(row.verdict).toBe("SCOPE_GAP");
     });
 
-    it("the clothing lot asks rather than clears, against a recall of youth clothing with its list cut off", async () => {
+    it("the other line in the mixed order is near no recall, so it adds no card", async () => {
       const { shopId } = await seed(fakePayPal().client);
-      expect((await lineFor(shopId, "26724", /clothing lot/))[0]).toMatchObject({ verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS" });
+      const lines = await db.query("select id from order_lines where shop_id = $1 and title = 'Picture book lot'", [shopId]);
+      expect(lines.rows).toHaveLength(1);
+      const { rows } = await db.query("select m.verdict from recall_matches m join order_lines l on l.id = m.order_line_id where m.shop_id = $1 and l.title = 'Picture book lot'", [shopId]);
+      expect(rows).toEqual([]);
     });
 
     it("NEAR MISS: the same brand, a different product, clears with its reason", async () => {
