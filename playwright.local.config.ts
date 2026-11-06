@@ -9,6 +9,8 @@ import { defineConfig } from "@playwright/test";
 const secret = () => randomBytes(32).toString("hex");
 export const FAKE_PAYPAL_STATE = process.env.FAKE_PAYPAL_STATE ?? join(tmpdir(), `fake-paypal-${process.pid}.json`);
 process.env.FAKE_PAYPAL_STATE = FAKE_PAYPAL_STATE;
+export const FAKE_PAYPAL_CONTROL = process.env.FAKE_PAYPAL_CONTROL ?? join(tmpdir(), `fake-paypal-control-${process.pid}.json`);
+process.env.FAKE_PAYPAL_CONTROL = FAKE_PAYPAL_CONTROL;
 
 export default defineConfig({
   testDir: "e2e/local",
@@ -26,7 +28,7 @@ export default defineConfig({
     env: {
       NODE_OPTIONS: `--import=${pathToFileURL(resolve("e2e/support/fake-paypal.mjs")).href}`,
       FAKE_PAYPAL_STATE,
-      FAKE_PAYPAL_LOSE_REFUND_ANSWERS: "3",
+      FAKE_PAYPAL_CONTROL,
       DATABASE_URL: process.env.DATABASE_URL ?? "",
       PAYPAL_CLIENT_ID: "fake",
       PAYPAL_CLIENT_SECRET: "fake",

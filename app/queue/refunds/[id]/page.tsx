@@ -81,7 +81,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       {rec.canAskAgain ? (
         <form action="/api/queue/refunds/ask-again" method="post">
           <input type="hidden" name="refundId" value={id} />
-          <p>This repeats the same request. If PayPal already made the refund, it answers with that refund and makes no second one.</p>
+          <p>This repeats the same request. If PayPal already made the refund, it answers with that refund and makes no second one. Don&apos;t use this if you refunded this sale in PayPal yourself.</p>
           <button type="submit">Ask PayPal again</button>
         </form>
       ) : null}

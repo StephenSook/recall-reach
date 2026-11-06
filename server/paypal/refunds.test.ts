@@ -399,44 +399,83 @@ describe("refunds", () => {
     });
   });
 
-  describe("a refund with no clear answer leaves the seller a way forward", () => {
-    async function stuckRefund() {
+  describe("a refund with no clear answer leaves the seller one way forward at a time", () => {
+    async function noAnswer() {
       const m = await setUp();
       const a = await approve(m.id);
       const pp = fakePayPal({ refundSteps: ["down", "down", "down"] });
       const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
       return { m, r, pp };
     }
-    const read = (refundId: string, client: PayPalClient) => reconcileRefund(db, client, { shopId, refundId, recordKey: key, now: NOW });
+    const SOON = new Date(NOW.getTime() + 7 * 60_000);
+    const TOO_OLD = new Date(NOW.getTime() + 7 * 3_600_000);
+    const read = (refundId: string, client: PayPalClient, now: Date) => reconcileRefund(db, client, { shopId, refundId, recordKey: key, now });
+    const again = (refundId: string, client: PayPalClient, now: Date) => askPayPalAgain(db, client, { shopId, refundId, recordKey: key, now });
 
-    it("names the order and the amount, because the capture id is not something a seller has", async () => {
-      const { r, pp } = await stuckRefund();
-      expect((await read(r.refundId, pp.client)).stuck).toEqual({ orderNumber: "#R1", sentToPayPal: false });
+    it("offers asking PayPal again first, and does not yet tell the seller to refund it themselves", async () => {
+      const { r, pp } = await noAnswer();
+      expect(await read(r.refundId, pp.client, SOON)).toMatchObject({ canAskAgain: true, stuck: null });
+    });
+
+    it("turns to PayPal itself once the request is too old to repeat, naming the order", async () => {
+      const { r, pp } = await noAnswer();
+      expect(await read(r.refundId, pp.client, TOO_OLD)).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1", sentToPayPal: false } });
+    });
+
+    it("turns to PayPal itself once a repeat was refused, shows PayPal's answer, and repeats no more", async () => {
+      const { r } = await noAnswer();
+      await again(r.refundId, fakePayPal({ refundSteps: [422] }).client, SOON);
+      const pp = fakePayPal();
+      const rec = await read(r.refundId, pp.client, SOON);
+      expect(rec).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1" } });
+      expect(rec.exceptions).toContain("PayPal refused the repeat (REFUND_AMOUNT_EXCEEDED). Check PayPal directly before doing anything else.");
+      expect(await refusal(again(r.refundId, pp.client, SOON))).toBe("CHECK_IN_PAYPAL");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("offers neither while a send may still be running: a refund made by hand now could be a second one", async () => {
+      const { r, pp } = await noAnswer();
+      await db.query("update refunds set send_lease_until = $2::timestamptz where id = $1", [r.refundId, new Date(SOON.getTime() + 60_000).toISOString()]);
+      expect(await read(r.refundId, pp.client, SOON)).toMatchObject({ canAskAgain: false, stuck: null });
+      expect(await refusal(sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: SOON }))).toBe("REFUND_BEING_SENT");
     });
 
     it("records that the seller was sent to PayPal, once", async () => {
-      const { r, pp } = await stuckRefund();
-      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW });
-      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: new Date(NOW.getTime() + 60_000) });
-      expect((await read(r.refundId, pp.client)).stuck?.sentToPayPal).toBe(true);
+      const { r, pp } = await noAnswer();
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: TOO_OLD });
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: new Date(TOO_OLD.getTime() + 60_000) });
+      expect((await read(r.refundId, pp.client, TOO_OLD)).stuck?.sentToPayPal).toBe(true);
       const { rows } = await db.query<{ seller_sent_to_paypal_at: Date }>("select seller_sent_to_paypal_at from refunds");
-      expect(rows[0].seller_sent_to_paypal_at.getTime()).toBe(NOW.getTime());
+      expect(rows[0].seller_sent_to_paypal_at.getTime()).toBe(TOO_OLD.getTime());
+    });
+
+    it("never repeats once the seller was sent to PayPal: they may have refunded it there", async () => {
+      const { r } = await noAnswer();
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: SOON });
+      const pp = fakePayPal();
+      expect((await read(r.refundId, pp.client, SOON)).canAskAgain).toBe(false);
+      expect(await refusal(again(r.refundId, pp.client, SOON))).toBe("CHECK_IN_PAYPAL");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("holds that even if the seller is sent there while the repeat is getting ready", async () => {
+      const { r } = await noAnswer();
+      const pp = fakePayPal();
+      const racing: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "GET") await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: SOON });
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      expect(await refusal(again(r.refundId, racing, SOON))).toBe("CHECK_IN_PAYPAL");
+      expect(pp.posts()).toEqual([]);
     });
 
     it("never frees the line: a new request id could refund the same sale twice", async () => {
-      const { m, r } = await stuckRefund();
-      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW });
+      const { m, r } = await noAnswer();
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: SOON });
       expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
-    });
-
-    it("shows PayPal's answer when the repeat was refused", async () => {
-      const { r } = await stuckRefund();
-      await agedFromNow(r.refundId);
-      const later = new Date(NOW.getTime() + 7 * 60_000);
-      const refusing = fakePayPal({ refundSteps: [422] });
-      await askPayPalAgain(db, refusing.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
-      const rec = await reconcileRefund(db, fakePayPal().client, { shopId, refundId: r.refundId, recordKey: key, now: later });
-      expect(rec.exceptions).toContain("PayPal refused the repeat (REFUND_AMOUNT_EXCEEDED). Check PayPal directly before doing anything else.");
     });
 
     it("is not offered once the refund has a clear answer", async () => {
@@ -444,12 +483,12 @@ describe("refunds", () => {
       const a = await approve(m.id);
       const pp = fakePayPal();
       const r = await execute(a.approvalId, pp.client);
-      expect((await read(r.refundId, pp.client)).stuck).toBeNull();
+      expect((await read(r.refundId, pp.client, NOW)).stuck).toBeNull();
       expect(await refusal(sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW }))).toBe("NOTHING_TO_ASK");
     });
 
     it("refuses another shop's refund", async () => {
-      const { r } = await stuckRefund();
+      const { r } = await noAnswer();
       const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
       expect(await refusal(sendSellerToPayPal(db, { shopId: other, refundId: r.refundId, now: NOW }))).toBe("NO_SUCH_REFUND");
       expect(await refusal(sendSellerToPayPal(db, { shopId, refundId: "not-a-uuid", now: NOW }))).toBe("NO_SUCH_REFUND");

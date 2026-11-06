@@ -51,7 +51,8 @@ export type RefusalCode =
   | "NO_SUCH_REFUND"
   | "NOTHING_TO_ASK"
   | "REFUND_BEING_SENT"
-  | "TOO_OLD_TO_ASK_AGAIN";
+  | "TOO_OLD_TO_ASK_AGAIN"
+  | "CHECK_IN_PAYPAL";
 
 // PayPal judged the request and said no. 409 is not here: it means a previous call is still in progress.
 const CLEAR_REFUSALS = new Set([400, 401, 403, 404, 422]);
@@ -470,7 +471,7 @@ async function sendRefund(
     // nothing, not even with the capture reading COMPLETED while a refund settles, so a person checks.
     if (clearlyRefused(err)) {
       if (!send.repeat) return settle("failed", err.issue ?? `HTTP ${err.status}`);
-      return settle("unconfirmed", `PayPal refused the repeat (${err.issue ?? `HTTP ${err.status}`}). Check PayPal directly before doing anything else.`);
+      return settle("unconfirmed", `${REFUSED_REPEAT} (${err.issue ?? `HTTP ${err.status}`}). Check PayPal directly before doing anything else.`);
     }
     return settle("unconfirmed", "No clear answer from PayPal. Check it before trying again.");
   }
@@ -503,8 +504,10 @@ export async function askPayPalAgain(
     order_line_id: string;
     line_sha256: string | null;
     paypal_payment_id: string | null;
+    failure: string | null;
+    seller_sent_to_paypal_at: Date | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, p.capture_id, p.refund_id as paypal_refund_id,
+    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, r.failure, r.seller_sent_to_paypal_at, p.capture_id, p.refund_id as paypal_refund_id,
             a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256, a.paypal_payment_id
      from refunds r join approvals a on a.id = r.approval_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
@@ -516,6 +519,9 @@ export async function askPayPalAgain(
   if (row.status !== "unconfirmed" || row.paypal_refund_id) {
     throw new RefundRefused("NOTHING_TO_ASK", "PayPal already has a record of this refund. Check it against PayPal.");
   }
+  const checkInPayPal = () => new RefundRefused("CHECK_IN_PAYPAL", "This one is with PayPal now. Check the payment there.");
+  // A person may have refunded it by hand from here on, and a repeat could then make a second refund.
+  if (row.seller_sent_to_paypal_at || row.failure?.startsWith(REFUSED_REPEAT)) throw checkInPayPal();
   if (!row.capture_id) throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Check PayPal directly.");
   if (now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS) {
     throw new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
@@ -536,11 +542,16 @@ export async function askPayPalAgain(
   const claimed = await db.query<{ send_lease_id: string }>(
     `update refunds set send_lease_until = $2::timestamptz, send_lease_id = gen_random_uuid(), updated_at = $3::timestamptz
      where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $3::timestamptz)
+       and seller_sent_to_paypal_at is null
      returning send_lease_id`,
     [input.refundId, leaseEnd(startedAt, now), now.toISOString()],
   );
   const holder = claimed.rows[0]?.send_lease_id;
-  if (!holder) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
+  if (!holder) {
+    const { rows: latest } = await db.query<{ seller_sent_to_paypal_at: Date | null }>("select seller_sent_to_paypal_at from refunds where id = $1", [input.refundId]);
+    if (latest[0].seller_sent_to_paypal_at) throw checkInPayPal();
+    throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
+  }
 
   return sendRefund(
     db,
@@ -559,8 +570,16 @@ export async function sendSellerToPayPal(db: Queryable, input: { shopId: string;
   const { rows } = await db.query<{ status: string }>("select status from refunds where id = $1 and shop_id = $2", [input.refundId, input.shopId]);
   if (!rows[0]) throw notFound();
   if (rows[0].status !== "unconfirmed") throw new RefundRefused("NOTHING_TO_ASK", "This refund already has a clear answer.");
-  await db.query("update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz) where id = $1", [input.refundId, now.toISOString()]);
+  const sent = await db.query(
+    `update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz)
+     where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $2::timestamptz)
+     returning id`,
+    [input.refundId, now.toISOString()],
+  );
+  if (sent.rows.length === 0) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
 }
+
+const REFUSED_REPEAT = "PayPal refused the repeat";
 
 const refundSchema = z.object({
   id: z.string(),
@@ -635,12 +654,19 @@ export async function reconcileRefund(
   }
 
   if (!row.capture_id) exceptions.push("PayPal's record of this refund has aged out here. Check PayPal directly.");
-  const unanswered = status === "unconfirmed" && !row.paypal_refund_id && row.capture_id !== null;
-  const canAskAgain = unanswered && now.getTime() - row.created_at.getTime() <= ASK_AGAIN_MS;
-  if (unanswered && !canAskAgain) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
+  // One way forward at a time. Telling a seller to refund by hand while a send may be running, or while a
+  // repeat is still on offer, could end in two refunds of one sale.
+  const noAnswer = status === "unconfirmed" && !row.paypal_refund_id;
+  const sendMayBeRunning = row.send_lease_until !== null && row.send_lease_until.getTime() > now.getTime();
+  const refusedRepeat = row.failure?.startsWith(REFUSED_REPEAT) ?? false;
+  const sentToPayPal = row.seller_sent_to_paypal_at !== null;
+  const tooOld = now.getTime() - row.created_at.getTime() > ASK_AGAIN_MS;
+  const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld;
+  const stuck = noAnswer && !sendMayBeRunning && !canAskAgain ? { orderNumber: row.order_number, sentToPayPal } : null;
+  if (noAnswer && row.capture_id !== null && tooOld) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");
-  if (status === "unconfirmed" && row.failure?.startsWith("PayPal refused the repeat")) exceptions.push(row.failure);
+  if (status === "unconfirmed" && row.failure?.startsWith(REFUSED_REPEAT)) exceptions.push(row.failure);
   if (refund && (refund.amountCents !== row.amount_cents || refund.currency !== row.currency)) {
     exceptions.push("PayPal's refund amount differs from the ledger.");
   }
@@ -651,7 +677,7 @@ export async function reconcileRefund(
 
   return {
     canAskAgain,
-    stuck: status === "unconfirmed" && !row.paypal_refund_id ? { orderNumber: row.order_number, sentToPayPal: row.seller_sent_to_paypal_at !== null } : null,
+    stuck,
     ledger: { status, amountCents: row.amount_cents, currency: row.currency },
     capture: captureFacts ? { status: captureFacts.status, amountCents: captureFacts.amountCents, currency: captureFacts.currency } : null,
     refund,

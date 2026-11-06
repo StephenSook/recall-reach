@@ -1,8 +1,9 @@
 // Test only. Node loads this into a local server with --import, so the app's calls to PayPal's sandbox
 // land here. The app itself has no setting that can change where a money request goes, on purpose.
 // Follows PayPal's rules as measured on the sandbox: a repeated request id returns the original refund
-// and moves no more money. FAKE_PAYPAL_LOSE_REFUND_ANSWERS refund answers are lost after the refund lands.
-import { writeFileSync } from "node:fs";
+// and moves no more money. A test steers it with the file at FAKE_PAYPAL_CONTROL: { lose: n } loses the next
+// n refund answers after the refund lands, and { refuse: n } refuses the next n with a 422.
+import { readFileSync, writeFileSync } from "node:fs";
 
 const HOST = "api-m.sandbox.paypal.com";
 const realFetch = globalThis.fetch;
@@ -11,7 +12,18 @@ const run = Date.now().toString(36).toUpperCase();
 const orders = new Map();
 const captures = new Map();
 const refunds = new Map();
-let lostLeft = Number(process.env.FAKE_PAYPAL_LOSE_REFUND_ANSWERS ?? 0);
+function takeFromControl(key) {
+  let control = {};
+  try {
+    control = JSON.parse(readFileSync(process.env.FAKE_PAYPAL_CONTROL, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!(control[key] > 0)) return false;
+  control[key]--;
+  writeFileSync(process.env.FAKE_PAYPAL_CONTROL, JSON.stringify(control));
+  return true;
+}
 let posts = 0;
 const requestIds = new Set();
 
@@ -52,6 +64,10 @@ function fakePayPal(url, init) {
   if (refund && method === "POST") {
     posts++;
     requestIds.add(requestId);
+    if (takeFromControl("refuse")) {
+      report();
+      return json({ name: "UNPROCESSABLE_ENTITY", details: [{ issue: "REFUND_AMOUNT_EXCEEDED" }] }, 422);
+    }
     let made = refunds.get(requestId);
     if (!made) {
       made = { id: `FAKE-REF-${run}-${refunds.size + 1}`, status: "COMPLETED", amount: body.amount };
@@ -59,10 +75,7 @@ function fakePayPal(url, init) {
       captures.get(refund[1]).status = "REFUNDED";
     }
     report();
-    if (lostLeft > 0) {
-      lostLeft--;
-      throw new TypeError("fetch failed");
-    }
+    if (takeFromControl("lose")) throw new TypeError("fetch failed");
     return json({ id: made.id, status: made.status }, 201);
   }
   const readRefund = /^\/v2\/payments\/refunds\/([\w-]+)$/.exec(path);
