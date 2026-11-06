@@ -17,7 +17,7 @@ export const CHECK_FROM = "2022-01-01";
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
 const TOP_CANDIDATES = 20;
 /** word_similarity of a shop title to the recall's title and product names. Low, because a miss here is silent. */
-const MIN_SIMILARITY = 0.3;
+export const MIN_SIMILARITY = 0.3;
 
 export interface RunSummary {
   /** Null when only one record was checked: that says nothing about the shop's coverage. */
