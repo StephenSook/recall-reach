@@ -71,7 +71,15 @@ The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 min
 
 ## Run it locally
 
-Requirements: Node 22.12 or newer, pnpm 10, and a Postgres database.
+To check the code you need no keys, no accounts and no database, only Node 22.12 or newer, pnpm 10 and `openssl`. Postgres runs inside the tests.
+
+```bash
+pnpm install
+pnpm test    # about 2 to 3 minutes, 2,000+ tests
+pnpm eval    # recomputes /eval's numbers from the stored verdicts, in seconds
+```
+
+To run the site yourself you also need a Postgres database and sandbox keys:
 
 ```bash
 pnpm install
