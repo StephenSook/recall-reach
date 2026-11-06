@@ -10,7 +10,7 @@ import { createContactCipher } from "../privacy/contactCipher";
 import { createRecordKey } from "../privacy/recordKey";
 import { createPayPalClient, type PayPalClient } from "./client";
 import { valueToCents } from "./orders";
-import { approveRefund, askPayPalAgain, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents, sendSellerToPayPal } from "./refunds";
+import { approveRefund, askPayPalAgain, executeRefund, readRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents, sendSellerToPayPal } from "./refunds";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -1332,6 +1332,63 @@ describe("refunds", () => {
     });
   });
 
+  describe("reading a refund, which is what opening the page does", () => {
+    const stored = async (id: string) => (await db.query<{ status: string; updated_at: Date }>("select status, updated_at from refunds where id = $1", [id])).rows[0];
+
+    it("changes nothing, and says PayPal has a newer answer", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      pp.settle("COMPLETED");
+      const before = await stored(r.refundId);
+      const read = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      expect(read.ledger.status).toBe("pending");
+      expect(read.newerAnswer).toBe("refunded");
+      expect(await stored(r.refundId)).toEqual(before);
+    });
+
+    it("the update is a separate, deliberate step", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      pp.settle("COMPLETED");
+      const updated = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      expect(updated.ledger.status).toBe("refunded");
+      expect(updated.newerAnswer).toBeNull();
+      expect((await stored(r.refundId)).status).toBe("refunded");
+    });
+
+    it("does not give up on a reservation just because someone looked", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const dies: typeof db = {
+        ...db,
+        transaction: async (fn) => {
+          const out = await db.transaction(fn);
+          throw Object.assign(new Error("the process died here"), { out });
+        },
+      };
+      await expect(executeRefund(dies, pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow("died");
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      const later = new Date(NOW.getTime() + 7 * 60_000);
+      const read = await readRefund(db, pp.client, { shopId, refundId: rows[0].id, recordKey: key, now: later });
+      expect(read.ledger.status).toBe("reserved");
+      expect(read.newerAnswer).toBe("failed");
+      expect((await stored(rows[0].id)).status).toBe("reserved");
+    });
+
+    it("has nothing newer to say when the row already agrees with PayPal", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const r = await execute(a.approvalId, pp.client);
+      expect((await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW })).newerAnswer).toBeNull();
+    });
+  });
+
   describe("reconciling", () => {
     it("shows capture, refund, webhook and ledger side by side, with no exceptions when they agree", async () => {
       const m = await setUp();
@@ -1347,6 +1404,7 @@ describe("refunds", () => {
       expect(rec).toEqual({
         canAskAgain: false,
         stuck: null,
+        newerAnswer: null,
         ledger: { status: "refunded", amountCents: 9000, currency: "USD" },
         capture: { status: "REFUNDED", amountCents: 9000, currency: "USD" },
         refund: { status: "COMPLETED", amountCents: 9000, currency: "USD" },

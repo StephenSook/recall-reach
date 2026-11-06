@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { centsToValue } from "@/server/paypal/orders";
-import { reconcileRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
+import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { currentSession } from "@/server/web/http";
 
@@ -18,7 +18,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   let rec: Reconciliation;
   try {
-    rec = await reconcileRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: id, recordKey });
+    rec = await readRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId: id, recordKey });
   } catch (err) {
     if (err instanceof RefundRefused) notFound();
     throw err;
@@ -66,6 +66,12 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       ) : (
         <p data-testid="no-exceptions">All four records agree.</p>
       )}
+      {rec.newerAnswer ? (
+        <form action="/api/queue/refunds/update" method="post" data-testid="newer-answer">
+          <input type="hidden" name="refundId" value={id} />
+          <button type="submit">Update from PayPal</button>
+        </form>
+      ) : null}
       {rec.stuck ? (
         <section data-testid="stuck">
           <p>

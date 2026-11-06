@@ -596,6 +596,8 @@ export interface Reconciliation {
   canAskAgain: boolean;
   /** No clear answer and no PayPal refund id. Only PayPal itself can say what happened. */
   stuck: { orderNumber: string; sentToPayPal: boolean } | null;
+  /** What PayPal's answer says this row should now be, while a read has not changed it. */
+  newerAnswer: RefundOutcome["status"] | null;
   ledger: { status: string; amountCents: number; currency: string };
   capture: { status: string; amountCents: number; currency: string } | null;
   refund: { status: string; amountCents: number; currency: string } | null;
@@ -603,12 +605,21 @@ export interface Reconciliation {
   exceptions: string[];
 }
 
+interface ReconcileInput {
+  shopId: string;
+  refundId: string;
+  recordKey: RecordKey;
+  now?: Date;
+}
+
 /** Capture, refund, webhook and our ledger side by side. Settles a pending or unconfirmed refund from PayPal's answer. */
-export async function reconcileRefund(
-  db: Queryable,
-  client: PayPalClient,
-  input: { shopId: string; refundId: string; recordKey: RecordKey; now?: Date },
-): Promise<Reconciliation> {
+/** What opening the refund page does: reads ours and PayPal's records, and changes nothing. */
+export const readRefund = (db: Queryable, client: PayPalClient, input: ReconcileInput) => reconcile(db, client, input, false);
+
+/** A person asked for it: brings the ledger up to date with PayPal's answer. */
+export const reconcileRefund = (db: Queryable, client: PayPalClient, input: ReconcileInput) => reconcile(db, client, input, true);
+
+async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileInput, write: boolean): Promise<Reconciliation> {
   const now = input.now ?? new Date();
   const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
   if (!UUID.test(input.refundId)) throw notFound();
@@ -650,12 +661,18 @@ export async function reconcileRefund(
 
   // Our ledger follows PayPal's own answer about the refund.
   let status = row.status;
-  if (status === "reserved") status = await giveUpIfNeverSent(db, input.refundId, now);
-  if (status === "pending" || status === "unconfirmed") {
-    if (refund?.status === "COMPLETED") status = "refunded";
-    else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") status = "failed";
-    else if (!webhookSeen && now.getTime() - row.created_at.getTime() > UNCONFIRMED_AFTER_MS) status = "unconfirmed";
-    status = await moveLedger(db, input.refundId, status, now);
+  let newerAnswer: RefundOutcome["status"] | null = null;
+  if (status === "reserved") {
+    const leaseOver = row.send_lease_until === null || row.send_lease_until.getTime() <= now.getTime();
+    if (write) status = await giveUpIfNeverSent(db, input.refundId, now);
+    else if (leaseOver) newerAnswer = "failed";
+  } else if (status === "pending" || status === "unconfirmed") {
+    let answer: RefundOutcome["status"] = status;
+    if (refund?.status === "COMPLETED") answer = "refunded";
+    else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") answer = "failed";
+    else if (!webhookSeen && now.getTime() - row.created_at.getTime() > UNCONFIRMED_AFTER_MS) answer = "unconfirmed";
+    if (write) status = await moveLedger(db, input.refundId, answer, now);
+    else if (answer !== status) newerAnswer = answer;
   }
 
   if (!row.capture_id) exceptions.push("PayPal's record of this refund has aged out here. Check PayPal directly.");
@@ -683,6 +700,7 @@ export async function reconcileRefund(
   return {
     canAskAgain,
     stuck,
+    newerAnswer,
     ledger: { status, amountCents: row.amount_cents, currency: row.currency },
     capture: captureFacts ? { status: captureFacts.status, amountCents: captureFacts.amountCents, currency: captureFacts.currency } : null,
     refund,
