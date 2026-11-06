@@ -325,6 +325,14 @@ describe("notices", () => {
       expect((await familyView(db, unsure))?.answerOpen).toBe(false);
     });
 
+    it("does not treat typed text as not sure: on a model question, those words are just a wrong model", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#F13", title: "Baby Brezza sterilizer" }));
+      const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });
+      expect(kind).toBe("CHECK_REQUEST");
+      await recordFamilyAnswer(db, noticeId, "not_sure");
+      expect((await familyView(db, noticeId))?.answerOpen).toBe(false);
+    });
+
     it("keeps a real answer once there is one, even after a later not sure", async () => {
       const noticeId = await check("#F10");
       expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("MATCHES");

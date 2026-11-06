@@ -212,7 +212,7 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
        check_open = case when check_result is null or check_open then $3::boolean else false end,
        responded_at = coalesce(responded_at, now())
      where id = $1 returning check_result`,
-    [noticeId, checkResult(notice, question, said), said === "not_sure"],
+    [noticeId, checkResult(notice, question, said), question.kind !== "model" && said === "not_sure"],
   );
   return saved.rows[0].check_result;
 }
