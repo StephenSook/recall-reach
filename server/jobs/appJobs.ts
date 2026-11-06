@@ -2,6 +2,7 @@ import { fetchRecalls, type FetchDeps } from "../cpsc/fetch";
 import { recordPull, snapshotHash } from "../cpsc/pull";
 import type { Db } from "../db/types";
 import { purgeOldOwnShops } from "../import/ownFile";
+import { checkStoredShops, type SweepSummary } from "../match/sweep";
 import { purgePayPalData } from "../privacy/retention";
 import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
 
@@ -13,6 +14,9 @@ export interface RecallPollStatus {
   lastPollAt: string | null;
   lastPollOk: boolean | null;
   dbTouched: boolean | null;
+  /** The last check of stored shops against new recalls. Counts only: no shop is named here. */
+  sweep?: SweepSummary | null;
+  sweepOk?: boolean | null;
 }
 
 // On globalThis because Next.js can load instrumentation and route handlers as separate module
@@ -114,15 +118,35 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
       polledThrough = range.end; // the same answer as the one already stored
     }
 
-    holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb };
+    // Only when the database is awake anyway. A quiet poll stays off it, and a shop that is behind waits for the next
+    // touched tick (an hour at most), which is also what catches recalls loaded by a deploy.
+    const earlier = holder.__recallReachPoll;
+    let sweep = earlier?.sweep ?? null;
+    let sweepOk = earlier?.sweepOk ?? null;
+    let sweepError: unknown = null;
+    if (touchDb) {
+      try {
+        sweep = await checkStoredShops(db, { now: at });
+        sweepOk = true;
+      } catch (err) {
+        sweepError = err;
+        sweepOk = false;
+        console.error(`recall check of stored shops failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
     const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
     console.info(
       `cpsc-poll ${range.start}..${range.end}: ${fetched}, db=${touchDb ? `touched${why}` : "untouched"}` +
-        (purged ? `, purged ${JSON.stringify(purged)}` : ""),
+        (purged ? `, purged ${JSON.stringify(purged)}` : "") +
+        (touchDb && sweep && sweep.shopsChecked > 0 ? `, checked ${sweep.shopsChecked} ${sweep.shopsChecked === 1 ? "shop" : "shops"} against new recalls` : "") +
+        (touchDb && sweep && sweep.shopsFailed > 0 ? `, ${sweep.shopsFailed} failed` : "") +
+        (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError;
     if (failure) throw failure;
   };
 

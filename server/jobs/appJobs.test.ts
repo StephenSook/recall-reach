@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import type { Db } from "../db/types";
+import { createShop, storeOrderLines } from "../import/store";
+import { createContactCipher } from "../privacy/contactCipher";
 import { appJobs, HEARTBEAT_TICKS, POLL_MS, recallPollStatus } from "./appJobs";
 
 const fixture: Record<string, unknown>[] = JSON.parse(
@@ -283,11 +285,80 @@ describe("the recall poll job", () => {
     await poll.run();
     calls.n = 0;
     await poll.run();
-    expect(recallPollStatus()).toEqual({ lastPollAt: NOW.toISOString(), lastPollOk: true, dbTouched: false });
+    expect(recallPollStatus()).toMatchObject({ lastPollAt: NOW.toISOString(), lastPollOk: true, dbTouched: false });
     status = 400;
     await poll.run().catch(() => {});
     expect(recallPollStatus()).toMatchObject({ lastPollOk: false });
     expect(calls.n).toBe(0);
+  });
+
+  describe("a shop that uploaded before the recall came in", () => {
+    const storedShop = async () => {
+      const shopId = await createShop(db, { name: "A shop", kind: "REAL" });
+      await storeOrderLines(
+        db,
+        shopId,
+        [
+          {
+            orderNumber: "1001",
+            lineNo: 1,
+            title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083",
+            sku: null,
+            quantity: 1,
+            unitPriceCents: 5000,
+            discountCents: 0,
+            currency: "USD",
+            orderedOn: "2026-09-15",
+            paymentReference: null,
+            buyerEmail: null,
+          },
+        ],
+        createContactCipher("k".repeat(32), shopId),
+        "test",
+      );
+      return shopId;
+    };
+    const matches = async (shopId: string) => (await db.query("select id from recall_matches where shop_id = $1 and verdict = 'MATCH'", [shopId])).rows;
+
+    it("gets the recall on the tick that brings it in, and health says so", async () => {
+      const shopId = await storedShop();
+      const [poll] = appJobs(db, cpscAnswering(() => nov5).deps);
+      await poll.run();
+      expect(await matches(shopId)).toHaveLength(1);
+      expect(recallPollStatus()).toMatchObject({ sweepOk: true, sweep: { shopsChecked: 1, shopsFailed: 0, shopsWaiting: 0 } });
+      expect(info[0]).toContain("checked 1 shop against new recalls");
+    });
+
+    it("costs a quiet poll nothing, and keeps the last result for health", async () => {
+      await storedShop();
+      const { counted, calls } = counting(db);
+      const [poll] = appJobs(counted, cpscAnswering(() => nov5).deps);
+      await poll.run();
+      calls.n = 0;
+      await poll.run();
+      expect(calls.n).toBe(0);
+      expect(recallPollStatus()).toMatchObject({ dbTouched: false, sweep: { shopsChecked: 1 } });
+    });
+
+    it("if the check can't run at all, the recall is still stored, and health and the job both say so", async () => {
+      const shopId = await storedShop();
+      const failing: Db = {
+        ...db,
+        exec: db.exec.bind(db),
+        transaction: db.transaction.bind(db),
+        query: ((sql: string, params?: unknown[]) => {
+          if (sql.includes("recalls_checked_through")) throw new Error("no connection");
+          return db.query(sql, params);
+        }) as Db["query"],
+      };
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const [poll] = appJobs(failing, cpscAnswering(() => nov5).deps);
+      await expect(poll.run()).rejects.toThrow("no connection");
+      expect(recallPollStatus()).toMatchObject({ sweepOk: false });
+      expect(await pulls()).toBeGreaterThan(0);
+      expect(errors.mock.calls.flat().join(" ")).toContain("no connection");
+      expect(await matches(shopId)).toEqual([]);
+    });
   });
 
   it("logs exactly one line per tick saying whether the database was touched", async () => {

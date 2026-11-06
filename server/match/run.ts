@@ -52,6 +52,7 @@ const CANDIDATES_SQL = `
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
       upper(title || ' ' || description) as doc
     from recalls
+    where $5::int[] is null or recall_id = any($5::int[])
   ),
   scored as (
     select r.recall_id, i.kind, i.id, i.title, i.description, i.ordered_on,
@@ -111,6 +112,11 @@ export async function runShopCheck(
     search?: SearchCoverage;
     /** Check this one record only. It says nothing about the shop's coverage, so no run is recorded. */
     onlyRecordId?: string;
+    /**
+     * Check these new recalls only, for a shop that has already had its full check. It only ever adds rows, so a
+     * repeat can't touch a card someone acted on, and the shop counts as checked only when this commits.
+     */
+    onlyRecallIds?: number[];
     failedMonths?: string[];
   },
 ): Promise<RunSummary> {
@@ -127,6 +133,7 @@ export async function runShopCheck(
     MIN_SIMILARITY,
     TOP_CANDIDATES,
     JSON.stringify(tokens),
+    opts.onlyRecallIds ?? null,
   ]);
   const candidates = allCandidates.filter((c) => c.within_cap && (!opts.onlyRecordId || c.id === opts.onlyRecordId));
   const candidatesNotChecked = allCandidates.length - candidates.length;
@@ -176,7 +183,8 @@ export async function runShopCheck(
                              else coalesce(recall_matches.join_state, excluded.join_state) end,
            paypal_payment_id = case when $12::boolean then excluded.paypal_payment_id
                                     else coalesce(recall_matches.paypal_payment_id, excluded.paypal_payment_id) end,
-           checked_at = now()`,
+           checked_at = now()
+         where not $15::boolean`,
         [
           shopId,
           c.recall_id,
@@ -192,6 +200,7 @@ export async function runShopCheck(
           paypalSearched,
           c.kind === "order_line" ? joined.lines[c.id]?.paymentKey ?? null : null,
           v.strength,
+          Boolean(opts.onlyRecallIds),
         ],
       );
     }
@@ -199,7 +208,21 @@ export async function runShopCheck(
     // PayPal's search runs on UTC. A seller reads dates on the US calendar, like every other date on the page.
     const searchedFrom = opts.search ? businessDay(new Date(opts.search.from)) : (dates[0] ?? null);
     const searchedTo = opts.search ? businessDay(new Date(opts.search.to)) : opts.today;
-    const { rows } = opts.onlyRecordId ? { rows: [] } : await tx.query<{ id: string }>(
+    if (opts.onlyRecallIds) {
+      await tx.query(
+        `update shops set recalls_checked_through = greatest(recalls_checked_through, (select max(first_seen_at) from recalls where recall_id = any($2::int[])))
+         where id = $1`,
+        [shopId, opts.onlyRecallIds],
+      );
+      // The shop's own record of what it was checked against stays true.
+      await tx.query(
+        `update shop_runs set candidates_not_checked = candidates_not_checked + $2,
+           recalls_checked = (select count(*) from recalls where first_seen_at <= (select recalls_checked_through from shops where id = $1))
+         where id = (select id from shop_runs where shop_id = $1 order by finished_at desc limit 1)`,
+        [shopId, candidatesNotChecked],
+      );
+    }
+    const { rows } = opts.onlyRecordId || opts.onlyRecallIds ? { rows: [] } : await tx.query<{ id: string }>(
       `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read)
        values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13) returning id`,
       [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0],
