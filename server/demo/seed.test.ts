@@ -139,7 +139,7 @@ describe("seedDemoShop", () => {
       )
     ).rows;
 
-  describe("the cases in research/DEMO-CASES.md, on real recalls", () => {
+  describe("the demo cases, on real recalls", () => {
     const lineFor = async (shopId: string, recallNumber: string, title: RegExp) => {
       const { rows } = await db.query<{ verdict: string; strength: string; sale_path: string; join_state: string; title: string; ordered_on: string; id: string }>(
         `select m.id, m.verdict, m.strength, m.sale_path, m.join_state, l.title, l.ordered_on from recall_matches m join recalls r using (recall_id) join order_lines l on l.id = m.order_line_id

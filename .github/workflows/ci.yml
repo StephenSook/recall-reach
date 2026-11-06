@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Going public doesn't push anything, so this is what makes the public-flip guard run at that moment.
+  public:
 
 # Every push to main gets its own group (keyed on the SHA) so a quick follow-up
 # push never cancels the run that gives the previous commit its verdict.
@@ -27,6 +29,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - run: node --no-warnings --experimental-strip-types scripts/publicGuard.ts
+        env:
+          REPO_PRIVATE: ${{ github.event.repository.private }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck

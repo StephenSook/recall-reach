@@ -1,4 +1,4 @@
-// The exact words a family reads. Wording is from research/COPY-DECK.md; hazard and remedy text is
+// The exact words a family reads. Hazard and remedy text is
 // copied verbatim from the stored CPSC record and never rewritten. Transactional content only:
 // no promotions, and the shop sends it from its own mail client.
 import type { WrittenQuestion } from "../agent/questionStore";

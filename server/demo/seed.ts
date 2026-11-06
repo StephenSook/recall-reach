@@ -1,7 +1,7 @@
 // The DEMO SHOP: labelled shop data, real CPSC recalls, real sandbox payments.
 //
 // What is real and what is not, and the app says so on screen:
-// - Recalls are real and read from the database here, never retyped (research/DEMO-CASES.md).
+// - Recalls are real and read from the database here, never retyped.
 // - Past payments are real sandbox captures made once, read back through PayPal's Transaction Search on every
 //   run (historyPool.ts). A sale made a moment ago can't be found there yet, and nothing refunds these.
 // - The refundable sales are real captures made just now, because each refund uses one up.

@@ -1,6 +1,6 @@
 -- Store PayPal ids in the webhook tables only as HMACs under the shop's secret (RECORD_HMAC_SECRET),
 -- never raw and never as a plain hash. A plain hash of a PayPal id may still count as transaction
--- history under the Developer Agreement's 48-hour rule (research/O-LEGAL-DATA-USE.md).
+-- history under the Developer Agreement's 48-hour rule.
 -- The tables have held no rows since they were created, so they are rebuilt; this refuses to run
 -- if that ever stops being true, rather than drop anything.
 do $$

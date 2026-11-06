@@ -3,7 +3,7 @@ import { requireSecret } from "./secrets";
 
 /**
  * Keys for storing a reference to a PayPal id without storing the id. Whether a plain hash of a
- * PayPal transaction id still counts as transaction history is unclear (research/O-LEGAL-DATA-USE.md),
+ * PayPal transaction id still counts as transaction history is unclear,
  * so references are an HMAC under a secret: unreadable and unlinkable without it.
  * The kind is mixed in, so the same id used for two purposes gives two unrelated keys.
  */
