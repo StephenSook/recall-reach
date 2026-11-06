@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
-import { checkText, MAX_MODEL, MAX_TITLE, readTextCheck } from "@/server/match/textCheck";
+import { checkText, isRecallNumber, MAX_MODEL, MAX_TITLE, readPublicRecall, readTextCheck } from "@/server/match/textCheck";
 import { businessDay } from "@/server/time/businessDay";
 import { countPublicCall } from "@/server/web/publicCalls";
 import { publicCheckAllowed } from "@/server/web/publicCheck";
@@ -19,7 +19,7 @@ const CORS = {
 
 const refusal = (text: string) => ({ isError: true, content: [{ type: "text" as const, text }] });
 
-/** One tool. It reads public recalls with the same rules as /api/check, and can't change anything or reach a shop. */
+/** Two tools. They read public recalls, one with the same rules as /api/check, and can't change anything or reach a shop. */
 function recallServer(headers: Headers): McpServer {
   const server = new McpServer({ name: "recall-reach", version: "1.0.0" });
   server.registerTool(
@@ -48,6 +48,28 @@ function recallServer(headers: Headers): McpServer {
         // The name only: a database error can quote the text it was given.
         console.error("mcp recall check failed:", err instanceof Error ? err.name : "unknown error");
         return refusal("the check could not run just now");
+      }
+    },
+  );
+  server.registerTool(
+    "get_recall",
+    {
+      title: "Read one CPSC recall",
+      description: "CPSC's public record for one recall number: its title, date, products, hazards, remedies and its page. check_recall names a recall, and this reads it.",
+      inputSchema: { recallNumber: z.string().max(40).describe("The recall number, as check_recall gives it, such as 27072.") },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ recallNumber }) => {
+      if (!publicCheckAllowed(headers)) return refusal("too many checks: try again in an hour");
+      if (!isRecallNumber(recallNumber)) return refusal("that isn't a recall number");
+      try {
+        const db = getDb();
+        const answer = await readPublicRecall(db, recallNumber);
+        await countPublicCall(db, "mcp", businessDay());
+        return { content: [{ type: "text" as const, text: JSON.stringify(answer) }] };
+      } catch (err) {
+        console.error("mcp recall read failed:", err instanceof Error ? err.name : "unknown error");
+        return refusal("the recall could not be read just now");
       }
     },
   );

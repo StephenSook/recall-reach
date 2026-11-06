@@ -125,3 +125,18 @@ export async function checkText(
     note: NOTE,
   };
 }
+
+const RECALL_NUMBER = /^[A-Za-z0-9-]{1,16}$/;
+
+export const isRecallNumber = (text: string) => RECALL_NUMBER.test(text);
+
+/** CPSC's public record for one recall number. Holds nothing about a shop, a sale or a buyer. */
+export async function readPublicRecall(db: Queryable, recallNumber: string) {
+  const { rows } = await db.query<{ recall_number: string; title: string; recall_date: string; url: string; description: string; products: { name: string; model: string; type: string | null; units: string | null }[]; hazards: string[]; remedies: string[] }>(
+    "select recall_number, title, recall_date::text as recall_date, url, description, products, hazards, remedies from recalls where recall_number = $1 order by recall_date desc limit 1",
+    [recallNumber],
+  );
+  const r = rows[0];
+  if (!r) return { found: false as const, note: "No such recall is held here. That says nothing about a product: it does not mean a recall doesn't exist, and not that a product is safe." };
+  return { found: true as const, recallNumber: r.recall_number, title: r.title, recallDate: r.recall_date, url: r.url, description: r.description, products: r.products, hazards: r.hazards, remedies: r.remedies };
+}

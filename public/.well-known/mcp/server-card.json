@@ -1,0 +1,11 @@
+{
+  "serverInfo": { "name": "recall-reach", "title": "Recall Reach", "version": "1.0.0" },
+  "description": "Check a secondhand product against real U.S. CPSC recalls, and read a recall's public record. Read only. A result names a recall to read, not a finding about the item.",
+  "transport": { "type": "streamable-http", "endpoint": "https://recall-reach-web-e022.onrender.com/api/mcp" },
+  "capabilities": { "tools": {} },
+  "authentication": { "required": false },
+  "tools": [
+    { "name": "check_recall", "description": "Check a product's title or model number against CPSC recalls." },
+    { "name": "get_recall", "description": "Read CPSC's public record for one recall number." }
+  ]
+}

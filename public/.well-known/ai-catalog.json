@@ -1,0 +1,15 @@
+{
+  "specVersion": "1.0",
+  "entries": [
+    {
+      "identifier": "urn:air:recall-reach:mcp",
+      "type": "application/mcp-server-card+json",
+      "url": "https://recall-reach-web-e022.onrender.com/.well-known/mcp/server-card.json"
+    },
+    {
+      "identifier": "urn:air:recall-reach:openapi",
+      "type": "application/openapi+yaml",
+      "url": "https://recall-reach-web-e022.onrender.com/openapi.yaml"
+    }
+  ]
+}

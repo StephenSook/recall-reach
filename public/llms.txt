@@ -1,0 +1,19 @@
+# Recall Reach
+
+> A small kids' resale shop checks past sales against real U.S. CPSC recalls, reaches families through a notice the owner approves and sends, and refunds eligible sales through PayPal's sandbox. The demo uses sandbox PayPal only.
+
+## For agents
+
+A read-only MCP server, with no sign-in: https://recall-reach-web-e022.onrender.com/api/mcp (Streamable HTTP)
+
+- check_recall(title, model): check a product against CPSC recalls. A result names a recall to read, not a finding about the item. An empty result means nothing came near, not that the item is safe.
+- get_recall(recallNumber): CPSC's public record for one recall number.
+
+Neither can reach a shop or a sale, and neither changes anything. They are rate limited.
+
+## Pages
+
+- [Judge's route](https://recall-reach-web-e022.onrender.com/judge): a numbered walk through the product
+- [API description](https://recall-reach-web-e022.onrender.com/openapi.yaml): the public endpoints
+- [Status](https://recall-reach-web-e022.onrender.com/status): each outside service's last reading
+- [Privacy](https://recall-reach-web-e022.onrender.com/privacy): what is kept

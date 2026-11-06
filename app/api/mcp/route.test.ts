@@ -45,9 +45,65 @@ describe("the MCP tool", () => {
     await real.close();
   });
 
-  it("offers one tool, which says it only reads", async () => {
+  describe("reading one recall", () => {
+    const read = async (recallNumber: string) => (await connect()).callTool({ name: "get_recall", arguments: { recallNumber } });
+
+    it("gives CPSC's public record for that number, and nothing else", async () => {
+      const answer = answerOf(await read("27072"));
+      expect(answer).toMatchObject({ found: true, recallNumber: "27072" });
+      expect(answer.title).toContain("Baby Brezza");
+      expect(answer.url).toMatch(/^https:\/\/www\.cpsc\.gov\//);
+      expect(Object.keys(answer).sort()).toEqual(["description", "found", "hazards", "products", "recallDate", "recallNumber", "remedies", "title", "url"]);
+    });
+
+    it("says it doesn't hold a number, and that this doesn't make a product safe", async () => {
+      const answer = answerOf(await read("99999"));
+      expect(answer.found).toBe(false);
+      expect(answer.note).toContain("not that a product is safe");
+    });
+
+    it("refuses what isn't a recall number, before any query", async () => {
+      const result = (await read("27072' or 1=1")) as { isError?: boolean; content: { text: string }[] };
+      expect(result.isError).toBe(true);
+    });
+
+    it("says it only reads", async () => {
+      const { tools } = await (await connect()).listTools();
+      expect(tools.find((t) => t.name === "get_recall")?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    });
+  });
+
+  describe("how agents find it", () => {
+    const card = JSON.parse(readFileSync(new URL("../../../public/.well-known/mcp/server-card.json", import.meta.url), "utf8"));
+    const catalog = JSON.parse(readFileSync(new URL("../../../public/.well-known/ai-catalog.json", import.meta.url), "utf8"));
+    const llms = readFileSync(new URL("../../../public/llms.txt", import.meta.url), "utf8");
+
+    it("lists the same tools the server really offers", async () => {
+      const { tools } = await (await connect()).listTools();
+      expect(card.tools.map((t: { name: string }) => t.name).sort()).toEqual(tools.map((t) => t.name).sort());
+      for (const tool of tools) expect(llms).toContain(tool.name);
+    });
+
+    it("points at the server, and says it needs no sign-in", () => {
+      expect(card.transport).toEqual({ type: "streamable-http", endpoint: "https://recall-reach-web-e022.onrender.com/api/mcp" });
+      expect(card.authentication).toEqual({ required: false });
+      expect(llms).toContain("https://recall-reach-web-e022.onrender.com/api/mcp");
+    });
+
+    it("has a catalog entry for the card and for the API description", () => {
+      expect(catalog.specVersion).toBe("1.0");
+      expect(catalog.entries.map((e: { url: string }) => new URL(e.url).pathname).sort()).toEqual(["/.well-known/mcp/server-card.json", "/openapi.yaml"]);
+    });
+
+    it("makes no claim about a product's safety, and doesn't promise more than a lookup", () => {
+      expect(llms).toMatch(/not a finding about the item/);
+      expect(llms).toContain("An empty result means nothing came near, not that the item is safe");
+    });
+  });
+
+  it("offers two tools, which say they only read", async () => {
     const { tools } = await (await connect()).listTools();
-    expect(tools.map((t) => t.name)).toEqual(["check_recall"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["check_recall", "get_recall"]);
     expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(tools[0].description).toContain("not a finding");
     expect(tools[0].description).toContain("not that the item is safe");

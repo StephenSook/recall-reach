@@ -18,6 +18,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${jost.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

@@ -6,6 +6,7 @@ const PAYPAL_RETURN = "/api/demo/buy/paypal/return";
 const nextConfig: NextConfig = {
   async headers() {
     return [
+      { source: "/", headers: [{ key: "Link", value: '</.well-known/ai-catalog.json>; rel="ai-catalog"' }] },
       { source: "/r/:token", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: PAYPAL_RETURN, headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
