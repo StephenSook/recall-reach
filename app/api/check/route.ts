@@ -1,6 +1,7 @@
 import { getDb } from "@/server/db/pg";
 import { checkText, readTextCheck } from "@/server/match/textCheck";
 import { businessDay } from "@/server/time/businessDay";
+import { countPublicCall } from "@/server/web/publicCalls";
 import { publicCheckAllowed } from "@/server/web/publicCheck";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,11 @@ export async function GET(request: Request): Promise<Response> {
   const input = readTextCheck(params.get("title"), params.get("model"));
   if ("error" in input) return Response.json({ error: input.error }, { status: 400, headers: HEADERS });
   try {
-    return Response.json(await checkText(getDb(), input, businessDay()), { headers: HEADERS });
+    const db = getDb();
+    const day = businessDay();
+    const answer = await checkText(db, input, day);
+    await countPublicCall(db, "api", day);
+    return Response.json(answer, { headers: HEADERS });
   } catch (err) {
     // The name only: a database error can quote the text it was given.
     console.error("recall check failed:", err instanceof Error ? err.name : "unknown error");

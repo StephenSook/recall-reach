@@ -65,6 +65,13 @@ describe("GET /api/check", () => {
     expect((await results("title=Costway+high+chair")).note).toContain("not a finding");
   });
 
+  it("counts a check, and only that", async () => {
+    await results("title=SECRET-TITLE+chair");
+    const { rows } = await real.query<{ surface: string; calls: number }>("select surface, calls from public_calls");
+    expect(rows).toEqual([{ surface: "api", calls: 1 }]);
+    expect(JSON.stringify(rows)).not.toContain("SECRET-TITLE");
+  });
+
   it("stores nothing it was given", async () => {
     const before = JSON.stringify((await real.query("select (select count(*) from shops) as shops, (select count(*) from order_lines) as lines, (select count(*) from shop_items) as items")).rows);
     await results("title=Baby+Brezza+sterilizer&model=BRZ0083");
