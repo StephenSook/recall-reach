@@ -57,6 +57,18 @@ describe("which rows can be approved from the grid", () => {
   });
 });
 
+describe("what a row says", () => {
+  it("follows what happened: a sent notice", () => {
+    expect(by(build([row({ notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, result: null } })]), "m1").state).toBe("You marked sent");
+  });
+
+  it("follows what happened: a refund, which is no longer on offer", () => {
+    const refunded = by(build([row({ verdict: "MATCH", strength: "CONFIRMED", salePath: "REFUND_ELIGIBLE", refund: { id: "r", status: "refunded", amountCents: 100, currency: "USD", failure: null } })]), "m1");
+    expect(refunded.state).toBe("Refunded");
+    expect(refunded.path).toBeNull();
+  });
+});
+
 describe("the tabs", () => {
   const rows = build([
     row({ matchId: "lead" }),

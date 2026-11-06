@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, traceLine } from "./labels";
+import { agentHeadline, chipClass, chipsFor, counted, coverageLine, needsApproval, paymentLine, queueCounts, stateChip, traceLine } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -8,8 +8,12 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   joinState: "IDENTIFIED",
   isListing: false,
   stillListed: false,
+  notice: null,
+  refund: null,
   ...over,
 });
+const told = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED", kind = "SAFETY_NOTICE", result: string | null = null) => ({ id: "n", kind, state, stopped: false, result });
+const refund = (status: string) => ({ id: "r", status, amountCents: 100, currency: "USD", failure: null });
 
 describe("paymentLine", () => {
   it("says PayPal shows a payment when exactly one is linked to the sale", () => {
@@ -154,7 +158,62 @@ describe("needsApproval", () => {
   });
 });
 
+describe("stateChip: what has happened on this row, not only what the check found", () => {
+  it("says what the check found until anything has", () => {
+    expect(stateChip(row())).toBe("Needs review");
+    expect(stateChip(row({ verdict: "SCOPE_GAP" }))).toBe("Scope gap");
+    expect(stateChip(row({ verdict: "CLEARED" }))).toBe("Cleared");
+  });
+
+  it.each([
+    ["PREPARED", "Prepared"],
+    ["OPENED_IN_MAIL", "Opened in mail"],
+    ["MARKED_SENT", "You marked sent"],
+    ["FAMILY_RESPONDED", "Family responded"],
+  ] as const)("reads a notice's state: %s", (state, chip) => {
+    expect(stateChip(row({ notice: told(state) }))).toBe(chip);
+  });
+
+  it.each([
+    ["refunded", "Refunded"],
+    ["pending", "Refund pending at PayPal"],
+    ["unconfirmed", "Refund not confirmed"],
+    ["reserved", "Refund not sent yet"],
+    ["failed", "Refund failed"],
+  ])("reads a refund's state ahead of a notice's: %s", (status, chip) => {
+    expect(stateChip(row({ refund: refund(status), notice: told("MARKED_SENT") }))).toBe(chip);
+  });
+
+  it.each([
+    ["MATCHES", "Family's answer matches"],
+    ["DOESNT_MATCH", "Family's answer doesn't match"],
+    ["CANT_TELL", "Family's answer didn't settle it"],
+  ])("reads a family's answer to a question, and never calls it confirmed: %s", (result, chip) => {
+    const said = stateChip(row({ verdict: "SCOPE_GAP", strength: "BRAND", notice: told("FAMILY_RESPONDED", "CHECK_REQUEST", result) }));
+    expect(said).toBe(chip);
+    expect(said).not.toMatch(/confirm/i);
+  });
+
+  it("goes back to needs review when a question has gone out and the recall has since been confirmed", () => {
+    expect(stateChip(row({ notice: told("MARKED_SENT", "CHECK_REQUEST") }))).toBe("Needs review");
+  });
+
+  it("stays cleared whatever else it holds", () => {
+    expect(stateChip(row({ verdict: "CLEARED", notice: told("MARKED_SENT") }))).toBe("Cleared");
+  });
+});
+
 describe("chipsFor", () => {
+  it("stops offering a refund once one is made or under way, and offers it again after one fails", () => {
+    expect(chipsFor(row({ refund: refund("refunded") }))).toEqual(["Refunded"]);
+    expect(chipsFor(row({ refund: refund("pending") }))).toEqual(["Refund pending at PayPal"]);
+    expect(chipsFor(row({ refund: refund("failed") }))).toEqual(["Refund failed", "Refund eligible"]);
+  });
+
+  it("keeps saying a notice is all this sale gets, once it has gone", () => {
+    expect(chipsFor(row({ salePath: "NOTICE_ONLY", notice: told("MARKED_SENT") }))).toEqual(["You marked sent", "Notice only"]);
+  });
+
   it("shows the sale path on a confirmed match", () => {
     expect(chipsFor(row())).toEqual(["Needs review", "Refund eligible"]);
     expect(chipsFor(row({ salePath: "NOTICE_ONLY" }))).toEqual(["Needs review", "Notice only"]);

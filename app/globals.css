@@ -470,6 +470,11 @@ pre {
 [data-testid="match-grid"] .chip-cell {
   text-overflow: clip;
 }
+/* A state can be a few words, such as what a family answered. */
+[data-testid="match-grid"] .chip-cell .chip {
+  line-height: 1.2;
+  white-space: normal;
+}
 .sr-only {
   position: absolute;
   width: 1px;
