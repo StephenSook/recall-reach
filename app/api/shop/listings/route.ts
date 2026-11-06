@@ -6,25 +6,28 @@ import { importStoreListings } from "@/server/import/storeListings";
 import { businessDay } from "@/server/time/businessDay";
 import { fromThisSite, refused, seeOther, signIn, withMessage } from "@/server/web/http";
 import { ownCheckAllowed } from "@/server/web/ownCheck";
-import { createRateLimiter } from "@/server/web/rateLimit";
+import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
 export const dynamic = "force-dynamic";
 
-/** However many people ask, one store isn't read more than this. */
-const perStore = createRateLimiter({ limit: 6, windowMs: 60 * 60_000 });
+/** Tries, typing slips included, counted before a byte of the form is read. The checks themselves have a smaller limit. */
+const tries = createRateLimiter({ limit: 60, windowMs: 60 * 60_000 });
 const MAX_FORM_BYTES = 2048;
+const FORM_TIMEOUT_MS = 10_000;
 
 // This route fetches an address a stranger typed. server/import/storeFeed.ts is what makes that safe.
 export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
   const back = (code: string) => seeOther(request, `/check?error=${code}`);
-  const read = await readCappedBody(request, MAX_FORM_BYTES);
+  const visitor = clientIp(request.headers);
+  if (!visitor || !tries(visitor)) return back("BUSY");
+  const read = await readCappedBody(request, MAX_FORM_BYTES, { timeoutMs: FORM_TIMEOUT_MS });
   if (!read.ok) return back("BAD_ADDRESS");
   try {
     const form = await new Response(read.body as BodyInit, { headers: { "content-type": request.headers.get("content-type") ?? "" } }).formData();
     // A typing slip costs no network and spends none of the visitor's checks.
     const host = readStoreAddress(String(form.get("address") ?? ""));
-    if (!ownCheckAllowed(request.headers) || !perStore(host)) return back("BUSY");
+    if (!ownCheckAllowed(request.headers)) return back("BUSY");
     const { shopId, listings, complete } = await importStoreListings(getDb(), { typed: host, today: businessDay() });
     const response = complete ? seeOther(request, "/queue") : withMessage(request, `Read the first ${listings.toLocaleString("en-US")} listings. The rest weren't checked.`);
     return signIn(request, response, shopId, OWN_FILE_DAYS * 86_400_000);

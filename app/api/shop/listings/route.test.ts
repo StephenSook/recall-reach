@@ -66,13 +66,37 @@ describe("POST /api/shop/listings", () => {
     expect((await post({ ip })).headers.get("location")).toBe("http://localhost/queue");
   });
 
-  it("refuses a body far too long to be an address, without reading it", async () => {
-    const res = await post({ body: `address=${"x".repeat(3000)}` });
+  it("refuses a form too long to hold an address, even with a good address at the front", async () => {
+    const res = await post({ body: `address=mystore.com&more=${"x".repeat(3000)}` });
     expect(res.headers.get("location")).toBe("http://localhost/check?error=BAD_ADDRESS");
     expect(load).not.toHaveBeenCalled();
   });
 
-  it.each(["CANT_REACH", "NO_FEED", "ROBOTS", "MOVED", "EMPTY_FEED"] as const)("sends %s back to the form, signed in as no one", async (code) => {
+  it("won't wait on a form that never finishes arriving", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("address=mystore.com"));
+        },
+      });
+      const pending = POST(new Request("http://localhost/api/shop/listings", { method: "POST", headers: { origin: "http://localhost", "true-client-ip": freshIp(), "content-type": "application/x-www-form-urlencoded" }, body, duplex: "half" } as RequestInit));
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect((await pending).headers.get("location")).toBe("http://localhost/check?error=BAD_ADDRESS");
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("limits how many tries one visitor makes, before reading any of them", async () => {
+    const ip = freshIp();
+    for (let i = 0; i < 60; i++) await post({ ip, address: "not an address" });
+    expect((await post({ ip, address: "not an address" })).headers.get("location")).toBe("http://localhost/check?error=BUSY");
+  });
+
+  it.each(["CANT_REACH", "NO_FEED", "ROBOTS", "MOVED", "EMPTY_FEED", "BUSY"] as const)("sends %s back to the form, signed in as no one", async (code) => {
     load.mockRejectedValue(new StoreFeedRefused(code));
     const res = await post();
     expect(res.headers.get("location")).toBe(`http://localhost/check?error=${code}`);
@@ -96,14 +120,6 @@ describe("POST /api/shop/listings", () => {
       await postFile(new Request("http://localhost/api/shop/import", { method: "POST", headers: { origin: "http://localhost", "true-client-ip": ip }, body }));
     }
     expect((await post({ ip, address: "another-store.com" })).headers.get("location")).toBe("http://localhost/check?error=BUSY");
-  });
-
-  it("won't read one store more than six times an hour, however many visitors ask", async () => {
-    const answers: (string | null)[] = [];
-    for (let i = 0; i < 7; i++) answers.push((await post({ address: "popular-store.com" })).headers.get("location"));
-    expect(answers.slice(0, 6).every((a) => a === "http://localhost/queue")).toBe(true);
-    expect(answers[6]).toBe("http://localhost/check?error=BUSY");
-    expect(load).toHaveBeenCalledTimes(6);
   });
 
   it("puts neither the store's name nor the error's words in a log", async () => {

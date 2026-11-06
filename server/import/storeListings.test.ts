@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import { prepareNotice } from "../notice/store";
+import { NoticeRefused, prepareNotice } from "../notice/store";
 import type { PayPalClient } from "../paypal/client";
 import { approveRefund, RefundRefused } from "../paypal/refunds";
 import { loadQueue, toCards } from "../queue/queue";
@@ -87,7 +87,7 @@ describe("a store checked by its public listings", () => {
     expect(q.coverage).toMatchObject({ paypalSearched: false, searchWindows: 0 });
     const row = q.rows.find((r) => r.recallNumber === "27072");
     await expect(approveRefund(db, paypalMustNotBeCalled, { shopId, sessionId: "s", matchId: row?.matchId ?? "" })).rejects.toBeInstanceOf(RefundRefused);
-    await expect(prepareNotice(db, { shopId, matchId: row?.matchId ?? "" })).rejects.toThrow();
+    await expect(prepareNotice(db, { shopId, matchId: row?.matchId ?? "" })).rejects.toBeInstanceOf(NoticeRefused);
     expect((await db.query("select 1 from notices")).rows).toEqual([]);
   });
 

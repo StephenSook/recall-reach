@@ -6,12 +6,15 @@ import { lookup } from "node:dns/promises";
 import { request } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { setTimeout as wait } from "node:timers/promises";
+import { createRateLimiter } from "../web/rateLimit";
 import { MAX_LINES } from "./ownFile";
 
 export const FEED_USER_AGENT = "RecallReachBot/1.0 (+https://recall-reach-web-e022.onrender.com/privacy)";
 const ROBOTS_TOKEN = "recallreachbot";
 const ROBOTS_PATH = "/robots.txt";
 const PAGE_SIZE = 250;
+/** Counted in pages as well as listings: a store can send full pages with nothing usable on them, forever. */
+const MAX_PAGES = Math.ceil(MAX_LINES / PAGE_SIZE);
 const GAP_MS = 5000;
 /** A store asking for longer gaps than this can't be read during one visit, so it isn't read. */
 const MAX_GAP_MS = 30_000;
@@ -22,7 +25,7 @@ const MAX_ROBOTS_BYTES = 512_000;
 const MAX_ADDRESS = 300;
 const MAX_TITLE = 200;
 
-export type StoreFeedCode = "BAD_ADDRESS" | "CANT_REACH" | "NO_FEED" | "ROBOTS" | "MOVED" | "EMPTY_FEED";
+export type StoreFeedCode = "BAD_ADDRESS" | "CANT_REACH" | "NO_FEED" | "ROBOTS" | "MOVED" | "EMPTY_FEED" | "BUSY";
 
 export class StoreFeedRefused extends Error {
   constructor(readonly code: StoreFeedCode) {
@@ -56,6 +59,24 @@ export interface StoreFeedDeps {
   resolve: (host: string) => Promise<string[]>;
   get: (target: FeedTarget) => Promise<FeedAnswer>;
   sleep: (ms: number) => Promise<void>;
+  /** May this store be read now? Answers with how to say the read is over, or null. Absent means no limit. */
+  enter?: StoreGate;
+}
+
+export type StoreGate = (host: string) => (() => void) | null;
+
+/**
+ * One read of a store at a time, so the gap between pages holds however many people ask, and a few reads an hour. Each
+ * name is charged when a read reaches it, so moving from mystore.com to www.mystore.com pays for both.
+ */
+export function createStoreGate(): StoreGate {
+  const reading = new Set<string>();
+  const allowed = createRateLimiter({ limit: 6, windowMs: 60 * 60_000 });
+  return (host) => {
+    if (reading.has(host) || !allowed(host)) return null;
+    reading.add(host);
+    return () => reading.delete(host);
+  };
 }
 
 export interface StoreListing {
@@ -139,6 +160,13 @@ export function isPublicAddress(address: string): boolean {
   return false;
 }
 
+/** An encoded letter or digit means that letter or digit, so a rule can't hide behind one. An encoded ? or / means something else, and stays (RFC 3986). */
+const decodeUnreserved = (pattern: string) =>
+  pattern.replace(/%([0-9a-f]{2})/gi, (whole, hex: string) => {
+    const character = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~]/.test(character) ? character : whole.toUpperCase();
+  });
+
 /** A robots.txt pattern against a path, with * and a final $. A loop, not a regex: anyone can write this file, and a regex built from it could hang the server. */
 function patternMatches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith("$");
@@ -177,7 +205,7 @@ export function robotsRules(text: string): ((path: string) => boolean) & { crawl
   const groups: RobotsGroup[] = [];
   let current: RobotsGroup | null = null;
   let lastWasAgent = false;
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text.replace(/^\ufeff/, "").split(/\r\n|\r|\n/)) {
     const field = /^\s*([a-z-]+)\s*:\s*(.*?)\s*$/i.exec(line.split("#")[0]);
     if (!field) continue;
     const key = field[1].toLowerCase();
@@ -191,7 +219,7 @@ export function robotsRules(text: string): ((path: string) => boolean) & { crawl
       lastWasAgent = true;
     } else if (key === "allow" || key === "disallow") {
       lastWasAgent = false;
-      if (current && value) current.rules.push({ allow: key === "allow", pattern: value });
+      if (current && value) current.rules.push({ allow: key === "allow", pattern: decodeUnreserved(value) });
     } else if (key === "crawl-delay") {
       lastWasAgent = false;
       const seconds = Number(value);
@@ -254,6 +282,7 @@ export function pinnedGet(target: FeedTarget & { port?: number; ca?: string; tim
 }
 
 const REAL_DEPS: StoreFeedDeps = {
+  enter: createStoreGate(),
   resolve: async (host) => (await lookup(host, { all: true, verbatim: true })).map((a) => a.address),
   get: (target) => pinnedGet(target),
   sleep: async (ms) => {
@@ -318,6 +347,16 @@ function feedProducts(answer: FeedAnswer): unknown[] | null {
 const refusalFor = (err: unknown) => new StoreFeedRefused(err instanceof FeedTooBig ? "NO_FEED" : "CANT_REACH");
 
 async function readFrom(host: string, deps: StoreFeedDeps, mayChangeName: boolean): Promise<StoreRead> {
+  const leave = deps.enter ? deps.enter(host) : () => {};
+  if (!leave) throw new StoreFeedRefused("BUSY");
+  try {
+    return await readEntered(host, deps, mayChangeName);
+  } finally {
+    leave();
+  }
+}
+
+async function readEntered(host: string, deps: StoreFeedDeps, mayChangeName: boolean): Promise<StoreRead> {
   const address = await checkedAddress(host, deps);
   const moveOn = async (location: string | null) => {
     const other = mayChangeName ? sameStoreOtherName(host, location) : null;
@@ -341,7 +380,7 @@ async function readFrom(host: string, deps: StoreFeedDeps, mayChangeName: boolea
 
   const listings: StoreListing[] = [];
   let complete = true;
-  for (let page = 1; ; page++) {
+  for (let page = 1; page <= MAX_PAGES; page++) {
     const path = `/products.json?limit=${PAGE_SIZE}&page=${page}`;
     if (!rules(path)) {
       if (page === 1) throw new StoreFeedRefused("ROBOTS");
@@ -373,6 +412,7 @@ async function readFrom(host: string, deps: StoreFeedDeps, mayChangeName: boolea
       break;
     }
     if (products.length < PAGE_SIZE) break;
+    if (page === MAX_PAGES) complete = false;
   }
   if (listings.length === 0) throw new StoreFeedRefused("EMPTY_FEED");
   return { host, listings: listings.slice(0, MAX_LINES), complete };

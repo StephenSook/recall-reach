@@ -8,6 +8,7 @@ import type { TLSSocket } from "node:tls";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MAX_LINES } from "./ownFile";
 import {
+  createStoreGate,
   FEED_USER_AGENT,
   FeedTooBig,
   isPublicAddress,
@@ -197,6 +198,19 @@ describe("robots.txt", () => {
     expect(robotsRules(text)(FEED(1))).toBe(allowed);
   });
 
+  it.each([
+    ["lines ending in a bare CR", "User-agent: *\rDisallow: /products.json\r", false],
+    ["lines ending in CRLF", "User-agent: *\r\nDisallow: /products.json\r\n", false],
+    ["a byte order mark before the first line", "\ufeffUser-agent: *\nDisallow: /products.json", false],
+    ["an encoded letter in the rule", "User-agent: *\nDisallow: /%70roducts.json", false],
+    ["an encoded letter in other case", "User-agent: *\nDisallow: /%70RODUCTS.json", true],
+    ["an encoded dot, which is a dot, and an encoded question mark, which isn't one", "User-agent: *\nDisallow: /products%2Ejson%3F", true],
+    ["an encoded dot alone", "User-agent: *\nDisallow: /products%2Ejson", false],
+    ["an encoded slash, which isn't a slash", "User-agent: *\nDisallow: %2Fproducts.json", true],
+  ])("%s", (_name, text, allowed) => {
+    expect(robotsRules(text)(FEED(1))).toBe(allowed);
+  });
+
   it("can't be made to hang the server by a pattern written to blow up a regex", () => {
     const hostile = `User-agent: *\nDisallow: /${"*.".repeat(2000)}x${"*".repeat(2000)}y`;
     const started = Date.now();
@@ -355,6 +369,63 @@ describe("reading a store", () => {
       const read = await readStoreListings("mystore.com", s.deps);
       expect(s.calls.map((c) => c.path)).toEqual(["/robots.txt", FEED(1)]);
       expect(read.complete).toBe(true);
+    });
+  });
+
+  describe("how far it reads", () => {
+    const junk = { products: Array.from({ length: 250 }, () => ({ title: null })) };
+
+    it("stops at the page limit when full pages hold nothing usable, however many a store has", async () => {
+      const answers: Record<string, FeedAnswer> = {};
+      for (let p = 1; p <= 40; p++) answers[FEED(p)] = ok(junk);
+      const s = store(answers);
+      expect(await refusal(readStoreListings("mystore.com", s.deps))).toBe("EMPTY_FEED");
+      expect(s.calls.map((c) => c.path)).toEqual(["/robots.txt", FEED(1), FEED(2), FEED(3), FEED(4)]);
+    });
+
+    it("keeps what was usable, and says it stopped", async () => {
+      const answers: Record<string, FeedAnswer> = { [FEED(1)]: ok({ products: [...junk.products.slice(0, 240), ...pageOf(10).products] }) };
+      for (let p = 2; p <= 40; p++) answers[FEED(p)] = ok(junk);
+      const read = await readStoreListings("mystore.com", store(answers).deps);
+      expect(read.listings).toHaveLength(10);
+      expect(read.complete).toBe(false);
+    });
+  });
+
+  describe("one store at a time", () => {
+    const quick = (gate: ReturnType<typeof createStoreGate>) => ({ ...store({ [FEED(1)]: ok(pageOf(1)) }).deps, enter: gate });
+
+    it("won't read a store that's already being read", async () => {
+      const gate = createStoreGate();
+      let finish: (a: FeedAnswer) => void = () => {};
+      const slow: StoreFeedDeps = { ...store({}).deps, enter: gate, get: () => new Promise((resolve) => (finish = resolve)) };
+      const first = readStoreListings("mystore.com", slow);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await refusal(readStoreListings("mystore.com", quick(gate)))).toBe("BUSY");
+      expect((await readStoreListings("other-store.com", quick(gate))).listings).toHaveLength(1);
+      finish({ status: 500, location: null, body: "" });
+      expect(await refusal(first)).toBe("NO_FEED");
+    });
+
+    it("lets a store be read again after a read ends, however it ended", async () => {
+      const gate = createStoreGate();
+      const failing = { ...store({ "/robots.txt": new Error("reset") }).deps, enter: gate };
+      expect(await refusal(readStoreListings("mystore.com", failing))).toBe("CANT_REACH");
+      expect((await readStoreListings("mystore.com", quick(gate))).listings).toHaveLength(1);
+    });
+
+    it("won't read one store more than six times an hour, however many visitors ask", async () => {
+      const gate = createStoreGate();
+      for (let i = 0; i < 6; i++) await readStoreListings("popular-store.com", quick(gate));
+      expect(await refusal(readStoreListings("popular-store.com", quick(gate)))).toBe("BUSY");
+    });
+
+    it("charges the www name too when a read moves there", async () => {
+      const gate = createStoreGate();
+      for (let i = 0; i < 6; i++) await readStoreListings("www.mystore.com", quick(gate));
+      const s = store({ "mystore.com/robots.txt": moved("https://www.mystore.com/robots.txt") });
+      expect(await refusal(readStoreListings("mystore.com", { ...s.deps, enter: gate }))).toBe("BUSY");
+      expect(s.calls.map((c) => c.host)).toEqual(["mystore.com"]);
     });
   });
 
