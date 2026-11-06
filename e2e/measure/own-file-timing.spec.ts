@@ -25,6 +25,7 @@ test("times a full-size order file through the real upload, then deletes it", as
 
   const started = Date.now();
   await page.getByRole("button", { name: "Check my file" }).click();
+  await expect(page.getByTestId("checking")).toContainText("couple of minutes");
   await expect(page).toHaveURL(/\/queue/, { timeout: 8 * 60_000 });
   const uploaded = Date.now() - started;
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Timing Test Shop");

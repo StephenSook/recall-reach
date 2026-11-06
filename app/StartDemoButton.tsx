@@ -13,7 +13,7 @@ export function StartDemoButton() {
   return (
     <form action="/api/demo/start" method="post" onSubmit={() => setStarting(true)}>
       <button type="submit" className="btn big" disabled={starting}>
-        Try it as a demo shop
+        {starting ? "Setting up your shop" : "Try it as a demo shop"}
       </button>
     </form>
   );

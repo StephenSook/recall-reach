@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MAX_FILE_BYTES, MAX_LINES, OWN_FILE_DAYS } from "@/server/import/ownFile";
+import { CheckForm } from "./CheckForm";
 
 // The route sends a visitor here with a code, and only these sentences are shown.
 const ERRORS: Record<string, string> = {
@@ -26,19 +27,7 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
           {message}
         </p>
       ) : null}
-      <form className="window upload" action="/api/shop/import" method="post" encType="multipart/form-data">
-        <label className="field">
-          Your shop&apos;s name
-          <input name="shopName" maxLength={80} autoComplete="organization" required />
-        </label>
-        <label className="field">
-          Your order file
-          <input type="file" name="file" accept=".csv,text/csv" required />
-        </label>
-        <button type="submit" className="btn big">
-          Check my file
-        </button>
-      </form>
+      <CheckForm />
       <p className="note">
         A Shopify order export works as it is. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on. <a href="/sample-order-file.csv">Try a sample file</a>.
       </p>
