@@ -136,6 +136,19 @@ describe("Recall Replay", () => {
       expect((await proveReplay(db, runId))?.sameRecalls).toBe(false);
     });
 
+    it("says which years didn't load, in the run and in its proof", async () => {
+      const { runId } = await run();
+      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025]);
+      expect((await proveReplay(db, runId))?.recallYearsMissing).toEqual([2025]);
+    });
+
+    it("has no year to name once every year loaded", async () => {
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now())");
+      const { runId } = await run();
+      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([]);
+      expect((await proveReplay(db, runId))?.recallYearsMissing).toEqual([]);
+    });
+
     it("counts add up to every recall", async () => {
       const { counts } = (await loadReplay(db, (await run()).runId))!;
       expect(counts.matched + counts.scopeGaps + counts.cleared + counts.notNear).toBe(counts.checked);

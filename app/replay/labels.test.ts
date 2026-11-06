@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { matchSplitLine } from "./labels";
+import { matchSplitLine, replayGap, replayIntro } from "./labels";
 
 const match = (saleSplit: "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE" | null) => ({ outcome: "MATCH" as const, saleSplit });
+
+describe("what a run says it covered", () => {
+  it("says every recall only when every year loaded", () => {
+    expect(replayIntro([])).toBe("Every real CPSC recall from 2025 on, checked against the demo shop in one run.");
+    expect(replayGap([])).toBeNull();
+  });
+
+  it("names the years that didn't load, and doesn't say every", () => {
+    expect(replayIntro([2025])).not.toContain("Every");
+    expect(replayGap([2025])).toBe("Recalls from 2025 did not fully load, so this run didn't check them.");
+    expect(replayGap([2025, 2026])).toBe("Recalls from 2025, 2026 did not fully load, so this run didn't check them.");
+  });
+});
 
 describe("matchSplitLine", () => {
   it("accounts for every recall matched, in the same unit as the count beside it", () => {

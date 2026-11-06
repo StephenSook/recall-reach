@@ -35,6 +35,8 @@ export interface Replay {
   createdAt: string;
   counts: ReplayCounts & { unidentified: number };
   search: { windows: number; failedWindows: number; complete: boolean };
+  /** Past years whose recalls hadn't fully loaded when this ran. */
+  recallYearsMissing: number[];
   rows: ReplayRow[];
 }
 
@@ -72,9 +74,9 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
   try {
     const ms = Math.max(1, Math.round(performance.now() - started));
     const { rows } = await db.query<{ id: string }>(
-      `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest)
-       values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6) returning id`,
-      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest],
+      `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest, recall_years_missing)
+       values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6, $7::int[]) returning id`,
+      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest, run.recallYearsMissing],
     );
     const runId = rows[0].id;
     // A recall's strongest outcome is what the replay reports for it. CLEARED means an item came near and was ruled out.
@@ -121,6 +123,7 @@ interface RunRow {
   failed_windows: number;
   search_complete: boolean;
   recalls_digest: string;
+  recall_years_missing: number[];
   created_at: string | Date;
 }
 
@@ -154,6 +157,7 @@ export async function loadReplay(db: Queryable, runId: string): Promise<Replay |
     createdAt: new Date(run.created_at).toISOString(),
     counts: { ...storedCounts(run), unidentified: run.unidentified },
     search: { windows: run.search_windows, failedWindows: run.failed_windows, complete: run.search_complete },
+    recallYearsMissing: run.recall_years_missing,
     rows: rows.map((r) => ({ recallNumber: r.recall_number, recallTitle: r.recall_title, recallDate: r.recall_date, outcome: r.outcome, saleSplit: r.sale_split, itemTitle: r.item_title, reason: r.reason })),
   };
 }
@@ -194,5 +198,6 @@ export async function proveReplay(db: Queryable, runId: string) {
     sameRecalls: rows[0].digest === run.recalls_digest,
     ms: run.ms,
     search: { windows: run.search_windows, failedWindows: run.failed_windows, complete: run.search_complete },
+    recallYearsMissing: run.recall_years_missing,
   };
 }

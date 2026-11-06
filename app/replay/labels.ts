@@ -5,6 +5,15 @@ export const SPLIT_CHIP: Record<NonNullable<ReplayRow["saleSplit"]>, string> = {
 
 export const seconds = (ms: number) => (ms / 1000).toFixed(1);
 
+/** "Every" holds only when every year loaded. */
+export const replayIntro = (yearsMissing: number[]) =>
+  yearsMissing.length === 0
+    ? "Every real CPSC recall from 2025 on, checked against the demo shop in one run."
+    : "The real CPSC recalls loaded from 2025 on, checked against the demo shop in one run.";
+
+export const replayGap = (yearsMissing: number[]) =>
+  yearsMissing.length === 0 ? null : `Recalls from ${yearsMissing.join(", ")} did not fully load, so this run didn't check them.`;
+
 /** Accounts for every recall matched, in the same unit as the count beside it: Replay counts recalls, not sales. */
 export function matchSplitLine(rows: Pick<ReplayRow, "outcome" | "saleSplit">[]): string {
   const matches = rows.filter((r) => r.outcome === "MATCH");

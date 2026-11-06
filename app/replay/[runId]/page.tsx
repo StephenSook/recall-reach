@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { loadReplay } from "@/server/replay/replay";
-import { matchSplitLine, OUTCOME_CHIP, seconds } from "../labels";
+import { matchSplitLine, OUTCOME_CHIP, replayGap, replayIntro, seconds } from "../labels";
 import { ReplayGridLoader } from "../ReplayGridLoader";
 import { RunAgainButton } from "../RunAgainButton";
 
@@ -13,6 +13,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
   if (!replay) notFound();
   const { counts, search } = replay;
   const found = replay.rows.filter((r) => r.outcome === "MATCH" || r.outcome === "SCOPE_GAP");
+  const gap = replayGap(replay.recallYearsMissing);
   return (
     <main className="page">
       <header className="page-head">
@@ -21,7 +22,12 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
           {counts.checked} recalls in {seconds(replay.ms)} seconds
         </span>
       </header>
-      <p>Every real CPSC recall from 2025 on, checked against the demo shop in one run.</p>
+      <p>{replayIntro(replay.recallYearsMissing)}</p>
+      {gap ? (
+        <p role="alert" className="alert" data-testid="replay-gap">
+          {gap}
+        </p>
+      ) : null}
       <div className="stats" data-testid="replay-counts">
         <div className="stat">
           <span className="stat-value">{counts.checked}</span>
