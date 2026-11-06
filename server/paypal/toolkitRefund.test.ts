@@ -173,10 +173,40 @@ describe("create_refund through the toolkit", () => {
       expect((err as PayPalApiError).uncertain).toBe(true);
     });
 
-    it("hides anything shaped like a PayPal id in what PayPal said", async () => {
+    it("keeps none of PayPal's prose: it can name a payment or a buyer, and the ledger outlives the 48-hour rule", async () => {
       const { err } = await attemptsFor(422);
-      expect((err as PayPalApiError).message).not.toContain("9AB12345CD6789012");
-      expect((err as PayPalApiError).issue).toContain("PayPal said no about");
+      expect((err as PayPalApiError).issue).toBeUndefined();
+      expect((err as PayPalApiError).message).toBe("PayPal 422 on POST /v2/payments/captures/:id/refund");
+    });
+  });
+
+  describe("what is kept of a refusal", () => {
+    const answerWith = (message: string) =>
+      refundsThroughToolkit((async () => new Response()) as typeof fetch, async () => ({ ok: false, status: 422, code: "PAYPAL_API_HTTP_ERROR", message }));
+    const issueOf = async (message: string) => {
+      const res = await answerWith(message)("https://api-m.sandbox.paypal.com/v2/payments/captures/C/refund", {
+        method: "POST",
+        headers: { Authorization: "Bearer t", "PayPal-Request-Id": "r" },
+        body: JSON.stringify({ amount: { currency_code: "USD", value: "1.00" } }),
+      });
+      return (await res.json()) as { name?: string; details: { issue?: string }[] };
+    };
+
+    it("names a refusal PayPal described in its measured words", async () => {
+      const real = "The requested action could not be performed, semantically incorrect, or failed business validation.: The refund amount must be less than or equal to the capture amount that has not yet been refunded.";
+      expect((await issueOf(real)).details[0].issue).toBe("REFUND_AMOUNT_EXCEEDED");
+    });
+
+    it("keeps an issue code PayPal wrote out, if it is one this app knows", async () => {
+      expect((await issueOf("UNPROCESSABLE_ENTITY: CAPTURE_FULLY_REFUNDED")).details[0].issue).toBe("CAPTURE_FULLY_REFUNDED");
+    });
+
+    it("keeps nothing of a message it does not recognize", async () => {
+      const answer = await issueOf("Payment abc-def-123 belongs to buyer@example.com");
+      expect(JSON.stringify(answer)).not.toContain("abc-def-123");
+      expect(JSON.stringify(answer)).not.toContain("buyer@example.com");
+      expect(answer.details[0].issue).toBeUndefined();
+      expect(answer.name).toBeUndefined();
     });
   });
 

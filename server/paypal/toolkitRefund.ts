@@ -85,8 +85,15 @@ export async function toolkitSetup(call: CreateRefundCall) {
 
 const refundBody = z.object({ amount: z.object({ currency_code: z.string().min(1), value: z.string().min(1) }) });
 
-/** PayPal's words can go into the ledger and logs, so anything shaped like a PayPal id comes out first. */
-const withoutIds = (text: string) => text.replace(/\b[A-Z0-9]{12,}\b/g, ":id");
+// The toolkit passes on PayPal's description rather than its issue code, and that prose could name a payment
+// or a buyer. What a refusal leaves behind goes into the ledger, which outlives the 48-hour rule, so only a
+// code this app already knows is kept. Each phrase is PayPal's own, as measured on the sandbox.
+const KNOWN_ISSUES = ["REFUND_AMOUNT_EXCEEDED", "CAPTURE_FULLY_REFUNDED", "REFUND_TIME_LIMIT_EXCEEDED", "TRANSACTION_REFUSED", "PERMISSION_DENIED"];
+const KNOWN_PHRASES: [RegExp, string][] = [[/must be less than or equal to the capture amount/i, "REFUND_AMOUNT_EXCEEDED"]];
+
+function knownIssue(message: string): string | undefined {
+  return KNOWN_ISSUES.find((code) => message.includes(code)) ?? KNOWN_PHRASES.find(([phrase]) => phrase.test(message))?.[1];
+}
 
 /** A fetch for the PayPal client: a refund goes through the toolkit, and anything else goes through `other`. */
 export function refundsThroughToolkit(
@@ -117,7 +124,7 @@ export function refundsThroughToolkit(
       return Response.json({ id: answer.id, status: answer.status }, { status: 201 });
     }
     if (answer?.ok === false && typeof answer.status === "number") {
-      return Response.json({ name: String(answer.code), details: [{ issue: withoutIds(String(answer.message ?? "")) }] }, { status: answer.status });
+      return Response.json({ details: [{ issue: knownIssue(String(answer.message ?? "")) }] }, { status: answer.status });
     }
     // No status means no answer about the refund. The client treats this like a lost connection.
     throw new TypeError("no clear answer from the toolkit");

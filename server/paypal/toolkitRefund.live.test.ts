@@ -34,5 +34,6 @@ describe("create_refund (live sandbox)", () => {
     expect(refused).toBeInstanceOf(PayPalApiError);
     expect((refused as PayPalApiError).status).toBe(422);
     expect((refused as PayPalApiError).uncertain).toBe(false);
+    expect((refused as PayPalApiError).issue).toBe("REFUND_AMOUNT_EXCEEDED");
   });
 });
