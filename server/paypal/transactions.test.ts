@@ -159,6 +159,22 @@ describe("searchTransactions", () => {
     expect(coverage.complete).toBe(false);
   });
 
+  // Measured on the sandbox, 2026-11-06: a window with no rows has no transaction_details at all.
+  it("reads a window PayPal says is empty as empty, not as failed", async () => {
+    const { client } = fakeSearch(() => ({ account_number: "A", start_date: "s", end_date: "e", last_refreshed_datetime: "t", links: [], page: 1, total_items: 0, total_pages: 0 }));
+    const { payments, coverage } = await searchTransactions(client, { from: at("2026-10-01T00:00:00Z"), to: at("2026-10-02T00:00:00Z") });
+    expect(payments).toEqual([]);
+    expect(coverage).toMatchObject({ failedWindows: [], complete: true, rowsRead: 0 });
+  });
+
+  it("does not read a missing list as empty unless PayPal says there are no rows", async () => {
+    const { client } = fakeSearch(() => ({ page: 1, total_items: 5, total_pages: 1 }));
+    const { coverage } = await searchTransactions(client, { from: at("2026-10-01T00:00:00Z"), to: at("2026-10-02T00:00:00Z") });
+    expect(coverage.complete).toBe(false);
+    const { client: silent } = fakeSearch(() => ({ page: 1 }));
+    expect((await searchTransactions(silent, { from: at("2026-10-01T00:00:00Z"), to: at("2026-10-02T00:00:00Z") })).coverage.complete).toBe(false);
+  });
+
   it("treats an answer it cannot read as a failed window, not as no sales", async () => {
     const { client } = fakeSearch(() => ({ surprise: true }));
     const { coverage } = await searchTransactions(client, { from: FROM, to: at("2026-10-05T00:00:00Z") });

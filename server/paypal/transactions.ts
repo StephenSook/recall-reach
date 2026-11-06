@@ -41,10 +41,15 @@ const rowSchema = z.object({
     .optional(),
 });
 
-const pageSchema = z.object({
-  transaction_details: z.array(rowSchema),
-  total_pages: z.number().int().optional(),
-});
+// A window with no rows has no transaction_details (measured 2026-11-06). Only PayPal saying zero makes that empty:
+// any other answer with no list is one this code can't read, and a sale in it would be missed.
+const pageSchema = z
+  .object({
+    transaction_details: z.array(rowSchema).optional(),
+    total_items: z.number().int().optional(),
+    total_pages: z.number().int().optional(),
+  })
+  .refine((p) => p.transaction_details !== undefined || p.total_items === 0, "no rows, and PayPal did not say there are none");
 
 export interface SearchedPayment {
   transactionId: string;
@@ -121,7 +126,7 @@ export async function searchTransactions(
           query: { start_date: window.start, end_date: window.end, fields: "all", page_size: PAGE_SIZE, page },
         });
         const parsed = pageSchema.parse(data);
-        for (const { transaction_info: info, cart_info: cart } of parsed.transaction_details) {
+        for (const { transaction_info: info, cart_info: cart } of parsed.transaction_details ?? []) {
           rowsRead++;
           if (seen.has(info.transaction_id)) {
             duplicatesRemoved++;
