@@ -108,9 +108,31 @@ export function scoreClaude(pairs: EvalPair[], findings: Record<string, ClaudeFi
   return { lookAlikes: on(["NEAR_MISS", "NO_MATCH"]), scopeGaps: on(["UNSURE"]) };
 }
 
+/** Titles built from a recall's own words: one stating its model, one a character off. Never mixed into the rates above. */
+export interface StatedModelScore {
+  recalls: number;
+  confirmed: Rate;
+  offByOneConfirmed: Rate;
+}
+
+export function scoreStatedModels(pairs: EvalPair[], decide: (p: EvalPair) => Decision | null): StatedModelScore {
+  const confirmed = (p: EvalPair) => {
+    const d = decide(p);
+    return d?.verdict === "MATCH" && d.strength === "CONFIRMED";
+  };
+  const stated = pairs.filter((p) => p.label === "MATCH");
+  const offByOne = pairs.filter((p) => p.label === "NEAR_MISS");
+  return {
+    recalls: new Set(pairs.map((p) => p.recallNumber)).size,
+    confirmed: rate(stated.filter(confirmed).length, stated.length),
+    offByOneConfirmed: rate(offByOne.filter(confirmed).length, offByOne.length),
+  };
+}
+
 export interface EvalResults {
   pairs: number;
   recalls: number;
   heldOut: { matcher: Score; baseline: Score };
   train: { matcher: Score; baseline: Score };
+  statedModels?: { matcher: StatedModelScore; baseline: StatedModelScore };
 }

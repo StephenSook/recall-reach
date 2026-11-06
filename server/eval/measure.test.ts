@@ -104,6 +104,18 @@ describe("the eval on the real labels", () => {
     expect(load("pairs.csv").split("\n")[0]).toBe("pair_id,recall_number,listing_title,label,split");
   });
 
+  it("a title stating a recalled model is confirmed, and one a character off is not", () => {
+    const { matcher, baseline } = JSON.parse(load("results.json")).statedModels;
+    expect(matcher.confirmed.k / matcher.confirmed.n).toBeGreaterThan(0.9);
+    expect(matcher.offByOneConfirmed.k).toBe(0);
+    expect(baseline.offByOneConfirmed.k).toBe(baseline.offByOneConfirmed.n); // word match can't tell them apart
+  });
+
+  it("keeps stated-model titles out of the held-out rates, and names none as real listings", () => {
+    const held = new Set(parsePairs(load("pairs.csv")).map((p) => p.pairId));
+    expect(parsePairs(load("positives.csv")).filter((p) => held.has(p.pairId))).toEqual([]);
+  });
+
   it("runs every pair through the real pipeline, and beats the word-match baseline as the plan requires", async () => {
     const db = await testDb();
     const results = await runEval(db, { pairs: parsePairs(load("pairs.csv")), recalls: JSON.parse(load("recalls.json")) });
@@ -116,7 +128,11 @@ describe("the eval on the real labels", () => {
 
   it("the committed results are what the code produces now, so the card can't go stale", async () => {
     const db = await testDb();
-    const results = await runEval(db, { pairs: parsePairs(load("pairs.csv")), recalls: JSON.parse(load("recalls.json")) });
+    const results = await runEval(db, {
+      pairs: parsePairs(load("pairs.csv")),
+      recalls: JSON.parse(load("recalls.json")),
+      statedModels: { pairs: parsePairs(load("positives.csv")), recalls: JSON.parse(load("positives_recalls.json")) },
+    });
     expect(JSON.parse(load("results.json"))).toEqual(JSON.parse(JSON.stringify(results)));
     await db.close();
   }, 240_000);

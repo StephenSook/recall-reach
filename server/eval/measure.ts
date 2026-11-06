@@ -8,7 +8,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import type { Strength, Verdict } from "../match/verdict";
 import { createContactCipher } from "../privacy/contactCipher";
-import { score, type Decision, type EvalPair, type EvalResults } from "./score";
+import { score, scoreStatedModels, type Decision, type EvalPair, type EvalResults } from "./score";
 
 export * from "./score";
 
@@ -48,7 +48,7 @@ export async function decidePairs(db: Db, pairs: EvalPair[], rawRecalls: unknown
   return decided;
 }
 
-export async function runEval(db: Db, input: { pairs: EvalPair[]; recalls: unknown[] }): Promise<EvalResults> {
+export async function runEval(db: Db, input: { pairs: EvalPair[]; recalls: unknown[]; statedModels?: { pairs: EvalPair[]; recalls: unknown[] } }): Promise<EvalResults> {
   const decided = await decidePairs(db, input.pairs, input.recalls);
   const matcher = (p: EvalPair) => decided.get(p.pairId) ?? null;
   // A plain word match: anything retrieval finds is flagged as a hit, with no way to abstain.
@@ -57,5 +57,15 @@ export async function runEval(db: Db, input: { pairs: EvalPair[]; recalls: unkno
     const pairs = input.pairs.filter((p) => p.split === split);
     return { matcher: score(pairs, matcher), baseline: score(pairs, baseline) };
   };
-  return { pairs: input.pairs.length, recalls: new Set(input.pairs.map((p) => p.recallNumber)).size, heldOut: on("held_out"), train: on("train") };
+  // Run after the rates above are settled, so these can't touch them.
+  const stated = input.statedModels ? await decidePairs(db, input.statedModels.pairs, input.statedModels.recalls) : null;
+  const statedModels = input.statedModels && stated
+    ? {
+        statedModels: {
+          matcher: scoreStatedModels(input.statedModels.pairs, (p) => stated.get(p.pairId) ?? null),
+          baseline: scoreStatedModels(input.statedModels.pairs, (p) => (stated.has(p.pairId) ? { verdict: "MATCH", strength: "CONFIRMED" } : null)),
+        },
+      }
+    : {};
+  return { pairs: input.pairs.length, recalls: new Set(input.pairs.map((p) => p.recallNumber)).size, heldOut: on("held_out"), train: on("train") , ...statedModels };
 }

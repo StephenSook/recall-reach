@@ -1,0 +1,114 @@
+pair_id,recall_number,listing_title,label,split
+25112-stated,25112,AliExpress 6-in-1 Multi Styler and 5-in-1 Multi Styler Hair Dryers HS01,MATCH,held_out
+25112-off-by-one,25112,AliExpress 6-in-1 Multi Styler and 5-in-1 Multi Styler Hair Dryers HS02,NEAR_MISS,held_out
+25135-stated,25135,AFTCO Youth Solitude Jackets BJ05,MATCH,held_out
+25135-off-by-one,25135,AFTCO Youth Solitude Jackets BJ06,NEAR_MISS,held_out
+25138-stated,25138,Walmart Swagtron SG-5 Swagger 5 Boost Commuter Electric Scooters SWGR5-V2-SLV,MATCH,held_out
+25141-stated,25141,Kubota Kubota Utility Tractors model MX5400DTC MX5400DTC,MATCH,held_out
+25143-stated,25143,Holosun Technologies Holosun Firearm Dot Sights HS503G-ACSS,MATCH,held_out
+25143-off-by-one,25143,Holosun Technologies Holosun Firearm Dot Sights HS503G-ACST,NEAR_MISS,held_out
+25152-stated,25152,OdorStop OdorStop Boot and Shoe Dryers and Deodorizers OSOBSDD2,MATCH,held_out
+25152-off-by-one,25152,OdorStop OdorStop Boot and Shoe Dryers and Deodorizers OSOBSDD3,NEAR_MISS,held_out
+25203-stated,25203,"Enerco DEWALT 70,000 BTU Outdoor Portable Cordless Forced Air Propane Heaters DXH70CFAVX",MATCH,held_out
+25203-off-by-one,25203,"Enerco DEWALT 70,000 BTU Outdoor Portable Cordless Forced Air Propane Heaters DXH70CFAVY",NEAR_MISS,held_out
+25207-stated,25207,"Honda Accessory Heaters for Model Years 2022-2024 Honda Pioneer 1000, 2023-2025 Pioneer 700, and 2022-2024 Honda Talon 1000 Side-by-Side vehicles SXS700",MATCH,held_out
+25207-off-by-one,25207,"Honda Accessory Heaters for Model Years 2022-2024 Honda Pioneer 1000, 2023-2025 Pioneer 700, and 2022-2024 Honda Talon 1000 Side-by-Side vehicles SXS701",NEAR_MISS,held_out
+25216-stated,25216,Fisher-Price Tissue Box Toy sold with Fisher-Price 3-in-1 SnugaPuppy Activity Centers HLV78,MATCH,held_out
+25216-off-by-one,25216,Fisher-Price Tissue Box Toy sold with Fisher-Price 3-in-1 SnugaPuppy Activity Centers HLV79,NEAR_MISS,held_out
+25238-stated,25238,Kawasaki Motors USA Model Year 2025 KX series competition and cross-country motorcycles KX450,MATCH,held_out
+25238-off-by-one,25238,Kawasaki Motors USA Model Year 2025 KX series competition and cross-country motorcycles KX451,NEAR_MISS,held_out
+25283-stated,25283,KTM GASGAS and Husqvarna Off-Road Motorcycles 350F,MATCH,held_out
+25283-off-by-one,25283,KTM GASGAS and Husqvarna Off-Road Motorcycles 350G,NEAR_MISS,held_out
+25317-stated,25317,Lutron Lutron-branded power interfaces for LED tape lights LU-PH3-B,MATCH,held_out
+25317-off-by-one,25317,Lutron Lutron-branded power interfaces for LED tape lights LU-PH3-C,NEAR_MISS,held_out
+25324-stated,25324,Direct Scaffold Supply Casters on Direct Scaffold Supply Multi-Purpose Baker Style Scaffolding Products CAS5SS4P,MATCH,held_out
+25324-off-by-one,25324,Direct Scaffold Supply Casters on Direct Scaffold Supply Multi-Purpose Baker Style Scaffolding Products CAS5SS4Q,NEAR_MISS,held_out
+25355-stated,25355,DR Power DR Power LiPRO rechargeable lithium-ion battery packs (5.0 Ah) SB11022XEN,MATCH,held_out
+25355-off-by-one,25355,DR Power DR Power LiPRO rechargeable lithium-ion battery packs (5.0 Ah) SB11022XEO,NEAR_MISS,held_out
+25389-stated,25389,Deale International CasaClean Handheld Steamers DF-958,MATCH,held_out
+25389-off-by-one,25389,Deale International CasaClean Handheld Steamers DF-959,NEAR_MISS,held_out
+25396-stated,25396,"iMirror Inc. Rechargeable Electric Bug Zapper Racket, Fly Swatter, and Mosquito Swatter for Indoor and Outdoor use BZ-001",MATCH,held_out
+25396-off-by-one,25396,"iMirror Inc. Rechargeable Electric Bug Zapper Racket, Fly Swatter, and Mosquito Swatter for Indoor and Outdoor use BZ-002",NEAR_MISS,held_out
+25412-stated,25412,Dorel Home Furnishings Cosco 2-Step Kitchen Stepper 11349WHG1E,MATCH,held_out
+25412-off-by-one,25412,Dorel Home Furnishings Cosco 2-Step Kitchen Stepper 11349WHG1F,NEAR_MISS,held_out
+25430-stated,25430,"Empower Brands Hair Dryers sold under the ""Remington"" brand, model number D3190DCDN D3190DCDN",MATCH,held_out
+25431-stated,25431,Werner Werner 20' and 24' Multi-Max Pro Multi-Purpose Ladders ALMP-20IAA,MATCH,held_out
+25431-off-by-one,25431,Werner Werner 20' and 24' Multi-Max Pro Multi-Purpose Ladders ALMP-20IAB,NEAR_MISS,held_out
+26026-stated,26026,VESTA.DS VST gas-fired tankless water heaters VRS-150,MATCH,held_out
+26026-off-by-one,26026,VESTA.DS VST gas-fired tankless water heaters VRS-151,NEAR_MISS,held_out
+26065-stated,26065,The Kroger Co. Halloween-themed Skeleton Wax Candle D310800CN01,MATCH,held_out
+26065-off-by-one,26065,The Kroger Co. Halloween-themed Skeleton Wax Candle D310800CN02,NEAR_MISS,held_out
+26074-stated,26074,Sanven Technology Vevor Baby Swings BB501K,MATCH,held_out
+26074-off-by-one,26074,Sanven Technology Vevor Baby Swings BB501L,NEAR_MISS,held_out
+26126-stated,26126,Ningbo Tianqi Electronic FUFU&GAGA White Wood Frame Queen Size Murphy Wall Beds KF210284US-01MH-A001,MATCH,held_out
+26126-off-by-one,26126,Ningbo Tianqi Electronic FUFU&GAGA White Wood Frame Queen Size Murphy Wall Beds KF210284US-01MH-A002,NEAR_MISS,held_out
+26148-stated,26148,Luyuan X-Pro Eagle 40cc Youth ATVs and FRP Sahara 40cc Youth ATVs 40-RED-M,MATCH,held_out
+26148-off-by-one,26148,Luyuan X-Pro Eagle 40cc Youth ATVs and FRP Sahara 40cc Youth ATVs 40-RED-N,NEAR_MISS,held_out
+26271-stated,26271,Vive Health Vive Health Bed Rails LVA1024,MATCH,held_out
+26271-off-by-one,26271,Vive Health Vive Health Bed Rails LVA1025,NEAR_MISS,held_out
+26278-stated,26278,PQL High Bay Linear LED light fixtures 55209-WC,MATCH,held_out
+26278-off-by-one,26278,PQL High Bay Linear LED light fixtures 55209-WD,NEAR_MISS,held_out
+26329-stated,26329,Tainoki Fine Furniture Swivel Office Chairs M7016O,MATCH,held_out
+26329-off-by-one,26329,Tainoki Fine Furniture Swivel Office Chairs M7016P,NEAR_MISS,held_out
+26339-stated,26339,Nexgrill Metal Wire Bristle Grill Brushes 530-0024G,MATCH,held_out
+26339-off-by-one,26339,Nexgrill Metal Wire Bristle Grill Brushes 530-0024H,NEAR_MISS,held_out
+26341-stated,26341,Vive Health Vive Health Bed Rails LVA2009SLV,MATCH,held_out
+26341-off-by-one,26341,Vive Health Vive Health Bed Rails LVA2009SLW,NEAR_MISS,held_out
+26385-stated,26385,BISSELL Steam Shot OmniReach and Steam Shot Omni Steam Cleaners with attachments 4155L,MATCH,held_out
+26385-off-by-one,26385,BISSELL Steam Shot OmniReach and Steam Shot Omni Steam Cleaners with attachments 4155M,NEAR_MISS,held_out
+26395-stated,26395,Head USA Head Ski Boots 85HT,MATCH,held_out
+26395-off-by-one,26395,Head USA Head Ski Boots 85HU,NEAR_MISS,held_out
+26413-stated,26413,Fun and Function Multi-Point Swing Frames MW7661,MATCH,held_out
+26413-off-by-one,26413,Fun and Function Multi-Point Swing Frames MW7662,NEAR_MISS,held_out
+26453-stated,26453,Acer America Corporation Acer AES015 Two-Wheeled Folding Electric Scooters AES015,MATCH,held_out
+26497-stated,26497,"ABC Trading Toy Headbands, Electronic Pet Cage-Dinosaur Tribes, My Pet Bird Cute Bird Tribes 6300RP",MATCH,held_out
+26497-off-by-one,26497,"ABC Trading Toy Headbands, Electronic Pet Cage-Dinosaur Tribes, My Pet Bird Cute Bird Tribes 6300RQ",NEAR_MISS,held_out
+26501-stated,26501,Lil Pick Up Sierra 125U Youth All-Terrain Vehicles (ATVs) 125U,MATCH,held_out
+26502-stated,26502,PandaEar Portable Hook-On Chairs C2102,MATCH,held_out
+26502-off-by-one,26502,PandaEar Portable Hook-On Chairs C2103,NEAR_MISS,held_out
+26513-stated,26513,"Joy Furniture Talan and Royce Collection Sofas, Loveseats and Recliners JF1126-4PHL",MATCH,held_out
+26513-off-by-one,26513,"Joy Furniture Talan and Royce Collection Sofas, Loveseats and Recliners JF1126-4PHM",NEAR_MISS,held_out
+26539-stated,26539,Merkury Innovations Hot + Cool Heating and Cooling Fans MI-DHC02,MATCH,held_out
+26539-off-by-one,26539,Merkury Innovations Hot + Cool Heating and Cooling Fans MI-DHC03,NEAR_MISS,held_out
+26566-stated,26566,"Bada Boom Fireworks Pyro Diablo ""Diablo Rising"" 9 Shots PD-C5001",MATCH,held_out
+26566-off-by-one,26566,"Bada Boom Fireworks Pyro Diablo ""Diablo Rising"" 9 Shots PD-C5002",NEAR_MISS,held_out
+26601-stated,26601,Conair Metal Wire Bristle Grill Brushes CCB-100,MATCH,held_out
+26601-off-by-one,26601,Conair Metal Wire Bristle Grill Brushes CCB-101,NEAR_MISS,held_out
+26603-stated,26603,Winco Fireworks International Roman Candles 8 Shot 3-Pack Firework Devices RCLR-W8012,MATCH,held_out
+26603-off-by-one,26603,Winco Fireworks International Roman Candles 8 Shot 3-Pack Firework Devices RCLR-W8013,NEAR_MISS,held_out
+26606-stated,26606,Best Buy Insignia Front Control Gas Ranges NS-RGFGSS1,MATCH,held_out
+26606-off-by-one,26606,Best Buy Insignia Front Control Gas Ranges NS-RGFGSS2,NEAR_MISS,held_out
+26610-stated,26610,Flaunt Flaunt MagSafe Battery Chargers E33A,MATCH,held_out
+26610-off-by-one,26610,Flaunt Flaunt MagSafe Battery Chargers E33B,NEAR_MISS,held_out
+26611-stated,26611,"Greenworks Tools Kobalt 24V and 48V Trimmers, Blowers, Mowers, Chainsaws and Pruning Saws with USB-C Batteries 270CFM",MATCH,held_out
+26611-off-by-one,26611,"Greenworks Tools Kobalt 24V and 48V Trimmers, Blowers, Mowers, Chainsaws and Pruning Saws with USB-C Batteries 270CFN",NEAR_MISS,held_out
+26618-stated,26618,Panasonic Electric Toaster Ovens NB-G200,MATCH,held_out
+26618-off-by-one,26618,Panasonic Electric Toaster Ovens NB-G201,NEAR_MISS,held_out
+26694-stated,26694,GigaCloud Technology USA Merax Full-Size and Twin-Size Murphy Beds GX000392AAK,MATCH,held_out
+26694-off-by-one,26694,GigaCloud Technology USA Merax Full-Size and Twin-Size Murphy Beds GX000392AAL,NEAR_MISS,held_out
+26699-stated,26699,"SUGIFT SUGIFT Electric Pressure Washers, Model LTBBHG006 LTBBHG006",MATCH,held_out
+26710-stated,26710,KTM North America GASGAS and Husqvarna Off-Road Motorcycles 250F,MATCH,held_out
+26710-off-by-one,26710,KTM North America GASGAS and Husqvarna Off-Road Motorcycles 250G,NEAR_MISS,held_out
+26717-stated,26717,Conair Expands Metal Wire Bristle Grill Brushes CCB-100,MATCH,held_out
+26717-off-by-one,26717,Conair Expands Metal Wire Bristle Grill Brushes CCB-101,NEAR_MISS,held_out
+26739-stated,26739,Skip Hop Baby Sesame Street Elmo Silicone Teethers 9R263210,MATCH,held_out
+26739-off-by-one,26739,Skip Hop Baby Sesame Street Elmo Silicone Teethers 9R263211,NEAR_MISS,held_out
+26750-stated,26750,Junkins DHASUWT Hair Dryer and Blow Dryer Brushes XR-8801,MATCH,held_out
+26750-off-by-one,26750,Junkins DHASUWT Hair Dryer and Blow Dryer Brushes XR-8802,NEAR_MISS,held_out
+26763-stated,26763,Triumph Motorcycles 2025 and 2026 Triumph TF450 models Closed Course Competition Motorcycles TF450-C,MATCH,held_out
+26777-stated,26777,"Hayward Industries 400,000 BTU Universal-HC Series Pool Heaters HDFS400",MATCH,held_out
+26777-off-by-one,26777,"Hayward Industries 400,000 BTU Universal-HC Series Pool Heaters HDFS401",NEAR_MISS,held_out
+27007-stated,27007,Designs Direct Designs Direct Cupcakes and Cashmere Brand Three-Light Floor Lamps 7927-OZ,MATCH,held_out
+27007-off-by-one,27007,Designs Direct Designs Direct Cupcakes and Cashmere Brand Three-Light Floor Lamps 7927-OA,NEAR_MISS,held_out
+27021-stated,27021,Snow Peak Snow Peak Takibi Fireplace Propane Inserts and Lava Rocks ST-332-US,MATCH,held_out
+27021-off-by-one,27021,Snow Peak Snow Peak Takibi Fireplace Propane Inserts and Lava Rocks ST-332-UT,NEAR_MISS,held_out
+27024-stated,27024,3M Company Scotch™ Thermal Laminators TL1302Z,MATCH,held_out
+27024-off-by-one,27024,3M Company Scotch™ Thermal Laminators TL1302A,NEAR_MISS,held_out
+27050-stated,27050,Whatever Works Whatever Works Microwave Grillers K4001,MATCH,held_out
+27050-off-by-one,27050,Whatever Works Whatever Works Microwave Grillers K4002,NEAR_MISS,held_out
+27064-stated,27064,Vanderhall North America Model Year 2024-2026 Brawley GTS Electric Recreational Off-road Vehicles (ROVs) XXXXXXXXXXX005992,MATCH,held_out
+27064-off-by-one,27064,Vanderhall North America Model Year 2024-2026 Brawley GTS Electric Recreational Off-road Vehicles (ROVs) XXXXXXXXXXX005993,NEAR_MISS,held_out
+27069-stated,27069,Gourmia Gourmia Stainless Steel Digital 9 Slice Digital Air Fryer Ovens GTF7530,MATCH,held_out
+27069-off-by-one,27069,Gourmia Gourmia Stainless Steel Digital 9 Slice Digital Air Fryer Ovens GTF7531,NEAR_MISS,held_out
+27071-stated,27071,Kikea Store X-VESOLJE Nursing Pillows NP001,MATCH,held_out
+27071-off-by-one,27071,Kikea Store X-VESOLJE Nursing Pillows NP002,NEAR_MISS,held_out

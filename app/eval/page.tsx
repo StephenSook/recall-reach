@@ -49,6 +49,8 @@ export default function EvalPage() {
   const claude = JSON.parse(read("claude-held-out.json")) as { asked: number; model: string; summary: ReturnType<typeof scoreClaude> };
   const pairs = new Map(parsePairs(read("pairs.csv")).map((p) => [p.pairId, p]));
   const { matcher, baseline } = results.heldOut;
+  const stated = results.statedModels;
+  const search = JSON.parse(read("stated_model_search.json")) as { recalls: number; products: number; titlesHoldingTheModel: number };
   const negatives = matcher.falseAlarms.n;
   const named = (ids: string[]) =>
     ids.map((id) => {
@@ -126,6 +128,38 @@ export default function EvalPage() {
         </table>
       </div>
       <p className="note">Ranges are 95% Wilson intervals. Word match flags whatever the search finds, with no way to abstain.</p>
+
+      {stated ? (
+        <>
+          <h2 className="section-title">When a title states the model</h2>
+          <p data-testid="eval-stated">
+            We searched a public product index for {search.recalls} recalled models, one search each. Of {search.products} products found, {search.titlesHoldingTheModel} had the model in the title. So these titles are built from each recall&apos;s own words, and are not real listings. They show the matcher reads a model when one is stated, and nothing more.
+          </p>
+          <div className="window table-window">
+            <table className="ledger" data-testid="eval-stated-table">
+              <thead>
+                <tr>
+                  <th>{stated.matcher.recalls} recalls</th>
+                  <th>Recall Reach</th>
+                  <th>Word match</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Title states the recalled model: confirmed</td>
+                  <Cell r={stated.matcher.confirmed} />
+                  <Cell r={stated.baseline.confirmed} />
+                </tr>
+                <tr>
+                  <td>Model one character off: wrongly confirmed</td>
+                  <Cell r={stated.matcher.offByOneConfirmed} />
+                  <Cell r={stated.baseline.offByOneConfirmed} />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
 
       <h2 className="section-title">What Claude says about these</h2>
       <p>Claude read the {claude.asked} held-out pairs that reach a seller. Its finding is text for the seller to read. It changes nothing above.</p>

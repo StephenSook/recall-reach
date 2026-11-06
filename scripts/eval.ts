@@ -16,7 +16,7 @@ async function main() {
     },
   });
   const db: Db = { ...wrap(pg), transaction: (fn) => pg.transaction((tx) => fn(wrap(tx))) as never };
-  const results = await runEval(db, { pairs: parsePairs(readFileSync("eval/pairs.csv", "utf8")), recalls: JSON.parse(readFileSync("eval/recalls.json", "utf8")) });
+  const results = await runEval(db, { pairs: parsePairs(readFileSync("eval/pairs.csv", "utf8")), recalls: JSON.parse(readFileSync("eval/recalls.json", "utf8")), statedModels: { pairs: parsePairs(readFileSync("eval/positives.csv", "utf8")), recalls: JSON.parse(readFileSync("eval/positives_recalls.json", "utf8")) } });
   writeFileSync("eval/results.json", `${JSON.stringify(results, null, 1)}\n`);
   const show = (name: string, s: (typeof results.heldOut)["matcher"]) =>
     console.log(`${name}: false alarms ${s.falseAlarms.k}/${s.falseAlarms.n}, could reach a family ${s.couldReachFamily.k}/${s.couldReachFamily.n}, abstained ${s.abstained.k}/${s.abstained.n}, guessed ${s.guessed.k}/${s.guessed.n}, missed ${s.missed.k}/${s.missed.n}`);

@@ -602,5 +602,41 @@
     "25445-4"
    ]
   }
+ },
+ "statedModels": {
+  "matcher": {
+   "recalls": 60,
+   "confirmed": {
+    "k": 58,
+    "n": 60,
+    "rate": 0.9666666666666667,
+    "low": 0.8863601247107462,
+    "high": 0.9908108735098499
+   },
+   "offByOneConfirmed": {
+    "k": 0,
+    "n": 53,
+    "rate": 0,
+    "low": 0,
+    "high": 0.0675843044530766
+   }
+  },
+  "baseline": {
+   "recalls": 60,
+   "confirmed": {
+    "k": 60,
+    "n": 60,
+    "rate": 1,
+    "low": 0.939826069522067,
+    "high": 1
+   },
+   "offByOneConfirmed": {
+    "k": 53,
+    "n": 53,
+    "rate": 1,
+    "low": 0.9324156955469233,
+    "high": 1
+   }
+  }
  }
 }

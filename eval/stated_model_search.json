@@ -1,0 +1,7 @@
+{
+ "searchedOn": "2026-11-06",
+ "recalls": 40,
+ "products": 311,
+ "titlesHoldingTheModel": 0,
+ "how": "One exact-model search per recall in a public product search, on recalls outside the training split whose text names a model and has no date, lot or serial limit."
+}
