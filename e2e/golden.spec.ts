@@ -28,6 +28,8 @@ async function mailLink(card: Locator) {
   await expect(link).toBeVisible({ timeout: 30_000 });
   const href = (await link.getAttribute("href")) ?? "";
   expect(href.startsWith("mailto:")).toBe(true);
+  // A public demo never shows, or sends to, a real inbox.
+  expect(decodeURIComponent(href.slice(0, href.indexOf("?")))).toMatch(/^mailto:([^@\s]*@example\.com)?$/);
   const params = new URLSearchParams(href.slice(href.indexOf("?") + 1).replace(/\+/g, "%2B"));
   return { link, subject: params.get("subject") ?? "", body: params.get("body") ?? "" };
 }
