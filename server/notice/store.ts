@@ -10,7 +10,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -201,11 +201,16 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   if (!notice) throw noNotice();
   if (notice.kind !== "CHECK_REQUEST") throw new NoticeRefused("NOT_A_QUESTION", "This message does not ask a question.");
   if (notice.expired) throw linkExpired();
-  if (notice.check_result) return notice.check_result;
-  const result = checkResult(notice, checkQuestion({ recallNumber: notice.recall_number, title: notice.title, description: notice.description }), answer);
+  const question = checkQuestion({ recallNumber: notice.recall_number, title: notice.title, description: notice.description });
+  const said = answer.trim();
+  const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
+  if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");
+  // "Not sure" stays open, so the family can look and answer. A real answer is final.
   const saved = await db.query<{ check_result: CheckResult }>(
-    `update notices set check_result = coalesce(check_result, $2), responded_at = coalesce(responded_at, now()) where id = $1 returning check_result`,
-    [noticeId, result],
+    `update notices set check_result = case when check_result is null or check_result = 'CANT_TELL' then $2 else check_result end,
+       responded_at = coalesce(responded_at, now())
+     where id = $1 returning check_result`,
+    [noticeId, checkResult(notice, question, said)],
   );
   return saved.rows[0].check_result;
 }

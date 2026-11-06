@@ -287,6 +287,32 @@ describe("notices", () => {
       expect(await resultOf(noticeId)).toBe("MATCHES");
     });
 
+    it("does not record an empty answer, so a stray post cannot settle the question", async () => {
+      const noticeId = await check("#F7");
+      expect(await refusal(recordFamilyAnswer(db, noticeId, ""))).toBe("NO_ANSWER");
+      expect(await refusal(recordFamilyAnswer(db, noticeId, "   "))).toBe("NO_ANSWER");
+      expect(await resultOf(noticeId)).toBeNull();
+    });
+
+    it("does not record an answer the question never offered", async () => {
+      const noticeId = await check("#F8");
+      expect(await refusal(recordFamilyAnswer(db, noticeId, "maybe tomorrow"))).toBe("NO_ANSWER");
+      expect(await resultOf(noticeId)).toBeNull();
+    });
+
+    it("lets a family who was not sure answer once they have looked", async () => {
+      const noticeId = await check("#F9");
+      expect(await recordFamilyAnswer(db, noticeId, "not_sure")).toBe("CANT_TELL");
+      expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("MATCHES");
+      expect(await resultOf(noticeId)).toBe("MATCHES");
+    });
+
+    it("keeps a real answer once there is one, even after a later not sure", async () => {
+      const noticeId = await check("#F10");
+      expect(await recordFamilyAnswer(db, noticeId, "yes")).toBe("MATCHES");
+      expect(await recordFamilyAnswer(db, noticeId, "not_sure")).toBe("MATCHES");
+    });
+
     it("takes an answer only on a check request", async () => {
       const m = await matchFor("27072", line({ orderNumber: "#F2" }));
       const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
