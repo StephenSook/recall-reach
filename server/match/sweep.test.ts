@@ -58,6 +58,8 @@ describe("checking stored shops against new recalls", () => {
     db = await testDb();
     await migrate(db);
     await pull(others);
+    // These came in well before the shop did. A recall seen just before a shop was made is checked again: see below.
+    await db.query("update recalls set first_seen_at = now() - interval '1 hour'");
     shopId = await addShop("REAL");
   });
   afterEach(async () => {
@@ -112,6 +114,14 @@ describe("checking stored shops against new recalls", () => {
     await sweep();
     const after = await db.query<{ recall_years_missing: number[] }>("select recall_years_missing from shop_runs where shop_id = $1", [shopId]);
     expect(after.rows[0].recall_years_missing).not.toContain(2022);
+  });
+
+  it("doesn't miss a recall whose load began before the shop was made and committed after its first check", async () => {
+    await pull(brezza);
+    // Its row carries the time its transaction began, a moment before this shop existed.
+    await db.query("update recalls set first_seen_at = (select created_at from shops where id = $1) - interval '1 second' where recall_number = '27072'", [shopId]);
+    expect(await sweep()).toMatchObject({ shopsChecked: 1 });
+    expect(await brezzaRows(shopId)).toHaveLength(1);
   });
 
   it("does nothing at all when no recall is new", async () => {
