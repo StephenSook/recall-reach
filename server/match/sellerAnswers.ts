@@ -8,7 +8,7 @@ export type SellerAnswer = "SAME_PRODUCT" | "DIFFERENT_PRODUCT";
 
 const ANSWERS: readonly string[] = ["SAME_PRODUCT", "DIFFERENT_PRODUCT"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_COUNTED = 5000;
+const MAX_COUNTED = 1000;
 
 /** The server reads the recall and the title from the shop's own match, so nothing but the answer comes from the browser. */
 export async function recordSellerAnswer(db: Queryable, input: { shopId: string; matchId: string; answer: string }): Promise<boolean> {
@@ -65,4 +65,18 @@ export async function sellerTally(db: Queryable): Promise<SellerTally> {
     }
   }
   return tally;
+}
+
+/** The public page reads through this, so no number of visits re-runs the matcher more than once a minute. A failure isn't kept. */
+export function tallyCache(freshMs: number, now: () => number = Date.now): (db: Queryable) => Promise<SellerTally> {
+  let held: { at: number; tally: Promise<SellerTally> } | null = null;
+  return (db) => {
+    if (held && now() - held.at < freshMs) return held.tally;
+    const tally = sellerTally(db).catch((err: unknown) => {
+      held = null;
+      throw err;
+    });
+    held = { at: now(), tally };
+    return tally;
+  };
 }

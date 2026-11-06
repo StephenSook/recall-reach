@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
 const tally = vi.hoisted(() => vi.fn());
-vi.mock("@/server/match/sellerAnswers", () => ({ sellerTally: tally }));
+vi.mock("@/server/match/sellerAnswers", () => ({ tallyCache: () => tally }));
 
 import { renderToStaticMarkup } from "react-dom/server";
 import SellerAnswersPage from "./page";

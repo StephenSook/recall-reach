@@ -89,7 +89,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "app/queue/SellerAnswerForm.tsx", find: "/api/queue/answers" },
       { file: "app/api/queue/answers/route.ts", call: "recordSellerAnswer" },
-      { file: "app/eval/sellers/page.tsx", call: "sellerTally" },
+      { file: "server/match/sellerAnswers.ts", call: "verdictFor" },
     ],
   },
   {

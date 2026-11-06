@@ -4,6 +4,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 390, height: 844 } });
+test.setTimeout(300_000);
+
+const MEMO_MS = 61_000; // the count page re-reads at most once a minute
 
 async function counted(page: Page): Promise<number> {
   const res = await page.request.get("/eval/sellers");
@@ -37,6 +40,7 @@ test("a demo shop's answer saves, leaves the card alone and is never counted", a
   expect(shown.filter((b) => !/it is/.test(b))).toEqual(actions.filter((b) => !/it is/.test(b)));
 
   await answer(page, "No, it is the recalled product", "the recalled product");
+  await page.waitForTimeout(MEMO_MS);
   expect(await counted(page)).toBe(before);
 });
 
@@ -51,12 +55,12 @@ test("a shop's own file counts, and stops counting when the shop is deleted", as
   try {
     await answer(page, "Yes, it is", "the recalled product");
     await expect(brezza(page).getByTestId("seller-answer")).toContainText("Kept with your shop");
-    expect(await counted(page)).toBe(before + 1);
+    await expect.poll(() => counted(page), { timeout: 2 * MEMO_MS, intervals: [10_000] }).toBe(before + 1);
   } finally {
     await page.goto("/queue");
     await page.getByText("Delete my data").click();
     await page.getByRole("button", { name: "Delete everything" }).click();
     await expect(page.locator(".alert")).toHaveText("Your shop's data was deleted.");
   }
-  expect(await counted(page)).toBe(before);
+  await expect.poll(() => counted(page), { timeout: 2 * MEMO_MS, intervals: [10_000] }).toBe(before);
 });

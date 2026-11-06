@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { getDb } from "@/server/db/pg";
-import { sellerTally, type SellerTally } from "@/server/match/sellerAnswers";
+import { tallyCache, type SellerTally } from "@/server/match/sellerAnswers";
 
 export const dynamic = "force-dynamic";
 
+const readCached = tallyCache(60_000);
+
 async function readTally(): Promise<SellerTally | null> {
   try {
-    return await sellerTally(getDb());
+    return await readCached(getDb());
   } catch (err) {
     console.error("seller tally failed:", err instanceof Error ? err.name : "unknown error");
     return null;
@@ -21,7 +23,7 @@ export default async function SellerAnswersPage() {
         <h1>What sellers said</h1>
       </header>
       <p>
-        A seller can say whether a flagged item is the recalled product. Each answer is re-run through today&apos;s matcher when this page loads. Only shops using their own file or store address count, never a demo shop. This shows counts only, never a shop, a title or a recall.
+        A seller can say whether a flagged item is the recalled product. Each answer is re-run through today&apos;s matcher, at most once a minute. Only shops using their own file or store address count, never a demo shop. This shows counts only, never a shop, a title or a recall.
       </p>
       {!tally ? (
         <p role="alert" className="alert">

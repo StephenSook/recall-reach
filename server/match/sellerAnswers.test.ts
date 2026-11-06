@@ -8,7 +8,7 @@ import { seedDemoShop } from "../demo/seed";
 import { createShop } from "../import/store";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { loadQueue } from "../queue/queue";
-import { recordSellerAnswer, sellerTally } from "./sellerAnswers";
+import { recordSellerAnswer, sellerTally, tallyCache } from "./sellerAnswers";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -130,6 +130,25 @@ describe("a seller's answer", () => {
     it("counts only recalls it holds, so every answer in the total was re-run", async () => {
       await addReal([["00000", BREZZA, "SAME_PRODUCT"]]);
       expect((await sellerTally(db)).answers).toBe(0);
+    });
+
+    it("re-runs the matcher at most once in its window, however many visits there are", async () => {
+      let clock = 0;
+      const read = tallyCache(60_000, () => clock);
+      expect((await read(db)).answers).toBe(0);
+      const real = await addReal([["27072", BREZZA, "SAME_PRODUCT"]]);
+      clock = 59_999;
+      expect((await read(db)).answers).toBe(0);
+      clock = 60_000;
+      expect((await read(db)).answers).toBe(1);
+      await db.query("delete from shops where id = $1", [real]);
+    });
+
+    it("doesn't keep a failure", async () => {
+      const read = tallyCache(60_000, () => 0);
+      const broken = { query: async () => Promise.reject(new Error("down")) } as unknown as typeof db;
+      await expect(read(broken)).rejects.toThrow("down");
+      expect((await read(db)).answers).toBe(0);
     });
 
     it("goes down when a real shop is deleted", async () => {
