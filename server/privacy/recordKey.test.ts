@@ -5,6 +5,11 @@ import { createRecordKey } from "./recordKey";
 const SECRET = "a".repeat(32);
 
 describe("createRecordKey", () => {
+  it("takes only the listed kinds, so a kind can't carry a separator into another's key", () => {
+    // @ts-expect-error a kind outside the list doesn't compile
+    expect(createRecordKey(SECRET)("anything else", "x")).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it("gives the same key for the same kind and value", () => {
     const key = createRecordKey(SECRET);
     expect(key("paypal-event", "WH-1")).toBe(key("paypal-event", "WH-1"));
