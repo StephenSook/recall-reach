@@ -99,6 +99,12 @@ describe("getHealth", () => {
       expect(await check()).toMatchObject({ ok: false, checks: { purge: false } });
     });
 
+    it("isn't, when a demo shop has outlived the purge", async () => {
+      await pulled("ok");
+      await db.query("insert into shops (name, kind, created_at) values ('x', 'DEMO', $1::timestamptz)", ["2026-11-04T00:00:00Z"]);
+      expect(await check()).toMatchObject({ ok: false, checks: { purge: false } });
+    });
+
     it("isn't, when the last poll failed", async () => {
       await pulled("ok");
       expect((await check({ lastPollAt: NOW.toISOString(), lastPollOk: false, dbTouched: true })).checks?.poll).toBe(false);

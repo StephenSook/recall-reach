@@ -4,6 +4,13 @@ import type { RecallPollStatus } from "./jobs/appJobs";
 import { createRecordKey } from "./privacy/recordKey";
 import { PAYPAL_RETENTION_HOURS, PAYPAL_SOURCED } from "./privacy/retention";
 
+const PAST_THE_RULE = "$1::timestamptz - make_interval(hours => $2)";
+const OVERDUE = [
+  ...PAYPAL_SOURCED.map(({ table, receivedAt }) => `exists (select 1 from ${table} where ${receivedAt} < ${PAST_THE_RULE})`),
+  // A demo shop is built from PayPal's answers, so it goes by the same rule.
+  `exists (select 1 from shops where kind = 'DEMO' and created_at < ${PAST_THE_RULE})`,
+].join(" or ");
+
 export interface Health {
   ok: boolean;
   checkedAt: string;
@@ -14,7 +21,7 @@ export interface Health {
     webhook: boolean;
     /** The last finished CPSC pull worked and isn't old: the heartbeat writes one hourly. */
     lastPull: boolean;
-    /** No PayPal row has outlived the 48-hour rule, so the purge is running. */
+    /** No PayPal row or demo shop has outlived the 48-hour rule, so the purge is running. */
     purge: boolean;
     /** The background poll's last run didn't fail. */
     poll: boolean;
@@ -78,7 +85,7 @@ export async function getHealth(
     // The purge takes the event rows, so this table is what remembers when one was last verified.
     const webhook = await db.query<{ at: unknown }>("select max(received_at) as at from paypal_webhook_transmissions");
     const overdue = await db.query<{ any: boolean }>(
-      `select ${PAYPAL_SOURCED.map(({ table, receivedAt }) => `exists (select 1 from ${table} where ${receivedAt} < $1::timestamptz - make_interval(hours => $2))`).join(" or ")} as any`,
+      `select ${OVERDUE} as any`,
       [checkedAt, PAYPAL_RETENTION_HOURS],
     );
     const p = pulls.rows[0];

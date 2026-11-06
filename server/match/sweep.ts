@@ -1,6 +1,7 @@
 // Checks stored shops against recalls that arrived after their last check, so a shop hears about a recall
 // without uploading again. It shows in the queue on the shop's next visit. Rules only: no Claude, no PayPal call,
 // and no message goes anywhere.
+import { DEMO_SHOP_HOURS } from "../import/ownFile";
 import type { Db } from "../db/types";
 import { businessDay } from "../time/businessDay";
 import { CHECK_FROM, runShopCheck } from "./run";
@@ -9,8 +10,6 @@ import { CHECK_FROM, runShopCheck } from "./run";
 export const SWEEP_MAX_SHOPS = 25;
 /** Under half the poll job's deadline, so a long sweep can't hold the job past it. */
 export const SWEEP_BUDGET_MS = 4 * 60_000;
-/** A demo shop is a visit, not a shop's records. After two days its PayPal rows are gone and nobody is looking. */
-const DEMO_SHOP_HOURS = 48;
 
 export interface SweepSummary {
   at: string;

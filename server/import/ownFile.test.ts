@@ -164,12 +164,22 @@ describe("a shop checking its own order file", () => {
       const old = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
       const recent = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
       const own = (await load()).shopId;
-      await age(old, 4);
-      await age(recent, 2);
-      await age(own, 4);
+      await age(old, 2);
+      await age(recent, 1);
+      await age(own, 2);
       expect(await purgeOldDemoShops(db, NOW)).toBe(1);
       const { rows } = await db.query<{ id: string }>("select id from shops order by id");
       expect(rows.map((r) => r.id).sort()).toEqual([recent, own].sort());
+    });
+
+    it("takes a demo shop before the 48-hour rule, so nothing it was built from can outlast it", async () => {
+      const at = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
+      const gone = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+      const kept = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+      await db.query("update shops set created_at = $2::timestamptz where id = $1", [gone, at(47)]);
+      await db.query("update shops set created_at = $2::timestamptz where id = $1", [kept, at(45)]);
+      await purgeOldDemoShops(db, NOW);
+      expect((await db.query<{ id: string }>("select id from shops")).rows.map((r) => r.id)).toEqual([kept]);
     });
 
     it("leaves demo shops to themselves", async () => {

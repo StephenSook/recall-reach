@@ -3,6 +3,7 @@
 import type { Db, Queryable } from "../db/types";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
+import { PAYPAL_PURGE_CUTOFF_HOURS } from "../privacy/retention";
 import { parseShopExport } from "./shopExport";
 import { createShop, storeOrderLines } from "./store";
 
@@ -55,11 +56,14 @@ export async function deleteOwnShop(db: Queryable, shopId: string): Promise<bool
   return rows.length > 0;
 }
 
-/** A demo shop is a visit. Nobody can reach one after its session ends, so it isn't kept long after. */
-export const DEMO_SHOP_DAYS = 3;
+/**
+ * A demo shop is a visit: its session ends after a day and nobody can reach it after that. It goes at the same hour as
+ * the PayPal purge, so nothing it was built from can outlast the 48-hour rule, whichever table that ended up in.
+ */
+export const DEMO_SHOP_HOURS = PAYPAL_PURGE_CUTOFF_HOURS;
 
 export async function purgeOldDemoShops(db: Queryable, now: Date = new Date()): Promise<number> {
-  const { rows } = await db.query("delete from shops where kind = 'DEMO' and created_at < $1::timestamptz - make_interval(days => $2) returning 1", [now.toISOString(), DEMO_SHOP_DAYS]);
+  const { rows } = await db.query("delete from shops where kind = 'DEMO' and created_at < $1::timestamptz - make_interval(hours => $2) returning 1", [now.toISOString(), DEMO_SHOP_HOURS]);
   return rows.length;
 }
 
