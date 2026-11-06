@@ -124,7 +124,7 @@ export function modelsNamedInText(text: string): string[] {
 
 /** Lower-case words, with a light plural strip, so "Dryers" and "dryer" meet. */
 /** Words for who a product is for. They appear across a brand's whole range, so sharing one says nothing about what it is. */
-const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "kid", "child", "children", "boy", "girl", "men", "mens", "women", "womens", "adult", "youth", "junior", "unisex"]);
+const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "kid", "child", "children", "boy", "girl", "men", "mens", "women", "womens", "ladie", "adult", "youth", "junior", "unisex"]);
 
 function words(text: string): Set<string> {
   const out = new Set<string>();

@@ -321,6 +321,12 @@ describe("what a card with the brand on it says it knows", () => {
     expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
   });
 
+  it.each(["Babies", "Men's", "Women's", "Ladies", "Kids", "Girls"])("treats %s as who it's for, not what it is", (who) => {
+    const named = { ...JEANS, products: [product(`${who} Fleece Jackets`)] };
+    expect(verdictFor(named, { title: `Children's Place ${who} Socks` }).reason).toBe(BRAND_ONLY);
+    expect(verdictFor(named, { title: `Children's Place ${who} Jacket` }).reason).toBe(SAME_LINE);
+  });
+
   it("still says so when the item is the kind of thing recalled", () => {
     const v = verdictFor(JEANS, { title: "Children's Place boys straight leg jeans" });
     expect(v.reason).toBe(SAME_LINE);

@@ -323,7 +323,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
       <noscript>
-        <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; }`}</style>
+        <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; } .queue-heading { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; clip-path: none !important; white-space: normal !important; }`}</style>
       </noscript>
       {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
