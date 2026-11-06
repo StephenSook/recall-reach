@@ -1,5 +1,5 @@
 // The exact words on the seller's screen (research/COPY-DECK.md).
-import type { QueueRow } from "@/server/queue/queue";
+import type { QueueData, QueueRow } from "@/server/queue/queue";
 
 export const VERDICT_CHIP = { MATCH: "Needs review", SCOPE_GAP: "Scope gap", CLEARED: "Cleared" } as const;
 export const PATH_CHIP = { NOTICE_ONLY: "Notice only", REVIEW: "Review date", REFUND_ELIGIBLE: "Refund eligible" } as const;
@@ -25,6 +25,15 @@ export const CHECK_RESULT: Record<string, string> = {
   DOESNT_MATCH: "Family's answer does not match the recall details",
   CANT_TELL: "Family's answer could not settle it",
 };
+
+/** Says "Searched" only when PayPal's history was really read. No search means no dates and no payment count. */
+export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
+  const searched = c.paypalSearched
+    ? `Searched ${c.searchedFrom ?? c.searchedTo} to ${c.searchedTo}. ${c.unidentifiedPayments} payments couldn't be identified.`
+    : "PayPal's history was not searched.";
+  const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
+  return `${searched} Checked ${c.recallsChecked} recalls.${left}`;
+}
 
 /** Whether a message for this row is waiting on the seller's approval. */
 export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolean {

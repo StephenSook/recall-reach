@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipsFor, needsApproval } from "./labels";
+import { chipsFor, coverageLine, needsApproval } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,25 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("coverageLine", () => {
+  const coverage = { recallsChecked: 934, searchedFrom: "2026-09-01", searchedTo: "2026-11-06", unidentifiedPayments: 2, paypalSearched: true, candidatesNotChecked: 0 };
+
+  it("says what was searched when PayPal's history was really read", () => {
+    expect(coverageLine(coverage)).toBe("Searched 2026-09-01 to 2026-11-06. 2 payments couldn't be identified. Checked 934 recalls.");
+  });
+
+  it("claims no search, dates or payment count when it was not", () => {
+    const line = coverageLine({ ...coverage, paypalSearched: false });
+    expect(line).toBe("PayPal's history was not searched. Checked 934 recalls.");
+    expect(line).not.toMatch(/Searched|2026|identified/);
+  });
+
+  it("says when candidates were left unchecked, either way", () => {
+    expect(coverageLine({ ...coverage, candidatesNotChecked: 3 })).toContain("3 candidates were not checked.");
+    expect(coverageLine({ ...coverage, paypalSearched: false, candidatesNotChecked: 3 })).toContain("3 candidates were not checked.");
+  });
 });
 
 describe("needsApproval", () => {

@@ -91,9 +91,16 @@ describe("loadQueue", () => {
     expect(order).toEqual([...order].sort((a, b) => ["MATCH", "SCOPE_GAP", "CLEARED"].indexOf(a) - ["MATCH", "SCOPE_GAP", "CLEARED"].indexOf(b)));
   });
 
+  it("links each demo sale to the capture the seed made, with PayPal's history not searched", async () => {
+    const q = await loadQueue(db, shopId, "session-1");
+    expect(q.coverage?.paypalSearched).toBe(false);
+    expect(q.rows.length).toBeGreaterThanOrEqual(3);
+    for (const r of q.rows) expect(r.joinState, r.recallNumber).toBe("IDENTIFIED");
+  });
+
   it("carries the run's coverage", async () => {
     const q = await loadQueue(db, shopId, "session-1");
-    expect(q.coverage).toMatchObject({ recallsChecked: 55, searchedTo: TODAY, unidentifiedPayments: 0, paypalSearched: true, candidatesNotChecked: 0 });
+    expect(q.coverage).toMatchObject({ recallsChecked: 55, searchedTo: TODAY, unidentifiedPayments: 0, paypalSearched: false, candidatesNotChecked: 0 });
     expect(q.shop).toEqual({ name: "DEMO SHOP", kind: "DEMO" });
   });
 

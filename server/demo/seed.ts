@@ -130,6 +130,7 @@ export async function seedDemoShop(
       ],
     );
   }
-  const run = await runShopCheck(db, shopId, { today: opts.today, paypalSearched: true });
+  // PayPal's history has not been searched here: these payments are only the ones this seed just made.
+  const run = await runShopCheck(db, shopId, { today: opts.today });
   return { shopId, run };
 }

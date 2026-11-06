@@ -3,7 +3,7 @@ import { getDb } from "@/server/db/pg";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession } from "@/server/web/http";
-import { CHECK_RESULT, chipsFor, needsApproval, NOTICE_STATE, REFUND_STATE } from "./labels";
+import { CHECK_RESULT, chipsFor, coverageLine, needsApproval, NOTICE_STATE, REFUND_STATE } from "./labels";
 import { NoticeActions } from "./NoticeActions";
 
 export const dynamic = "force-dynamic";
@@ -150,11 +150,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       ) : null}
       {message ? <p role="alert">{message}</p> : null}
       {coverage ? (
-        <p data-testid="coverage">
-          Searched {coverage.searchedFrom ?? coverage.searchedTo} to {coverage.searchedTo}. {coverage.unidentifiedPayments} payments couldn&apos;t be identified.
-          {" "}Checked {coverage.recallsChecked} recalls.
-          {coverage.candidatesNotChecked > 0 ? ` ${coverage.candidatesNotChecked} candidates were not checked.` : ""}
-        </p>
+        <p data-testid="coverage">{coverageLine(coverage)}</p>
       ) : null}
       <section data-testid="needs">
         <h2>Needs review</h2>

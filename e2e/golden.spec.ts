@@ -44,7 +44,7 @@ async function asFamily<T>(browser: Browser, url: string, act: (page: Page) => P
 
 test("a real recall reaches the queue, the family is told, and one eligible sale is refunded", async ({ page, browser }) => {
   await startDemoShop(page);
-  await expect(page.getByTestId("coverage")).toContainText(/Searched .* to .*\. \d+ payments couldn't be identified\./);
+  await expect(page.getByTestId("coverage")).toContainText("PayPal's history was not searched.");
 
   // NOTICE ONLY: this week's real Baby Brezza recall, sold before it.
   const brezza = recall(page, "27072");
