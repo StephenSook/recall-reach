@@ -341,7 +341,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </noscript>
       {/* Above the grid, because the grid draws late: anything below it gets pushed off screen after the browser has scrolled to it. */}
       <section data-testid="needs" className="cards">
-        <h2 className="section-title narrow-only">Your queue</h2>
+        <h2 className="section-title queue-heading">Your queue</h2>
         {/* One list in a fixed order, with each card's chip saying where it stands. A card moved to another list or place loses the browser's :target, and an open card would close by itself. */}
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>

@@ -233,6 +233,25 @@ small,
   .narrow-only {
     display: none;
   }
+  /* Gone from the screen on a wide layout, still there for a screen reader, so the page's headings stay in order. */
+  .queue-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  html[data-no-grid] .queue-heading {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: revert;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
   html[data-no-grid] .cards > .window,
   html[data-no-grid] .narrow-only {
     display: block;
@@ -476,7 +495,8 @@ pre {
   line-height: 1.2;
   white-space: normal;
 }
-.sr-only {
+.sr-only,
+.header-for-readers .ag-header-cell-text {
   position: absolute;
   width: 1px;
   height: 1px;

@@ -40,7 +40,7 @@ const columns: ColDef<Row>[] = [
   { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter" },
   { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: true },
   { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true },
-  { colId: "open", headerName: "", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false },
+  { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false },
 ];
 
 /** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
