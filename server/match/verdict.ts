@@ -64,9 +64,9 @@ export function modelTokens(text: string): string[] {
 }
 
 /** Punctuation does not separate models: BRZ-0083 and BRZ.0083 are BRZ0083. */
-const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
+export const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
 /** Letters a typed model is easily mistaken for: BRZOO83 is probably BRZ0083. */
-const unconfuse = (t: string) => t.replace(/O/g, "0").replace(/[IL]/g, "1");
+export const unconfuse = (t: string) => t.replace(/O/g, "0").replace(/[IL]/g, "1");
 
 function editDistance(a: string, b: string): number {
   let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -81,7 +81,7 @@ function editDistance(a: string, b: string): number {
 }
 
 /** The model with only separators between its characters ("BRZ 0083"), and no extra character on either side. */
-function writtenApart(model: string): RegExp {
+export function writtenApart(model: string): RegExp {
   const body = [...normalizeModel(model)].join("[\\s._/-]*");
   return new RegExp(`(?<![A-Z0-9])${body}(?![A-Z0-9])`);
 }
@@ -97,12 +97,27 @@ function isSiblingModel(token: string, listed: string[]): boolean {
 }
 
 /** Contains a listed model, is contained by one, or is one small slip from one. Possibly the same unit. */
-function isVariantOf(token: string, listed: string[]): boolean {
+export function isVariantOf(token: string, listed: string[]): boolean {
   const t = unconfuse(normalizeModel(token));
   return listed.some((m) => {
     const n = unconfuse(normalizeModel(m));
     return t.includes(n) || n.includes(t) || editDistance(t, n) <= 1;
   });
+}
+
+/**
+ * What CPSC names right after the word "model", up to the end of the sentence. Wider than modelTokens: "4155L" reads like
+ * litres and "1026" has no letter, and both are real models. Too wide to confirm a match on, because a bare number could
+ * be anything in a shop's title. Right for a family's typed answer, where calling a recalled model "no match" is the harm.
+ */
+export function modelsNamedInText(text: string): string[] {
+  const found = new Set<string>();
+  for (const span of text.slice(0, MAX_TEXT).match(/\bmodels?\b(?:(?!\.(?:\s|$))[\s\S]){0,300}/gi) ?? []) {
+    for (const token of span.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? []) {
+      if (normalizeModel(token).length >= 3 && !/^(19|20)\d\d$/.test(token)) found.add(token);
+    }
+  }
+  return [...found];
 }
 
 /** Lower-case words, with a light plural strip, so "Dryers" and "dryer" meet. */

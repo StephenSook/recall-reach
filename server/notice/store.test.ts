@@ -714,3 +714,38 @@ describe("notices", () => {
     });
   });
 });
+
+describe("what a family types, when CPSC's model list has more than our token rule can read", () => {
+  const model = { kind: "model" } as Parameters<typeof checkResult>[1];
+  const bissell = {
+    title: "BISSELL Recalls Steam Cleaners",
+    description: "The affected model numbers are 4155, 4155L, 4155W, 4155G, 4171, and 4171F. The model numbers are located on the rating label.",
+  };
+  const mamaroo = { title: "4moms Recalls MamaRoo Infant Swings", description: "MamaRoo versions 1.0 and 2.0, model 4M-005; version 3.0, model 1026; and version 4.0, model 1037." };
+
+  it("a model that reads like a measure is still a model CPSC lists", () => {
+    expect(checkResult(bissell, model, "4155L")).toBe("MATCHES");
+    expect(checkResult(bissell, model, "4155W")).toBe("MATCHES");
+  });
+
+  it("a model with no letter in it is still a model CPSC lists", () => {
+    expect(checkResult(bissell, model, "4155")).toBe("MATCHES");
+    expect(checkResult(mamaroo, model, "1026")).toBe("MATCHES");
+    expect(checkResult(mamaroo, model, "1037")).toBe("MATCHES");
+  });
+
+  it("a slip from a listed model is never told it doesn't match", () => {
+    expect(checkResult(bissell, model, "4155H")).toBe("CANT_TELL");
+    expect(checkResult(mamaroo, model, "4M-OO5")).toBe("MATCHES");
+    expect(checkResult(mamaroo, model, "4M-006")).toBe("CANT_TELL");
+  });
+
+  it("something CPSC's record says elsewhere can't be ruled out either", () => {
+    expect(checkResult({ title: "X Recalls Heaters", description: "Heaters, model AB-100. The 1500W version is not included in the 2024 count." }, model, "1500W")).toBe("CANT_TELL");
+  });
+
+  it("a code nowhere near the record still doesn't match", () => {
+    expect(checkResult(bissell, model, "ZZ9000")).toBe("DOESNT_MATCH");
+    expect(checkResult(mamaroo, model, "ABC-777")).toBe("DOESNT_MATCH");
+  });
+});

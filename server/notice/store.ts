@@ -3,7 +3,7 @@
 import { writtenQuestion, type WrittenQuestion } from "../agent/questionStore";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
-import { fullScopeInRecord, modelTokens } from "../match/verdict";
+import { fullScopeInRecord, isVariantOf, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
 import { refundedAmount } from "../paypal/refunds";
 import type { ContactCipher } from "../privacy/contactCipher";
 import { checkQuestion, composeCheckRequest, composeSafetyNotice, type CheckQuestion } from "./compose";
@@ -202,7 +202,6 @@ function askedOf(n: Pick<RecallRow, "recall_number" | "title" | "description" | 
 }
 
 export type CheckResult = "MATCHES" | "DOESNT_MATCH" | "CANT_TELL";
-const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 /** "Doesn't match" is only ever said when CPSC's full scope is in the record. */
 export function checkResult(
@@ -214,8 +213,12 @@ export function checkResult(
   const fullScope = fullScopeInRecord(recall);
   if (question.kind === "model") {
     if (!said) return "CANT_TELL";
-    const listed = modelTokens(`${recall.title ?? ""} ${recall.description}`).map(normalizeModel);
-    if (listed.includes(normalizeModel(said))) return "MATCHES"; // the record itself names this model
+    const text = `${recall.title ?? ""} ${recall.description}`;
+    const listed = [...modelTokens(text), ...modelsNamedInText(text)];
+    const typed = unconfuse(normalizeModel(said));
+    if (listed.some((m) => unconfuse(normalizeModel(m)) === typed)) return "MATCHES"; // the record itself names this model
+    // Nobody is told it doesn't match over a typing slip, or something CPSC's record says elsewhere.
+    if (isVariantOf(said, listed) || writtenApart(said).test(text.toUpperCase())) return "CANT_TELL";
     return fullScope ? "DOESNT_MATCH" : "CANT_TELL";
   }
   // CPSC's list is elsewhere, so nothing a family says here can settle it either way.
