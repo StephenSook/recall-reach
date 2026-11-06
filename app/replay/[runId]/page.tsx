@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { loadReplay } from "@/server/replay/replay";
-import { OUTCOME_CHIP, seconds } from "../labels";
+import { matchSplitLine, OUTCOME_CHIP, seconds } from "../labels";
 import { ReplayGridLoader } from "../ReplayGridLoader";
 import { RunAgainButton } from "../RunAgainButton";
 
@@ -41,7 +41,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
         </div>
       </div>
       <p className="note" data-testid="replay-split">
-        Of the matches, {counts.noticeOnly} sold before the recall and need a notice, and {counts.refundEligible} sold after it and can be refunded. That split is the demo shop&apos;s, on seeded dates.{" "}
+        {matchSplitLine(replay.rows)} That split is the demo shop&apos;s, on seeded dates.{" "}
         {counts.unidentified} {counts.unidentified === 1 ? "payment" : "payments"} couldn&apos;t be identified. {counts.notNear} recalls had nothing near them.
       </p>
       <p className="note">
