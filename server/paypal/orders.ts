@@ -129,11 +129,7 @@ export interface CardOrderInput {
   card: { number: string; expiry: string; securityCode: string };
 }
 
-/**
- * Creates and captures a sandbox order server side with a test card (measured 2026-11-05: COMPLETED
- * at once, because Advanced Card Payments is on for the app). Then reads it back.
- */
-export async function createCardOrder(client: PayPalClient, input: CardOrderInput): Promise<OrderFacts> {
+function orderUnit(input: Omit<CardOrderInput, "requestId" | "card">): Record<string, unknown> {
   const { currency } = input;
   const amount = (cents: number) => ({ currency_code: currency, value: centsToValue(cents) });
   const itemTotal = input.lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
@@ -162,16 +158,58 @@ export async function createCardOrder(client: PayPalClient, input: CardOrderInpu
   const customId = input.customId ?? input.orderNumber;
   if (customId) unit = { custom_id: customId, ...unit };
   if (input.orderNumber) unit = { invoice_id: input.orderNumber, ...unit };
+  return unit;
+}
 
+/**
+ * Creates and captures a sandbox order server side with a test card (measured 2026-11-05: COMPLETED
+ * at once, because Advanced Card Payments is on for the app). Then reads it back.
+ */
+export async function createCardOrder(client: PayPalClient, input: CardOrderInput): Promise<OrderFacts> {
   const { data } = await client.request<{ id: string }>("POST", "/v2/checkout/orders", {
     requestId: input.requestId,
     body: {
       intent: "CAPTURE",
-      purchase_units: [unit],
+      purchase_units: [orderUnit(input)],
       payment_source: {
         card: { number: input.card.number, expiry: input.card.expiry, security_code: input.card.securityCode },
       },
     },
   });
   return getOrder(client, data.id);
+}
+
+export interface PayPalOrderInput extends Omit<CardOrderInput, "card"> {
+  returnUrl: string;
+  cancelUrl: string;
+}
+
+const SANDBOX_APPROVAL_HOST = "www.sandbox.paypal.com";
+
+/**
+ * An order a person approves on PayPal's own page, and nothing is captured until they come back (measured 2026-11-06:
+ * PAYER_ACTION_REQUIRED with a payer-action link, and a capture before approval is refused with ORDER_NOT_APPROVED).
+ */
+export async function createPayPalOrder(client: PayPalClient, input: PayPalOrderInput): Promise<{ orderId: string; approveUrl: string }> {
+  const { data } = await client.request<{ id: string; links?: { rel: string; href: string }[] }>("POST", "/v2/checkout/orders", {
+    requestId: input.requestId,
+    body: {
+      intent: "CAPTURE",
+      purchase_units: [orderUnit(input)],
+      payment_source: {
+        paypal: {
+          experience_context: { return_url: input.returnUrl, cancel_url: input.cancelUrl, user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING" },
+        },
+      },
+    },
+  });
+  const href = data.links?.find((l) => l.rel === "payer-action")?.href;
+  const url = href ? new URL(href) : null;
+  if (url?.protocol !== "https:" || url.host !== SANDBOX_APPROVAL_HOST) throw new Error("PayPal gave no sandbox approval page");
+  return { orderId: data.id, approveUrl: url.href };
+}
+
+/** Takes the money for an approved order. The request id makes a reload safe: PayPal answers it once. */
+export async function captureOrder(client: PayPalClient, orderId: string, requestId: string): Promise<void> {
+  await client.request("POST", `/v2/checkout/orders/${pathId(orderId)}/capture`, { requestId, body: {} });
 }

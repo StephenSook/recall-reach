@@ -1,12 +1,12 @@
 // A recalled item sells, and a card reaches the seller's queue with no one pressing anything. The line comes from
 // the shop's own listing, and the check is the local one. PayPal's webhook only says when to look.
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Db } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
-import type { PayPalClient } from "../paypal/client";
-import { createCardOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
+import { PayPalApiError, type PayPalClient } from "../paypal/client";
+import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
 import { createContactCipher } from "../privacy/contactCipher";
 import { businessDay } from "../time/businessDay";
 import { DEMO_LABEL, SANDBOX_TEST_CARD } from "./seed";
@@ -20,22 +20,30 @@ export class LiveSaleRefused extends Error {
   }
 }
 
-/** A family buys a listed item on the demo shop, with the sandbox test card, so no one needs a PayPal login. */
-export async function buyAsFamily(
-  db: Db,
-  client: PayPalClient,
-  input: { shopId: string; shopItemId: string; today: string; secret: string; demoEmail?: string },
-): Promise<{ orderNumber: string }> {
-  if (!UUID.test(input.shopItemId)) throw new LiveSaleRefused();
+interface ListedItem {
+  title: string;
+  sku: string | null;
+  price_cents: number;
+  currency: string;
+}
+
+/** An item this demo shop lists at a price, or a refusal. */
+async function listedItem(db: Db, shopId: string, shopItemId: string): Promise<ListedItem> {
+  if (!UUID.test(shopItemId)) throw new LiveSaleRefused();
   const { rows } = await db.query<{ title: string; sku: string | null; price_cents: number | null; currency: string | null }>(
     `select i.title, i.sku, i.price_cents, i.currency from shop_items i join shops s on s.id = i.shop_id
      where i.id = $1 and i.shop_id = $2 and i.listed and s.kind = 'DEMO'`,
-    [input.shopItemId, input.shopId],
+    [shopItemId, shopId],
   );
   const item = rows[0];
   if (!item || !item.price_cents || !item.currency) throw new LiveSaleRefused();
+  return { ...item, price_cents: item.price_cents, currency: item.currency };
+}
 
-  const orderNumber = `DEMO-LIVE-${randomBytes(6).toString("hex")}`;
+const newOrderNumber = () => `DEMO-LIVE-${randomBytes(6).toString("hex")}`;
+
+/** The sale, from the shop's own listing. Written before the capture: PayPal's webhook can arrive before that call returns. */
+async function writeLiveSale(db: Db, input: { shopId: string; today: string; secret: string; demoEmail?: string }, item: ListedItem, orderNumber: string): Promise<void> {
   const line: ImportedOrderLine = {
     orderNumber,
     lineNo: 1,
@@ -49,9 +57,19 @@ export async function buyAsFamily(
     paymentReference: null,
     buyerEmail: input.demoEmail ?? null,
   };
-  // Written first: PayPal's webhook can arrive before this call returns.
   await storeOrderLines(db, input.shopId, [line], createContactCipher(input.secret, input.shopId), `${DEMO_LABEL}: sold just now, with a sandbox capture`);
   await db.query("update order_lines set live_sale = true where shop_id = $1 and order_number = $2", [input.shopId, orderNumber]);
+}
+
+/** A family buys a listed item on the demo shop, with the sandbox test card, so no one needs a PayPal login. */
+export async function buyAsFamily(
+  db: Db,
+  client: PayPalClient,
+  input: { shopId: string; shopItemId: string; today: string; secret: string; demoEmail?: string },
+): Promise<{ orderNumber: string }> {
+  const item = await listedItem(db, input.shopId, input.shopItemId);
+  const orderNumber = newOrderNumber();
+  await writeLiveSale(db, input, item, orderNumber);
   try {
     await createCardOrder(client, {
       orderNumber,
@@ -66,6 +84,75 @@ export async function buyAsFamily(
     throw err;
   }
   return { orderNumber };
+}
+
+const PAYPAL_RETURN = "/api/demo/buy/paypal/return";
+const ORDER_NUMBER = /^DEMO-LIVE-[0-9a-f]{12}$/;
+const PAYPAL_ID = /^[A-Za-z0-9-]+$/;
+
+/** Each part has a fixed shape, checked before this is compared, so joining them can't make two states read alike. */
+const stateSignature = (sessionSecret: string, shopId: string, shopItemId: string, orderNumber: string) =>
+  createHmac("sha256", sessionSecret).update(`paypal-return:${shopId}:${shopItemId}:${orderNumber}`).digest("base64url");
+
+/**
+ * The same sale through PayPal's own approval page, where a person logs in. Nothing is stored here: the buyer may never
+ * come back. The return address is signed, so it can't be pointed at another shop, item or order.
+ */
+export async function startPayPalBuy(
+  db: Db,
+  client: PayPalClient,
+  input: { shopId: string; shopItemId: string; siteUrl: string; sessionSecret: string },
+): Promise<{ orderId: string; approveUrl: string; returnUrl: string }> {
+  const item = await listedItem(db, input.shopId, input.shopItemId);
+  const orderNumber = newOrderNumber();
+  const state = `${input.shopItemId}.${orderNumber}.${stateSignature(input.sessionSecret, input.shopId, input.shopItemId, orderNumber)}`;
+  const returnUrl = `${input.siteUrl}${PAYPAL_RETURN}?state=${encodeURIComponent(state)}`;
+  const { orderId, approveUrl } = await createPayPalOrder(client, {
+    orderNumber,
+    currency: item.currency,
+    discountCents: 0,
+    lines: [{ title: item.title, sku: item.sku, quantity: 1, unitPriceCents: item.price_cents }],
+    requestId: randomUUID(),
+    returnUrl,
+    cancelUrl: `${input.siteUrl}${PAYPAL_RETURN}?cancelled=1`,
+  });
+  return { orderId, approveUrl, returnUrl };
+}
+
+/** The state's parts, if this server signed them for this shop. */
+function readState(state: string, shopId: string, sessionSecret: string): { shopItemId: string; orderNumber: string } | null {
+  const [shopItemId = "", orderNumber = "", signature = ""] = state.split(".");
+  if (!UUID.test(shopItemId) || !ORDER_NUMBER.test(orderNumber)) return null;
+  const given = Buffer.from(signature);
+  const expected = Buffer.from(stateSignature(sessionSecret, shopId, shopItemId, orderNumber));
+  return given.length === expected.length && timingSafeEqual(given, expected) ? { shopItemId, orderNumber } : null;
+}
+
+/**
+ * The buyer is back from PayPal. The address proves nothing about the payment, so the order is read from PayPal and must
+ * be the one this state started, approved, at the listed price. Then the webhook does the rest, as with the test card.
+ */
+export async function finishPayPalBuy(
+  db: Db,
+  client: PayPalClient,
+  input: { shopId: string; state: string; orderId: string; today: string; secret: string; sessionSecret: string; demoEmail?: string },
+): Promise<void> {
+  const signed = readState(input.state, input.shopId, input.sessionSecret);
+  if (!signed || !PAYPAL_ID.test(input.orderId)) throw new LiveSaleRefused();
+  const item = await listedItem(db, input.shopId, signed.shopItemId);
+  const order = await getOrder(client, input.orderId);
+  const atListedPrice = order.items.length === 1 && order.items[0].quantity === 1 && order.items[0].unitCents === item.price_cents;
+  if (order.invoiceId !== signed.orderNumber || !atListedPrice || (order.status !== "APPROVED" && order.status !== "COMPLETED")) throw new LiveSaleRefused();
+
+  await writeLiveSale(db, input, item, signed.orderNumber);
+  if (order.status === "COMPLETED") return; // a reload
+  try {
+    await captureOrder(client, input.orderId, `capture-${signed.orderNumber}`);
+  } catch (err) {
+    // With no clear answer the capture may have happened, and its webhook needs this line.
+    if (err instanceof PayPalApiError && !err.uncertain) await db.query("delete from order_lines where shop_id = $1 and order_number = $2", [input.shopId, signed.orderNumber]);
+    throw err;
+  }
 }
 
 export type CatchResult = "CAUGHT" | "ALREADY" | "NOT_COMPLETED" | "NOT_A_LIVE_SALE";

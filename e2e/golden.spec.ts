@@ -297,6 +297,23 @@ test.describe("on a wide screen", () => {
   });
 });
 
+test("a recalled item sold as it happens lands on the queue with no reload, and the PayPal path goes to PayPal's own page", async ({ page }) => {
+  await startDemoShop(page);
+  const cards = page.getByTestId("needs").locator('article[data-recall="27018"]');
+  const before = await cards.count();
+  await cards.first().getByRole("button", { name: "Buy this as a family" }).click();
+  // PayPal's webhook brings it, so this waits on the sandbox.
+  await expect(cards).toHaveCount(before + 1, { timeout: 120_000 });
+
+  // No login here: this only reads where the button would send a person.
+  const item = await page.locator('form[action="/api/demo/buy/paypal"] input[name="shopItemId"]').first().inputValue();
+  const sent = await page.request.post("/api/demo/buy/paypal", { form: { shopItemId: item }, headers: { origin: new URL(page.url()).origin }, maxRedirects: 0 });
+  expect(sent.status()).toBe(303);
+  const approve = new URL(sent.headers().location);
+  expect(approve.host).toBe("www.sandbox.paypal.com");
+  expect(approve.pathname).toBe("/checkoutnow");
+});
+
 test("the eval card shows held-out numbers, with their limits on the page", async ({ page }) => {
   await page.goto("/eval");
   await expect(page.getByTestId("eval-sentence")).toContainText(/\d+ of \d+/);

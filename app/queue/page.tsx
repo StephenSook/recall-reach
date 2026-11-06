@@ -73,6 +73,14 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
                 </button>
               </form>
             ) : null}
+            {canBuy ? (
+              <form action="/api/demo/buy/paypal" method="post">
+                <input type="hidden" name="shopItemId" value={row.recordId} />
+                <button type="submit" className="btn btn-outline">
+                  Buy with a PayPal sandbox login
+                </button>
+              </form>
+            ) : null}
             {canApprove ? (
               <form action={`/api/queue/notices${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
