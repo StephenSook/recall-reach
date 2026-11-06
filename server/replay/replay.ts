@@ -61,13 +61,20 @@ async function countsOf(db: Queryable, runId: string): Promise<ReplayCounts> {
 
 export async function runReplay(db: Db, client: PayPalClient, input: { today: string; now: Date; secret: string }): Promise<{ runId: string }> {
   const started = performance.now();
+  // Read first, so every recall this run reports was already there when its check began. One loading during the run
+  // waits for the next run, instead of being reported as nothing near. Recalls are never deleted, so the check sees all of these.
+  const read = await db.query<{ ids: number[]; digest: string }>(
+    `select coalesce(array_agg(recall_id), '{}') as ids, ${DIGEST_SQL} as digest from recalls where recall_date >= $1::date`,
+    [REPLAY_FROM],
+  );
+  const { ids, digest } = read.rows[0];
   const { shopId, run, search } = await seedDemoShop(db, client, { today: input.today, secret: input.secret, now: input.now, freshCaptures: false, recallsFrom: REPLAY_FROM });
   try {
     const ms = Math.max(1, Math.round(performance.now() - started));
     const { rows } = await db.query<{ id: string }>(
       `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest)
-       select $1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, ${DIGEST_SQL} from recalls where recall_date >= $6::date returning id`,
-      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, REPLAY_FROM],
+       values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6) returning id`,
+      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest],
     );
     const runId = rows[0].id;
     // A recall's strongest outcome is what the replay reports for it. CLEARED means an item came near and was ruled out.
@@ -79,13 +86,13 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
        left join recall_matches m on m.recall_id = r.recall_id and m.shop_id = $2
        left join order_lines l on l.id = m.order_line_id
        left join shop_items i on i.id = m.shop_item_id
-       where r.recall_date >= $3::date
+       where r.recall_id = any($3::int[])
        order by r.recall_id,
          case m.verdict when 'MATCH' then 0 when 'SCOPE_GAP' then 1 when 'CLEARED' then 2 else 3 end,
          case m.strength when 'CONFIRMED' then 0 when 'BRAND' then 1 when 'PRODUCT_WORDS' then 2 else 3 end,
          case m.sale_path when 'REFUND_ELIGIBLE' then 0 when 'NOTICE_ONLY' then 1 else 2 end,
          l.title`,
-      [runId, shopId, REPLAY_FROM],
+      [runId, shopId, ids],
     );
     const c = await countsOf(db, runId);
     await db.query(

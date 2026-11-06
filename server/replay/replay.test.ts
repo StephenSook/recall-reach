@@ -105,6 +105,37 @@ describe("Recall Replay", () => {
       });
     });
 
+    it("reports only recalls it read before its check, so one loading mid-run isn't called nothing near", async () => {
+      // One no demo case needs, so the seed still runs without it.
+      const earlier = await loadReplay(db, (await run()).runId);
+      const late = earlier?.rows.find((r) => r.outcome === "NOT_NEAR")?.recallNumber ?? "";
+      expect(late).not.toBe("");
+      await db.query("delete from recalls where recall_number = $1", [late]);
+      const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });
+      let loaded = false;
+      const during = new Proxy(db, {
+        get(target, prop) {
+          if (prop === "query") {
+            return async (sql: string, params?: unknown[]) => {
+              if (!loaded && sql.includes("insert into replay_runs")) {
+                loaded = true;
+                await pullRecalls(target, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
+              }
+              return target.query(sql, params);
+            };
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const { runId } = await runReplay(during, fakePayPal().client, { today: TODAY, now: NOW, secret: "k".repeat(32) });
+      expect(loaded).toBe(true);
+      const replay = await loadReplay(db, runId);
+      expect(replay?.rows.map((r) => r.recallNumber)).not.toContain(late);
+      expect(replay?.rows).toHaveLength((await total()) - 1);
+      expect((await proveReplay(db, runId))?.sameRecalls).toBe(false);
+    });
+
     it("counts add up to every recall", async () => {
       const { counts } = (await loadReplay(db, (await run()).runId))!;
       expect(counts.matched + counts.scopeGaps + counts.cleared + counts.notNear).toBe(counts.checked);
