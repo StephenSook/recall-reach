@@ -68,16 +68,25 @@ describe("loadYears", () => {
       const date = `${year}-08-15T00:00:00`;
       return JSON.stringify([{ ...real, RecallID: year, RecallNumber: String(year), RecallDate: date, LastPublishDate: date }]);
     };
-    const TODAY = "2024-11-05"; // so the past years from 2022 are 2022 and 2023
+    const TODAY = "2024-11-05"; // so the years from 2022 are 2022, 2023 and the running 2024
 
-    it("pulls each past year it has no finished pull for, and leaves the current year to the poll", async () => {
-      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
+    it("pulls each year it has no finished pull for, the running year up to today", async () => {
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023, 2024]);
       const { requested, deps } = answering(aRecallForTheYear);
       const result = await loadMissingYears(db, 2022, TODAY, deps);
-      expect(requested).toHaveLength(2);
+      expect(requested).toHaveLength(3);
       expect(result.failed).toEqual([]);
-      expect(result.pulls.map((p) => p.range.start)).toEqual(["2022-01-01", "2023-01-01"]);
+      expect(result.pulls.map((p) => p.range.start)).toEqual(["2022-01-01", "2023-01-01", "2024-01-01"]);
+      expect(result.pulls.at(-1)?.range.end).toBe(TODAY);
       expect(await missingRecallYears(db, 2022, TODAY)).toEqual([]);
+    });
+
+    it("counts the running year as held once a pull from its first day has worked, whatever day that reached", async () => {
+      const held = (start: string, end: string) => db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched) values ('RecallDate', $1, $2, 'ok', 1)", [start, end]);
+      await held("2024-10-01", "2024-11-05");
+      expect(await missingRecallYears(db, 2024, TODAY)).toEqual([2024]);
+      await held("2024-01-01", "2024-06-01");
+      expect(await missingRecallYears(db, 2024, TODAY)).toEqual([]);
     });
 
     it("costs nothing once they are in", async () => {
@@ -91,7 +100,7 @@ describe("loadYears", () => {
       const first = answering((url) => (url.includes("RecallDateStart=2022") ? 500 : aRecallForTheYear(url)));
       const result = await loadMissingYears(db, 2022, TODAY, first.deps);
       expect(result.failed.map((f) => f.year)).toEqual([2022]);
-      expect(result.pulls.map((p) => p.range.start)).toEqual(["2023-01-01"]);
+      expect(result.pulls.map((p) => p.range.start)).toEqual(["2023-01-01", "2024-01-01"]);
       expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022]);
 
       const second = answering(aRecallForTheYear);
@@ -102,20 +111,24 @@ describe("loadYears", () => {
 
     it("starts no new year once its time is up, and the rest wait for next time", async () => {
       const { requested, deps } = answering(aRecallForTheYear);
-      expect(await loadMissingYears(db, 2022, TODAY, deps, { budgetMs: -1 })).toEqual({ pulls: [], failed: [], deferred: [2022, 2023] });
+      expect(await loadMissingYears(db, 2022, TODAY, deps, { budgetMs: -1 })).toEqual({ pulls: [], failed: [], deferred: [2022, 2023, 2024] });
       expect(requested).toEqual([]);
-      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023, 2024]);
     });
 
     it("doesn't take a poll's pull, or a failed one, for a year being loaded", async () => {
+      // Neither of these loads a year.
       await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched) values ('LastPublishDate', '2022-01-01', '2022-12-31', 'ok', 5), ('RecallDate', '2022-01-01', '2022-12-31', 'failed', 5), ('RecallDate', '2022-01-01', '2022-12-31', 'partial', 5)");
-      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023, 2024]);
     });
 
     it("doesn't take an empty answer for a whole year as that year being loaded: it says so and tries again", async () => {
       const result = await loadMissingYears(db, 2023, TODAY, answering(() => "[]").deps);
-      expect(result.failed).toEqual([{ year: 2023, error: "CPSC returned no recalls for this year" }]);
-      expect(await missingRecallYears(db, 2023, TODAY)).toEqual([2023]);
+      expect(result.failed).toEqual([
+        { year: 2023, error: "CPSC returned no recalls for this year" },
+        { year: 2024, error: "CPSC returned no recalls for this year" },
+      ]);
+      expect(await missingRecallYears(db, 2023, TODAY)).toEqual([2023, 2024]);
     });
   });
 });

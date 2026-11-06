@@ -74,12 +74,12 @@ describe("runShopCheck", () => {
 
     it("names the years it doesn't hold, so its dates can't hide a gap", async () => {
       await store([line("#1", "4moms MamaRoo Multi-Motion Swing", "2022-05-17")]);
-      expect((await runShopCheck(db, shopId, { today: TODAY })).recallYearsMissing).toEqual([2022, 2023, 2024, 2025]);
+      expect((await runShopCheck(db, shopId, { today: TODAY })).recallYearsMissing).toEqual([2022, 2023, 2024, 2025, 2026]);
       await pullRecalls(db, { field: "RecallDate", start: "2022-01-01", end: "2022-12-31" }, answering(older));
       const summary = await runShopCheck(db, shopId, { today: TODAY });
-      expect(summary.recallYearsMissing).toEqual([2023, 2024, 2025]);
+      expect(summary.recallYearsMissing).toEqual([2023, 2024, 2025, 2026]);
       const run = await db.query("select recall_years_missing from shop_runs where shop_id = $1 order by finished_at desc limit 1", [shopId]);
-      expect(run.rows).toEqual([{ recall_years_missing: [2023, 2024, 2025] }]);
+      expect(run.rows).toEqual([{ recall_years_missing: [2023, 2024, 2025, 2026] }]);
     });
 
     it("leaves out an older recall CPSC republished, and doesn't count it", async () => {

@@ -433,9 +433,9 @@ describe("the recall poll job", () => {
       const { asked, deps } = cpsc();
       const [poll] = appJobs(db, deps);
       await poll.run();
-      expect(asked).toEqual(["2022", "2023", "2024", "2025"]);
+      expect(asked).toEqual(["2022", "2023", "2024", "2025", "2026"]);
       expect(await has22200(shopId)).toBe(1);
-      expect(info[0]).toContain("loaded 4 years");
+      expect(info[0]).toContain("loaded 5 years");
     });
 
     it("asks nothing further once they are in, and a quiet poll still costs the database nothing", async () => {
@@ -477,7 +477,7 @@ describe("the recall poll job", () => {
     it("says when years were left for the next hour", async () => {
       const [poll] = appJobs(db, { ...cpsc().deps, backfillBudgetMs: -1 });
       await poll.run();
-      expect(info[0]).toContain("4 years left for the next hour");
+      expect(info[0]).toContain("5 years left for the next hour");
     });
 
     it("stays out of it when not asked to load anything", async () => {

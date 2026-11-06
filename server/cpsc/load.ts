@@ -31,18 +31,21 @@ export async function loadYears(
 }
 
 /**
- * Whole past years from `fromYear` with no finished pull that returned recalls. The current year is the poll's job.
- * A whole past year with no recalls is a bad answer, not a loaded year, and a partial one isn't loaded either.
+ * Years from `fromYear` that aren't held. A past year needs a whole-year pull that returned recalls. The running year needs
+ * one from its first day, whatever day that reached, because the poll keeps it current from there. An empty answer for a
+ * whole year is a bad answer, and a partial pull doesn't count.
  */
 export async function missingRecallYears(db: Queryable, fromYear: number, today: string): Promise<number[]> {
   const { rows } = await db.query<{ range_start: string; range_end: string }>(
     "select range_start::text as range_start, range_end::text as range_end from cpsc_pulls where range_field = 'RecallDate' and status = 'ok' and fetched > 0",
   );
   const loaded = new Set(rows.map((r) => `${r.range_start}..${r.range_end}`));
+  const thisYear = Number(today.slice(0, 4));
   const missing: number[] = [];
-  for (let year = fromYear; year < Number(today.slice(0, 4)); year++) {
+  for (let year = fromYear; year < thisYear; year++) {
     if (!loaded.has(`${year}-01-01..${year}-12-31`)) missing.push(year);
   }
+  if (thisYear >= fromYear && !rows.some((r) => r.range_start === `${thisYear}-01-01`)) missing.push(thisYear);
   return missing;
 }
 

@@ -191,12 +191,34 @@ describe("Recall Replay", () => {
 
     it("says which years didn't load, in the run and in its proof", async () => {
       const { runId } = await run();
-      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025]);
-      expect((await proveReplay(db, runId))?.recallYearsMissing).toEqual([2025]);
+      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025, 2026]);
+      expect((await proveReplay(db, runId))?.recallYearsMissing).toEqual([2025, 2026]);
+    });
+
+    it("says a year is missing if it was when the run read its recalls, even if the load finishes during the run", async () => {
+      let loaded = false;
+      const during = new Proxy(db, {
+        get(target, prop) {
+          if (prop === "query") {
+            return async (sql: string, params?: unknown[]) => {
+              if (!loaded && sql.includes("insert into shops")) {
+                loaded = true;
+                await target.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now()), ('RecallDate', '2026-01-01', '2026-11-05', 'ok', 1, now())");
+              }
+              return target.query(sql, params);
+            };
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const { runId } = await runReplay(during, fakePayPal().client, { today: TODAY, now: NOW, secret: "k".repeat(32) });
+      expect(loaded).toBe(true);
+      expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([2025, 2026]);
     });
 
     it("has no year to name once every year loaded", async () => {
-      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now())");
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', 1, now()), ('RecallDate', '2026-01-01', '2026-11-05', 'ok', 1, now())");
       const { runId } = await run();
       expect((await loadReplay(db, runId))?.recallYearsMissing).toEqual([]);
       expect((await proveReplay(db, runId))?.recallYearsMissing).toEqual([]);

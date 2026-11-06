@@ -1,5 +1,6 @@
 // Recall Replay: every recall loaded, in one run, against the demo catalog, with a clock. It uses the same seed and
 // matcher as a demo shop, but makes no capture, so it spends nothing and anyone can run it again.
+import { missingRecallYears } from "../cpsc/load";
 import type { Db, Queryable } from "../db/types";
 import { seedDemoShop } from "../demo/seed";
 import type { PayPalClient } from "../paypal/client";
@@ -73,13 +74,15 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
     [REPLAY_FROM],
   );
   const { ids, digest } = read.rows[0];
+  // Read with them, so a year loading during the run can't be claimed for a run that doesn't hold it.
+  const recallYearsMissing = await missingRecallYears(db, Number(REPLAY_FROM.slice(0, 4)), input.today);
   const { shopId, run, search } = await seedDemoShop(db, client, { today: input.today, secret: input.secret, now: input.now, freshCaptures: false, recallsFrom: REPLAY_FROM });
   try {
     const ms = Math.max(1, Math.round(performance.now() - started));
     const { rows } = await db.query<{ id: string }>(
       `insert into replay_runs (ms, checked, matched, scope_gaps, cleared, not_near, notice_only, refund_eligible, unidentified, search_windows, failed_windows, search_complete, recalls_digest, recall_years_missing)
        values ($1, 0, 0, 0, 0, 0, 0, 0, $2, $3, $4, $5, $6, $7::int[]) returning id`,
-      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest, run.recallYearsMissing],
+      [ms, run.unidentifiedPayments, search?.windows ?? 0, search?.failedWindows.length ?? 0, search?.complete ?? false, digest, recallYearsMissing],
     );
     const runId = rows[0].id;
     // A recall's strongest outcome is what the replay reports for it. CLEARED means an item came near and was ruled out.
