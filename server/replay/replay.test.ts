@@ -16,7 +16,7 @@ function fakePayPal(over: { searchFails?: boolean } = {}) {
   const client: PayPalClient = {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
       calls.push({ method, path });
-      const found = answerSearch(path, opts, over.searchFails);
+      const found = answerSearch(path, over.searchFails);
       if (found) return found;
       throw new Error(`unexpected ${method} ${path}`);
     }) as PayPalClient["request"],

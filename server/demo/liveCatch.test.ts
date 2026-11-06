@@ -25,7 +25,7 @@ function fakePayPal(over: { captureStatus?: string; failCreate?: boolean } = {})
   let next = 0;
   const client: PayPalClient = {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
-      const found = answerSearch(path, opts);
+      const found = answerSearch(path);
       if (found) return found;
       if (method === "POST") {
         if (over.failCreate) throw new Error("PayPal said no");

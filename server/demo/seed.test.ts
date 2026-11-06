@@ -23,7 +23,7 @@ function fakePayPal(over: { searchFails?: boolean; searchFailsOnce?: boolean } =
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
       calls.push({ method, path, opts });
       const failNow = over.searchFails || (over.searchFailsOnce && path.startsWith("/v1/reporting") && searches++ === 0);
-      const found = answerSearch(path, opts, Boolean(failNow));
+      const found = answerSearch(path, Boolean(failNow));
       if (found) return found;
       if (method === "POST" && path === "/v2/checkout/orders") {
         const id = `ORDER-${orders.size + 1}`;

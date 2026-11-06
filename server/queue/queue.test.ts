@@ -20,7 +20,7 @@ function fakePayPal(): PayPalClient {
   const orders = new Map<string, unknown>();
   return {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
-      const found = answerSearch(path, opts);
+      const found = answerSearch(path);
       if (found) return found;
       if (method === "POST") {
         const id = `RAWORDERID${orders.size}`;

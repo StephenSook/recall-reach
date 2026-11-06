@@ -1,5 +1,4 @@
 import { HISTORY_POOL } from "../server/demo/historyPool";
-import type { RequestOptions } from "../server/paypal/client";
 
 const row = (i: number, info: Record<string, unknown>, items: { item_name: string; item_code: string }[] = []) => ({
   transaction_info: {
@@ -28,7 +27,7 @@ export const historyRows = [
 ];
 
 /** Answers a search request, or null if this is not one. Passing `fail` makes every search fail. */
-export function answerSearch(path: string, _opts: RequestOptions = {}, fail = false) {
+export function answerSearch(path: string, fail = false) {
   if (path !== "/v1/reporting/transactions") return null;
   if (fail) throw new Error("search failed");
   return { status: 200, data: { transaction_details: historyRows, total_pages: 1 } };
