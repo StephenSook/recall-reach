@@ -250,6 +250,15 @@ test.describe("on a wide screen", () => {
   });
 });
 
+test("the eval card shows held-out numbers, with their limits on the page", async ({ page }) => {
+  await page.goto("/eval");
+  await expect(page.getByTestId("eval-sentence")).toContainText(/\d+ of \d+/);
+  await expect(page.getByTestId("eval-table")).toContainText("Word match");
+  await expect(page.getByText("One labeller")).toBeVisible();
+  const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+  expect(scroll).toBeLessThanOrEqual(client);
+});
+
 test.describe("Recall Replay", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 

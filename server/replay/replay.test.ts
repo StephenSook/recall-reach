@@ -4,7 +4,7 @@ import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
+import type { Method, PayPalClient } from "../paypal/client";
 import { latestReplay, loadReplay, proveReplay, REPLAYS_KEPT, runReplay } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -14,7 +14,7 @@ const NOW = new Date(`${TODAY}T15:00:00Z`);
 function fakePayPal(over: { searchFails?: boolean } = {}) {
   const calls: { method: Method; path: string }[] = [];
   const client: PayPalClient = {
-    request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
+    request: (async (method: Method, path: string) => {
       calls.push({ method, path });
       const found = answerSearch(path, over.searchFails);
       if (found) return found;

@@ -1,0 +1,116 @@
+{
+ "model": "claude-sonnet-5-5",
+ "asked": 48,
+ "findings": {
+  "25382-1": "DIFFERENT_PRODUCT",
+  "25382-2": "DIFFERENT_PRODUCT",
+  "25382-3": "DIFFERENT_PRODUCT",
+  "25382-4": "DIFFERENT_PRODUCT",
+  "25384-1": "CANT_TELL",
+  "25384-2": "CANT_TELL",
+  "26075-1": "CANT_TELL",
+  "26075-2": "CANT_TELL",
+  "26075-3": "CANT_TELL",
+  "26075-4": "CANT_TELL",
+  "26122-1": "CANT_TELL",
+  "26122-2": "DIFFERENT_PRODUCT",
+  "26122-3": "CANT_TELL",
+  "26122-4": "DIFFERENT_PRODUCT",
+  "25290-1": "CANT_TELL",
+  "25220-1": "CANT_TELL",
+  "25220-2": "CANT_TELL",
+  "25220-3": "DIFFERENT_PRODUCT",
+  "25220-4": "DIFFERENT_PRODUCT",
+  "25287-1": "DIFFERENT_PRODUCT",
+  "25287-2": "DIFFERENT_PRODUCT",
+  "25287-4": "CANT_TELL",
+  "25123-1": "CANT_TELL",
+  "25123-2": "CANT_TELL",
+  "25123-3": "CANT_TELL",
+  "25123-4": "CANT_TELL",
+  "25135-2": "DIFFERENT_PRODUCT",
+  "27060-1": "CANT_TELL",
+  "25345-3": "DIFFERENT_PRODUCT",
+  "26101-1": "CANT_TELL",
+  "26101-2": "CANT_TELL",
+  "26101-3": "CANT_TELL",
+  "26101-4": "CANT_TELL",
+  "25127-1": "CANT_TELL",
+  "27012-1": "CANT_TELL",
+  "27012-2": "CANT_TELL",
+  "27012-3": "CANT_TELL",
+  "27012-4": "CANT_TELL",
+  "25398-1": "CANT_TELL",
+  "25398-2": "CANT_TELL",
+  "25398-3": "CANT_TELL",
+  "25398-4": "CANT_TELL",
+  "25167-1": "DIFFERENT_PRODUCT",
+  "26058-1": "DIFFERENT_PRODUCT",
+  "26058-3": "DIFFERENT_PRODUCT",
+  "25248-1": "CANT_TELL",
+  "25248-4": "CANT_TELL",
+  "26054-2": "CANT_TELL"
+ },
+ "summary": {
+  "lookAlikes": {
+   "same": {
+    "k": 0,
+    "n": 37,
+    "rate": 0,
+    "low": 0,
+    "high": 0.09406095745514377
+   },
+   "cantTell": {
+    "k": 22,
+    "n": 37,
+    "rate": 0.5945945945945946,
+    "low": 0.4348568313132931,
+    "high": 0.7365370416005986
+   },
+   "different": {
+    "k": 15,
+    "n": 37,
+    "rate": 0.40540540540540543,
+    "low": 0.2634629583994014,
+    "high": 0.565143168686707
+   },
+   "none": {
+    "k": 0,
+    "n": 37,
+    "rate": 0,
+    "low": 0,
+    "high": 0.09406095745514377
+   }
+  },
+  "scopeGaps": {
+   "same": {
+    "k": 0,
+    "n": 11,
+    "rate": 0,
+    "low": 0,
+    "high": 0.2588400172488141
+   },
+   "cantTell": {
+    "k": 11,
+    "n": 11,
+    "rate": 1,
+    "low": 0.7411599827511859,
+    "high": 1
+   },
+   "different": {
+    "k": 0,
+    "n": 11,
+    "rate": 0,
+    "low": 0,
+    "high": 0.2588400172488141
+   },
+   "none": {
+    "k": 0,
+    "n": 11,
+    "rate": 0,
+    "low": 0,
+    "high": 0.2588400172488141
+   }
+  }
+ }
+}

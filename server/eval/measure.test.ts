@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
-import { decidePairs, parsePairs, rate, runEval, score, wilson, type Decision, type EvalPair } from "./measure";
+import { decidePairs, parsePairs, rate, runEval, score, scoreClaude, wilson, type ClaudeFinding, type Decision, type EvalPair } from "./measure";
 
 const pair = (pairId: string, label: EvalPair["label"], split: EvalPair["split"] = "held_out"): EvalPair => ({ pairId, recallNumber: "1", title: "t", label, split });
 const decision = (verdict: Decision["verdict"], strength: Decision["strength"] = "BRAND"): Decision => ({ verdict, strength });
@@ -66,6 +66,18 @@ describe("score", () => {
   });
 });
 
+describe("scoreClaude", () => {
+  const pairs = [pair("n1", "NEAR_MISS"), pair("n2", "NEAR_MISS"), pair("n3", "NO_MATCH"), pair("n4", "NEAR_MISS"), pair("u1", "UNSURE"), pair("u2", "UNSURE")];
+
+  it("counts what Claude said by what each pair really is, only over pairs it was asked about", () => {
+    const s = scoreClaude(pairs, { n1: "DIFFERENT_PRODUCT", n2: "SAME_PRODUCT", n3: "CANT_TELL", u1: "CANT_TELL", u2: "DIFFERENT_PRODUCT" });
+    expect(s.lookAlikes.different).toMatchObject({ k: 1, n: 3 });
+    expect(s.lookAlikes.same).toMatchObject({ k: 1, n: 3 });
+    expect(s.scopeGaps.cantTell).toMatchObject({ k: 1, n: 2 });
+    expect(s.scopeGaps.different).toMatchObject({ k: 1, n: 2 });
+  });
+});
+
 describe("parsePairs", () => {
   it("reads titles with commas and quotes", () => {
     expect(parsePairs('pair_id,recall_number,listing_title,label,split\n1-1,1,"A, ""B"" C",NO_MATCH,train\n')[0]).toEqual({ pairId: "1-1", recallNumber: "1", title: 'A, "B" C', label: "NO_MATCH", split: "train" });
@@ -108,6 +120,14 @@ describe("the eval on the real labels", () => {
     expect(JSON.parse(load("results.json"))).toEqual(JSON.parse(JSON.stringify(results)));
     await db.close();
   }, 240_000);
+
+  it("the committed Claude summary is what its cached findings say, so CI checks it without spending anything", () => {
+    const cached = JSON.parse(load("claude-held-out.json")) as { findings: Record<string, ClaudeFinding>; summary: unknown };
+    const heldOut = parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out");
+    expect(JSON.parse(JSON.stringify(scoreClaude(heldOut, cached.findings)))).toEqual(cached.summary);
+    expect(Object.keys(cached.findings).length).toBeGreaterThan(0);
+    for (const id of Object.keys(cached.findings)) expect(heldOut.some((p) => p.pairId === id)).toBe(true);
+  });
 
   it("the decisions are read from the pipeline for the pair's own recall", async () => {
     const db = await testDb();
