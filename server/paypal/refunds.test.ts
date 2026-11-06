@@ -141,6 +141,28 @@ function fakePayPal(
   };
 }
 
+/** Holds one kind of PayPal answer back until the test lets it through, so an older answer can arrive late. */
+function heldBack(client: PayPalClient, holds: (method: string, path: string) => boolean) {
+  let release!: () => void;
+  let arrived!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const reached = new Promise<void>((resolve) => (arrived = resolve));
+  const held: PayPalClient = {
+    request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+      if (!holds(method, path)) return client.request(method, path, opts);
+      const answer = await client.request(method, path, opts).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      arrived();
+      await gate;
+      if ("error" in answer) throw answer.error;
+      return answer.value;
+    }) as PayPalClient["request"],
+  };
+  return { client: held, reached, release };
+}
+
 describe("refunds", () => {
   let db: Awaited<ReturnType<typeof testDb>>;
   let shopId: string;
@@ -922,6 +944,76 @@ describe("refunds", () => {
       pp.settle("COMPLETED");
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(rec.ledger.status).toBe("refunded");
+    });
+
+    describe("an older answer arriving after a newer one", () => {
+      const statusOf = async (id: string) => (await db.query<{ status: string }>("select status from refunds where id = $1", [id])).rows[0].status;
+
+      it("cannot move a refunded row back, and the reader sees the row as it stands", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const pp = fakePayPal({ refundStatus: "PENDING" });
+        const r = await execute(a.approvalId, pp.client);
+        await agedFromNow(r.refundId);
+        const later = new Date(NOW.getTime() + 11 * 60_000);
+        // This reader gets PayPal's PENDING now, and its answer lands after the refund has completed.
+        const slow = heldBack(pp.client, (method, path) => method === "GET" && path.includes("/refunds/"));
+        const stale = reconcileRefund(db, slow.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+        await slow.reached;
+        pp.settle("COMPLETED");
+        const fresh = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+        expect(fresh.ledger.status).toBe("refunded");
+        slow.release();
+        expect((await stale).ledger.status).toBe("refunded");
+        expect(await statusOf(r.refundId)).toBe("refunded");
+      });
+
+      it("cannot revive a refund that failed", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const pp = fakePayPal({ refundStatus: "PENDING" });
+        const r = await execute(a.approvalId, pp.client);
+        await agedFromNow(r.refundId);
+        const later = new Date(NOW.getTime() + 11 * 60_000);
+        const slow = heldBack(pp.client, (method, path) => method === "GET" && path.includes("/refunds/"));
+        const stale = reconcileRefund(db, slow.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+        await slow.reached;
+        pp.settle("FAILED");
+        await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+        slow.release();
+        expect((await stale).ledger.status).toBe("failed");
+        expect(await statusOf(r.refundId)).toBe("failed");
+      });
+
+      it("a send's late answer leaves a settled row alone and reports it as it stands", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const slow = heldBack(fakePayPal({ refundSteps: ["down", "down", "down"] }).client, (method) => method === "POST");
+        const sending = execute(a.approvalId, slow.client);
+        await slow.reached;
+        const { rows } = await db.query<{ id: string }>("select id from refunds");
+        await db.query("update refunds set status = 'refunded' where id = $1", [rows[0].id]);
+        slow.release();
+        expect((await sending).status).toBe("refunded");
+        expect(await statusOf(rows[0].id)).toBe("refunded");
+      });
+
+      it("still records PayPal's refund id from a late answer", async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const pp = fakePayPal();
+        const slow = heldBack(pp.client, (method) => method === "POST");
+        const sending = execute(a.approvalId, slow.client);
+        await slow.reached;
+        const { rows } = await db.query<{ id: string }>("select id from refunds");
+        await db.query("update refunds set status = 'refunded' where id = $1", [rows[0].id]);
+        slow.release();
+        await sending;
+        const held = await db.query<{ refund_ref_hmac: string; refund_id: string }>(
+          "select f.refund_ref_hmac, p.refund_id from refunds f join paypal_refund_refs p on p.refund_row_id = f.id",
+        );
+        expect(held.rows[0]).toEqual({ refund_ref_hmac: key("paypal-resource", "REF-1"), refund_id: "REF-1" });
+      });
     });
 
     it("refuses another shop's refund", async () => {

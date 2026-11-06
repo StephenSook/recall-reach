@@ -314,6 +314,30 @@ export async function executeRefund(
   );
 }
 
+/**
+ * Moves the ledger only out of a state that can still change, and returns the row as it now stands.
+ * Refunded and failed are final, so an answer that took longer to arrive can never undo them.
+ */
+async function moveLedger(
+  q: Queryable,
+  refundRowId: string,
+  to: RefundOutcome["status"],
+  now: Date,
+  extra: { failure?: string | null; clearLease?: boolean } = {},
+): Promise<RefundOutcome["status"]> {
+  const moved = await q.query<{ status: RefundOutcome["status"] }>(
+    `update refunds set status = $2, updated_at = $3::timestamptz,
+       failure = case when $4::boolean then $5 else failure end,
+       send_lease_until = case when $6::boolean then null else send_lease_until end
+     where id = $1 and status in ('pending', 'unconfirmed')
+     returning status`,
+    [refundRowId, to, now.toISOString(), extra.failure !== undefined, extra.failure ?? null, extra.clearLease ?? false],
+  );
+  if (moved.rows[0]) return moved.rows[0].status;
+  const { rows } = await q.query<{ status: RefundOutcome["status"] }>("select status from refunds where id = $1", [refundRowId]);
+  return rows[0].status;
+}
+
 async function readCapture(client: PayPalClient, captureId: string): Promise<CaptureFacts> {
   try {
     return await getCapture(client, captureId);
@@ -356,14 +380,14 @@ async function sendRefund(
   recordKey: RecordKey,
   now: Date,
 ): Promise<RefundOutcome> {
-  const settle = async (status: RefundOutcome["status"], failure: string | null, refundId?: string) => {
-    if (refundId) await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [send.rowId, refundId]);
-    await db.query(
-      `update refunds set status = $2, failure = $3, refund_ref_hmac = coalesce($4, refund_ref_hmac), send_lease_until = null, updated_at = $5::timestamptz
-       where id = $1`,
-      [send.rowId, status, failure, refundId ? recordKey("paypal-resource", refundId) : null, now.toISOString()],
-    );
-    return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure };
+  const settle = async (answer: RefundOutcome["status"], failure: string | null, refundId?: string) => {
+    // A refund id is a fact whichever answer wins, so it is kept even when this answer is too late to count.
+    if (refundId) {
+      await db.query("update paypal_refund_refs set refund_id = $2 where refund_row_id = $1", [send.rowId, refundId]);
+      await db.query("update refunds set refund_ref_hmac = coalesce(refund_ref_hmac, $2) where id = $1", [send.rowId, recordKey("paypal-resource", refundId)]);
+    }
+    const status = await moveLedger(db, send.rowId, answer, now, { failure, clearLease: true });
+    return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure: status === answer ? failure : null };
   };
 
   try {
@@ -479,7 +503,7 @@ export async function reconcileRefund(
   const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
   if (!UUID.test(input.refundId)) throw notFound();
   const { rows } = await db.query<{
-    status: string;
+    status: RefundOutcome["status"];
     amount_cents: number;
     currency: string;
     refund_ref_hmac: string | null;
@@ -514,9 +538,7 @@ export async function reconcileRefund(
     if (refund?.status === "COMPLETED") status = "refunded";
     else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") status = "failed";
     else if (!webhookSeen && now.getTime() - row.created_at.getTime() > UNCONFIRMED_AFTER_MS) status = "unconfirmed";
-    if (status !== row.status) {
-      await db.query("update refunds set status = $2, updated_at = $3::timestamptz where id = $1", [input.refundId, status, now.toISOString()]);
-    }
+    status = await moveLedger(db, input.refundId, status, now);
   }
 
   if (!row.capture_id) exceptions.push("PayPal's record of this refund has aged out here. Check PayPal directly.");
