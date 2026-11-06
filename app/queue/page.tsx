@@ -255,7 +255,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       {pendingLiveSales > 0 ? <WatchForSale /> : rows.some((r) => r.notice && r.notice.state !== "FAMILY_RESPONDED") ? <LookAgain everyMs={3_000} forMs={180_000} /> : null}
       <div className="stats" data-testid="stats">
         <div className="stat">
-          <span className="stat-value">{counts.recallsChecked ?? "None"}</span>
+          <span className="stat-value">{counts.recallsChecked?.toLocaleString("en-US") ?? "None"}</span>
           <span className="stat-label">{counted(counts.recallsChecked ?? 0, "Recall checked", "Recalls checked")}</span>
         </div>
         <div className="stat stat-MATCH">
