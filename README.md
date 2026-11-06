@@ -26,6 +26,8 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | [`/check`](https://recall-reach-web-e022.onrender.com/check) | A shop's own order file or a Shopify store's public listings, deleted on request or after 7 days |
 | [`/privacy`](https://recall-reach-web-e022.onrender.com/privacy) | What is kept, and text a shop can copy |
 
+[Android build](https://github.com/StephenSook/recall-reach/releases/download/android-1.0.0/recall-reach-android-1.0.0.apk): queue only, push is iPhone only, not tested on a device.
+
 From a terminal:
 
 ```bash

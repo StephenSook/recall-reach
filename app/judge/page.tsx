@@ -36,6 +36,12 @@ export default function JudgeDoor() {
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"`}</pre>
+      <h2 className="section-title">On a phone</h2>
+      <p>
+        <a href="https://github.com/StephenSook/recall-reach/releases/download/android-1.0.0/recall-reach-android-1.0.0.apk">Android build</a>, queue only. Push is iPhone only. Not tested on a device. The repository and this download are public from Nov 11.
+      </p>
+      {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
+      <img src="/android-apk-qr.svg" alt="QR code for the Android build's download" width={160} height={160} />
       <p className="note">
         <Link href="/check">Check your own order file</Link>, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/privacy">Privacy</Link>.
       </p>
