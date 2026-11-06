@@ -23,7 +23,7 @@ test("the seller's button runs Claude, and the queue shows the question and the 
     await expect(page).toHaveURL(/\/queue/, { timeout: 180_000 });
   }
 
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".alert")).toHaveCount(0);
   const found = card.getByTestId("how-it-checked");
   await expect(found).toBeVisible({ timeout: 60_000 });
   await found.locator("summary").click();
