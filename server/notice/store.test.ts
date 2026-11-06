@@ -558,6 +558,11 @@ describe("notices", () => {
   });
 
   describe("the family's answer", () => {
+    it("a model CPSC names can't settle it when only certain units of it are recalled, the same as the verdict", () => {
+      const description = "This recall involves certain VINs of Model Year 2023 Polaris RANGER XP 1000 / XP 1000 Crew, RANGER 1000 / 1000 Crew and Model Year 2024 Polaris Pro XD Full-Size Diesel Crew, Model Year 2024 Gravely ATLAS JSV-3400 and Model Year 2024 Bobcat UV34XL Gas off road vehicles.";
+      expect(checkResult({ description }, { question: "Q", kind: "model" }, "JSV-3400")).toBe("CANT_TELL");
+    });
+
     it("a yes matches, a no does not, and not sure cannot tell", () => {
       const full = { description: "A full record." };
       const q = { question: "Q", kind: "yes_no" as const };

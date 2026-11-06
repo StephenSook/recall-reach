@@ -132,6 +132,9 @@ function words(text: string): Set<string> {
   return out;
 }
 
+/** Part of a line, by an identifier CPSC doesn't list. It says the list is elsewhere, and that a model alone can't settle it. */
+const CERTAIN_UNITS = String.raw`\bcertain\s+(?:models?|VINs?|vehicle identification numbers?|serial numbers?|lots?|lot codes?|date codes?|units)\b|\bqualifying serial\b`;
+
 // The ways CPSC's text says the real list isn't in it, read against all 1,855 descriptions from 2022 on. A false
 // "incomplete" costs a question. A false "full" can tell a family a recalled product doesn't match, so unsure reads incomplete.
 const SCOPE_ELSEWHERE: RegExp[] = [
@@ -151,8 +154,7 @@ const SCOPE_ELSEWHERE: RegExp[] = [
   /\b(?:information|photos|images|details|instructions)\b[^.]{0,80}\b(?:available|found) (?:at|on)\b[^.]{0,60}(?:www\.|https?:|web ?site)|\brecall web ?site\b/i,
   // Only the firm can say.
   /\bcontact\b[^.]{0,80}\bto (?:confirm|determine|verify|identify)\b|\bby contacting\b/i,
-  // Part of a line, by an identifier CPSC doesn't list.
-  /\bcertain\s+(?:models?|VINs?|vehicle identification numbers?|serial numbers?|lots?|lot codes?|date codes?|units)\b|\bqualifying serial\b/i,
+  new RegExp(CERTAIN_UNITS, "i"),
 ];
 
 /** False when CPSC's text points somewhere else for the models or lots, so the API text is not the whole scope. */
@@ -167,11 +169,12 @@ const IN_A_MONTH_OR_YEAR = "(?:\\d|january|february|march|april|may|june|july|au
 const PART_OF_A_MODEL = new RegExp(
   `\\bonly\\b[^.]*\\b(?:manufactured|produced|made|date codes?|lot|serial|batch)\\b` +
     `|\\bmanufactured\\s+(?:from|between|before|after|during|in\\s+${IN_A_MONTH_OR_YEAR})` +
-    `|\\b(?:date|lot|batch|serial)\\s*(?:code|number)s?\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b`,
+    `|\\b(?:date|lot|batch|serial)\\s*(?:code|number)s?\\b[^.]{0,80}\\b(?:included|recalled|affected|range|between|through)\\b` +
+    `|${CERTAIN_UNITS}`,
   "i",
 );
 
-/** CPSC limits the recall to part of a model: a date, a lot, a serial range. The model alone can't show this unit is in it. */
+/** CPSC limits the recall to part of a model: a date, a lot, a serial range, certain VINs. The model alone can't show this unit is in it. */
 export const limitedWithinModel = (description: string) => PART_OF_A_MODEL.test(description);
 
 /** A sale on the recall's own calendar date needs a human: it may have been before the announcement. */
@@ -217,8 +220,8 @@ export function verdictFor(
       verdict: "SCOPE_GAP",
       strength: "BRAND",
       matched: [...matched, `model: ${shown.join(", ")}`],
-      missing: ["the unit's date, lot or serial number: CPSC recalled only part of this model"],
-      reason: `The shop's text names recalled model ${shown.join(", ")}, but CPSC limits the recall by date, lot or serial number.`,
+      missing: ["the unit's date, lot, serial number or VIN: CPSC recalled only part of this model"],
+      reason: `The shop's text names recalled model ${shown.join(", ")}, but CPSC limits the recall by date, lot, serial number or VIN.`,
     };
   }
   if (shown.length > 0) {

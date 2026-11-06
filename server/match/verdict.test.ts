@@ -135,7 +135,7 @@ describe("verdictFor", () => {
     it("doesn't confirm on the model alone, when CPSC limits it by date, lot or serial", () => {
       const v = verdictFor(DREO, { title: "DREO space heater DR-HSH015" }, { dateFilter: false });
       expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
-      expect(v.missing.join(" ")).toContain("date, lot or serial");
+      expect(v.missing.join(" ")).toContain("date, lot, serial number or VIN");
       expect(v.reason).toContain("DR-HSH015");
     });
 
@@ -301,6 +301,29 @@ describe("verdictFor", () => {
       { dateFilter: false },
     );
     expect(v.verdict).toBe("MATCH");
+  });
+});
+
+describe("a record that recalls only certain units of a model it names", () => {
+  // CPSC's own first sentence of each, the only six records from 2022 on that named a model and said this without the older words.
+  const CASES = [
+    ["26103", "RSKXD161994VO", "Spartan RSKXD161994VO riding mower", "This recall involves certain Model Year 2025 Spartan SRT-XD and KGZ-XD zero radius turn (\"ZRT\") riding lawn mowers (model numbers RSKXD161994VO, RSKXD172994VO, RSSXD161994VO, RSSXD161999KE, RSSXD172994VO and RSSXD172999KE) within a limited serial range."],
+    ["25188", "600R", "Ski-Doo 600R snowmobile", "This recall involves certain Model Year 2025 Ski-Doo and Lynx snowmobiles equipped with a 600R E-TEC, a 850 E-TEC or a 850 E-TEC Turbo R engine."],
+    ["25702", "UV34/UV34", "Bobcat UV34/UV34 utility vehicle", "This recall involves certain VINs of Model Year 2024 Ranger 1000 / Crew 1000, Ranger XP 1000 / Crew XP 1000 and Ranger XP Kinetic ROVs; and ProXD Full Size/Full Size Crew and Bobcat UV34/UV34 XL UTVs."],
+    ["24223", "NT808000", "Arctic Cat NT808000 snowmobile", "This recall involves all model year 2017-2021 Arctic Cat 8000 and 9000 series snowmobiles, and certain model year 2022 Arctic Cat 8000 series snowmobiles with last 8 digits of the VIN between: NT808000 and NT808150 and between NT100101 and NT101060."],
+    ["23796", "JSV-3400", "Gravely JSV-3400 off road vehicle", "This recall involves certain VINs of Model Year 2023 Polaris RANGER XP 1000 / XP 1000 Crew, RANGER 1000 / 1000 Crew and Model Year 2024 Polaris Pro XD Full-Size Diesel Crew, Model Year 2024 Gravely ATLAS JSV-3400 and Model Year 2024 Bobcat UV34XL Gas off road vehicles."],
+    ["23258", "UV34", "Bobcat UV34 utility vehicle", "This recall involves certain VINs of Model Year 2021-2023 Polaris RANGER 1000, 1000 Crew, XP 1000, XP 1000 Crew; Model Year 2021-2022 Polaris RZR Pro XP (2-Seat Only); Model Year 2021 Polaris Pro XD Full-Size Gas; Model Year 2021-2022 Polaris Pro XD Full Size Gas Crew; Model Year 2021 Bobcat UV34 Gas and UV34 XL Gas; Model Year 2022 Bobcat UV34 Gas; Model Year 2022-2023 Bobcat UV34 XL Gas; Model Year 2021 Gravely Atlas JSV 3400; Model Year 2021 and 2023 Gravely Atlas JSV 6400 off-road vehicles; Fuel Pump Kits with part number 2208123 and Fuel Tank Assemblies with part numbers 2521943, 2522060 and 2522267 sold by Polaris and Fuel Pump Kits with part number 7396260 sold by Bobcat."],
+  ] as const;
+
+  it.each(CASES)("%s: naming model %s is a scope gap, never a confirmed match", (_n, model, title, description) => {
+    expect(limitedWithinModel(description)).toBe(true);
+    const verdict = verdictFor({ ...BREZZA, title: "A Firm Recalls Vehicles", description, products: [{ ...BREZZA.products[0], name: "Vehicles" }] }, { title });
+    expect(verdict).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
+    expect(verdict.reason).toContain(model);
+  });
+
+  it("leaves certain of a line alone when the models it names are the whole recall", () => {
+    expect(limitedWithinModel("This recall involves certain Matrix-brand Training Cycles models CXP-03, CXC-02, CXM-03, CXV and CXM-02.")).toBe(false);
   });
 });
 
