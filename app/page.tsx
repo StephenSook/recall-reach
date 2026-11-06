@@ -1,3 +1,5 @@
+import { StartDemoButton } from "./StartDemoButton";
+
 // The route sends a visitor here with a code, and only these sentences are shown.
 const DEMO_MESSAGES: Record<string, string> = {
   failed: "The demo shop could not be set up. Please try again.",
@@ -12,9 +14,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
       <h1>Help your resale shop check past sales for recalls and reach the families who bought them.</h1>
       <p>For small kids&apos; resale shops.</p>
       {message && <p role="alert">{message}</p>}
-      <form action="/api/demo/start" method="post">
-        <button type="submit">Try it as a demo shop</button>
-      </form>
+      <StartDemoButton />
       <footer>
         <p>Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.</p>
       </footer>

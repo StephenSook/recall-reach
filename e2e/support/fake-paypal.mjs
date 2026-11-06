@@ -30,7 +30,7 @@ let posts = 0;
 const requestIds = new Set();
 
 const report = () => {
-  writeFileSync(process.env.FAKE_PAYPAL_STATE, JSON.stringify({ posts, made: refunds.size, requestIds: requestIds.size }));
+  writeFileSync(process.env.FAKE_PAYPAL_STATE, JSON.stringify({ posts, made: refunds.size, requestIds: requestIds.size, orders: orders.size }));
 };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -54,6 +54,7 @@ function fakePayPal(url, init) {
     captures.set(capture.id, capture);
     const order = { id: `FAKE-ORDER-${run}-${n}`, status: "COMPLETED", purchase_units: [{ ...unit, payments: { captures: [capture] } }] };
     orders.set(order.id, order);
+    report();
     return json({ id: order.id, status: order.status }, 201);
   }
   const order = /^\/v2\/checkout\/orders\/([\w-]+)$/.exec(path);
