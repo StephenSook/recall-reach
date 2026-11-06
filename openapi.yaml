@@ -195,14 +195,20 @@ components:
           items: { type: string }
     CheckAnswer:
       type: object
-      required: [results, cleared, checked, note]
+      required: [results, more, cleared, notJudged, checked, note]
       properties:
         results:
           type: array
           items: { $ref: "#/components/schemas/CheckResult" }
+        more:
+          type: integer
+          description: Recalls found past the ones listed.
         cleared:
           type: integer
           description: Recalls that came near and were ruled out, so they aren't listed.
+        notJudged:
+          type: integer
+          description: Recalls that came near but weren't judged, because too many did. Above zero, an empty list doesn't mean nothing was found.
         checked:
           type: object
           required: [recalls, yearsMissing]

@@ -95,6 +95,23 @@ describe("GET /api/check", () => {
     expect((await res.json()).error).toContain("title");
   });
 
+  it.each(["BRZ0083", "BRZ-0083", "BRZ.0083", "BRZ 0083", "brz0083"])("finds the recall from the model alone, however it's written: %s", async (model) => {
+    const body = await results(`model=${encodeURIComponent(model)}`);
+    expect(body.results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH" });
+  });
+
+  it("finds a model that is only digits, as something to read, not a match", async () => {
+    const body = await results("model=406198");
+    expect(body.results[0]).toMatchObject({ recallNumber: "27012", verdict: "SCOPE_GAP" });
+    expect(body.results[0].reason).toContain("406198");
+    expect(body.results[0].missing.length).toBeGreaterThan(0);
+  });
+
+  it.each(["2026", "000", "406", "19"])("doesn't take %s for a model because those digits are somewhere in a recall", async (model) => {
+    const body = await results(`model=${model}`);
+    expect(body.results.map((r: { recallNumber: string }) => r.recallNumber)).not.toContain("27012");
+  });
+
   it("takes a model alone", async () => {
     expect((await results("model=BRZ0083")).results[0]).toMatchObject({ recallNumber: "27072" });
   });

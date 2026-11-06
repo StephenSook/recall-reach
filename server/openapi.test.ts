@@ -105,6 +105,22 @@ describe("openapi.yaml", () => {
       expect(misfits(schemaFor("/api/check"), await checkText(db, { title: "zzqx vvbn", model: "" }, "2026-11-06"))).toEqual([]);
     });
 
+    it("says so when it couldn't judge everything near, and judges model hits first, so one can't be crowded out", async () => {
+      const crowded = await checkText(db, { title: "high chair", model: "BRZ0083" }, "2026-11-06", { maxCandidates: 1 });
+      expect(crowded.results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH" });
+      expect(crowded.notJudged).toBeGreaterThan(0);
+      expect(misfits(schemaFor("/api/check"), crowded)).toEqual([]);
+      const whole = await checkText(db, { title: "Baby Brezza sterilizer", model: "BRZ0083" }, "2026-11-06");
+      expect(whole.notJudged).toBe(0);
+    });
+
+    it("says how many more results there are than it lists", async () => {
+      const few = await checkText(db, { title: "high chair", model: "" }, "2026-11-06", { maxResults: 1 });
+      expect(few.results).toHaveLength(1);
+      expect(few.more).toBeGreaterThanOrEqual(0);
+      expect(few.results.length + few.more + few.cleared + few.notJudged).toBeGreaterThan(0);
+    });
+
     it("/api/proof/{runId}", async () => {
       expect(misfits(schemaFor("/api/proof/{runId}"), await proveReplay(db, runId))).toEqual([]);
     });
@@ -121,6 +137,8 @@ describe("openapi.yaml", () => {
 
     it("this check can fail: a missing field and a wrong type are both caught", () => {
       expect(misfits(schemaFor("/api/check"), { results: [], cleared: "none", checked: { recalls: 1 } })).toEqual([
+        "answer.more is missing",
+        "answer.notJudged is missing",
         "answer.note is missing",
         "answer.cleared is not an integer",
         "answer.checked.yearsMissing is missing",
