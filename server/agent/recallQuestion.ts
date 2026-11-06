@@ -59,7 +59,9 @@ type Answer = z.infer<typeof answerInput>;
 
 const YES_OR_NO_OPENING = /^(Does|Do|Is|Are|Was|Were|Has|Have|Did|Can|Could|Will)\b/;
 const OFF_LIMITS = /\b(recalls?|recalled|cpsc|safe|safety|unsafe|hazards?|dangerous|receipts?|bought|purchased?|website)\b/i;
-const NOT_PLAIN = /[–—‘’“”]/;
+const NOT_PLAIN = /[\u2013\u2014\u2018\u2019\u201C\u201D]/;
+/** A yes has to mean it matches, and a negative turns that around. */
+const NEGATIVE = /\b(not|never|without|lacks?|missing|no|none|isn't|doesn't|don't|aren't)\b/i;
 
 const longWords = (text: string) => text.toLowerCase().match(/[a-z]{4,}/g) ?? [];
 const shareAWord = (a: string, b: string) => longWords(a).some((x) => longWords(b).some((y) => x.startsWith(y) || y.startsWith(x)));
@@ -75,6 +77,7 @@ function answerProblem(answer: Answer, recall: Snapshot): OurText | null {
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
   if (!q.endsWith("?") || q.indexOf("?") !== q.length - 1 || !YES_OR_NO_OPENING.test(q)) return ourText("Write one question a parent can answer Yes or No.");
   if (OFF_LIMITS.test(q)) return ourText("Ask about the product itself. Do not mention the recall, CPSC, safety or how it was bought.");
+  if (NEGATIVE.test(q)) return ourText("Ask it so that Yes means the product matches what CPSC describes, with no negative.");
   if (NOT_PLAIN.test(q)) return ourText("Use straight quotes and no dashes.");
   return null;
 }

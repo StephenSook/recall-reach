@@ -84,6 +84,32 @@ describe("checkQuestion", () => {
     expect(checkQuestion(edited).question).not.toContain("table and chair set");
   });
 
+  describe("a question Claude wrote", () => {
+    const written = { question: "Does your high chair turn into a table and chair set?", evidence: "convert into a table and chair set", everyRecalledUnit: true, accepted: true };
+
+    it("is asked while the words it rests on are in CPSC's text", () => {
+      expect(checkQuestion(recall("27040"), written)).toEqual({ question: written.question, kind: "written", evidence: written.evidence, noRulesOut: true });
+    });
+
+    it("is not asked once those words are gone: a question can't outlive its source", () => {
+      const edited = { ...recall("27040"), description: "This recall involves Costway high chairs in several colors." };
+      expect(checkQuestion(edited, written)).toEqual({ question: "Does yours look like the product on CPSC's recall page?", kind: "general" });
+    });
+
+    it("can rest on CPSC's words anywhere in the record, such as the hazard", () => {
+      const q = checkQuestion(recall("27040"), { ...written, evidence: "do not contain a passive restraint system" });
+      expect(q.kind).toBe("written");
+    });
+
+    it.each([
+      [true, true, true],
+      [true, false, false],
+      [false, true, false],
+    ])("with every recalled unit %s and accepted %s, a no rules it out: %s", (everyRecalledUnit, accepted, noRulesOut) => {
+      expect(checkQuestion(recall("27040"), { ...written, everyRecalledUnit, accepted })).toMatchObject({ noRulesOut });
+    });
+  });
+
   it("asks for the model number when CPSC lists models", () => {
     const q = checkQuestion(recall("27072"));
     expect(q.kind).toBe("model");

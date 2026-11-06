@@ -153,9 +153,11 @@ describe("the question Claude writes for a family", () => {
       ["about CPSC", "Does CPSC say your chair can convert into a table?"],
       ["about safety", "Is it safe to convert into a table and chair set?"],
       ["about the paperwork", "Does your receipt say it will convert into a table?"],
+      ["negative, where a yes would mean it is not the product", "Does your high chair not convert into a table?"],
+      ["negative in another word", "Is your high chair without a table and chair set?"],
       ["too long", `Does your high chair ${"really ".repeat(25)}convert into a table and chair set?`],
-      ["an em dash", "Does your high chair — the wooden one — convert into a table?"],
-      ["curly quotes", "Does your high chair’s tray convert into a table?"],
+      ["an em dash", "Does your high chair \u2014 the wooden one \u2014 convert into a table?"],
+      ["curly quotes", "Does your high chair\u2019s tray convert into a table?"],
     ])("refuses %s", (_name, question) => refused(question));
   });
 

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { RecallProduct } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
 import { publicText, shopOwnedText, type AllowedValue } from "./boundary";
+import { recallWords } from "./quote";
 
 export interface Snapshot {
   /** What Claude reads. */
@@ -44,7 +45,7 @@ export async function readRecall(db: Queryable, recallId: number): Promise<(Snap
       hazards: r.hazards.map(publicText),
       remedies: r.remedies.map(publicText),
     },
-    quotable: [r.title, r.description, ...r.products.flatMap((p) => [p.name, p.model, p.type ?? ""]), ...r.hazards, ...r.remedies].filter(Boolean),
+    quotable: recallWords(r),
   };
 }
 

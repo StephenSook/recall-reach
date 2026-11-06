@@ -5,6 +5,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Queryable } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
+import { QUESTION_VERSION } from "../agent/questionStore";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
@@ -362,6 +363,80 @@ describe("notices", () => {
     });
   });
 
+  describe("a question Claude wrote for the recall", () => {
+    const WRITTEN = "Does your high chair turn into a table and chair set?";
+    const write = (over: { question?: string; review?: string | null; every?: boolean } = {}) =>
+      db.query(
+        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, review, model, input_tokens, output_tokens, cost_micros)
+         select raw_sha256, $1, recall_id, 'QUESTION', $2, 'convert into a table and chair set', $3, $4, 'm', 0, 0, 0 from recalls where recall_number = '27040'`,
+        [QUESTION_VERSION, over.question ?? WRITTEN, over.every ?? true, over.review ?? null],
+      );
+    const gap = (orderNumber: string) => matchFor("27040", line({ orderNumber, title: "Costway high chair" }));
+    const familyQuestion = async (noticeId: string) => (await familyView(db, noticeId))?.question?.question;
+
+    it("goes in the seller's message and on the family's page", async () => {
+      await write();
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q1") });
+      expect((await compose(noticeId)).body).toContain(WRITTEN);
+      expect(await familyQuestion(noticeId)).toBe(WRITTEN);
+    });
+
+    it("stays what the family was asked, once the seller approved it", async () => {
+      await write();
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q2") });
+      await db.query("update recall_questions set question = 'Does your high chair have a different question?'");
+      expect((await compose(noticeId)).body).toContain(WRITTEN);
+      expect(await familyQuestion(noticeId)).toBe(WRITTEN);
+    });
+
+    it("is not used when a person rejected it", async () => {
+      await write({ review: "REJECTED" });
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q3") });
+      expect(await familyQuestion(noticeId)).not.toBe(WRITTEN);
+    });
+
+    it("gives way once CPSC's text no longer has its words, and the answer goes by what is asked", async () => {
+      await write();
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q4") });
+      await db.query("update recalls set description = 'Costway high chairs in several colors.' where recall_number = '27040'");
+      expect(await familyQuestion(noticeId)).toBe("Does yours look like the product on CPSC's recall page?");
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("CANT_TELL");
+    });
+
+    it("takes a no as can't tell until a person accepted it", async () => {
+      await write();
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q5") });
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("CANT_TELL");
+    });
+
+    it("takes a no as doesn't match once a person accepted it and every recalled unit has the trait", async () => {
+      await write({ review: "ACCEPTED" });
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q6") });
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("DOESNT_MATCH");
+    });
+
+    it("is dropped when the message becomes a safety notice, and picked up when it becomes a question", async () => {
+      const m = await matchFor("27072", line({ orderNumber: "#Q7", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
+      const safety = await prepareNotice(db, { shopId, matchId: m });
+      const stored = async () => (await db.query<{ written_question: unknown }>("select written_question from notices where id = $1", [safety.noticeId])).rows[0].written_question;
+      expect(await stored()).toBeNull();
+      await db.query(
+        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, model, input_tokens, output_tokens, cost_micros)
+         select raw_sha256, $1, recall_id, 'QUESTION', 'Does your sterilizer have a dryer?', 'Sterilizer', 'm', 0, 0, 0 from recalls where recall_number = '27072'`,
+        [QUESTION_VERSION],
+      );
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#Q7", title: "Baby Brezza SuperFast Sterilizer Dryer" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      const asked = await prepareNotice(db, { shopId, matchId: m });
+      expect(asked.kind).toBe("CHECK_REQUEST");
+      expect(await stored()).toMatchObject({ question: "Does your sterilizer have a dryer?" });
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#Q7", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      await prepareNotice(db, { shopId, matchId: m });
+      expect(await stored()).toBeNull();
+    });
+  });
+
   describe("the family's answer", () => {
     it("a yes matches, a no does not, and not sure cannot tell", () => {
       const full = { description: "A full record." };
@@ -373,6 +448,32 @@ describe("notices", () => {
 
     it("never says doesn't match when CPSC's full list is elsewhere", () => {
       expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind: "yes_no" }, "no")).toBe("CANT_TELL");
+    });
+
+    it.each(["yes_no", "general"] as const)("can't tell from a yes either on a %s question when CPSC's list is elsewhere", (kind) => {
+      expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind }, "yes")).toBe("CANT_TELL");
+    });
+
+    it("still matches a model the record itself lists, wherever the rest of the list is", () => {
+      const recall = { title: "x", description: "Models BRZ0083 and others are listed below." };
+      expect(checkResult(recall, { question: "Q", kind: "model" }, "BRZ0083")).toBe("MATCHES");
+      expect(checkResult(recall, { question: "Q", kind: "model" }, "XYZ1")).toBe("CANT_TELL");
+    });
+
+    describe("to a question Claude wrote", () => {
+      const full = { description: "A full record." };
+      const q = (noRulesOut: boolean) => ({ question: "Q", kind: "written" as const, evidence: "e", noRulesOut });
+
+      it("a yes matches", () => expect(checkResult(full, q(false), "yes")).toBe("MATCHES"));
+      it("a no can't tell, until a person accepted that a no rules it out", () => {
+        expect(checkResult(full, q(false), "no")).toBe("CANT_TELL");
+        expect(checkResult(full, q(true), "no")).toBe("DOESNT_MATCH");
+      });
+      it("nothing settles it when CPSC's list is elsewhere", () => {
+        const elsewhere = { description: "Models are listed below." };
+        expect(checkResult(elsewhere, q(true), "yes")).toBe("CANT_TELL");
+        expect(checkResult(elsewhere, q(true), "no")).toBe("CANT_TELL");
+      });
     });
 
     it("compares a typed model number loosely, but only to CPSC's list", () => {

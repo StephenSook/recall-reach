@@ -1,5 +1,6 @@
 // A notice is a message a person approved. The app never sends it: it opens in the seller's own mail.
 // The buyer's address comes only from the shop's own record. A PayPal payer email is never read.
+import { writtenQuestion, type WrittenQuestion } from "../agent/questionStore";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
 import { fullScopeInRecord, modelTokens } from "../match/verdict";
@@ -46,8 +47,8 @@ export async function prepareNotice(
   input: { shopId: string; matchId: string },
 ): Promise<{ noticeId: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }> {
   if (!UUID.test(input.matchId)) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
-  const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null }>(
-    "select verdict, strength, join_state, order_line_id from recall_matches where id = $1 and shop_id = $2",
+  const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null; recall_sha256: string }>(
+    "select verdict, strength, join_state, order_line_id, recall_sha256 from recall_matches where id = $1 and shop_id = $2",
     [input.matchId, input.shopId],
   );
   const m = rows[0];
@@ -71,20 +72,22 @@ export async function prepareNotice(
     );
     if (taken.rows.length > 0) throw alreadyAsked();
   }
+  const written = kind === "CHECK_REQUEST" ? await writtenQuestion(db, m.recall_sha256) : null;
+  const frozen = written ? JSON.stringify(written) : null;
   if (mine) {
     // It can be sent or answered while this runs, and then it stays as it was.
     const rewritten = await db.query(
-      "update notices set kind = $2, opened_at = null where id = $1 and shop_id = $3 and sent_at is null and responded_at is null returning id",
-      [mine.id, kind, input.shopId],
+      "update notices set kind = $2, opened_at = null, written_question = $4::jsonb where id = $1 and shop_id = $3 and sent_at is null and responded_at is null returning id",
+      [mine.id, kind, input.shopId, frozen],
     );
     return { noticeId: mine.id, kind: rewritten.rows.length > 0 ? kind : mine.kind };
   }
   // The index settles a race between two requests. Here a second notice for the match is the same notice.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
-    `insert into notices (shop_id, match_id, kind, order_line_id) values ($1, $2, $3, $4)
+    `insert into notices (shop_id, match_id, kind, order_line_id, written_question) values ($1, $2, $3, $4, $5::jsonb)
      on conflict do nothing
      returning id, kind`,
-    [input.shopId, input.matchId, kind, m.order_line_id],
+    [input.shopId, input.matchId, kind, m.order_line_id, frozen],
   );
   if (!saved.rows[0]) throw alreadyAsked();
   return { noticeId: saved.rows[0].id, kind: saved.rows[0].kind };
@@ -130,6 +133,7 @@ export async function composeForSeller(
       kind: string;
       sent_at: unknown;
       responded_at: unknown;
+      written_question: WrittenQuestion | null;
       join_state: string | null;
       verdict: string;
       strength: string | null;
@@ -140,7 +144,7 @@ export async function composeForSeller(
       order_line_id: string;
     }
   >(
-    `select n.kind, n.sent_at, n.responded_at, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select n.kind, n.sent_at, n.responded_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
@@ -170,7 +174,7 @@ export async function composeForSeller(
   };
   let message;
   if (n.kind === "CHECK_REQUEST") {
-    const { question } = checkQuestion({ recallNumber: n.recall_number, title: n.title, description: n.description });
+    const { question } = askedOf(n);
     message = composeCheckRequest({ ...context, question });
   } else {
     // The refund line appears only once PayPal confirmed the refund, never on approval.
@@ -185,6 +189,11 @@ export async function composeForSeller(
   return { to, toSource: to ? "Shop record" : "You add the address", ...message };
 }
 
+/** What this notice asks: the question frozen when the seller approved it, while CPSC's text still supports it. */
+function askedOf(n: Pick<RecallRow, "recall_number" | "title" | "description" | "products" | "hazards" | "remedies"> & { written_question: WrittenQuestion | null }): CheckQuestion {
+  return checkQuestion({ recallNumber: n.recall_number, title: n.title, description: n.description, products: n.products, hazards: n.hazards, remedies: n.remedies }, n.written_question);
+}
+
 export type CheckResult = "MATCHES" | "DOESNT_MATCH" | "CANT_TELL";
 const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
@@ -195,15 +204,19 @@ export function checkResult(
   answer: string,
 ): CheckResult {
   const said = answer.trim();
-  const noMatch: CheckResult = fullScopeInRecord(recall) ? "DOESNT_MATCH" : "CANT_TELL";
+  const fullScope = fullScopeInRecord(recall);
   if (question.kind === "model") {
     if (!said) return "CANT_TELL";
     const listed = modelTokens(`${recall.title ?? ""} ${recall.description}`).map(normalizeModel);
-    return listed.includes(normalizeModel(said)) ? "MATCHES" : noMatch;
+    if (listed.includes(normalizeModel(said))) return "MATCHES"; // the record itself names this model
+    return fullScope ? "DOESNT_MATCH" : "CANT_TELL";
   }
+  // CPSC's list is elsewhere, so nothing a family says here can settle it either way.
+  if (!fullScope) return "CANT_TELL";
   if (said === "yes") return "MATCHES";
-  if (said === "no") return question.kind === "yes_no" ? noMatch : "CANT_TELL";
-  return "CANT_TELL";
+  if (said !== "no") return "CANT_TELL";
+  const noSettlesIt = question.kind === "yes_no" || (question.kind === "written" && question.noRulesOut);
+  return noSettlesIt ? "DOESNT_MATCH" : "CANT_TELL";
 }
 
 const linkExpired = () => new NoticeRefused("LINK_EXPIRED", "This link has expired.");
@@ -221,11 +234,15 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
     recall_number: string;
     title: string;
     description: string;
+    products: Recall["products"];
+    hazards: string[];
+    remedies: string[];
+    written_question: WrittenQuestion | null;
     kind: string;
     check_result: CheckResult | null;
     expired: boolean;
   }>(
-    `select r.recall_number, r.title, r.description, n.kind, n.check_result, n.family_link_expires_at <= now() as expired from notices n
+    `select r.recall_number, r.title, r.description, r.products, r.hazards, r.remedies, n.written_question, n.kind, n.check_result, n.family_link_expires_at <= now() as expired from notices n
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id where n.id = $1`,
     [noticeId],
   );
@@ -233,7 +250,7 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   if (!notice) throw noNotice();
   if (notice.kind !== "CHECK_REQUEST") throw new NoticeRefused("NOT_A_QUESTION", "This message does not ask a question.");
   if (notice.expired) throw linkExpired();
-  const question = checkQuestion({ recallNumber: notice.recall_number, title: notice.title, description: notice.description });
+  const question = askedOf(notice);
   const said = answer.trim();
   const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
   if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");
@@ -270,9 +287,9 @@ export interface FamilyView {
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
-    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean }
+    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null }
   >(
-    `select n.kind, n.family_stopped, n.check_result, n.check_open, n.family_link_expires_at <= now() as expired, s.name as shop_name,
+    `select n.kind, n.family_stopped, n.check_result, n.check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
@@ -289,7 +306,7 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     recallUrl: n.url,
     hazards: n.hazards,
     remedies: n.remedies,
-    question: n.kind === "CHECK_REQUEST" ? checkQuestion({ recallNumber: n.recall_number, title: n.title, description: n.description }) : null,
+    question: n.kind === "CHECK_REQUEST" ? askedOf(n) : null,
     stopped: n.family_stopped,
     result: n.check_result,
     expired: n.expired,

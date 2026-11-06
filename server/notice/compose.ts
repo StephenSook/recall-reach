@@ -1,6 +1,8 @@
 // The exact words a family reads. Wording is from research/COPY-DECK.md; hazard and remedy text is
 // copied verbatim from the stored CPSC record and never rewritten. Transactional content only:
 // no promotions, and the shop sends it from its own mail client.
+import type { WrittenQuestion } from "../agent/questionStore";
+import { quoted, recallWords } from "../agent/quote";
 import type { Recall } from "../cpsc/schema";
 import { modelTokens } from "../match/verdict";
 
@@ -61,10 +63,16 @@ export function composeCheckRequest(c: NoticeContext & { question: string }): Co
   return { subject: `Quick safety check on ${c.itemTitle} you bought from ${c.shopName}`, body: lines.join("\n") };
 }
 
-export interface CheckQuestion {
-  question: string;
-  kind: "yes_no" | "model" | "general";
-}
+export type CheckQuestion =
+  | { question: string; kind: "yes_no" | "model" | "general" }
+  | {
+      question: string;
+      kind: "written";
+      /** The exact CPSC words it rests on. */
+      evidence: string;
+      /** A person accepted it and every recalled unit has this trait, so a no sets this product apart. */
+      noRulesOut: boolean;
+    };
 
 // Hand-written questions for recalls whose record offers no identifier. Each is used only while the
 // phrase it rests on is in the stored CPSC description, so a question can never outlive its source.
@@ -72,8 +80,17 @@ const CURATED: Record<string, { question: string; evidence: string }> = {
   "27040": { question: "Does your high chair convert into a table and chair set?", evidence: "convert into a table and chair set" },
 };
 
-/** The one thing to ask this family, specific to what this recall can be told apart by. */
-export function checkQuestion(recall: Pick<Recall, "recallNumber" | "title" | "description">): CheckQuestion {
+/**
+ * The one thing to ask this family, specific to what this recall can be told apart by: the question Claude wrote
+ * while the words it rests on are in the record, then a hand-written one, CPSC's model numbers, and the plain one.
+ */
+export function checkQuestion(
+  recall: Pick<Recall, "recallNumber" | "title" | "description"> & Partial<Pick<Recall, "products" | "hazards" | "remedies">>,
+  written?: WrittenQuestion | null,
+): CheckQuestion {
+  if (written && quoted(recallWords(recall), written.evidence)) {
+    return { question: written.question, kind: "written", evidence: written.evidence, noRulesOut: written.everyRecalledUnit && written.accepted };
+  }
   const curated = CURATED[recall.recallNumber];
   if (curated && recall.description.includes(curated.evidence)) return { question: curated.question, kind: "yes_no" };
   const models = modelTokens(`${recall.title} ${recall.description}`);
