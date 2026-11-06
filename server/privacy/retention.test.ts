@@ -56,9 +56,18 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
        values ('old', 'T', 'self', $1), ('past-cutoff', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
       [hoursAgo(49), hoursAgo(46.1), hoursAgo(45.9)],
     );
-    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_refund_refs: 0 });
+    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_refund_refs: 0, live_catch_runs: 0 });
     const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
     expect(kept.rows.map((r) => r.event_id_hmac)).toEqual(["new"]);
+  });
+
+  it("takes a live catch's seconds too: they were worked out from PayPal's capture time", async () => {
+    const now = new Date("2026-11-10T12:00:00Z");
+    const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+    await db.query("insert into live_catch_runs (seconds, caught_at) values (1.5, $1), (2.5, $2)", [hoursAgo(47), hoursAgo(45)]);
+    expect((await purgePayPalData(db, now)).live_catch_runs).toBe(1);
+    const kept = await db.query<{ seconds: string }>("select seconds::text as seconds from live_catch_runs");
+    expect(kept.rows.map((r) => r.seconds)).toEqual(["2.5"]);
   });
 
   it("never lets a PayPal-sourced row reach 48 hours, at any moment on the real purge schedule", async () => {
