@@ -11,7 +11,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { loadQueue } from "../queue/queue";
-import { checkResult, composeForSeller, familyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
+import { checkResult, composeForSeller, familyAnswerFrom, familyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -31,6 +31,23 @@ const line = (over: Partial<ImportedOrderLine>): ImportedOrderLine => ({
   paymentReference: null,
   buyerEmail: null,
   ...over,
+});
+
+describe("familyAnswerFrom", () => {
+  it("lets \"I can't find it\" win over anything left in the box", () => {
+    expect(familyAnswerFrom(["BRZ0083", "not_sure"])).toBe("not_sure");
+    expect(familyAnswerFrom(["", "not_sure"])).toBe("not_sure");
+  });
+
+  it("takes the box when the Check button was pressed", () => {
+    expect(familyAnswerFrom(["BRZ0083"])).toBe("BRZ0083");
+    expect(familyAnswerFrom(["  ", "yes"])).toBe("yes");
+  });
+
+  it("has nothing to take from an empty form, and keeps a long answer short", () => {
+    expect(familyAnswerFrom([])).toBe("");
+    expect(familyAnswerFrom(["x".repeat(200)])).toHaveLength(80);
+  });
 });
 
 describe("notices", () => {

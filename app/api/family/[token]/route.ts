@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { noticeIdFromToken } from "@/server/notice/token";
-import { NoticeRefused, recordFamilyAnswer, recordFamilyStopped } from "@/server/notice/store";
+import { familyAnswerFrom, NoticeRefused, recordFamilyAnswer, recordFamilyStopped } from "@/server/notice/store";
 import { refused, secret, seeOther } from "@/server/web/http";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
     else {
       const asked = form.get("asked");
-      await recordFamilyAnswer(getDb(), noticeId, (form.getAll("answer").map(String).find((a) => a.trim()) ?? "").slice(0, 80), typeof asked === "string" ? asked : undefined);
+      await recordFamilyAnswer(getDb(), noticeId, familyAnswerFrom(form.getAll("answer").map(String)), typeof asked === "string" ? asked : undefined);
     }
   } catch (err) {
     if (!(err instanceof NoticeRefused)) throw err;

@@ -201,6 +201,12 @@ function askedOf(n: Pick<RecallRow, "recall_number" | "title" | "description" | 
   return checkQuestion({ recallNumber: n.recall_number, title: n.title, description: n.description, products: n.products, hazards: n.hazards, remedies: n.remedies }, n.written_question);
 }
 
+/** What a family's form said. "I can't find it" is a button of its own, and it wins over anything left in the box. */
+export function familyAnswerFrom(values: string[]): string {
+  if (values.includes("not_sure")) return "not_sure";
+  return (values.find((v) => v.trim()) ?? "").slice(0, 80);
+}
+
 export type CheckResult = "MATCHES" | "DOESNT_MATCH" | "CANT_TELL";
 
 export const staleNoSql = (notice: string, recallSha: string) => `(${notice}check_result = 'DOESNT_MATCH' and ${notice}check_recall_sha is distinct from ${recallSha})`;
