@@ -132,6 +132,7 @@ describe("the question Claude writes for a family", () => {
     it("refuses a span written in other case", () => corrected({ evidence: "CONVERT INTO A TABLE AND CHAIR SET" }));
     it("refuses a question with no span", () => corrected({ evidence: null }));
     it("refuses a span the question has nothing to do with", () => corrected({ question: "Does your chair have four legs?", evidence: "several color combinations" }));
+    it("does not count a common word as the question being about the span", () => corrected({ question: "Does your chair have four legs with wheels?", evidence: "There is no tracking information located on the products" }));
 
     it("accepts CPSC's typography written plainly", async () => {
       const { client } = fakeClaude([[answer({ question: "Does your ladder have Rapid Locks?", evidence: "the ladder's height" })]]);
@@ -183,6 +184,26 @@ describe("the question Claude writes for a family", () => {
 
     it("refuses a code CPSC never wrote", async () => {
       const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack say Z99999 on its label?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27065", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("can't be got around by a code that also stands alone elsewhere in the record", async () => {
+      await db.query("update recalls set remedies = remedies || '[\"Call about pack 083723.\"]'::jsonb where recall_number = '27065'");
+      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack have a serial number starting with 083723?", evidence: "Call about pack 083723." })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27065", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("treats the models across CPSC's product list as one list", async () => {
+      await db.query(`update recalls set products = '[{"name":"Chair A","model":"AB123","type":null,"units":null},{"name":"Chair B","model":"CD456","type":null,"units":null}]'::jsonb where recall_number = '27040'`);
+      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair say AB123 on its label?", evidence: "AB123" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27040", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("refuses a code that is CPSC's but not in the words the question says it rests on", async () => {
+      const { client, requests } = fakeClaude([[answer({ question: "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
       await write("27065", client);
       expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
     });
