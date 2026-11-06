@@ -12,7 +12,7 @@ import { migrate } from "./db/migrate";
 import { getHealth } from "./health";
 import { checkText } from "./match/textCheck";
 import type { Method, PayPalClient } from "./paypal/client";
-import { latestRecallDay, proveReplay, runReplay } from "./replay/replay";
+import { latestRecallDay, loadReplay, proveReplay, runReplay } from "./replay/replay";
 
 type Schema = { $ref?: string; type?: string; required?: string[]; properties?: Record<string, Schema>; items?: Schema; nullable?: boolean; enum?: unknown[] };
 
@@ -120,6 +120,12 @@ describe("openapi.yaml", () => {
       expect(few.results).toHaveLength(1);
       expect(few.more).toBeGreaterThanOrEqual(0);
       expect(few.results.length + few.more + few.cleared + few.notJudged).toBeGreaterThan(0);
+    });
+
+    it("/api/replay/{runId}", async () => {
+      const replay = await loadReplay(db, runId);
+      expect(replay?.rows.length).toBeGreaterThan(0);
+      expect(misfits(schemaFor("/api/replay/{runId}"), replay)).toEqual([]);
     });
 
     it("/api/proof/{runId}", async () => {

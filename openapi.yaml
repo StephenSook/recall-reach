@@ -123,6 +123,28 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /api/replay/{runId}:
+    get:
+      tags: [Evidence]
+      operationId: readReplay
+      summary: One Recall Replay run with all its rows
+      description: The rows /replay/{runId} shows. CPSC's public text and the demo shop's item titles, nothing about a buyer.
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplayRun" }
+        "404":
+          description: No such run. Runs are pruned, so an old id can stop working.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /api/proof/{runId}:
     get:
       tags: [Evidence]
@@ -170,6 +192,29 @@ paths:
           description: It answers.
 components:
   schemas:
+    ReplayRun:
+      type: object
+      required: [runId, ms, createdAt, counts, search, recallYearsMissing, rows]
+      properties:
+        runId: { type: string, format: uuid }
+        ms: { type: integer }
+        createdAt: { type: string, format: date-time }
+        counts: { type: object }
+        search: { type: object }
+        recallYearsMissing: { type: array, items: { type: integer } }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [recallNumber, recallTitle, recallDate, outcome]
+            properties:
+              recallNumber: { type: string }
+              recallTitle: { type: string }
+              recallDate: { type: string }
+              outcome: { type: string, enum: [MATCH, SCOPE_GAP, CLEARED, NOT_NEAR] }
+              saleSplit: { type: string, nullable: true }
+              itemTitle: { type: string, nullable: true }
+              reason: { type: string, nullable: true }
     Problem:
       type: object
       required: [error]

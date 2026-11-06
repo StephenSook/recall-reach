@@ -75,6 +75,14 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Saved copy of Recall Replay",
+    status: "claimed",
+    evidence: [
+      { file: "server/replay/staticPage.ts", find: "export function renderStaticReplay" },
+      { file: "scripts/exportReplay.ts", call: "renderStaticReplay" },
+    ],
+  },
+  {
     name: "APIMatic Context Plugin",
     status: "claimed",
     evidence: [{ file: "docs/apimatic-context-plugin.md", find: "server-sdk-context-plugin-preview" }],
