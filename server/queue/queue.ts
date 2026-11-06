@@ -1,7 +1,23 @@
 // What the seller's queue shows. No raw PayPal id leaves this function: the page never needs one.
+import { QUESTION_VERSION, type WrittenQuestion } from "../agent/questionStore";
+import type { TraceEntry } from "../agent/recallAgent";
+import { readItem } from "../agent/sources";
+import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
+import { checkQuestion, type CheckQuestion } from "../notice/compose";
 import { noticeState, type NoticeState } from "../notice/store";
 import type { Strength } from "../match/verdict";
+
+/** What Claude found for this row. Text for a person to read: it changes no verdict, order or action. */
+export interface AgentFinding {
+  outcome: string;
+  finding: string | null;
+  evidence: { source: string; quote: string }[];
+  missingField: string | null;
+  reason: string | null;
+  trace: TraceEntry[];
+  model: string;
+}
 
 export interface QueueRow {
   matchId: string;
@@ -29,6 +45,10 @@ export interface QueueRow {
   notice: { id: string; kind: string; state: NoticeState; stopped: boolean; result: string | null } | null;
   /** What the family said to a question, when a safety notice has since followed it. */
   earlierQuestionResult: string | null;
+  /** What the family is or would be asked. Only on a scope gap about a sale. */
+  question: CheckQuestion | null;
+  /** Null until Claude has checked exactly this text. */
+  agent: AgentFinding | null;
   approval: { id: string; amountCents: number; currency: string; expiresAt: string } | null;
   refund: { id: string; status: string; amountCents: number; currency: string; failure: string | null } | null;
 }
@@ -48,6 +68,26 @@ export interface QueueData {
 
 const VERDICT_ORDER = { MATCH: 0, SCOPE_GAP: 1, CLEARED: 2 } as const;
 
+/** Once a question is approved it is what the family gets. Until then, the one approving it now would freeze. */
+function askedFor(r: Record<string, unknown>): CheckQuestion | null {
+  if (r.verdict !== "SCOPE_GAP" || !r.order_line_id) return null;
+  const stored: WrittenQuestion | null = r.stored_question
+    ? { question: String(r.stored_question), evidence: String(r.stored_evidence), everyRecalledUnit: Boolean(r.stored_every), accepted: r.stored_review === "ACCEPTED" }
+    : null;
+  const written = r.notice_kind === "CHECK_REQUEST" ? (r.written_question as WrittenQuestion | null) : stored;
+  return checkQuestion(
+    {
+      recallNumber: String(r.recall_number),
+      title: String(r.recall_title),
+      description: String(r.description),
+      products: r.products as Recall["products"],
+      hazards: r.hazards as string[],
+      remedies: r.remedies as string[],
+    },
+    written,
+  );
+}
+
 export async function loadQueue(db: Queryable, shopId: string, sessionId: string): Promise<QueueData> {
   const shop = await db.query<{ name: string; kind: string }>("select name, kind from shops where id = $1", [shopId]);
   const run = await db.query<{
@@ -64,7 +104,11 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
   );
   const { rows } = await db.query<Record<string, never>>(
     `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id,
-            r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products,
+            r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
+            n.written_question,
+            q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit as stored_every, q.review as stored_review,
+            ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
+            ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.check_result,
@@ -78,6 +122,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      left join lateral (
        select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1
      ) n on true
+     left join recall_questions q on q.recall_sha256 = m.recall_sha256 and q.agent_version = $3 and q.outcome = 'QUESTION' and q.review is distinct from 'REJECTED'
+     left join agent_runs ar on ar.id = m.agent_run_id
      left join lateral (
        select * from approvals x
        where x.order_line_id = m.order_line_id and x.recall_id = m.recall_id and x.session_id = $2
@@ -88,7 +134,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
        select * from refunds y where y.order_line_id = m.order_line_id order by y.created_at desc limit 1
      ) rf on m.order_line_id is not null
      where m.shop_id = $1`,
-    [shopId, sessionId],
+    [shopId, sessionId, QUESTION_VERSION],
   );
 
   const out = (rows as unknown as Record<string, unknown>[]).map(
@@ -122,6 +168,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
           }
         : null,
       earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,
+      question: askedFor(r),
+      agent: null,
       approval: r.approval_id
         ? {
             id: String(r.approval_id),
@@ -139,6 +187,23 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             failure: (r.refund_failure as string | null) ?? null,
           }
         : null,
+    }),
+  );
+  // A finding is about the exact text Claude read, so it goes away when either text changes.
+  await Promise.all(
+    (rows as unknown as Record<string, unknown>[]).map(async (r, i) => {
+      if (!r.run_outcome || r.run_recall_sha !== r.raw_sha256) return;
+      const item = await readItem(db, shopId, r.order_line_id ? { kind: "order_line", id: String(r.order_line_id) } : { kind: "shop_item", id: String(r.shop_item_id) });
+      if (item?.sha256 !== r.run_item_sha) return;
+      out[i].agent = {
+        outcome: String(r.run_outcome),
+        finding: (r.run_finding as string | null) ?? null,
+        evidence: r.run_evidence as AgentFinding["evidence"],
+        missingField: (r.run_missing as string | null) ?? null,
+        reason: (r.run_reason as string | null) ?? null,
+        trace: r.run_trace as TraceEntry[],
+        model: String(r.run_model),
+      };
     }),
   );
   out.sort(

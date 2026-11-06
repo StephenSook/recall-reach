@@ -18,6 +18,8 @@ services:
         sync: false # set in Render, never in git
       - key: PAYPAL_WEBHOOK_ID
         sync: false # set in Render after the sandbox webhook is registered
+      - key: ANTHROPIC_API_KEY
+        sync: false # set in Render; without it the queue says the Claude check is unavailable
       - key: PAYPAL_CLIENT_ID
         sync: false # sandbox app credentials, set in Render
       - key: PAYPAL_CLIENT_SECRET

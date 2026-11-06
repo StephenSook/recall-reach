@@ -12,7 +12,7 @@ import { readItem, readRecall, searchItems, type ShopRecord, type Snapshot } fro
 
 export const AGENT_VERSION = "1";
 const MAX_STEPS = 8;
-const MAX_RECALLS_PER_RECORD = 5;
+export const MAX_RECALLS_PER_RECORD = 5;
 const TARGET = "item-1";
 
 const SYSTEM = `You check one item a resale shop sold against one CPSC recall, and record what the two texts support.
@@ -219,17 +219,23 @@ export interface AgentSummary {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Checks the strongest open recalls for one shop record. Whatever goes wrong with Claude leaves the queue as it was. */
-export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date }): Promise<AgentSummary> {
-  const summary: AgentSummary = { checked: 0, reused: 0, unavailable: 0, failedStatuses: [], overBudget: 0, notChecked: 0 };
-  if (!UUID.test(input.recordId)) return summary;
-  const { rows: matches } = await db.query<{ id: string; recall_id: number; order_line_id: string | null; scope: string | null }>(
+/** The recalls still open for one shop record, strongest first. Empty for a record of another shop. */
+export async function openRecallsFor(db: Queryable, shopId: string, recordId: string) {
+  if (!UUID.test(recordId)) return [];
+  const { rows } = await db.query<{ id: string; recall_id: number; order_line_id: string | null; scope: string | null }>(
     `select m.id, m.recall_id, m.order_line_id, case when s.kind = 'DEMO' then null else s.id end as scope
      from recall_matches m join shops s on s.id = m.shop_id
      where m.shop_id = $1 and coalesce(m.order_line_id, m.shop_item_id) = $2 and m.verdict <> 'CLEARED'
      order by case m.strength when 'CONFIRMED' then 0 when 'BRAND' then 1 when 'PRODUCT_WORDS' then 2 else 3 end, m.recall_id desc`,
-    [input.shopId, input.recordId],
+    [shopId, recordId],
   );
+  return rows;
+}
+
+/** Checks the strongest open recalls for one shop record. Whatever goes wrong with Claude leaves the queue as it was. */
+export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date }): Promise<AgentSummary> {
+  const summary: AgentSummary = { checked: 0, reused: 0, unavailable: 0, failedStatuses: [], overBudget: 0, notChecked: 0 };
+  const matches = await openRecallsFor(db, input.shopId, input.recordId);
   summary.notChecked = Math.max(0, matches.length - MAX_RECALLS_PER_RECORD);
 
   await Promise.all(

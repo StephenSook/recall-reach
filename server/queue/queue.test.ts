@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
+import { QUESTION_VERSION } from "../agent/questionStore";
+import { readItem } from "../agent/sources";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { seedDemoShop } from "../demo/seed";
@@ -133,6 +135,101 @@ describe("loadQueue", () => {
     expect(await loadQueue(db, empty, "s")).toMatchObject({ rows: [], coverage: null });
   });
 
+  describe("what the seller sees before approving a question", () => {
+    const WRITTEN = "Does your high chair turn into a table and chair set?";
+    const write = (question = WRITTEN) =>
+      db.query(
+        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, model, input_tokens, output_tokens, cost_micros)
+         select raw_sha256, $1, recall_id, 'QUESTION', $2, 'convert into a table and chair set', true, 'm', 0, 0, 0 from recalls where recall_number = '27040'
+         on conflict (recall_sha256, agent_version) do update set question = excluded.question`,
+        [QUESTION_VERSION, question],
+      );
+
+    it("shows the plain question until Claude has written one", async () => {
+      expect((await row("27040")).question).toMatchObject({ question: "Does your high chair convert into a table and chair set?", kind: "yes_no" });
+    });
+
+    it("shows the one Claude wrote, with the CPSC words it rests on", async () => {
+      await write();
+      expect((await row("27040")).question).toMatchObject({ question: WRITTEN, kind: "written", evidence: "convert into a table and chair set" });
+    });
+
+    it("has no question for a confirmed match: that gets a safety notice", async () => {
+      await write();
+      expect((await row("27072")).question).toBeNull();
+    });
+
+    it("shows what the family is actually asked once it is approved, whatever is written later", async () => {
+      await write();
+      const { matchId } = await row("27040");
+      await prepareNotice(db, { shopId, matchId });
+      await write("Does your high chair have a different question?");
+      expect((await row("27040")).question).toMatchObject({ question: WRITTEN });
+    });
+
+    it("keeps the plain question on a message approved before Claude wrote one", async () => {
+      const { matchId } = await row("27040");
+      await prepareNotice(db, { shopId, matchId });
+      await write();
+      expect((await row("27040")).question).toMatchObject({ kind: "yes_no" });
+    });
+  });
+
+  describe("how Claude checked it", () => {
+    const addRun = async (over: { itemSha?: string; recallSha?: string; outcome?: string; finding?: string | null } = {}) => {
+      const { matchId, recordId } = await row("27040");
+      const item = await readItem(db, shopId, { kind: "order_line", id: recordId });
+      const { rows } = await db.query<{ id: string }>(
+        `insert into agent_runs (shop_id, recall_sha256, item_sha256, agent_version, outcome, finding, evidence, missing_field, reason, trace, model, input_tokens, output_tokens, cost_micros)
+         select $1, coalesce($2, r.raw_sha256), $3, '1', $4, $5, $6::jsonb, 'Whether it converts', 'The title does not say.', $7::jsonb, 'claude-sonnet-5-5', 1, 1, 1
+         from recalls r where r.recall_number = '27040' returning id`,
+        [shopId, over.recallSha ?? null, over.itemSha ?? item?.sha256, over.outcome ?? "FINDING", over.finding === undefined ? "CANT_TELL" : over.finding, JSON.stringify([{ source: "recall", quote: "Costway Convertible High Chairs" }]), JSON.stringify([{ tool: "read_recall", ok: true }, { tool: "record_finding", ok: true }])],
+      );
+      await db.query("update recall_matches set agent_run_id = $1 where id = $2", [rows[0].id, matchId]);
+    };
+
+    it("is nothing until it has run", async () => {
+      expect((await row("27040")).agent).toBeNull();
+    });
+
+    it("shows the finding, the quotes, what is missing and each step", async () => {
+      await addRun();
+      expect((await row("27040")).agent).toEqual({
+        outcome: "FINDING",
+        finding: "CANT_TELL",
+        evidence: [{ source: "recall", quote: "Costway Convertible High Chairs" }],
+        missingField: "Whether it converts",
+        reason: "The title does not say.",
+        trace: [{ tool: "read_recall", ok: true }, { tool: "record_finding", ok: true }],
+        model: "claude-sonnet-5-5",
+      });
+    });
+
+    it("shows that it found nothing, when it did not", async () => {
+      await addRun({ outcome: "STEP_LIMIT", finding: null });
+      expect((await row("27040")).agent).toMatchObject({ outcome: "STEP_LIMIT", finding: null });
+    });
+
+    it("stops showing a finding about text that has since changed", async () => {
+      await addRun({ itemSha: "not this text" });
+      expect((await row("27040")).agent).toBeNull();
+    });
+
+    it("stops showing a finding about an older CPSC record", async () => {
+      await addRun({ recallSha: "an older record" });
+      expect((await row("27040")).agent).toBeNull();
+    });
+
+    it.each(["CANT_TELL", "DIFFERENT_PRODUCT", "SAME_PRODUCT"])("leaves the card's order, verdict and strength alone on %s", async (finding) => {
+      const before = await row("27040");
+      const cardsBefore = toCards((await loadQueue(db, shopId, "session-1")).rows);
+      await addRun({ finding });
+      const after = await row("27040");
+      expect([after.verdict, after.strength, after.reason]).toEqual([before.verdict, before.strength, before.reason]);
+      expect(toCards((await loadQueue(db, shopId, "session-1")).rows).cards.map((c) => c.lead.matchId)).toEqual(cardsBefore.cards.map((c) => c.lead.matchId));
+    });
+  });
+
   describe("a sale with a question and then a safety notice", () => {
     const untilConfirmed = async () => {
       await db.query("update recall_matches set verdict = 'SCOPE_GAP', strength = 'BRAND' where recall_id = (select recall_id from recalls where recall_number = '27072') and shop_id = $1", [shopId]);
@@ -191,6 +288,8 @@ describe("toCards", () => {
     stillListed: false,
     notice: null,
     earlierQuestionResult: null,
+    question: null,
+    agent: null,
     approval: null,
     refund: null,
     ...over,

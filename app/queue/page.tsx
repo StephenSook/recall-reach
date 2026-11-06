@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
+import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { currentSession } from "@/server/web/http";
-import { CHECK_RESULT, chipsFor, coverageLine, needsApproval, NOTICE_STATE, REFUND_STATE } from "./labels";
+import { agentHeadline, CHECK_RESULT, chipsFor, coverageLine, needsApproval, NOTICE_STATE, REFUND_STATE, traceLine } from "./labels";
 import { NoticeActions } from "./NoticeActions";
 
 export const dynamic = "force-dynamic";
 
-function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string; shopKind: string }) {
+function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean }) {
   const row = card.lead;
   const blocked = row.joinState === "AMBIGUOUS_JOIN";
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
@@ -40,6 +41,49 @@ function Card({ card, shopName, shopKind }: { card: QueueCard; shopName: string;
         <p>
           <a href={row.recallUrl}>CPSC&apos;s recall page</a>
         </p>
+      ) : null}
+
+      {canNotify && row.question ? (
+        <>
+          <p data-testid="family-question">The family is asked: {row.question.question}</p>
+          {row.question.kind === "written" ? (
+            <details data-testid="question-source">
+              <summary>Where this question came from</summary>
+              <p>Claude wrote it from CPSC&apos;s words: &quot;{row.question.evidence}&quot;</p>
+            </details>
+          ) : null}
+        </>
+      ) : null}
+
+      {row.agent ? (
+        <details data-testid="how-it-checked">
+          <summary>{agentHeadline(row.agent)}</summary>
+          {row.agent.reason ? <p>{row.agent.reason}</p> : null}
+          {row.agent.missingField ? <p>Missing: {row.agent.missingField}</p> : null}
+          {row.agent.evidence.length > 0 ? (
+            <ul>
+              {row.agent.evidence.map((e) => (
+                <li key={`${e.source}:${e.quote}`}>
+                  {e.source === "recall" ? "CPSC" : "Your shop"}: &quot;{e.quote}&quot;
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p>How it checked:</p>
+          <ol>
+            {row.agent.trace.map((step, i) => (
+              <li key={i}>{traceLine(step)}</li>
+            ))}
+          </ol>
+          <p>
+            <small>{row.agent.model}. This is Claude reading the text. It changes nothing above and says nothing about safety.</small>
+          </p>
+        </details>
+      ) : agentReady && row.verdict !== "CLEARED" ? (
+        <form action="/api/queue/agent" method="post">
+          <input type="hidden" name="recordId" value={row.recordId} />
+          <button type="submit">Check with Claude</button>
+        </form>
       ) : null}
 
       {canNotify && needsApproval(row) ? (
@@ -138,6 +182,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const shopName = shop?.name ?? "";
   const shopKind = shop?.kind ?? "DEMO";
   const { cards, cleared, unrelated } = toCards(rows);
+  const agentReady = agentConfigured();
 
   return (
     <main>
@@ -149,20 +194,25 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </p>
       ) : null}
       {message ? <p role="alert">{message}</p> : null}
+      {agentReady ? null : (
+        <p>
+          <small data-testid="agent-unavailable">Claude check unavailable.</small>
+        </p>
+      )}
       {coverage ? (
         <p data-testid="coverage">{coverageLine(coverage)}</p>
       ) : null}
       <section data-testid="needs">
         <h2>Needs review</h2>
         {cards.map((card) => (
-          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} />
+          <Card key={card.lead.matchId} card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
         ))}
       </section>
       {cleared.length > 0 || unrelated > 0 ? (
         <section>
           <h2>Checked and cleared</h2>
           {cleared.map((row) => (
-            <Card key={row.matchId} card={{ lead: row, also: [] }} shopName={shopName} shopKind={shopKind} />
+            <Card key={row.matchId} card={{ lead: row, also: [] }} shopName={shopName} shopKind={shopKind} agentReady={agentReady} />
           ))}
           {unrelated > 0 ? (
             <p data-testid="unrelated">

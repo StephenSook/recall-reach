@@ -26,6 +26,29 @@ export const CHECK_RESULT: Record<string, string> = {
   CANT_TELL: "Family's answer could not settle it",
 };
 
+const AGENT_HEADLINE: Record<string, string> = {
+  SAME_PRODUCT: "Claude: the words point to this product",
+  CANT_TELL: "Claude: can't tell from the words",
+  DIFFERENT_PRODUCT: "Claude: the words point to a different product",
+  NO_FINDING: "Claude gave no finding",
+  REFUSED: "Claude declined to answer",
+  STEP_LIMIT: "Claude stopped before a finding",
+};
+
+/** What Claude found, in plain words. It describes the text, never whether a product is safe. */
+export function agentHeadline(run: { outcome: string; finding: string | null }): string {
+  return AGENT_HEADLINE[run.finding ?? run.outcome] ?? AGENT_HEADLINE.NO_FINDING;
+}
+
+/** One step of how it checked. */
+export function traceLine(step: { tool: string; ok: boolean; item?: string; query?: string; found?: number; note?: string }): string {
+  if (!step.ok) return `Sent back: ${step.note ?? "that did not pass a check."}`;
+  if (step.tool === "read_recall") return "Read the recall";
+  if (step.tool === "read_shop_item") return `Read ${step.item ?? "an item"}`;
+  if (step.tool === "search_shop_items") return `Searched your shop for "${step.query ?? ""}": ${step.found ?? 0} found`;
+  return "Recorded its finding";
+}
+
 /** Says "Searched" only when PayPal's history was really read. No search means no dates and no payment count. */
 export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
   const searched = c.paypalSearched

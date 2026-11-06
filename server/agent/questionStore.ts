@@ -4,6 +4,9 @@ import type { Queryable } from "../db/types";
 
 export const QUESTION_VERSION = "1";
 
+/** Whether a key is set at all. Pages use this so they don't load the Claude client. A refused key shows up when it is used. */
+export const agentConfigured = (env: Record<string, string | undefined> = process.env) => Boolean(env.ANTHROPIC_API_KEY?.trim());
+
 export interface WrittenQuestion {
   question: string;
   /** The exact CPSC words it rests on. */

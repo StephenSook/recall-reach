@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipsFor, coverageLine, needsApproval } from "./labels";
+import { agentHeadline, chipsFor, coverageLine, needsApproval, traceLine } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -9,6 +9,33 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   isListing: false,
   stillListed: false,
   ...over,
+});
+
+describe("how Claude checked it, in words", () => {
+  it.each([
+    [{ outcome: "FINDING", finding: "SAME_PRODUCT" }, "Claude: the words point to this product"],
+    [{ outcome: "FINDING", finding: "CANT_TELL" }, "Claude: can't tell from the words"],
+    [{ outcome: "FINDING", finding: "DIFFERENT_PRODUCT" }, "Claude: the words point to a different product"],
+    [{ outcome: "NO_FINDING", finding: null }, "Claude gave no finding"],
+    [{ outcome: "REFUSED", finding: null }, "Claude declined to answer"],
+    [{ outcome: "STEP_LIMIT", finding: null }, "Claude stopped before a finding"],
+  ])("%o reads as a plain headline", (run, text) => {
+    expect(agentHeadline(run)).toBe(text);
+  });
+
+  it("never calls a product safe or not recalled", () => {
+    for (const finding of ["SAME_PRODUCT", "CANT_TELL", "DIFFERENT_PRODUCT"]) expect(agentHeadline({ outcome: "FINDING", finding })).not.toMatch(/safe|not recalled|cleared/i);
+  });
+
+  it.each([
+    [{ tool: "read_recall", ok: true }, "Read the recall"],
+    [{ tool: "read_shop_item", ok: true, item: "Costway high chair" }, "Read Costway high chair"],
+    [{ tool: "search_shop_items", ok: true, query: "high chair", found: 2 }, 'Searched your shop for "high chair": 2 found'],
+    [{ tool: "record_finding", ok: true }, "Recorded its finding"],
+    [{ tool: "record_finding", ok: false, note: "Include a quote from the item." }, "Sent back: Include a quote from the item."],
+  ])("%o reads as one step", (step, text) => {
+    expect(traceLine(step)).toBe(text);
+  });
 });
 
 describe("coverageLine", () => {
