@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { readSession, SESSION_COOKIE, type ShopSession } from "../session/session";
+import { messageQuery } from "./queueMessage";
 
 export function secret(name: "SESSION_SECRET" | "SHOP_DATA_KEY"): string {
   const value = process.env[name];
@@ -32,6 +33,6 @@ export function fromThisSite(request: Request): boolean {
 export const seeOther = (request: Request, path: string) =>
   new Response(null, { status: 303, headers: { Location: `${baseUrl(request)}${path}` } });
 
-export const withMessage = (request: Request, message: string) => seeOther(request, `/queue?message=${encodeURIComponent(message)}`);
+export const withMessage = (request: Request, message: string) => seeOther(request, `/queue?${messageQuery(secret("SESSION_SECRET"), message)}`);
 
 export const refused = (status: number, error: string) => Response.json({ error }, { status, headers: { "cache-control": "no-store" } });

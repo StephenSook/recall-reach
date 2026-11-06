@@ -18,11 +18,15 @@ const message = (res: Response) => new URL(res.headers.get("location") ?? "").se
 
 describe("POST /api/queue/notices", () => {
   beforeEach(() => {
+    vi.stubEnv("SESSION_SECRET", "s".repeat(32));
     session.current = { shopId: "shop", sessionId: "s" };
     prepare.mockReset();
     prepare.mockResolvedValue({ noticeId: "n", kind: "CHECK_REQUEST" });
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
   it("approves one", async () => {
     const res = await post("a");

@@ -17,6 +17,7 @@ const message = (res: Response) => new URL(res.headers.get("location") ?? "").se
 
 describe("POST /api/queue/agent", () => {
   beforeEach(() => {
+    vi.stubEnv("SESSION_SECRET", "s".repeat(32));
     session.current = { shopId: `shop-${Math.random()}`, sessionId: "s" };
     vi.stubEnv("ANTHROPIC_API_KEY", "key");
     vi.spyOn(console, "error").mockImplementation(() => {});

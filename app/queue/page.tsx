@@ -3,7 +3,8 @@ import { getDb } from "@/server/db/pg";
 import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
-import { currentSession } from "@/server/web/http";
+import { currentSession, secret } from "@/server/web/http";
+import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows } from "./gridRows";
 import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, coverageLine, needsApproval, NOTICE_STATE, queueCounts, REFUND_STATE, traceLine } from "./labels";
 import { MatchGridLoader } from "./MatchGridLoader";
@@ -214,11 +215,12 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
   );
 }
 
-export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string }> }) {
+export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[] }> }) {
   const session = await currentSession();
   if (!session) redirect("/");
   const { rows, shop, coverage, pendingLiveSales } = await loadQueue(getDb(), session.shopId, session.sessionId);
-  const { message } = await searchParams;
+  const params = await searchParams;
+  const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const shopName = shop?.name ?? "";
   const shopKind = shop?.kind ?? "DEMO";
   const { cards, cleared, unrelated } = toCards(rows);
