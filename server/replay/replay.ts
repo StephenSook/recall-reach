@@ -109,7 +109,7 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
         "update replay_runs set checked = $2, matched = $3, scope_gaps = $4, cleared = $5, not_near = $6, notice_only = $7, refund_eligible = $8 where id = $1",
         [runId, c.checked, c.matched, c.scopeGaps, c.cleared, c.notNear, c.noticeOnly, c.refundEligible],
       );
-      await tx.query("delete from replay_runs where id not in (select id from replay_runs order by created_at desc, id limit $1) and id is distinct from (select id from replay_runs where search_complete order by created_at desc, id limit 1)", [REPLAYS_KEPT]);
+      await tx.query("delete from replay_runs where not pinned and id not in (select id from replay_runs order by created_at desc, id limit $1) and id is distinct from (select id from replay_runs where search_complete order by created_at desc, id limit 1)", [REPLAYS_KEPT]);
       return { runId };
     });
   } finally {

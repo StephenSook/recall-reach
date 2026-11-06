@@ -350,6 +350,15 @@ describe("Recall Replay", () => {
       expect(kept.rows.map((r) => r.id)).toEqual([good]);
     });
 
+    it("keeps a pinned run past pruning, so the film can be checked against it", async () => {
+      const filmed = (await run()).runId;
+      await db.query("update replay_runs set pinned = true where id = $1", [filmed]);
+      await db.query("update replay_runs set created_at = now() - interval '1 day' where id = $1", [filmed]);
+      for (let i = 0; i < REPLAYS_KEPT + 1; i++) await run();
+      expect(await loadReplay(db, filmed)).not.toBeNull();
+      expect((await latestReplay(db))?.runId).not.toBe(filmed);
+    });
+
     it("keeps only the newest", async () => {
       let last = "";
       for (let i = 0; i < REPLAYS_KEPT + 2; i++) last = (await run()).runId;
