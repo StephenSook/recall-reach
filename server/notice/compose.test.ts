@@ -72,6 +72,12 @@ describe("composeCheckRequest", () => {
 });
 
 describe("checkQuestion", () => {
+  it("lists every model CPSC names, including those that read like a measure or have no letter", () => {
+    const q = checkQuestion({ recallNumber: "1", title: "4moms Recalls Swings", description: "MamaRoo versions 1.0 and 2.0, model 4M-005 or 4M-012; version 3.0, model 1026; and version 4.0, model 1037." });
+    expect(q).toMatchObject({ kind: "model" });
+    for (const m of ["4M-005", "4M-012", "1026", "1037"]) expect(q.question).toContain(m);
+  });
+
   it("asks about the physical feature when CPSC gives no identifier", () => {
     expect(checkQuestion(recall("27040"))).toEqual({
       question: "Does your high chair convert into a table and chair set?",

@@ -227,7 +227,7 @@ export function verdictFor(
 
   const missing =
     recallModels.length > 0
-      ? [`model number (CPSC lists ${recallModels.join(", ")})`]
+      ? [`model number (CPSC lists ${[...new Set([...recallModels, ...modelsNamedInText(`${recall.title} ${recall.description}`)])].join(", ")})`]
       : ["something that shows this is the recalled version: CPSC gives no model number"];
   if (brand && !hasBrand) missing.unshift(`whether this is ${brand}`);
   if (!fullScope) missing.push(seeCpsc);

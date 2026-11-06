@@ -4,7 +4,7 @@
 import type { WrittenQuestion } from "../agent/questionStore";
 import { quoted, recallWords } from "../agent/quote";
 import type { Recall } from "../cpsc/schema";
-import { modelTokens } from "../match/verdict";
+import { modelsNamedInText, modelTokens } from "../match/verdict";
 
 export interface NoticeContext {
   recall: Pick<Recall, "recallNumber" | "url" | "products" | "hazards" | "remedies">;
@@ -93,7 +93,11 @@ export function checkQuestion(
   }
   const curated = CURATED[recall.recallNumber];
   if (curated && recall.description.includes(curated.evidence)) return { question: curated.question, kind: "yes_no" };
-  const models = modelTokens(`${recall.title} ${recall.description}`);
-  if (models.length > 0) return { question: `What model number is on the label? CPSC lists ${models.join(", ")}.`, kind: "model" };
+  // A partial list would read as "yours isn't on it", so it says all CPSC names when it says any.
+  const text = `${recall.title} ${recall.description}`;
+  if (modelTokens(text).length > 0) {
+    const models = [...new Set([...modelTokens(text), ...modelsNamedInText(text)])];
+    return { question: `What model number is on the label? CPSC lists ${models.join(", ")}.`, kind: "model" };
+  }
   return { question: "Does yours look like the product on CPSC's recall page?", kind: "general" };
 }
