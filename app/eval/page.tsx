@@ -112,7 +112,7 @@ export default function EvalPage() {
             {/* The limit travels with the number. */}
             <tr>
               <td colSpan={3} className="note" data-testid="eval-labeller">
-                Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller, with a person&apos;s audit still to come.
+                Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller. No person has audited them.
               </td>
             </tr>
             <tr>
