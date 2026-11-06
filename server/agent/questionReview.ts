@@ -1,5 +1,6 @@
 // A person accepts or rejects the questions Claude wrote. Accepting is what lets a "no" count against a recall.
 import type { Queryable } from "../db/types";
+import { staleNoSql } from "../notice/store";
 import { QUESTION_VERSION } from "./questionStore";
 
 export interface PendingQuestion {
@@ -38,7 +39,7 @@ export async function pendingQuestions(db: Queryable, opts: { limit: number; fir
 /**
  * False if nothing changed: the words are not the ones this person read, or it was already decided.
  * Rejecting also takes the question off any message the family has not settled, in one statement, so a question a
- * person said is wrong is no longer asked. "Not sure" settles nothing. A real answer stays as the record of what was asked.
+ * person said is wrong is no longer asked. "Not sure" settles nothing, and nor does a no given on an older version of the recall. A real answer stays as the record of what was asked.
  */
 export async function reviewQuestion(
   db: Queryable,
@@ -53,9 +54,9 @@ export async function reviewQuestion(
        returning q.recall_id
      ), cleared as (
        update notices n set written_question = null
-       from recall_matches m
+       from recall_matches m join recalls cr on cr.recall_id = m.recall_id
        where $1 = 'REJECTED' and m.id = n.match_id and m.recall_id in (select recall_id from decided)
-         and n.written_question ->> 'question' = $4 and (n.check_result is null or n.check_open)
+         and n.written_question ->> 'question' = $4 and (n.check_result is null or n.check_open or ${staleNoSql("n.", "cr.raw_sha256")})
      )
      select recall_id from decided`,
     [input.decision, input.recallNumber, QUESTION_VERSION, input.question, input.decision === "ACCEPTED" && input.scopeConfirmed === true],

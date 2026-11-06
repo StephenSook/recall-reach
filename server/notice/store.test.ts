@@ -5,6 +5,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Queryable } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
+import { reviewQuestion } from "../agent/questionReview";
 import { QUESTION_VERSION } from "../agent/questionStore";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
@@ -503,6 +504,18 @@ describe("notices", () => {
       await db.query("update recalls set raw_sha256 = 'edited' where recall_id = (select r.recall_id from notices n join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id where n.id = $1)", [noticeId]);
       expect(await familyView(db, noticeId)).toMatchObject({ result: "CANT_TELL", answerOpen: true });
       expect(await recordFamilyAnswer(db, noticeId, "not_sure")).toBe("CANT_TELL");
+    });
+
+    it("a rejected question comes off a no that CPSC's edit reopened, so it can't be answered through it", async () => {
+      await write({ review: "ACCEPTED" });
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q6-REJECTED") });
+      expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("DOESNT_MATCH");
+      await db.query("update recalls set raw_sha256 = 'edited' where recall_number = '27040'");
+      await write();
+      expect(await reviewQuestion(db, { recallNumber: "27040", question: WRITTEN, decision: "REJECTED" })).toBe(true);
+      expect(await familyQuestion(noticeId)).not.toBe(WRITTEN);
+      const { rows } = await db.query<{ written_question: unknown }>("select written_question from notices where id = $1", [noticeId]);
+      expect(rows[0].written_question).toBeNull();
     });
 
     it("is dropped when the message becomes a safety notice, and picked up when it becomes a question", async () => {
