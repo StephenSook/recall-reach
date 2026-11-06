@@ -1,3 +1,5 @@
+import { createServer } from "node:net";
+import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import { createTokenProvider, PAYPAL_SANDBOX_BASE } from "./token";
 
@@ -85,5 +87,23 @@ describe("createTokenProvider", () => {
     const tokens = createTokenProvider({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, fetchImpl });
     await expect(tokens.get()).rejects.toThrow(/HTTP 503/);
     expect(await tokens.get()).toBe("token-ok");
+  });
+
+  it("holds no credentials in the error when Node's own fetch can't connect", async () => {
+    const closedPort = await new Promise<number>((resolve) => {
+      const server = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = server.address() as { port: number };
+        server.close(() => resolve(port));
+      });
+    });
+    const fetchImpl = ((_input: unknown, init?: RequestInit) => fetch(`http://127.0.0.1:${closedPort}/`, init)) as typeof fetch;
+    const err = await createTokenProvider({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, fetchImpl })
+      .get()
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
+    for (const printed of [String(err), inspect(err, { depth: 10, showHidden: true }), JSON.stringify(err)]) {
+      for (const secret of [CLIENT_ID, CLIENT_SECRET, basic]) expect(printed).not.toContain(secret);
+    }
   });
 });

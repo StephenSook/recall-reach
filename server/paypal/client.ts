@@ -131,8 +131,12 @@ export function createPayPalClient(opts: {
             throw err;
           }
           if (!retryable || attempt >= MAX_ATTEMPTS) {
-            if (err.cause instanceof PayPalApiError) err.cause.uncertain = true;
-            throw err.cause instanceof Error ? err.cause : new Error(String(err.cause));
+            if (err.cause instanceof PayPalApiError) {
+              err.cause.uncertain = true;
+              throw err.cause;
+            }
+            // Fixed words, with no cause. A lower layer's own error can hold the whole request, and whatever this reaches may print it.
+            throw new Error("PayPal gave no answer");
           }
           uncertain = true;
           await sleep(500 * 2 ** (attempt - 1));

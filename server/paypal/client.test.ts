@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPayPalClient, PayPalApiError, payPalClientFromEnv } from "./client";
 import { PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
@@ -88,6 +89,36 @@ describe("PayPal client", () => {
     const res = await s.client.request("POST", "/v2/payments/captures/CAP1/refund", { body: {}, requestId: "req-1" });
     expect(res.data).toEqual({ id: "R1" });
     expect(s.calls.map((c) => c.headers.get("paypal-request-id"))).toEqual(["req-1", "req-1"]);
+  });
+
+  describe("when a call gets no answer from PayPal", () => {
+    const holdsTheRequest = () =>
+      Object.assign(new Error("Network Error on /v2/payments/refunds/PRIVATE-ID"), {
+        config: { url: "/v2/payments/refunds/PRIVATE-ID", headers: { Authorization: "Bearer SECRET-TOKEN" } },
+        cause: new Error("SECRET-TOKEN"),
+      });
+
+    it.each([
+      ["a read, after its retries", "GET", {}, 3],
+      ["a send with no request id, which is not retried", "POST", { body: {} }, 1],
+    ] as const)("%s leaves with fixed words, whatever the layer below threw", async (_about, method, options, calls) => {
+      const s = scripted([holdsTheRequest(), holdsTheRequest(), holdsTheRequest()]);
+      const err = await s.client.request(method, "/v2/payments/refunds/PRIVATE-ID", options).catch((e: unknown) => e);
+      expect(s.calls).toHaveLength(calls);
+      expect((err as Error).message).toBe("PayPal gave no answer");
+      expect((err as Error).cause).toBeUndefined();
+      for (const printed of [String(err), inspect(err, { depth: 10, showHidden: true }), JSON.stringify(err)]) {
+        expect(printed).not.toContain("SECRET-TOKEN");
+        expect(printed).not.toContain("PRIVATE-ID");
+      }
+    });
+
+    it("keeps PayPal's own answer when the last try got one", async () => {
+      const s = scripted([holdsTheRequest(), fail(503), fail(500)]);
+      const err = await s.client.request("GET", "/v2/payments/refunds/PRIVATE-ID").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(PayPalApiError);
+      expect((err as PayPalApiError).uncertain).toBe(true);
+    });
   });
 
   it("never retries a POST without a PayPal-Request-Id", async () => {
