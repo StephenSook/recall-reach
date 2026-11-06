@@ -2,19 +2,25 @@
 //
 //   MATCH      the shop's text shows the recalled model, or for a one-model recall, the same line
 //              with the printed look CPSC describes.
-//   SCOPE_GAP  same brand and line, but the text cannot show whether this unit is covered. This is
-//              the common case: CPSC's structured Model field is empty on all 934 records of 2025-26.
-//   CLEARED    a different product, a sibling model CPSC did not list, or sold before first sale.
+//   SCOPE_GAP  related, but the text cannot show whether this unit is covered. This is the common case:
+//              CPSC's structured Model field is empty on all 934 records of 2025-26.
+//   CLEARED    a sibling model CPSC did not list, sold before first sale, or sharing at most one
+//              product word with no brand named.
 //
-// A wrong CLEARED is the worst outcome here, so anything uncertain lands in SCOPE_GAP.
+// A wrong CLEARED is the worst outcome here, so anything uncertain lands in SCOPE_GAP. There is no vendor
+// field, and a shop's title may simply leave the brand out, so a title without the brand that shares two
+// product words stays a gap. Its strength says how little that is: it is not enough to contact a family.
 import type { Recall } from "../cpsc/schema";
 import { firstSaleMonth } from "../cpsc/retailText";
 
 export type Verdict = "MATCH" | "SCOPE_GAP" | "CLEARED";
 export type SalePath = "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE";
+/** What the two texts share, strongest first. A decision about outreach reads this, not the verdict alone. */
+export type Strength = "CONFIRMED" | "BRAND" | "PRODUCT_WORDS" | "NO_SHARED_WORDS";
 
 export interface VerdictResult {
   verdict: Verdict;
+  strength: Strength;
   /** Evidence: what the shop's text and the recall share. */
   matched: string[];
   /** What the shop's text would need to show. Only for SCOPE_GAP. */
@@ -125,13 +131,6 @@ export function verdictFor(
   item: MatchCandidate,
   opts: { dateFilter?: boolean } = {},
 ): VerdictResult {
-  const cleared = (reason: string, matched: string[] = []): VerdictResult => ({ verdict: "CLEARED", matched, missing: [], reason });
-
-  const firstSale = firstSaleMonth(recall.retailers);
-  if (opts.dateFilter !== false && item.orderedOn && firstSale && item.orderedOn.slice(0, 7) < firstSale) {
-    return cleared(`Sold ${item.orderedOn}, before this product was first sold (${firstSale}).`);
-  }
-
   const itemText = `${item.title} ${item.description ?? ""}`.slice(0, MAX_TEXT);
   const itemWords = words(itemText);
   const brand = brandOf(recall.title);
@@ -140,6 +139,17 @@ export function verdictFor(
   const matched = hasBrand ? [`brand: ${brand}`] : [];
   const fullScope = fullScopeInRecord(recall);
   const seeCpsc = "the full list on CPSC's notice, which this record does not include";
+
+  const lineWords = new Set<string>();
+  for (const p of recall.products) for (const w of words(p.name)) if (!brandWords.has(w)) lineWords.add(w);
+  const sharedLine = [...lineWords].filter((w) => itemWords.has(w)).sort();
+  const strength: Strength = hasBrand ? "BRAND" : sharedLine.length > 0 ? "PRODUCT_WORDS" : "NO_SHARED_WORDS";
+  const cleared = (reason: string, shared: string[] = []): VerdictResult => ({ verdict: "CLEARED", strength, matched: shared, missing: [], reason });
+
+  const firstSale = firstSaleMonth(recall.retailers);
+  if (opts.dateFilter !== false && item.orderedOn && firstSale && item.orderedOn.slice(0, 7) < firstSale) {
+    return cleared(`Sold ${item.orderedOn}, before this product was first sold (${firstSale}).`);
+  }
 
   // A recalled model number settles it, whatever else the text says or leaves out.
   const recallModels = modelTokens(`${recall.title} ${recall.description}`);
@@ -150,29 +160,26 @@ export function verdictFor(
   if (shown.length > 0) {
     return {
       verdict: "MATCH",
+      strength: "CONFIRMED",
       matched: [...matched, `model: ${shown.join(", ")}`],
       missing: [],
       reason: `The shop's text names recalled model ${shown.join(", ")}.`,
     };
   }
 
-  const lineWords = new Set<string>();
-  for (const p of recall.products) for (const w of words(p.name)) if (!brandWords.has(w)) lineWords.add(w);
-  const sharedLine = [...lineWords].filter((w) => itemWords.has(w)).sort();
-  const lineShare = lineWords.size > 0 ? sharedLine.length / lineWords.size : 0;
-
-  // With the brand matched, one shared product word keeps it out of CLEARED: a wrong clearance is the
-  // worst outcome. A title that merely omits the brand needs most of the product's words. There is no
-  // vendor field to tell an absent brand from another brand, so that stays a gap for a person.
-  const related = hasBrand ? sharedLine.length >= 1 : sharedLine.length >= Math.min(2, lineWords.size) && lineShare >= 0.5;
+  // With the brand matched, one shared product word keeps it out of CLEARED. Without it, two do (or the
+  // only word a one-word product name has). The count is the rule, so the same item gets the same answer
+  // however long CPSC's product name happens to be.
+  const related = hasBrand ? sharedLine.length >= 1 : sharedLine.length >= Math.min(2, lineWords.size) && sharedLine.length > 0;
+  const notNamed = brand ? `, and does not name ${brand}` : "";
   const unrelatedReason = hasBrand
     ? `The same brand, but a different product from ${recall.products[0]?.name ?? "the recalled one"}.`
-    : brand
-      ? `A different product, and it does not name ${brand}.`
-      : "A different product.";
+    : sharedLine.length === 1
+      ? `Shares only "${sharedLine[0]}" with this recall${notNamed}.`
+      : `Shares no product word with this recall${notNamed}.`;
   if (!related) {
     if ((hasBrand || sharedLine.length >= 1) && !fullScope) {
-      return { verdict: "SCOPE_GAP", matched, missing: [seeCpsc], reason: unrelatedReason };
+      return { verdict: "SCOPE_GAP", strength, matched, missing: [seeCpsc], reason: unrelatedReason };
     }
     return cleared(unrelatedReason, matched);
   }
@@ -183,7 +190,7 @@ export function verdictFor(
   const variants = itemCodes.filter((t) => isVariantOf(t, recallModels));
   if (hasBrand && otherModels.length > 0 && variants.length === 0) {
     const reason = `Model ${otherModels.join(", ")} is not one CPSC lists (${recallModels.join(", ")}).`;
-    if (!fullScope) return { verdict: "SCOPE_GAP", matched, missing: [seeCpsc], reason };
+    if (!fullScope) return { verdict: "SCOPE_GAP", strength, matched, missing: [seeCpsc], reason };
     return cleared(reason, matched);
   }
 
@@ -194,6 +201,7 @@ export function verdictFor(
   if (recallModels.length === 1 && look.length >= 2) {
     return {
       verdict: "MATCH",
+      strength: "CONFIRMED",
       matched: [...matched, `look: ${look.join(", ")}`],
       missing: [],
       reason: `A one-model recall, and the shop's text shows the look CPSC describes (${look.join(", ")}).`,
@@ -206,5 +214,10 @@ export function verdictFor(
       : ["something that shows this is the recalled version: CPSC gives no model number"];
   if (brand && !hasBrand) missing.unshift(`whether this is ${brand}`);
   if (!fullScope) missing.push(seeCpsc);
-  return { verdict: "SCOPE_GAP", matched, missing, reason: "The same product line, but the shop's text cannot show whether this unit is covered." };
+  const reason = hasBrand
+    ? "The same product line, but the shop's text cannot show whether this unit is covered."
+    : brand
+      ? `The same kind of product, but the shop's text does not name ${brand}.`
+      : "The same kind of product, but nothing in the shop's text ties it to this recall.";
+  return { verdict: "SCOPE_GAP", strength, matched, missing, reason };
 }

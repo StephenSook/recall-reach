@@ -88,6 +88,72 @@ describe("verdictFor", () => {
     expect(verdictFor(unbranded, { title: "armchair for adults, not high" }).verdict).toBe("CLEARED");
   });
 
+  describe("a title that does not name the brand", () => {
+    // Real product names of three high chair recalls (25318, 26061, 26121), same item, same answer expected.
+    const named = (title: string, name: string) => ({ ...COSTWAY, title, products: [{ name, model: "", type: null, units: null }] });
+    const LONG = named("Funlio Convertible High Chairs Recalled Due to Risk of Injury", "2-in-1 Funlio Convertible Baby High Chairs");
+    const LONGER = named("5-in-1 Convertible High Chairs Recalled Due to Risk of Injury", "Harppa 5-in-1 Convertible High Chairs for Babies and Toddlers");
+    const SHORT = named("Convertible High Chairs Recalled Due to Risk of Injury", "Baby High Chairs (convertible)");
+
+    it.each([
+      ["a long product name", LONG],
+      ["a longer one", LONGER],
+      ["a short one", SHORT],
+    ])("gets the same answer with %s: the length of CPSC's wording decides nothing", (_name, recallRecord) => {
+      const v = verdictFor(recallRecord, { title: "Costway high chair" });
+      expect(v.verdict).toBe("SCOPE_GAP");
+      expect(v.strength).toBe("PRODUCT_WORDS");
+      expect(v.reason).toBe("The same kind of product, but nothing in the shop's text ties it to this recall.");
+    });
+
+    it("says which brand is not named, when CPSC's title gives one", () => {
+      const honeyjoy = named("HONEYJOY Recalls Multiple Convertible and Foldable High Chairs Due to Risk of Suffocation", "HONEYJOY Convertible and Foldable High Chairs");
+      const v = verdictFor(honeyjoy, { title: "Costway high chair" });
+      expect(v.strength).toBe("PRODUCT_WORDS");
+      expect(v.reason).toBe("The same kind of product, but the shop's text does not name HONEYJOY.");
+    });
+
+    it("clears on one shared word, and names the word", () => {
+      const v = verdictFor(LONG, { title: "armchair for adults, not high" });
+      expect(v.verdict).toBe("CLEARED");
+      expect(v.strength).toBe("PRODUCT_WORDS");
+      expect(v.reason).toBe('Shares only "high" with this recall.');
+    });
+
+    it("clears on no shared word, and says that rather than calling it a different product", () => {
+      const v = verdictFor(BREZZA, { title: "Costway high chair" });
+      expect(v.verdict).toBe("CLEARED");
+      expect(v.strength).toBe("NO_SHARED_WORDS");
+      expect(v.reason).toBe("Shares no product word with this recall, and does not name Baby Brezza.");
+    });
+  });
+
+  describe("how strong the evidence is", () => {
+    it("a recalled model is confirmed", () => {
+      expect(verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }).strength).toBe("CONFIRMED");
+    });
+
+    it("a printed look on a one-model recall is confirmed", () => {
+      expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon" }).strength).toBe("CONFIRMED");
+    });
+
+    it("the brand and a product word is a gap with the brand behind it", () => {
+      const v = verdictFor(COSTWAY, { title: "Costway high chair" });
+      expect(v.verdict).toBe("SCOPE_GAP");
+      expect(v.strength).toBe("BRAND");
+    });
+
+    it("a sale from before first sale keeps what the texts share", () => {
+      const v = verdictFor(COSTWAY, { title: "Costway high chair", orderedOn: "2000-01-01" });
+      expect(v.verdict).toBe("CLEARED");
+      expect(v.strength).toBe("BRAND");
+    });
+
+    it("the same brand with a different product still counts as the brand", () => {
+      expect(verdictFor(BREZZA, { title: "Baby Brezza Formula Pro Advanced" }).strength).toBe("BRAND");
+    });
+  });
+
   it("CLEARED: same brand, a model CPSC did not list", () => {
     const v = verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ00999" });
     expect(v.verdict).toBe("CLEARED");
