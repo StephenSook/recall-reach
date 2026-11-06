@@ -208,10 +208,25 @@ describe("the question Claude writes for a family", () => {
       expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
     });
 
-    it("takes a question naming the whole list", async () => {
+    it("takes a question naming every code in the field", async () => {
+      await db.query("update recalls set description = $1, title = 'Packs Recalled', products = '[]'::jsonb, hazards = '[]'::jsonb, remedies = '[]'::jsonb where recall_number = '27065'", [`The pack serial ${LIST}.`]);
       const whole = "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?";
       const { client } = fakeClaude([[answer({ question: whole, evidence: LIST })]]);
       expect(await write("27065", client)).toBe("WROTE");
+    });
+
+    it("can't be got around by a list that runs over two sentences", async () => {
+      await db.query("update recalls set description = 'Pack serials begin 083723. They also begin 078352.', title = 'Packs Recalled', products = '[]'::jsonb, hazards = '[]'::jsonb, remedies = '[]'::jsonb where recall_number = '27065'");
+      const { client, requests } = fakeClaude([[answer({ question: "Does your pack's serial begin 083723?", evidence: "Pack serials begin 083723." })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27065", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("treats codes in CPSC's product names as one list too", async () => {
+      await db.query(`update recalls set products = '[{"name":"Chair AB123","model":"","type":null,"units":null},{"name":"Chair CD456","model":"","type":null,"units":null}]'::jsonb where recall_number = '27040'`);
+      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair say AB123 on its label?", evidence: "Chair AB123" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27040", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
     });
 
     it("takes a question about the list that names none of them", async () => {

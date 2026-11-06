@@ -69,15 +69,15 @@ const NEGATIVE = /\b(not|never|without|lacks?|missing|no|none|isn't|doesn't|don'
 const codes = (text: string) => (text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? []).map((c) => c.toUpperCase());
 
 /**
- * A code in a question has to be CPSC's and in the words it rests on, with every other code CPSC lists beside it, or
- * the owner of one left out is told theirs is fine. Every place the code appears counts, because a quote can be cut
- * down to the part the question names, and the same code can also stand alone elsewhere in the record.
+ * A code in a question has to be CPSC's and in the words it rests on, with every other code in the same field, or the
+ * owner of one left out is told theirs is fine. Whole fields, because a list can run over sentences and a quote can be
+ * cut down to the part the question names. This refuses some good questions, and a question with no code still works.
  */
-function codesProblem(question: string, evidence: string, recall: Snapshot & { models: string }): OurText | null {
+function codesProblem(question: string, evidence: string, recall: Snapshot & { productWords: string }): OurText | null {
   const asked = new Set(codes(question));
   const quoted = codes(evidence);
   if ([...asked].some((c) => !quoted.includes(c))) return ourText("Every code in the question has to be in the evidence.");
-  const places = [...recall.quotable.flatMap((t) => normalized(t).split(/(?<=[.!?])\s+/)), recall.models];
+  const places = [...recall.quotable, recall.productWords].map(normalized);
   for (const code of asked) {
     const homes = places.filter((s) => codes(s).includes(code));
     if (homes.length === 0) return ourText("A code in the question is not in CPSC's text. Use CPSC's own, or ask about something else.");
@@ -91,7 +91,7 @@ const longWords = (text: string) => (text.toLowerCase().match(/[a-z]{4,}/g) ?? [
 const shareAWord = (a: string, b: string) => longWords(a).some((x) => longWords(b).some((y) => x.startsWith(y) || y.startsWith(x)));
 
 /** Null means it passed. */
-function answerProblem(answer: Answer, recall: Snapshot & { models: string }): OurText | null {
+function answerProblem(answer: Answer, recall: Snapshot & { productWords: string }): OurText | null {
   const { question, evidence } = answer;
   if (question === null) return answer.abstain_reason?.trim() ? null : ourText("Give the reason in abstain_reason, or write a question.");
   if (!evidence) return ourText("Copy the CPSC words the question rests on into evidence.");
@@ -114,7 +114,7 @@ async function runLoop(
   db: Queryable,
   client: Anthropic,
   model: string,
-  recall: Snapshot & { number: string; models: string },
+  recall: Snapshot & { number: string; productWords: string },
   now: Date,
   spent: Spent,
 ): Promise<{ outcome: Outcome; answer: Answer | null; model: string }> {
