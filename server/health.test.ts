@@ -83,7 +83,7 @@ describe("getHealth", () => {
     it("is ok when every named check passes", async () => {
       await pulled("ok");
       await replayed("2026-11-06T02:00:00Z");
-      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
+      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
     });
 
     it("isn't, without the webhook id or a usable record key", async () => {
@@ -130,6 +130,27 @@ describe("getHealth", () => {
       expect((await check()).checks?.replay).toBe(false);
       await replayed("2026-11-04T10:00:00Z");
       expect(await check()).toMatchObject({ ok: false, checks: { replay: false } });
+    });
+
+    it("isn't, when DEBUG is set: the toolkit's debug logger would print a capture id", async () => {
+      await pulled("ok");
+      await replayed("2026-11-06T02:00:00Z");
+      const health = await getHealth(db, { ...env, DEBUG: "*" }, undefined, NOW);
+      expect(health).toMatchObject({ ok: false, checks: { logging: false, database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true } });
+      expect((await getHealth(db, { ...env, DEBUG: "" }, undefined, NOW)).checks.logging).toBe(true);
+    });
+
+    it("says so about DEBUG when the database is down too", async () => {
+      const broken: Queryable = {
+        query: async () => {
+          throw new Error("unreachable");
+        },
+        exec: async () => {
+          throw new Error("unreachable");
+        },
+      };
+      expect((await getHealth(broken, { ...env, DEBUG: "*" }, undefined, NOW)).checks.logging).toBe(false);
+      expect((await getHealth(broken, env, undefined, NOW)).checks.logging).toBe(true);
     });
 
     it("isn't, when the last poll failed", async () => {

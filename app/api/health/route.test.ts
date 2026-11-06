@@ -21,6 +21,7 @@ describe("GET /api/health", () => {
     db = real;
     vi.stubEnv("PAYPAL_WEBHOOK_ID", "WH-ID");
     vi.stubEnv("RECORD_HMAC_SECRET", "r".repeat(32));
+    vi.stubEnv("DEBUG", "");
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
   afterEach(async () => {
@@ -51,6 +52,14 @@ describe("GET /api/health", () => {
     const res = await GET();
     expect(res.status).toBe(503);
     expect((await res.json()).checks.webhook).toBe(false);
+  });
+
+  it("answers 503 when DEBUG is set in the environment, and says which", async () => {
+    await healthy();
+    vi.stubEnv("DEBUG", "*");
+    const res = await GET();
+    expect(res.status).toBe(503);
+    expect((await res.json()).checks).toMatchObject({ logging: false, webhook: true });
   });
 
   it("answers 503 with no detail when the database can't be reached at all", async () => {

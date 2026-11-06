@@ -279,7 +279,7 @@ components:
         checkedAt: { type: string, format: date-time }
         checks:
           type: object
-          required: [database, webhook, lastPull, purge, poll, replay]
+          required: [database, webhook, lastPull, purge, poll, replay, logging]
           properties:
             database: { type: boolean }
             webhook: { type: boolean }
@@ -287,6 +287,7 @@ components:
             purge: { type: boolean }
             poll: { type: boolean }
             replay: { type: boolean }
+            logging: { type: boolean }
         database:
           type: object
           required: [ok]
