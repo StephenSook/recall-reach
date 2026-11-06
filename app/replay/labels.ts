@@ -17,7 +17,7 @@ export const replayIntro = (yearsMissing: number[]) =>
     : "The real CPSC recalls loaded from 2025 on, checked against the demo shop in one run.";
 
 export const replayGap = (yearsMissing: number[]) =>
-  yearsMissing.length === 0 ? null : `Recalls from ${yearsMissing.join(", ")} did not fully load, so this run didn't check them.`;
+  yearsMissing.length === 0 ? null : `Recalls from ${yearsMissing.join(", ")} did not fully load, so this run may not cover them.`;
 
 /** Accounts for every recall matched, in the same unit as the count beside it: Replay counts recalls, not sales. */
 export function matchSplitLine(rows: Pick<ReplayRow, "outcome" | "saleSplit">[]): string {

@@ -17,8 +17,8 @@ describe("what a run says it covered", () => {
 
   it("names the years that didn't load, and doesn't say every", () => {
     expect(replayIntro([2025])).not.toContain("Every");
-    expect(replayGap([2025])).toBe("Recalls from 2025 did not fully load, so this run didn't check them.");
-    expect(replayGap([2025, 2026])).toBe("Recalls from 2025, 2026 did not fully load, so this run didn't check them.");
+    expect(replayGap([2025])).toBe("Recalls from 2025 did not fully load, so this run may not cover them.");
+    expect(replayGap([2025, 2026])).toBe("Recalls from 2025, 2026 did not fully load, so this run may not cover them.");
   });
 });
 
