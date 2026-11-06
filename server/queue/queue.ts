@@ -63,6 +63,7 @@ export interface QueueData {
     searchedTo: string;
     recallsFrom: string | null;
     recallsTo: string | null;
+    recallYearsMissing: number[];
     unidentifiedPayments: number;
     paypalSearched: boolean;
     candidatesNotChecked: number;
@@ -104,13 +105,14 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     searched_to: string;
     recalls_from: string | null;
     recalls_to: string | null;
+    recall_years_missing: number[];
     unidentified_payments: number;
     paypal_searched: boolean;
     candidates_not_checked: number;
     search_windows: number;
     failed_windows: number;
   }>(
-    `select recalls_checked, recalls_from, recalls_to, searched_from, searched_to, unidentified_payments, paypal_searched, candidates_not_checked, search_windows, failed_windows
+    `select recalls_checked, recalls_from, recalls_to, recall_years_missing, searched_from, searched_to, unidentified_payments, paypal_searched, candidates_not_checked, search_windows, failed_windows
      from shop_runs where shop_id = $1 order by finished_at desc limit 1`,
     [shopId],
   );
@@ -240,6 +242,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
           searchedTo: c.searched_to,
           recallsFrom: c.recalls_from,
           recallsTo: c.recalls_to,
+          recallYearsMissing: c.recall_years_missing,
           unidentifiedPayments: c.unidentified_payments,
           paypalSearched: c.paypal_searched,
           candidatesNotChecked: c.candidates_not_checked,

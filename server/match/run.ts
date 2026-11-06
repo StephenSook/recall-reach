@@ -1,6 +1,7 @@
 // Checks one shop's records against the stored recalls and saves a decision per candidate.
 // Local tier only: no third party sees anything here. See server/match/verdict.ts for the rules.
 import type { Recall, RecallProduct } from "../cpsc/schema";
+import { missingRecallYears } from "../cpsc/load";
 import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
@@ -25,6 +26,8 @@ export interface RunSummary {
   /** The dates of the recalls really checked, read from the recalls themselves. Null when there were none. */
   recallsFrom: string | null;
   recallsTo: string | null;
+  /** Years inside that range that didn't load, so the range can't hide a gap. */
+  recallYearsMissing: number[];
   matches: number;
   scopeGaps: number;
   cleared: number;
@@ -137,6 +140,7 @@ export async function runShopCheck(
     "select count(*)::text as n, min(recall_date)::text as first, max(recall_date)::text as last from recalls where recall_date >= $1::date",
     [recallsFrom],
   );
+  const recallYearsMissing = await missingRecallYears(db, Number(recallsFrom.slice(0, 4)), opts.today);
   const { rows: shopText } = await db.query<{ id: string; text: string }>(
     `select id, title as text from order_lines where shop_id = $1
      union all select id, title || ' ' || description from shop_items where shop_id = $1`,
@@ -232,24 +236,25 @@ export async function runShopCheck(
       );
       // The shop's own record of what it was checked against stays true.
       await tx.query(
-        `update shop_runs set candidates_not_checked = candidates_not_checked + $2,
+        `update shop_runs set candidates_not_checked = candidates_not_checked + $2, recall_years_missing = $4::int[],
            (recalls_checked, recalls_from, recalls_to) = (
              select count(*), min(recall_date), max(recall_date) from recalls
              where recall_date >= $3::date and first_seen_at <= (select recalls_checked_through from shops where id = $1))
          where id = (select id from shop_runs where shop_id = $1 order by finished_at desc limit 1)`,
-        [shopId, candidatesNotChecked, recallsFrom],
+        [shopId, candidatesNotChecked, recallsFrom, recallYearsMissing],
       );
     }
     const { rows } = opts.onlyRecordId || opts.onlyRecallIds ? { rows: [] } : await tx.query<{ id: string }>(
-      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read, recalls_from, recalls_to)
-       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13, $14::date, $15::date) returning id`,
-      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0, counted[0].first, counted[0].last],
+      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read, recalls_from, recalls_to, recall_years_missing)
+       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13, $14::date, $15::date, $16::int[]) returning id`,
+      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0, counted[0].first, counted[0].last, recallYearsMissing],
     );
     return {
       runId: rows[0]?.id ?? null,
       recallsChecked: Number(counted[0].n),
       recallsFrom: counted[0].first,
       recallsTo: counted[0].last,
+      recallYearsMissing,
       matches: counts.MATCH,
       scopeGaps: counts.SCOPE_GAP,
       cleared: counts.CLEARED,

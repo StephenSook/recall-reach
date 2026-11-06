@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
-import { loadYears, recallCountsByYear, yearRange } from "./load";
+import { loadMissingYears, loadYears, missingRecallYears, recallCountsByYear, yearRange } from "./load";
 
 const fixtureText = readFileSync(
   new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url),
@@ -49,5 +49,66 @@ describe("loadYears", () => {
     ]);
     expect(result.countsByYear).toEqual({ 2026: 55 });
     expect(await recallCountsByYear(db)).toEqual({ 2026: 55 });
+  });
+
+  describe("loadMissingYears", () => {
+    const answering = (body: (url: string) => string | number) => {
+      const requested: string[] = [];
+      const fetchImpl = async (url: string | URL | Request) => {
+        requested.push(String(url));
+        const answer = body(String(url));
+        return typeof answer === "number" ? new Response("no", { status: answer }) : new Response(answer, { status: 200, headers: { "content-type": "application/json" } });
+      };
+      return { requested, deps: { fetchImpl: fetchImpl as typeof fetch, sleep: async () => {} } };
+    };
+    /** One real record, dated inside whichever year was asked for. */
+    const real = JSON.parse(readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8"))[0];
+    const aRecallForTheYear = (url: string) => {
+      const year = Number(/RecallDateStart=(\d{4})/.exec(url)?.[1]);
+      const date = `${year}-08-15T00:00:00`;
+      return JSON.stringify([{ ...real, RecallID: year, RecallNumber: String(year), RecallDate: date, LastPublishDate: date }]);
+    };
+    const TODAY = "2024-11-05"; // so the past years from 2022 are 2022 and 2023
+
+    it("pulls each past year it has no finished pull for, and leaves the current year to the poll", async () => {
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
+      const { requested, deps } = answering(aRecallForTheYear);
+      const result = await loadMissingYears(db, 2022, TODAY, deps);
+      expect(requested).toHaveLength(2);
+      expect(result.failed).toEqual([]);
+      expect(result.pulls.map((p) => p.range.start)).toEqual(["2022-01-01", "2023-01-01"]);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([]);
+    });
+
+    it("costs nothing once they are in", async () => {
+      await loadMissingYears(db, 2022, TODAY, answering(aRecallForTheYear).deps);
+      const again = answering(aRecallForTheYear);
+      expect(await loadMissingYears(db, 2022, TODAY, again.deps)).toEqual({ pulls: [], failed: [] });
+      expect(again.requested).toEqual([]);
+    });
+
+    it("keeps going when one year fails, says which, and tries only that year again", async () => {
+      const first = answering((url) => (url.includes("RecallDateStart=2022") ? 500 : aRecallForTheYear(url)));
+      const result = await loadMissingYears(db, 2022, TODAY, first.deps);
+      expect(result.failed.map((f) => f.year)).toEqual([2022]);
+      expect(result.pulls.map((p) => p.range.start)).toEqual(["2023-01-01"]);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022]);
+
+      const second = answering(aRecallForTheYear);
+      await loadMissingYears(db, 2022, TODAY, second.deps);
+      expect(second.requested).toHaveLength(1);
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([]);
+    });
+
+    it("doesn't take a poll's pull, or a failed one, for a year being loaded", async () => {
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, fetched) values ('LastPublishDate', '2022-01-01', '2022-12-31', 'ok', 5), ('RecallDate', '2022-01-01', '2022-12-31', 'failed', 5), ('RecallDate', '2022-01-01', '2022-12-31', 'partial', 5)");
+      expect(await missingRecallYears(db, 2022, TODAY)).toEqual([2022, 2023]);
+    });
+
+    it("doesn't take an empty answer for a whole year as that year being loaded: it says so and tries again", async () => {
+      const result = await loadMissingYears(db, 2023, TODAY, answering(() => "[]").deps);
+      expect(result.failed).toEqual([{ year: 2023, error: "CPSC returned no recalls for this year" }]);
+      expect(await missingRecallYears(db, 2023, TODAY)).toEqual([2023]);
+    });
   });
 });

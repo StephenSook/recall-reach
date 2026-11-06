@@ -103,6 +103,17 @@ describe("checking stored shops against new recalls", () => {
     expect(rows).toEqual([{ recalls_to: "2026-11-05" }]);
   });
 
+  it("keeps the shop's stated gaps true when a missing year comes in", async () => {
+    const older = readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8");
+    const before = await db.query<{ recall_years_missing: number[] }>("select recall_years_missing from shop_runs where shop_id = $1", [shopId]);
+    expect(before.rows[0].recall_years_missing).toContain(2022);
+    const fetchImpl = async () => new Response(older, { status: 200, headers: { "content-type": "application/json" } });
+    await pullRecalls(db, { field: "RecallDate", start: "2022-01-01", end: "2022-12-31" }, { fetchImpl: fetchImpl as typeof fetch });
+    await sweep();
+    const after = await db.query<{ recall_years_missing: number[] }>("select recall_years_missing from shop_runs where shop_id = $1", [shopId]);
+    expect(after.rows[0].recall_years_missing).not.toContain(2022);
+  });
+
   it("does nothing at all when no recall is new", async () => {
     expect(await sweep()).toMatchObject({ shopsChecked: 0, shopsFailed: 0, shopsWaiting: 0 });
   });

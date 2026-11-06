@@ -70,7 +70,8 @@ export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
       : "PayPal's history was not searched.";
   const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
   const range = c.recallsFrom && c.recallsTo ? `, ${c.recallsFrom} to ${c.recallsTo}` : "";
-  return `${searched} Checked ${c.recallsChecked.toLocaleString("en-US")} recalls${range}.${left}`;
+  const gap = c.recallYearsMissing.length > 0 ? ` Recalls from ${c.recallYearsMissing.join(", ")} did not fully load.` : "";
+  return `${searched} Checked ${c.recallsChecked.toLocaleString("en-US")} recalls${range}.${gap}${left}`;
 }
 
 /** Whether anything may go out on this row at all: there has to be a buyer, one order, and more than product words. */
