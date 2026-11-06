@@ -129,13 +129,8 @@ describe("verdictFor", () => {
   });
 
   describe("a printed look", () => {
-    // One model, brand not named. Two product words plus two ordinary words from CPSC's description.
-    const words = PAPABLIC.description.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 4 && w !== "papablic");
-    const productWords = PAPABLIC.products[0].name.split(/\s+/).filter((w) => !/papablic/i.test(w)).slice(0, 2).join(" ");
-
-    it("confirms nothing without the brand, however many of CPSC's words the title shares", () => {
-      const title = `${productWords} ${words.slice(0, 6).join(" ")}`;
-      const v = verdictFor(PAPABLIC, { title });
+    it("confirms nothing without the brand, even when the title shows CPSC's exact look", () => {
+      const v = verdictFor(PAPABLIC, { title: "Bedside sleeper, gray stars and moon" });
       expect(v.verdict).toBe("SCOPE_GAP");
       expect(v.strength).toBe("PRODUCT_WORDS");
     });
