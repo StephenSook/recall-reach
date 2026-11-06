@@ -9,7 +9,7 @@ import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { DAILY_CAP_MICROS } from "./claude";
 import { writtenQuestion } from "./questionStore";
-import { QUESTION_TOOLS, writeRecallQuestion } from "./recallQuestion";
+import { QUESTION_TOOLS, wordsOutsideEvidence, writeRecallQuestion } from "./recallQuestion";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-06T15:00:00Z");
@@ -135,8 +135,55 @@ describe("the question Claude writes for a family", () => {
     it("does not count a common word as the question being about the span", () => corrected({ question: "Does your chair have four legs with wheels?", evidence: "There is no tracking information located on the products" }));
 
     it("accepts CPSC's typography written plainly", async () => {
-      const { client } = fakeClaude([[answer({ question: "Does your ladder have Rapid Locks?", evidence: "the ladder's height" })]]);
+      const { client } = fakeClaude([[answer({ question: "Does your ladder show its height?", evidence: "the ladder's height" })]]);
       expect(await write("27067", client)).toBe("WROTE");
+    });
+  });
+
+  describe("a question rests on the words it quotes", () => {
+    const HABA = {
+      title: "HABA USA Recalls Rainbow Rattle Grasping and Teething Toys Due to Choking Hazard",
+      productNames: ["Rainbow Rattle Grasping and Teething Toys"],
+      evidence: "The rattle grasping and teething toy features plastic rattling rings that produce sound when moved.",
+    };
+
+    it("refuses words the quote doesn't have, as in a question that added wooden hemisphere pieces", () => {
+      expect(wordsOutsideEvidence("Does your rattle toy have plastic rattling rings and natural wooden hemisphere pieces?", HABA.evidence, HABA)).toEqual(["natural", "wooden", "hemisphere", "pieces"]);
+    });
+
+    it("takes the same question asking only what the quote says", () => {
+      expect(wordsOutsideEvidence("Does your rattle toy have plastic rattling rings?", HABA.evidence, HABA)).toEqual([]);
+    });
+
+    it("allows word forms, so rings and ring, or coated and coating, are one word", () => {
+      const fire = { title: "X Recalls Toys Due to Risk", productNames: [] };
+      expect(wordsOutsideEvidence("Does your toy have a coating on its ring?", "The rings are coated in plastic.", fire)).toEqual([]);
+      expect(wordsOutsideEvidence("Do your toys have wooden rings?", "a toy with wood rings", fire)).toEqual([]);
+    });
+
+    it("lets it name the kind of product, in CPSC's own words for it, and no other word from the title", () => {
+      const swing = { title: "Pacearth Direct Recalls PACEARTH Swing Seats Due to Risk of Serious Injury", productNames: ["PACEARTH Swing Seats"] };
+      expect(wordsOutsideEvidence("Does your swing seat have a chain coated in yellow plastic?", "The chain is coated in yellow plastic.", swing)).toEqual([]);
+      expect(wordsOutsideEvidence("Does your swing seat have a serious injury chain?", "The chain is coated in yellow plastic.", swing)).toEqual(["serious", "injury"]);
+    });
+
+    it("doesn't let a list be stretched past what it says", () => {
+      const lights = { title: "BAMAMON Recalls LED Projecting Finger Light Toys Due to Risk", productNames: [] };
+      const quote = "The finger lights project eight space themed patterns such as astronauts, rockets, UFO, galaxy and solar systems";
+      expect(wordsOutsideEvidence("Does your finger light toy project space themed patterns like astronauts, rockets or planets?", quote, lights)).toEqual(["planets"]);
+    });
+
+    it("sends a question with outside words back, and takes the corrected one", async () => {
+      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair convert into a table and chair set with wheels?" })], [answer()]]);
+      expect(await write("27040", client)).toBe("WROTE");
+      expect(lastReply(requests[1])[0]).toMatchObject({ type: "tool_result", is_error: true });
+      expect((await stored("27040")).question).toBe(QUESTION);
+    });
+
+    it("keeps the prompt from showing it any demo case's question", async () => {
+      const { client, requests } = fakeClaude([[answer()]]);
+      await write("27040", client);
+      expect(JSON.stringify(requests[0].body.system)).not.toMatch(/high chair|chair|sterilizer|sleeper|bath seat|jumper|swing|drawstring|short set/i);
     });
   });
 
@@ -182,7 +229,7 @@ describe("the question Claude writes for a family", () => {
     });
 
     it("takes a question that asks what a parent can see, with no code", async () => {
-      const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number on the bottom?", evidence: LABEL })]]);
+      const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number printed on it?", evidence: LABEL })]]);
       expect(await write("27065", client)).toBe("WROTE");
     });
 

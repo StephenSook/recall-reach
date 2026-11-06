@@ -20,7 +20,7 @@ const hash = (fields: unknown) => createHash("sha256").update(JSON.stringify(fie
 const pub = (value: string | null) => (value ? publicText(value) : null);
 const own = (value: string | null) => (value ? shopOwnedText(value) : null);
 
-export async function readRecall(db: Queryable, recallId: number): Promise<(Snapshot & { number: string; title: string; description: string }) | null> {
+export async function readRecall(db: Queryable, recallId: number): Promise<(Snapshot & { number: string; productNames: string[]; title: string; description: string }) | null> {
   const { rows } = await db.query<{
     recall_number: string;
     title: string;
@@ -36,6 +36,7 @@ export async function readRecall(db: Queryable, recallId: number): Promise<(Snap
     number: r.recall_number,
     title: r.title,
     description: r.description,
+    productNames: r.products.map((p) => p.name),
     sha256: r.raw_sha256,
     text: {
       recall_number: publicText(r.recall_number),

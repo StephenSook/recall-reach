@@ -3,7 +3,7 @@
 import type { Queryable } from "../db/types";
 
 /** Goes up when the prompt or the guard changes, so a question written under older rules is written again. */
-export const QUESTION_VERSION = "2";
+export const QUESTION_VERSION = "3";
 
 /** Whether a key is set at all. Pages use this so they don't load the Claude client. A refused key shows up when it is used. */
 export const agentConfigured = (env: Record<string, string | undefined> = process.env) => Boolean(env.ANTHROPIC_API_KEY?.trim());

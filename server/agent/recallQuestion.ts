@@ -20,9 +20,9 @@ const SYSTEM = `You write one question for a parent who may own a product in a C
 The question must:
 - Ask about something visible on the product itself: a feature, a part, a shape, or a printed label. Not where or when it was bought, and not the hazard.
 - Be answerable Yes or No, where Yes means the product matches what CPSC describes.
-- Be one short sentence in plain words, naming the kind of product, as in "Does your high chair ...?". Do not ask about the brand: the shop already matched that.
+- Be one short sentence in plain words, naming the kind of product, as in "Does your lamp ...?". Do not ask about the brand: the shop already matched that.
 - Not mention the recall, CPSC or safety. Use straight quotes and no dashes.
-- Rest on CPSC's exact words. Copy the words it depends on into evidence, exactly as written.
+- Rest on CPSC's exact words. Copy the words it depends on into evidence, exactly as written. Apart from small words and the kind of product, every word in the question has to be in the evidence.
 
 Do not put a serial number, lot code, date code or model in the question. If that is the only thing that sets this product apart, abstain.
 
@@ -74,19 +74,43 @@ const FEATURE = /^\d{1,2}-[a-z]{2,}(-\d{1,2})?$/;
 const numbered = (text: string): string[] => text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? [];
 const hasIdentifier = (text: string) => numbered(text).some((token) => !FEATURE.test(token));
 
-const COMMON = new Set(["does", "your", "have", "with", "that", "this", "from", "were", "been", "they", "their", "into", "will", "when", "each", "other", "there", "located"]);
-const longWords = (text: string) => (text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !COMMON.has(w));
-const shareAWord = (a: string, b: string) => longWords(a).some((x) => longWords(b).some((y) => x.startsWith(y) || y.startsWith(x)));
+/** The words a question is built with. Everything else in it has to come from CPSC. */
+const ASKING_WORDS = new Set(
+  "a an and any are as at be by can come comes could did do does for from had has have in include includes into is it its like look looks of on one or show shows than that the their them there these this those to up use uses was were will with you your".split(" "),
+);
+const wordsOf = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+const stem = (w: string) => w.replace(/(ies|es|s|ed|ing)$/, "");
+/** Rings and ring, coated and coating, wood and wooden. A short word has to match outright, so "car" isn't "carafe". */
+function sameWord(a: string, b: string): boolean {
+  if (a === b || stem(a) === stem(b)) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 4 && longer.startsWith(shorter);
+}
+
+/** The kind of product, in CPSC's own words: its product names, and its title from "Recalls" up to "Due to". */
+function productWords(recall: { title: string; productNames: string[] }): string[] {
+  const kind = /\bRecall(?:s|ed)?\s+(.*?)(?:\s+Due to\b|$)/.exec(recall.title)?.[1] ?? recall.title.split(/\s+Due to\b/)[0];
+  return wordsOf(`${kind} ${recall.productNames.join(" ")}`);
+}
+
+/**
+ * What the question says that the quote doesn't, so "rests on CPSC's words" is true of the whole question and not just
+ * one word of it. A refusal costs a retry or an abstention, and either of those is safe.
+ */
+export function wordsOutsideEvidence(question: string, evidence: string, recall: { title: string; productNames: string[] }): string[] {
+  const allowed = [...wordsOf(evidence), ...productWords(recall)];
+  return wordsOf(question).filter((w) => !ASKING_WORDS.has(w) && !allowed.some((a) => sameWord(w, a)));
+}
 
 /** Null means it passed. */
-function answerProblem(answer: Answer, recall: Snapshot): OurText | null {
+function answerProblem(answer: Answer, recall: Snapshot & { title: string; productNames: string[] }): OurText | null {
   const { question, evidence } = answer;
   if (question === null) return answer.abstain_reason?.trim() ? null : ourText("Give the reason in abstain_reason, or write a question.");
   if (!evidence) return ourText("Copy the CPSC words the question rests on into evidence.");
   if (!quoted(recall.quotable, evidence)) return ourText("The evidence is not in CPSC's text. Copy the exact words.");
   if (hasIdentifier(question)) return ourText("Do not put a serial number, lot code or model in the question. Ask about something else a parent can see, or give the reason in abstain_reason.");
   if (numbered(question).some((token) => !numbered(evidence).includes(token))) return ourText("A number in the question has to be in the evidence.");
-  if (!shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
+  if (wordsOutsideEvidence(question, evidence, recall).length > 0) return ourText("A word in the question is not in the evidence. Apart from small words and the kind of product, use only words CPSC wrote in the evidence, or give the reason in abstain_reason.");
   const q = question.trim();
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
   if (!q.endsWith("?") || q.indexOf("?") !== q.length - 1 || !YES_OR_NO_OPENING.test(q)) return ourText("Write one question a parent can answer Yes or No.");
@@ -102,7 +126,7 @@ async function runLoop(
   db: Queryable,
   client: Anthropic,
   model: string,
-  recall: Snapshot & { number: string },
+  recall: Snapshot & { number: string; title: string; productNames: string[] },
   now: Date,
   spent: Spent,
 ): Promise<{ outcome: Outcome; answer: Answer | null; model: string }> {
