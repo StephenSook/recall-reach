@@ -58,6 +58,7 @@ For agents and marketplaces, the same check is an MCP tool, `check_recall`, on [
 - The matcher reads words. It can't see a label on a real product, so a look-alike can still reach a seller as a card to review.
 - `/eval`'s labels were written by Claude and aren't independent. The page says so.
 - Sandbox PayPal only. A real shop's file has no PayPal link, so it can't refund.
+- The store address on `/check` reads Shopify's public `/products.json` only, so it sees what's listed today and no sales. Its results say "need a check". A listing can't confirm a recall.
 - Tested on demo data and public listings. No real shop has run it yet.
 
 ## How it's built

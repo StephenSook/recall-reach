@@ -9,6 +9,7 @@ export default function Privacy() {
       </header>
       <h2 className="section-title">What this app keeps</h2>
       <p>Your order file&apos;s columns, with buyer emails encrypted, deleted after 7 days or when you ask. CPSC&apos;s public recalls. PayPal sales data is built to be deleted within 48 hours under PayPal&apos;s deletion rule. Stored decisions use your own order number or a keyed hash. It keeps a keyed fingerprint of each PayPal webhook delivery to refuse repeats, with no ids or amounts.</p>
+      <p>If you type a store&apos;s address, RecallReachBot reads that store&apos;s robots.txt and public /products.json, about 5 seconds apart. It keeps each title and whether it&apos;s for sale, deleted after 7 days or when you ask. It never keeps the vendor, and never reads a store unless someone typed its address.</p>
       <h2 className="section-title">What goes to a third party</h2>
       <p>If you press Check with Claude, CPSC&apos;s text and your item&apos;s title, SKU and listing description go to Anthropic. Nothing PayPal returns does, and no buyer&apos;s details do. The app never emails anyone: messages open in your own mail, and you send them.</p>
       <h2 className="section-title">For your shop&apos;s privacy policy</h2>

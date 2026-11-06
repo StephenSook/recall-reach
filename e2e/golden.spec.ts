@@ -363,6 +363,16 @@ test.describe("Recall Replay", () => {
   });
 });
 
+test("a store address the server must not fetch is refused in plain words, signed in as no one", async ({ page, context }) => {
+  await page.goto("/check");
+  const form = page.getByTestId("store-form");
+  await form.getByLabel("Type your store's web address").fill("169.254.169.254");
+  await form.getByRole("button", { name: "Check my listings" }).click();
+  await expect(page).toHaveURL(/\/check\?error=BAD_ADDRESS/);
+  await expect(page.locator(".alert")).toHaveText("That isn't a store address we can read. Type it like yourstore.com.");
+  expect((await context.cookies()).filter((c) => c.name.includes("session"))).toEqual([]);
+});
+
 for (const width of [1280, 390]) {
   test(`no page anyone can open logged out runs off the side at ${width} wide`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
