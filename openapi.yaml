@@ -1,0 +1,257 @@
+openapi: 3.0.3
+info:
+  title: Recall Reach public API
+  version: 1.0.0
+  description: >-
+    Check text against real CPSC recalls, and recount what the site reports. No key and no cookie. Nothing here reads
+    or returns PayPal data or a shop's data. A result names a recall to read, not a finding about an item.
+  license:
+    name: MIT
+    url: https://opensource.org/license/mit
+servers:
+  - url: https://recall-reach-web-e022.onrender.com
+tags:
+  - name: Check
+  - name: Evidence
+  - name: Status
+paths:
+  /api/check:
+    get:
+      tags: [Check]
+      operationId: checkRecall
+      summary: Check a product title or model against CPSC recalls
+      description: >-
+        Runs the rules a shop's sales get on the text you send. Nothing you send is stored or logged. At least one of
+        title and model is needed. Limited to 60 checks an hour per visitor.
+      parameters:
+        - name: title
+          in: query
+          description: The product's title, as a listing or a label would say it.
+          schema: { type: string, maxLength: 200 }
+          example: Baby Brezza sterilizer
+        - name: model
+          in: query
+          description: The model number, if you have one. Compared with the models CPSC names.
+          schema: { type: string, maxLength: 60 }
+          example: BRZ0083
+      responses:
+        "200":
+          description: The recalls this text comes near, closest first. An empty list means nothing came near.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckAnswer" }
+        "400":
+          description: No usable text, or too much of it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: Too many checks. Try again in an hour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: The check could not run just now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /api/recalls/today/matches:
+    get:
+      tags: [Evidence]
+      operationId: newestRecallDay
+      summary: The newest day of recalls in the latest Recall Replay, against the demo shop
+      parameters:
+        - name: shop
+          in: query
+          required: true
+          description: Only the demo shop is public.
+          schema: { type: string, enum: [demo] }
+      responses:
+        "200":
+          description: That day's recalls and what each one found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecallDay" }
+        "400":
+          description: A shop other than the demo shop.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: No Recall Replay has run yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /api/proof/{runId}:
+    get:
+      tags: [Evidence]
+      operationId: recountReplay
+      summary: Recount a Recall Replay's headline numbers from its own rows
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The stored numbers, the recount, and whether CPSC's records are still the ones it read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proof" }
+        "404":
+          description: No such run. Runs are pruned, so an old id can stop working.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /api/health:
+    get:
+      tags: [Status]
+      operationId: health
+      summary: Whether the site is working, check by check
+      responses:
+        "200":
+          description: Every check passed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: At least one check failed, or the database can't be reached.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthDown" }
+  /api/live:
+    get:
+      tags: [Status]
+      operationId: live
+      summary: Whether the server answers. Touches no database.
+      responses:
+        "200":
+          description: It answers.
+components:
+  schemas:
+    Problem:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    CheckResult:
+      type: object
+      required: [recallNumber, title, recallDate, verdict, strength, reason, missing]
+      properties:
+        recallNumber: { type: string }
+        title: { type: string }
+        recallDate: { type: string, format: date }
+        url: { type: string, nullable: true }
+        verdict:
+          type: string
+          enum: [MATCH, SCOPE_GAP]
+          description: MATCH means the text shows what the recall names. SCOPE_GAP means the same product line, but the text can't show this item is covered.
+        strength: { type: string }
+        reason: { type: string }
+        missing:
+          type: array
+          description: What it would take to settle a scope gap.
+          items: { type: string }
+    CheckAnswer:
+      type: object
+      required: [results, cleared, checked, note]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/CheckResult" }
+        cleared:
+          type: integer
+          description: Recalls that came near and were ruled out, so they aren't listed.
+        checked:
+          type: object
+          required: [recalls, yearsMissing]
+          properties:
+            recalls: { type: integer }
+            from: { type: string, format: date, nullable: true }
+            to: { type: string, format: date, nullable: true }
+            yearsMissing:
+              type: array
+              description: Years whose recalls didn't fully load, so this answer may not cover them.
+              items: { type: integer }
+        note: { type: string }
+    RecallDay:
+      type: object
+      required: [shop, runId, recallDate, recalls]
+      properties:
+        shop: { type: string }
+        runId: { type: string, format: uuid }
+        recallDate: { type: string, format: date, nullable: true }
+        recalls:
+          type: array
+          items:
+            type: object
+            required: [recallNumber, recallTitle, outcome]
+            properties:
+              recallNumber: { type: string }
+              recallTitle: { type: string }
+              outcome: { type: string, enum: [MATCH, SCOPE_GAP, CLEARED, NOT_NEAR] }
+              itemTitle: { type: string, nullable: true }
+              reason: { type: string, nullable: true }
+    Counts:
+      type: object
+      required: [checked, matched, scopeGaps, cleared, notNear, noticeOnly, refundEligible]
+      properties:
+        checked: { type: integer }
+        matched: { type: integer }
+        scopeGaps: { type: integer }
+        cleared: { type: integer }
+        notNear: { type: integer }
+        noticeOnly: { type: integer }
+        refundEligible: { type: integer }
+    Proof:
+      type: object
+      required: [runId, ranAt, stored, recomputed, agree, sameRecalls, ms, search, recallYearsMissing]
+      properties:
+        runId: { type: string, format: uuid }
+        ranAt: { type: string, format: date-time }
+        stored: { $ref: "#/components/schemas/Counts" }
+        recomputed: { $ref: "#/components/schemas/Counts" }
+        agree: { type: boolean }
+        sameRecalls: { type: boolean }
+        ms: { type: integer }
+        search:
+          type: object
+          required: [windows, failedWindows, complete]
+          properties:
+            windows: { type: integer }
+            failedWindows: { type: integer }
+            complete: { type: boolean }
+        recallYearsMissing:
+          type: array
+          items: { type: integer }
+    Health:
+      type: object
+      required: [ok, checkedAt, checks, database]
+      properties:
+        ok: { type: boolean }
+        checkedAt: { type: string, format: date-time }
+        checks:
+          type: object
+          required: [database, webhook, lastPull, purge, poll, replay]
+          properties:
+            database: { type: boolean }
+            webhook: { type: boolean }
+            lastPull: { type: boolean }
+            purge: { type: boolean }
+            poll: { type: boolean }
+            replay: { type: boolean }
+        database:
+          type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+    HealthDown:
+      type: object
+      required: [ok, database]
+      properties:
+        ok: { type: boolean }
+        database:
+          type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
