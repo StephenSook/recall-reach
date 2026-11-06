@@ -138,10 +138,14 @@ describe("the eval on the real labels", () => {
   it("a family typing a model the title states is never told it doesn't match", () => {
     const { valid } = parseRecalls(JSON.parse(load("positives_recalls.json")));
     const byNumber = new Map(valid.map((v) => [v.recall.recallNumber, v.recall]));
-    const typed = parsePairs(load("positives.csv"))
-      .filter((p) => p.label === "MATCH")
-      .flatMap((p) => modelTokens(p.title).map((model) => ({ pair: p.pairId, model, recall: byNumber.get(p.recallNumber)! })));
-    expect(typed.length).toBeGreaterThanOrEqual(60);
+    const stated = parsePairs(load("positives.csv")).filter((p) => p.label === "MATCH");
+    expect(stated).toHaveLength(60);
+    // These titles end in the model, so no pair can drop out because the tokenizer doesn't read its model as one (4155L).
+    const typed = stated.flatMap((p) => {
+      const last = p.title.trim().split(/\s+/).at(-1) ?? "";
+      expect(last, p.pairId).toMatch(/\d/);
+      return [...new Set([last, ...modelTokens(p.title)])].map((model) => ({ pair: p.pairId, model, recall: byNumber.get(p.recallNumber)! }));
+    });
     const told = typed.filter(({ model, recall }) => checkResult(recall, { question: "Q", kind: "model" }, model) === "DOESNT_MATCH").map((t) => `${t.pair}: ${t.model}`);
     expect(told).toEqual([]);
   });
