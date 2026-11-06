@@ -4,6 +4,7 @@ import { fetchTestCert, paypalHeaders } from "../../test/paypalSigner";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createRecordKey } from "../privacy/recordKey";
+import { purgePayPalData } from "../privacy/retention";
 import { handleWebhookDelivery } from "./webhookHandler";
 
 const WEBHOOK_ID = "TEST-WEBHOOK-ID";
@@ -67,6 +68,89 @@ describe("handleWebhookDelivery", () => {
 
     it("fails the delivery if acting on it fails, so PayPal tries again", async () => {
       await expect(send(event("PAYMENT.CAPTURE.COMPLETED"), async () => Promise.reject(new Error("PayPal down")))).rejects.toThrow("PayPal down");
+    });
+  });
+
+  describe("after the purge has taken the event's row", () => {
+    const capture = Buffer.from(JSON.stringify({ id: "WH-OLD", event_type: "PAYMENT.CAPTURE.COMPLETED", resource_type: "capture", resource: { id: "CAPTURE-OLD" } }));
+    const later = () => Date.now() + 47 * 3_600_000;
+    const at = (when: () => number, transmission: string, seen: (id: string) => Promise<unknown>) =>
+      handleWebhookDelivery({ rawBody: capture, headers: paypalHeaders(capture, WEBHOOK_ID, transmission), webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, now: when, onCaptureCompleted: seen });
+
+    it.each([
+      ["the same transmission", "t-old"],
+      ["a new transmission", "t-resend"],
+    ])("a delivery sent again under %s stores nothing and acts on nothing", async (_name, transmission) => {
+      const seen = vi.fn(async () => undefined);
+      await at(Date.now, "t-old", seen);
+      seen.mockClear();
+      await purgePayPalData(db, new Date(later()));
+      expect(await rows()).toHaveLength(0);
+
+      expect(await at(later, transmission, seen)).toEqual({ status: 200, body: { received: true, duplicate: true } });
+      expect(await rows()).toHaveLength(0);
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it("a delivery whose row is missing inside the window still goes through, so a crash between the two writes loses nothing", async () => {
+      const seen = vi.fn(async () => undefined);
+      await at(Date.now, "t-old", seen);
+      await db.query("delete from paypal_webhook_events");
+      seen.mockClear();
+
+      expect(await at(Date.now, "t-old", seen)).toEqual({ status: 200, body: { received: true, duplicate: false } });
+      expect(await rows()).toHaveLength(1);
+      expect(seen).toHaveBeenCalledWith("CAPTURE-OLD");
+    });
+  });
+
+  describe("a transmission sent again", () => {
+    const same = { ...event, resource: { id: "ATTACKER-CHOSEN", status: "COMPLETED" } };
+
+    it("is refused when its bytes differ, even under the same event id", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"));
+        const crafted = Buffer.from(JSON.stringify(same));
+        expect((await deliver(crafted, paypalHeaders(crafted, WEBHOOK_ID, "t-same"))).status).toBe(401);
+        expect(String(warn.mock.calls[0]?.[0])).not.toContain("ATTACKER-CHOSEN");
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("goes through when its bytes are the same", async () => {
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"));
+      expect((await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"))).body).toEqual({ received: true, duplicate: true });
+    });
+
+    it("goes through for a row kept from before the bytes were remembered", async () => {
+      await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"));
+      await db.query("update paypal_webhook_transmissions set body_hmac = null");
+      expect((await deliver(body, paypalHeaders(body, WEBHOOK_ID, "t-same"))).status).toBe(200);
+    });
+  });
+
+  describe("free text in a signed body", () => {
+    it("refuses an event type that isn't shaped like one, and keeps it out of the store and the log", async () => {
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const raw = Buffer.from(JSON.stringify({ ...event, event_type: "attacker@example.com wrote this" }));
+        expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID, "t-odd"))).status).toBe(400);
+        expect(await rows()).toHaveLength(0);
+        const lines = [...info.mock.calls, ...warn.mock.calls].map((c) => String(c[0])).join("\n");
+        expect(lines).not.toContain("attacker@example.com");
+      } finally {
+        info.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
+    it("stores no resource type that isn't shaped like one", async () => {
+      const raw = Buffer.from(JSON.stringify({ ...event, resource_type: "attacker@example.com" }));
+      expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID, "t-odd"))).status).toBe(200);
+      expect((await rows())[0].resource_type).toBeNull();
     });
   });
 
@@ -267,6 +351,7 @@ describe("handleWebhookDelivery", () => {
       "paypal_webhook_transmissions.transmission_id_hmac",
       "paypal_webhook_transmissions.event_id_hmac",
       "paypal_webhook_transmissions.received_at",
+      "paypal_webhook_transmissions.body_hmac",
     ]);
   });
 });
