@@ -12,5 +12,6 @@ task({ name: "refresh_replay", timeoutSeconds: 30 * 60, retry: { maxRetries: 1, 
   if (!secret) throw new Error("SHOP_DATA_KEY is not set");
   const now = new Date();
   const outcome = await refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(now), now, secret }), now, REPLAY_TASK_FRESH_MS);
+  console.log(`refresh_replay: ${outcome}`); // one word, so Render's logs show what a run did
   return { outcome };
 });
