@@ -89,6 +89,9 @@ const SHELF_ITEM = { title: "ONTHEWEI baby bath seat MY002", sku: "DEMO-ONTHEWEI
 const daysBefore = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
 
 /** Creates a fresh demo shop for one session, reads PayPal's history, then runs the real check against it. */
+/** Every recall a demo card can show. */
+export const DEMO_RECALL_NUMBERS: string[] = [...new Set([...CASES, SHELF_ITEM].map((c) => c.recallNumber))];
+
 export async function seedDemoShop(
   db: Db,
   client: PayPalClient,

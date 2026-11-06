@@ -37,6 +37,17 @@ describe("the market sweep", () => {
     expect(sweep).toMatchObject({ status: "ok", listings: [{ id: "p0", title: "A title", brand: "Brand" }], recallChanged: false });
   });
 
+  it("searches the recalls it is told to first, whatever their age", async () => {
+    await db.query("update recalls set recall_date = '2020-01-01' where recall_number = '27040'");
+    const sent: string[] = [];
+    const first = await db.query<{ title: string; products: { name?: string }[] }>("select title, products from recalls where recall_number = '27040'");
+    await sweepRecalls(db, async (query) => {
+      sent.push(query);
+      return found();
+    }, NOW, 1, ["27040"]);
+    expect(sent).toEqual([queryFor(first.rows[0])]);
+  });
+
   it("sends only CPSC's public product name, even with shop and PayPal rows in the database", async () => {
     const shop = await db.query<{ id: string }>("insert into shops (name, kind) values ('PLANTED-SHOP-NAME', 'REAL') returning id");
     await db.query("insert into shop_items (shop_id, title, listed, source) values ($1, 'PLANTED-ITEM-TITLE', true, 'x')", [shop.rows[0].id]);

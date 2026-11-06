@@ -8,7 +8,7 @@ import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
 import { approveRefund } from "../paypal/refunds";
 import { createContactCipher } from "../privacy/contactCipher";
 import { HISTORY_POOL_MADE_ON } from "./historyPool";
-import { DEMO_LABEL, seedDemoShop } from "./seed";
+import { DEMO_LABEL, DEMO_RECALL_NUMBERS, seedDemoShop } from "./seed";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const extraText = readFileSync(new URL("../../test/fixtures/cpsc/demo_cases_extra.json", import.meta.url), "utf8");
@@ -104,6 +104,13 @@ describe("seedDemoShop when it can't finish", () => {
       logged.mockRestore();
       await db.close();
     }
+  });
+});
+
+describe("DEMO_RECALL_NUMBERS", () => {
+  it("names every recall a demo card can show", () => {
+    expect(DEMO_RECALL_NUMBERS).toEqual(expect.arrayContaining(["27072", "27040", "27027", "27018"]));
+    expect(new Set(DEMO_RECALL_NUMBERS).size).toBe(DEMO_RECALL_NUMBERS.length);
   });
 });
 

@@ -7,7 +7,7 @@ export async function register(): Promise<void> {
     console.warn("background jobs not started: DATABASE_URL is not set");
     return;
   }
-  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }, { refreshReplay, runReplay }, { payPalClientFromEnv }, { businessDay }, { sweepRecalls }, { channel3Search }] = await Promise.all([
+  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }, { refreshReplay, runReplay }, { payPalClientFromEnv }, { businessDay }, { sweepRecalls }, { channel3Search }, { DEMO_RECALL_NUMBERS }] = await Promise.all([
     import("./server/db/pg"),
     import("./server/jobs/appJobs"),
     import("./server/jobs/scheduler"),
@@ -17,6 +17,7 @@ export async function register(): Promise<void> {
     import("./server/time/businessDay"),
     import("./server/sweep/sweep"),
     import("./server/sweep/channel3"),
+    import("./server/demo/seed"),
   ]);
   const shopDataKey = process.env.SHOP_DATA_KEY;
   startScheduler(
@@ -25,7 +26,7 @@ export async function register(): Promise<void> {
       refreshReplay: shopDataKey
         ? (at) => refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(at), now: at, secret: shopDataKey }), at)
         : undefined,
-      sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at),
+      sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at, undefined, DEMO_RECALL_NUMBERS),
     }),
   );
   console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");

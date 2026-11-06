@@ -27,7 +27,7 @@ interface Due {
 
 const DUE_SQL = `
   from recalls r left join recall_sweeps s using (recall_id)
-  where r.recall_date >= $1::timestamptz - make_interval(days => $2)
+  where (r.recall_date >= $1::timestamptz - make_interval(days => $2) or r.recall_number = any($4::text[]))
     and (s.recall_id is null
       or (s.status = 'failed' and s.searched_at <= $1::timestamptz - make_interval(days => ${RETRY_FAILED_DAYS}))
       or s.searched_at < $1::timestamptz - make_interval(days => $3))`;
@@ -35,11 +35,12 @@ const DUE_SQL = `
 /** Only CPSC's public words go out: the recall's first product name, or its title. */
 export const queryFor = (recall: Pick<Due, "title" | "products">) => (recall.products[0]?.name?.trim() || recall.title).slice(0, 200);
 
-export async function sweepRecalls(db: Queryable, search: SearchMarket, now: Date, perRun = SWEEP_PER_RUN): Promise<SweepRun> {
+/** `first` go ahead of everything else, whatever their age: the recalls someone is about to look at. */
+export async function sweepRecalls(db: Queryable, search: SearchMarket, now: Date, perRun = SWEEP_PER_RUN, first: string[] = []): Promise<SweepRun> {
   const at = now.toISOString();
   const { rows: due } = await db.query<Due>(
-    `select r.recall_id, r.raw_sha256, r.title, r.products ${DUE_SQL} order by r.recall_date desc, r.recall_number desc limit $4`,
-    [at, LOOK_BACK_DAYS, REFRESH_DAYS, perRun],
+    `select r.recall_id, r.raw_sha256, r.title, r.products ${DUE_SQL} order by r.recall_number = any($4::text[]) desc, r.recall_date desc, r.recall_number desc limit $5`,
+    [at, LOOK_BACK_DAYS, REFRESH_DAYS, first, perRun],
   );
   let searched = 0;
   let failed = 0;
@@ -66,7 +67,7 @@ export async function sweepRecalls(db: Queryable, search: SearchMarket, now: Dat
       break; // if it is a limit, the rest would only add to it
     }
   }
-  const { rows } = await db.query<{ n: string }>(`select count(*)::text as n ${DUE_SQL}`, [at, LOOK_BACK_DAYS, REFRESH_DAYS]);
+  const { rows } = await db.query<{ n: string }>(`select count(*)::text as n ${DUE_SQL}`, [at, LOOK_BACK_DAYS, REFRESH_DAYS, first]);
   return { searched, failed, left: Number(rows[0].n) };
 }
 
