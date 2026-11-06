@@ -52,7 +52,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
       </p>
       <p className="note">
         <span data-testid="ran-at">Run {ranAt(replay.createdAt)}.</span>{" "}
-        {search.complete ? `PayPal's search read all ${search.windows} windows.` : `PayPal's search failed for ${search.failedWindows} of ${search.windows} windows.`} PayPal can take up to 3 hours to list a sale and keeps 3 years. Run at {replay.createdAt.slice(0, 16).replace("T", " ")} UTC.{" "}
+        {search.complete ? `PayPal's search read all ${search.windows} windows.` : `PayPal's search failed for ${search.failedWindows} of ${search.windows} windows.`} PayPal can take up to 3 hours to list a sale and keeps 3 years.{" "}
         <a href={`/api/proof/${replay.runId}`}>Recount these numbers</a>.
       </p>
       <div className="actions">
