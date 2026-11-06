@@ -90,11 +90,20 @@ export const CLAIMS: Claim[] = [
     ],
   },
   { name: "OpenAPI", status: "claimed", evidence: [{ file: "openapi.yaml", find: "openapi: 3" }, { file: "server/openapi.test.ts", call: "Validator" }] },
+  {
+    name: "Channel3",
+    status: "claimed",
+    evidence: [
+      { file: "server/sweep/channel3.ts", find: "search_products" },
+      { file: "instrumentation.ts", call: "channel3Search" },
+      { file: "app/sweep/[recallNumber]/page.tsx", call: "readSweep" },
+      { file: "app/sweep/[recallNumber]/page.tsx", call: "sweepView" },
+    ],
+  },
   { name: "Render", status: "claimed", evidence: [{ file: "render.yaml", find: "type: web" }] },
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
 
-  { name: "Channel3", status: "cut", why: "The sweep runs, but no page shows it yet.", mentions: ["channel3"], allowedIn: ["server/sweep/", "server/privacy/retention.ts"] },
   { name: "APIMatic", status: "cut", why: "Needs an account Stephen hasn't created.", mentions: ["apimatic"] },
   { name: "AG Studio", status: "cut", why: "Needs a trial licence Stephen hasn't requested.", mentions: ["ag studio", "ag-studio"] },
   { name: "Bryntum", status: "cut", why: "Not built yet.", mentions: ["bryntum"] },

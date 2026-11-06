@@ -7,7 +7,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { channel3Search, CHANNEL3_MCP_URL, MAX_ANSWER_BYTES, MAX_LISTINGS, type SearchMarket } from "./channel3";
-import { queryFor, readSweep, SWEEP_PER_RUN, sweepRecalls } from "./sweep";
+import { queryFor, readSweep, SWEEP_PER_RUN, sweepCounts, sweepRecalls } from "./sweep";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-06T15:00:00Z");
@@ -98,6 +98,13 @@ describe("the market sweep", () => {
     await sweepRecalls(db, async () => found("A title"), NOW, 60);
     await db.query("update recalls set raw_sha256 = 'edited' where recall_number = '27072'");
     expect((await readSweep(db, "27072"))?.recallChanged).toBe(true);
+  });
+
+  it("counts what it has, leaving out failures", async () => {
+    await sweepRecalls(db, async () => found("A", "B"), NOW, 3);
+    expect(await sweepCounts(db)).toEqual({ searched: 3, listings: 6 });
+    await sweepRecalls(db, async () => Promise.reject(new Error("down")), NOW, 3);
+    expect(await sweepCounts(db)).toEqual({ searched: 3, listings: 6 });
   });
 
   it("has nothing to say about a recall it hasn't searched", async () => {

@@ -70,6 +70,13 @@ export async function sweepRecalls(db: Queryable, search: SearchMarket, now: Dat
   return { searched, failed, left: Number(rows[0].n) };
 }
 
+export async function sweepCounts(db: Queryable): Promise<{ searched: number; listings: number }> {
+  const { rows } = await db.query<{ searched: string; listings: string }>(
+    "select count(*)::text as searched, coalesce(sum(jsonb_array_length(listings)), 0)::text as listings from recall_sweeps where status = 'ok'",
+  );
+  return { searched: Number(rows[0].searched), listings: Number(rows[0].listings) };
+}
+
 export interface RecallSweep {
   query: string;
   status: "ok" | "failed";

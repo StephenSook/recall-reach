@@ -15,6 +15,7 @@ const PAGES: [path: string, heading: string, shows: string][] = [
   ["/evidence/paypal", "How it uses PayPal", "PayPal"],
   ["/evidence/ag-grid", "How it uses AG Grid", "AG Grid"],
   ["/evidence/api", "For agents and marketplaces", "check_recall"],
+  ["/evidence/channel3", "How it uses Channel3", "search_products"],
   ["/privacy", "Privacy", "48"],
   ["/check", "", "order file"],
 ];

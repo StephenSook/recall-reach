@@ -34,6 +34,8 @@ curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"
 ```
 
+Each recent recall's product name also goes to [Channel3](https://recall-reach-web-e022.onrender.com/evidence/channel3), from the hourly job, to see what the market lists under it. A page like [`/sweep/27072`](https://recall-reach-web-e022.onrender.com/sweep/27072) shows same-brand, same-product results as candidates for a person to review. None is called recalled, and no seller is kept. Only CPSC's public words go out.
+
 For agents and marketplaces, the same check is an MCP tool, `check_recall`, on [`/api/mcp`](https://recall-reach-web-e022.onrender.com/evidence/api). A result names a recall to read, not a finding about the item. No key, and nothing sent is stored. The API is described in [`openapi.yaml`](openapi.yaml), and a test checks it against the code.
 
 ```json

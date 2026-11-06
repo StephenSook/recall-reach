@@ -294,7 +294,7 @@ test.describe("Recall Replay", () => {
 for (const width of [1280, 390]) {
   test(`no page anyone can open logged out runs off the side at ${width} wide`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
-    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/evidence/api", "/privacy", "/check"]) {
+    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/evidence/api", "/evidence/channel3", "/sweep/27072", "/privacy", "/check"]) {
       await page.goto(path);
       const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
       expect.soft(scroll, `${path} at ${width}`).toBeLessThanOrEqual(client);
@@ -342,6 +342,11 @@ test("the judge's door works logged out, and every page it names is there", asyn
   expect(mcp.ok()).toBe(true);
   expect(JSON.parse((await mcp.json()).result.content[0].text).results[0].recallNumber).toBe("27072");
   expect(await (await request.get("/openapi.yaml")).text()).toContain("openapi: 3");
+  await page.goto("/sweep/27072");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("On the market now");
+  await expect(page.locator("main")).not.toContainText("was recalled");
+  await page.goto("/evidence/channel3");
+  await expect(page.getByTestId("sweep-totals")).toContainText("recalls searched");
   await page.goto("/evidence/api");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("For agents and marketplaces");
   await expect(page.getByTestId("public-calls")).toContainText("through the tool");

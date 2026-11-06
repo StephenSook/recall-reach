@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { agentConfigured } from "@/server/agent/questionStore";
@@ -184,7 +185,7 @@ function Card({ card, shopName, shopKind, agentReady }: { card: QueueCard; shopN
             {row.matched.length > 0 ? <p>Shared: {row.matched.join("; ")}</p> : null}
             {row.missing.length > 0 ? <p>Missing: {row.missing.join("; ")}</p> : null}
             <p>
-              <a href={row.recallUrl}>CPSC&apos;s recall page</a>
+              <a href={row.recallUrl}>CPSC&apos;s recall page</a>. <Link href={`/sweep/${row.recallNumber}`}>On the market now</Link>.
             </p>
           </details>
         ) : null}

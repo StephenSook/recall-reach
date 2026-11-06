@@ -27,6 +27,14 @@ export const API_CLAIMS: Claim[] = [
   { what: "Counts calls, and never keeps the text", file: "server/web/publicCalls.ts", find: "insert into public_calls (day, surface, calls)" },
 ];
 
+export const CHANNEL3_CLAIMS: Claim[] = [
+  { what: "Calls Channel3's search_products over its MCP server, from the hourly job", file: "server/sweep/channel3.ts", find: "search_products" },
+  { what: "Sends only the product name from CPSC's public record", file: "server/sweep/sweep.ts", find: "queryFor" },
+  { what: "Keeps titles only: offers, sellers and prices stop at the door", file: "server/sweep/channel3.ts", find: "Offers hold the retailers" },
+  { what: "Lists only what the rules read as the recall's brand and product, and only counts the rest", file: "server/sweep/view.ts", find: "sameBrand" },
+  { what: "Caches every search, so opening a page never calls anyone", file: "server/sweep/sweep.ts", find: "insert into recall_sweeps" },
+];
+
 export const AG_GRID_CLAIMS: Claim[] = [
   { what: "The seller's queue is a grid: every candidate, findable", file: "app/queue/MatchGrid.tsx", find: "AgGridReact" },
   { what: "Recall Replay is a grid: every recall in the run", file: "app/replay/ReplayGrid.tsx", find: "AgGridReact" },
