@@ -1,0 +1,7 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
+  "build": {
+    "testflight": { "distribution": "store", "ios": { "resourceClass": "default" } },
+    "apk": { "distribution": "internal", "android": { "buildType": "apk" } }
+  }
+}

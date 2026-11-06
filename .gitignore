@@ -1,5 +1,8 @@
 # dependencies
 /node_modules
+/mobile/node_modules
+/mobile/.expo
+/mobile/dist
 /.pnp
 .pnp.*
 
