@@ -20,6 +20,9 @@ export default function JudgeDoor() {
           <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue.
         </li>
         <li>
+          <strong>See the refund windows.</strong> In the queue, open a sale&apos;s row, then Why this came up, then Refund windows.
+        </li>
+        <li>
           <strong>Ask what a recall needs.</strong> On the card for recall 27040, press Approve this check request and answer on the family&apos;s page.
         </li>
         <li>

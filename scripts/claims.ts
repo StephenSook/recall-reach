@@ -114,12 +114,20 @@ export const CLAIMS: Claim[] = [
       { file: "app/sweep/[recallNumber]/page.tsx", call: "sweepView" },
     ],
   },
+  {
+    name: "Bryntum Scheduler",
+    status: "claimed",
+    evidence: [
+      { file: "package.json", find: '"@bryntum/scheduler-community":' },
+      { file: "app/queue/recalls/RefundTimeline.tsx", call: "BryntumScheduler" },
+      { file: "app/queue/recalls/[recallNumber]/page.tsx", call: "timelineFor" },
+    ],
+  },
   { name: "Render", status: "claimed", evidence: [{ file: "render.yaml", find: "type: web" }] },
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
 
   { name: "AG Studio", status: "cut", why: "Needs a trial licence Stephen hasn't requested.", mentions: ["ag studio", "ag-studio"] },
-  { name: "Bryntum", status: "cut", why: "Not built yet.", mentions: ["bryntum"] },
   { name: "Render Workflows", status: "cut", why: "Skipped: a daily job does this.", mentions: ["render workflows"] },
   { name: "Trained scorer", status: "cut", why: "The matcher is rules. No model was trained.", mentions: ["trained scorer", "train_scorer"] },
   { name: "Hybrid search", status: "cut", why: "Trigrams and model numbers. No embeddings.", mentions: ["hybrid search", "embedding"] },

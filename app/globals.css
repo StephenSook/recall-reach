@@ -372,6 +372,57 @@ pre {
   font-family: inherit;
   font-size: 14px;
 }
+.refund-timeline {
+  position: relative;
+  margin-block: 16px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  /* The app is light only, and Bryntum's theme would follow the viewer's system. */
+  --b-widget-color-scheme: light;
+}
+/* Bryntum sets a cell's line height to its row's, which pushes a long title's second line out of the row. */
+.refund-timeline .b-grid-cell {
+  display: flex !important;
+  align-items: center !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+}
+.timeline-line {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+}
+.timeline-line span {
+  position: absolute;
+  top: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-paper);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: pre;
+}
+.timeline-line-recall,
+.timeline-line-recall span {
+  background: var(--color-needs-review);
+}
+.timeline-line-recall span {
+  right: 2px;
+  color: var(--color-ink);
+  text-align: right;
+}
+.timeline-line-today,
+.timeline-line-today span {
+  background: var(--color-cobalt);
+}
+.timeline-line-today span {
+  left: 2px;
+}
 .provenance {
   display: flex;
   flex-wrap: wrap;

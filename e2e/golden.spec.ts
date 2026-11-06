@@ -302,6 +302,51 @@ for (const width of [1280, 390]) {
   });
 }
 
+test.describe("a recall's refund windows", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("draws each sale's window from the card, survives a resize, and leaves the queue as it found it", async ({ page, baseURL }) => {
+    const crashes: string[] = [];
+    page.on("pageerror", (e) => crashes.push(String(e)));
+    await startDemoShop(page);
+    const elsewhere: string[] = [];
+    page.on("request", (r) => {
+      if (!r.url().startsWith(baseURL ?? "") && !r.url().startsWith("data:")) elsewhere.push(new URL(r.url()).host);
+    });
+
+    const card = page.locator('article[data-recall="27027"]').first();
+    await page.getByTestId("match-grid").locator(`a[href="#${await card.getAttribute("id")}"]`).click();
+    await card.getByText("Why this came up").click();
+    await card.getByRole("link", { name: "Refund windows" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Refund windows");
+    const timeline = page.getByTestId("refund-timeline");
+    await expect(timeline.locator(".b-sch-event")).toHaveCount(2);
+    await expect(timeline.locator(".b-sch-event").first()).toContainText("Sold after the recall");
+    const x = async (id: string) => (await page.getByTestId(id).boundingBox())?.x ?? 0;
+    expect(await x("line-recall")).toBeGreaterThan(0);
+    expect(await x("line-recall")).toBeLessThan(await x("line-today"));
+    await expect(page.getByTestId("timeline-list").locator("li")).toHaveCount(2);
+    expect(elsewhere).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(timeline).toHaveCount(0);
+    await expect(page.getByTestId("timeline-list").locator("li")).toHaveCount(2);
+    const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(scroll).toBeLessThanOrEqual(client);
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(timeline.locator(".b-sch-event")).toHaveCount(2);
+    await expect(page.getByTestId("line-today")).toHaveCount(1);
+
+    await page.getByRole("link", { name: "Back to the queue" }).click();
+    await expect(page.getByTestId("match-grid")).toBeVisible();
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--b-primary"))).toBe("");
+    expect(crashes).toEqual([]);
+
+    expect((await page.goto("/queue/recalls/00000"))?.status()).toBe(404);
+  });
+});
+
 test("the safety checks run live, and every one is refused", async ({ page }) => {
   await page.goto("/safety");
   await page.getByRole("button", { name: /^Run them/ }).click();
