@@ -1,0 +1,30 @@
+name: Probe
+
+# A daily look at the deployed site through judging. It reads what the pages say, and retires itself after 2026-12-22.
+# Its check-run is named "probe" and pins to whatever commit is the branch head, so a verdict on a commit should leave it out.
+on:
+  schedule:
+    - cron: "37 13 * * *"
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Site to read. Point it at a wrong address to watch it fail.
+        required: false
+        default: https://recall-reach-web-e022.onrender.com
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node --experimental-strip-types scripts/probe.ts
+        env:
+          BASE_URL: ${{ inputs.base_url || 'https://recall-reach-web-e022.onrender.com' }}
