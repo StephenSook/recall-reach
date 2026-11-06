@@ -304,6 +304,50 @@ describe("verdictFor", () => {
   });
 });
 
+describe("what a card with the brand on it says it knows", () => {
+  const product = (name: string) => ({ name, model: "", type: null, units: null });
+  const JEANS = {
+    title: "The Children's Place Recalls Two Styles of Baby and Toddler Boy Basic Stretch Straight Leg Jeans Due to Choking Hazard",
+    description: "This recall involves Baby and Toddler Boy Basic Stretch Straight Leg Jeans sold in sizes 6-9M to 5T.",
+    products: [product("Baby and Toddler Boy Basic Stretch Straight Leg Jeans")],
+    retailers: [] as string[],
+  };
+  const BRAND_ONLY = "The same brand, but the shop's text cannot show whether this item is covered.";
+  const SAME_LINE = "The same product line, but the shop's text cannot show whether this unit is covered.";
+
+  it("doesn't call sleepwear the same product line as jeans because both say boy", () => {
+    const v = verdictFor(JEANS, { title: "Children's Place M Boy's Sleepwear" });
+    expect(v.reason).toBe(BRAND_ONLY);
+    expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
+  });
+
+  it("still says so when the item is the kind of thing recalled", () => {
+    const v = verdictFor(JEANS, { title: "Children's Place boys straight leg jeans" });
+    expect(v.reason).toBe(SAME_LINE);
+    expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND" });
+  });
+
+  it("counts a shared word only when it says what the thing is, in any of the recall's product names", () => {
+    const two = { ...JEANS, products: [product("Boy Fleece Pajamas"), product("Boy Fleece Hoodies")] };
+    expect(verdictFor(two, { title: "Children's Place boys hoodie" }).reason).toBe(SAME_LINE);
+    expect(verdictFor(two, { title: "Children's Place boys pajamas" }).reason).toBe(SAME_LINE);
+    expect(verdictFor(two, { title: "Children's Place boys socks" }).reason).toBe(BRAND_ONLY);
+  });
+
+  it("keeps a real line when the product name is a list or ends in a version", () => {
+    const list = { ...JEANS, products: [product("Boy Jumpers, Baby Swings and Baby Bouncers")] };
+    expect(verdictFor(list, { title: "Children's Place baby jumper" }).reason).toBe(SAME_LINE);
+    const version = { ...JEANS, products: [product("Baby Swing, versions 1.0 through 4.0")] };
+    expect(verdictFor(version, { title: "Children's Place motion swing" }).reason).toBe(SAME_LINE);
+  });
+
+  it("changes only the words: the verdict and evidence stay what they were", () => {
+    const v = verdictFor(JEANS, { title: "Children's Place M Boy's Sleepwear" });
+    expect(v.matched).toEqual(expect.arrayContaining([expect.stringContaining("brand:"), "product: boy"]));
+    expect(v.missing.length).toBeGreaterThan(0);
+  });
+});
+
 describe("a record that recalls only certain units of a model it names", () => {
   // CPSC's own first sentence of each, the only six records from 2022 on that named a model and said this without the older words.
   const CASES = [

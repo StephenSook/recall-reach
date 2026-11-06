@@ -123,6 +123,9 @@ export function modelsNamedInText(text: string): string[] {
 }
 
 /** Lower-case words, with a light plural strip, so "Dryers" and "dryer" meet. */
+/** Words for who a product is for. They appear across a brand's whole range, so sharing one says nothing about what it is. */
+const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "kid", "child", "children", "boy", "girl", "men", "mens", "women", "womens", "adult", "youth", "junior", "unisex"]);
+
 function words(text: string): Set<string> {
   const out = new Set<string>();
   for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
@@ -302,8 +305,12 @@ export function verdictFor(
       : ["something that shows this is the recalled version: CPSC gives no model number"];
   if (brand && !hasBrand) missing.unshift(`whether this is ${brand}`);
   if (!fullScope) missing.push(seeCpsc);
+  // Sleepwear that shares only "boy" with a recall of boys' jeans is the same brand, not the same line.
+  const sameKindOfThing = sharedLine.some((w) => !WHO_ITS_FOR.has(w));
   const reason = hasBrand
-    ? "The same product line, but the shop's text cannot show whether this unit is covered."
+    ? sameKindOfThing
+      ? "The same product line, but the shop's text cannot show whether this unit is covered."
+      : "The same brand, but the shop's text cannot show whether this item is covered."
     : brand
       ? `The same kind of product, but the shop's text does not name ${brand}.`
       : "The same kind of product, but nothing in the shop's text ties it to this recall.";

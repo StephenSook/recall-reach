@@ -27,7 +27,7 @@ function recallServer(headers: Headers): McpServer {
     {
       title: "Check a product against CPSC recalls",
       description:
-        "Before listing or buying a secondhand product, check its title or model number against real U.S. CPSC recalls. A result names a recall to read, not a finding about the item: MATCH means the text shows what the recall names, and SCOPE_GAP means the same product line, but the text can't show this item is covered. An empty result means nothing came near, not that the item is safe.",
+        "Before listing or buying a secondhand product, check its title or model number against real U.S. CPSC recalls. A result names a recall to read, not a finding about the item: MATCH means the text shows what the recall names, and SCOPE_GAP means it comes close to what the recall names, but the text can't show this item is covered. An empty result means nothing came near, not that the item is safe.",
       inputSchema: {
         title: z.string().max(MAX_TITLE).optional().describe("The product's title, as a listing or a label would say it."),
         model: z.string().max(MAX_MODEL).optional().describe("The model number, if there is one."),
