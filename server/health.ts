@@ -19,7 +19,7 @@ export interface Health {
     database: boolean;
     /** The webhook id is set and the record key works, so a delivery can be verified and recorded. */
     webhook: boolean;
-    /** The last finished CPSC pull worked and isn't old: the heartbeat writes one hourly. */
+    /** The last finished poll of CPSC worked and isn't old: the heartbeat writes one hourly. A history load says nothing about it. */
     lastPull: boolean;
     /** No PayPal row or demo shop has outlived the 48-hour rule, so the purge is running. */
     purge: boolean;
@@ -92,6 +92,10 @@ export async function getHealth(
       `select ${OVERDUE} as any`,
       [checkedAt, PAYPAL_RETENTION_HOURS],
     );
+    const lastPoll = await db.query<{ status: string; finished_at: unknown }>(
+      "select status, finished_at from cpsc_pulls where status <> 'running' and range_field = 'LastPublishDate' order by finished_at desc limit 1",
+    );
+    const polledAt = iso(lastPoll.rows[0]?.finished_at);
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
     const p = pulls.rows[0];
@@ -99,7 +103,7 @@ export async function getHealth(
     const checks = {
       database: true,
       webhook: webhookOk,
-      lastPull: p?.status === "ok" && pulledAt !== null && now.getTime() - Date.parse(pulledAt) <= MAX_PULL_AGE_MS,
+      lastPull: lastPoll.rows[0]?.status === "ok" && polledAt !== null && now.getTime() - Date.parse(polledAt) <= MAX_PULL_AGE_MS,
       purge: !overdue.rows[0]?.any,
       poll: pollOk,
       replay: lastRunAt !== null && now.getTime() - Date.parse(lastRunAt) <= MAX_REPLAY_AGE_MS,

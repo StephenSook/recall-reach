@@ -59,6 +59,7 @@ describe("getHealth", () => {
     });
 
     await replayed(new Date().toISOString());
+    await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'ok', now() - interval '1 minute')");
     const health = await getHealth(db, { PAYPAL_WEBHOOK_ID: WEBHOOK_ID, RECORD_HMAC_SECRET: "r".repeat(32) });
     expect(health.ok).toBe(true);
     expect(health.cpsc).toMatchObject({
@@ -105,6 +106,17 @@ describe("getHealth", () => {
       const shop = await db.query<{ id: string }>("insert into shops (name, kind) values ('x', 'DEMO') returning id");
       await db.query("insert into paypal_payments (shop_id, order_id, received_at) values ($1, 'O', $2::timestamptz)", [shop.rows[0].id, "2026-11-04T00:00:00Z"]);
       expect(await check()).toMatchObject({ ok: false, checks: { purge: false } });
+    });
+
+    it("isn't, when a history load finishing later hides a poll that went wrong", async () => {
+      await pulled("partial", "2026-11-06T11:20:00Z");
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', '2026-11-06T11:30:00Z')");
+      expect((await check()).checks.lastPull).toBe(false);
+    });
+
+    it("isn't, on a history load alone: only the poll keeps recalls current", async () => {
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('RecallDate', '2025-01-01', '2025-12-31', 'ok', '2026-11-06T11:30:00Z')");
+      expect((await check()).checks.lastPull).toBe(false);
     });
 
     it("isn't, when a demo shop has outlived the purge", async () => {
