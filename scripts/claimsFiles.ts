@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import type { Files } from "./claims";
 
-const PAGE = /^(README\.md$|openapi\.yaml$|app\/.*\.(ts|tsx)$)/;
+// Server code too: its strings reach pages, like the safety checks' titles and the matcher's reasons.
+const PAGE = /^(README\.md$|openapi\.yaml$|(app|server)\/.*\.(ts|tsx)$)/;
 const TEST = /\.test\.tsx?$/;
 
 export function readRepo(): Files {

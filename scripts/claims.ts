@@ -1,15 +1,17 @@
 // Every technology we say we use, and the code that has to be there for it to be true. This list is the Devpost Built With
 // list and the form's checkboxes: nothing outside "claimed" gets ticked, and pnpm claims fails CI if a claimed row loses its
 // call, or a cut one is mentioned on a page anyone can read.
-export interface Evidence {
-  file: string;
-  /** A pattern that must match the file's code, with comments taken out. */
-  find: string;
-}
+import ts from "typescript";
+
+export type Evidence =
+  /** A name this file must really call, read by the compiler's parser. */
+  | { file: string; call: string }
+  /** A pattern that must match the file with its comments taken out, for what isn't a call: a package, a URL, a config line. */
+  | { file: string; find: string };
 
 export type Claim =
   | { name: string; status: "claimed"; evidence: Evidence[] }
-  | { name: string; status: "cut"; why: string; mentions: string[] };
+  | { name: string; status: "cut"; why: string; mentions: string[]; allowedIn?: string[] };
 
 export const CLAIMS: Claim[] = [
   {
@@ -17,7 +19,7 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/paypal/transactions.ts", find: "export async function searchTransactions" },
-      { file: "server/demo/seed.ts", find: "searchTransactions\\(" },
+      { file: "server/demo/seed.ts", call: "searchTransactions" },
     ],
   },
   {
@@ -25,8 +27,8 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/paypal/orders.ts", find: "/v2/checkout/orders" },
-      { file: "server/demo/seed.ts", find: "createCardOrder\\(" },
-      { file: "server/demo/liveCatch.ts", find: "getOrder\\(" },
+      { file: "server/demo/seed.ts", call: "createCardOrder" },
+      { file: "server/demo/liveCatch.ts", call: "getOrder" },
     ],
   },
   {
@@ -34,15 +36,15 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/paypal/refunds.ts", find: "/v2/payments/refunds/" },
-      { file: "app/api/queue/refunds/execute/route.ts", find: "executeRefund\\(" },
+      { file: "app/api/queue/refunds/execute/route.ts", call: "executeRefund" },
     ],
   },
   {
     name: "PayPal webhooks",
     status: "claimed",
     evidence: [
-      { file: "server/paypal/webhookHandler.ts", find: "verifyWebhook\\(" },
-      { file: "app/api/paypal/webhook/route.ts", find: "handleWebhookDelivery\\(" },
+      { file: "server/paypal/webhookHandler.ts", call: "verifyWebhook" },
+      { file: "app/api/paypal/webhook/route.ts", call: "handleWebhookDelivery" },
     ],
   },
   {
@@ -50,7 +52,7 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/paypal/toolkitRefund.ts", find: "export function refundsThroughToolkit" },
-      { file: "server/paypal/client.ts", find: "refundsThroughToolkit\\(\\)" },
+      { file: "server/paypal/client.ts", call: "refundsThroughToolkit" },
     ],
   },
   {
@@ -58,8 +60,8 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/agent/claude.ts", find: "@anthropic-ai/sdk" },
-      { file: "server/agent/recallAgent.ts", find: "askClaude\\(" },
-      { file: "server/agent/recallQuestion.ts", find: "askClaude\\(" },
+      { file: "server/agent/recallAgent.ts", call: "askClaude" },
+      { file: "server/agent/recallQuestion.ts", call: "askClaude" },
     ],
   },
   {
@@ -67,32 +69,32 @@ export const CLAIMS: Claim[] = [
     status: "claimed",
     evidence: [
       { file: "server/cpsc/fetch.ts", find: "saferproducts\\.gov" },
-      { file: "server/cpsc/pull.ts", find: "fetchRecalls\\(" },
-      { file: "server/jobs/appJobs.ts", find: "fetchRecalls\\(" },
+      { file: "server/cpsc/pull.ts", call: "fetchRecalls" },
+      { file: "server/jobs/appJobs.ts", call: "fetchRecalls" },
     ],
   },
   {
     name: "AG Grid",
     status: "claimed",
     evidence: [
-      { file: "app/queue/MatchGrid.tsx", find: "<AgGridReact" },
-      { file: "app/replay/ReplayGrid.tsx", find: "<AgGridReact" },
+      { file: "app/queue/MatchGrid.tsx", call: "AgGridReact" },
+      { file: "app/replay/ReplayGrid.tsx", call: "AgGridReact" },
     ],
   },
   {
     name: "Model Context Protocol",
     status: "claimed",
     evidence: [
-      { file: "app/api/mcp/route.ts", find: "new McpServer\\(" },
-      { file: "app/api/mcp/route.ts", find: "checkText\\(" },
+      { file: "app/api/mcp/route.ts", call: "McpServer" },
+      { file: "app/api/mcp/route.ts", call: "checkText" },
     ],
   },
-  { name: "OpenAPI", status: "claimed", evidence: [{ file: "openapi.yaml", find: "openapi: 3" }, { file: "server/openapi.test.ts", find: "new Validator\\(" }] },
+  { name: "OpenAPI", status: "claimed", evidence: [{ file: "openapi.yaml", find: "openapi: 3" }, { file: "server/openapi.test.ts", call: "Validator" }] },
   { name: "Render", status: "claimed", evidence: [{ file: "render.yaml", find: "type: web" }] },
-  { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", find: "new pg\\.Pool\\(" }] },
+  { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
 
-  { name: "Channel3", status: "cut", why: "Not built yet. Comes back only when a sweep calls it.", mentions: ["channel3"] },
+  { name: "Channel3", status: "cut", why: "The sweep runs, but no page shows it yet.", mentions: ["channel3"], allowedIn: ["server/sweep/", "server/privacy/retention.ts"] },
   { name: "APIMatic", status: "cut", why: "Needs an account Stephen hasn't created.", mentions: ["apimatic"] },
   { name: "AG Studio", status: "cut", why: "Needs a trial licence Stephen hasn't requested.", mentions: ["ag studio", "ag-studio"] },
   { name: "Bryntum", status: "cut", why: "Not built yet.", mentions: ["bryntum"] },
@@ -104,13 +106,53 @@ export const CLAIMS: Claim[] = [
 
 export interface Files {
   read(file: string): string | null;
-  /** The files a judge or a reader can see: the README and every page. */
+  /** The files a judge or a reader can see, or that hand text to a page: the README, every page, and the server code behind them. */
   readable(): string[];
 }
 
-/** Comments come out first, so a call that was commented out, or a note about one, doesn't count. */
-function codeOf(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+const isCode = (file: string) => /\.tsx?$/.test(file);
+const parsed = (file: string, text: string) => ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+
+/** The code with its comments gone, from the compiler's own scanner, so nothing hiding after a quote can pass as code. */
+function withoutComments(file: string, text: string): string {
+  if (!isCode(file)) return text;
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, file.endsWith("x") ? ts.LanguageVariant.JSX : ts.LanguageVariant.Standard, text);
+  let kept = "";
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+    if (kind !== ts.SyntaxKind.SingleLineCommentTrivia && kind !== ts.SyntaxKind.MultiLineCommentTrivia) kept += scanner.getTokenText();
+  }
+  return kept;
+}
+
+/** The names this file really calls: calls, new, and JSX elements. Not a definition, an import, a comment or a string. */
+function namesCalled(file: string, text: string): Set<string> {
+  const names = new Set<string>();
+  const lastName = (e: ts.Node): string | null => (ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null);
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+      const name = lastName(node.expression);
+      if (name) names.add(name);
+    }
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const name = lastName(node.tagName);
+      if (name) names.add(name);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed(file, text));
+  return names;
+}
+
+/** What a reader could see from this file. In code, that is strings and JSX text: not comments or names. */
+function visibleText(file: string, text: string): string {
+  if (!isCode(file)) return text;
+  const parts: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isStringLiteralLike(node) || ts.isJsxText(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) parts.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed(file, text));
+  return parts.join("\n");
 }
 
 /** What's wrong, one line each. Empty means every claim holds. */
@@ -119,19 +161,24 @@ export function checkClaims(claims: Claim[], files: Files): string[] {
   for (const claim of claims) {
     if (claim.status !== "claimed") continue;
     if (claim.evidence.length === 0) problems.push(`${claim.name}: claimed with no evidence`);
-    for (const { file, find } of claim.evidence) {
-      const text = files.read(file);
-      if (text === null) problems.push(`${claim.name}: ${file} doesn't exist`);
-      else if (!new RegExp(find).test(codeOf(text))) problems.push(`${claim.name}: ${file} has nothing matching ${find}`);
+    for (const evidence of claim.evidence) {
+      const text = files.read(evidence.file);
+      if (text === null) problems.push(`${claim.name}: ${evidence.file} doesn't exist`);
+      else if ("call" in evidence) {
+        if (!namesCalled(evidence.file, text).has(evidence.call)) problems.push(`${claim.name}: ${evidence.file} never calls ${evidence.call}`);
+      } else if (!new RegExp(evidence.find).test(withoutComments(evidence.file, text))) {
+        problems.push(`${claim.name}: ${evidence.file} has nothing matching ${evidence.find}`);
+      }
     }
   }
   const readable = files.readable();
   for (const claim of claims) {
     if (claim.status !== "cut") continue;
     for (const file of readable) {
-      const text = (files.read(file) ?? "").toLowerCase();
+      if (claim.allowedIn?.some((prefix) => file.startsWith(prefix))) continue;
+      const seen = visibleText(file, files.read(file) ?? "").toLowerCase();
       for (const word of claim.mentions) {
-        if (text.includes(word)) problems.push(`${claim.name} is cut, and ${file} mentions "${word}"`);
+        if (seen.includes(word)) problems.push(`${claim.name} is cut, and ${file} mentions "${word}"`);
       }
     }
   }
