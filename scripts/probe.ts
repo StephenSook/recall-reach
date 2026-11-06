@@ -111,6 +111,7 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
   checks.push(await pageSays("paypal evidence", "/evidence/paypal", ["PayPal"]));
   checks.push(await pageSays("ag grid evidence", "/evidence/ag-grid", ["AG Grid"]));
   checks.push(await pageSays("privacy", "/privacy", ["What this app keeps"]));
+  checks.push(await pageSays("status", "/status", ["Postgres", "Answered when this page loaded", "This page never calls Claude"]));
   checks.push(
     await attempt("demo start", async () => {
       const started = await read("/api/demo/start", { method: "POST", redirect: "manual", headers: { origin: base } });

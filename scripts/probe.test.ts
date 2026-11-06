@@ -18,6 +18,7 @@ const GOOD: Record<string, string> = {
   "/evidence/paypal": "<main>PayPal</main>",
   "/evidence/ag-grid": "<main>AG Grid</main>",
   "/privacy": "<main>What this app keeps</main>",
+  "/status": "<main>Postgres: OK. Answered when this page loaded. This page never calls Claude.</main>",
   "/queue": "<main>DEMO SHOP 9 items wait for you 27072</main>",
 };
 

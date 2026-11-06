@@ -379,7 +379,7 @@ test("a store address the server must not fetch is refused in plain words, signe
 for (const width of [1280, 390]) {
   test(`no page anyone can open logged out runs off the side at ${width} wide`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
-    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/evidence/api", "/evidence/channel3", "/sweep/27072", "/privacy", "/check"]) {
+    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/evidence/api", "/evidence/channel3", "/sweep/27072", "/privacy", "/check", "/status"]) {
       await page.goto(path);
       const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
       expect.soft(scroll, `${path} at ${width}`).toBeLessThanOrEqual(client);
