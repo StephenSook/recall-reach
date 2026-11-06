@@ -340,6 +340,22 @@ describe("the recall poll job", () => {
       expect(recallPollStatus()).toMatchObject({ dbTouched: false, sweep: { shopsChecked: 1 } });
     });
 
+    it("gives a shop left waiting its turn on the next tick, not an hour later, then goes quiet", async () => {
+      const first = await storedShop();
+      const second = await storedShop();
+      const { counted, calls } = counting(db);
+      const [poll] = appJobs(counted, { ...cpscAnswering(() => nov5).deps, maxShopsPerSweep: 1 });
+      await poll.run();
+      expect(recallPollStatus()).toMatchObject({ sweep: { shopsChecked: 1, shopsWaiting: 1 } });
+      await poll.run();
+      expect(recallPollStatus()).toMatchObject({ dbTouched: true, sweep: { shopsChecked: 1, shopsWaiting: 0 } });
+      expect(await matches(first)).toHaveLength(1);
+      expect(await matches(second)).toHaveLength(1);
+      calls.n = 0;
+      await poll.run();
+      expect(calls.n).toBe(0);
+    });
+
     it("if the check can't run at all, the recall is still stored, and health and the job both say so", async () => {
       const shopId = await storedShop();
       const failing: Db = {

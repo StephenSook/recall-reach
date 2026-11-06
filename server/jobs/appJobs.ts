@@ -43,7 +43,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; maxShopsPerSweep?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -54,6 +54,8 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
   // Set by each heartbeat and cleared only by a purge that worked, so a failed purge is retried on
   // the next tick instead of waiting an hour. Its margin under 48 hours is what that hour would use.
   let purgeOwed = false;
+  // Set when a check of stored shops ran out of its turn, so the rest don't wait for the next heartbeat.
+  let sweepOwed = false;
 
   const poll = async () => {
     const heartbeat = ticks % HEARTBEAT_TICKS === 0;
@@ -97,7 +99,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
       fetchError = err;
     }
     const changed = hash !== null && hash !== lastHash;
-    const touchDb = heartbeat || changed;
+    const touchDb = heartbeat || changed || sweepOwed;
 
     let writeError: unknown = null;
     if (touchDb) {
@@ -118,16 +120,17 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
       polledThrough = range.end; // the same answer as the one already stored
     }
 
-    // Only when the database is awake anyway. A quiet poll stays off it, and a shop that is behind waits for the next
-    // touched tick (an hour at most), which is also what catches recalls loaded by a deploy.
+    // Only when the database is awake anyway, so a quiet poll stays off it. The first tick after a deploy is a heartbeat,
+    // which is what catches recalls the deploy loaded. A failed shop is tried again on the next touched tick.
     const earlier = holder.__recallReachPoll;
     let sweep = earlier?.sweep ?? null;
     let sweepOk = earlier?.sweepOk ?? null;
     let sweepError: unknown = null;
     if (touchDb) {
       try {
-        sweep = await checkStoredShops(db, { now: at });
+        sweep = await checkStoredShops(db, { now: at, maxShops: deps.maxShopsPerSweep });
         sweepOk = true;
+        sweepOwed = sweep.shopsWaiting > 0;
       } catch (err) {
         sweepError = err;
         sweepOk = false;
@@ -136,7 +139,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date } = {}): Jo
     }
 
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
-    const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : "";
+    const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : touchDb ? " (shops waiting)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
     console.info(
       `cpsc-poll ${range.start}..${range.end}: ${fetched}, db=${touchDb ? `touched${why}` : "untouched"}` +

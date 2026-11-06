@@ -5,7 +5,7 @@ import type { Db } from "../db/types";
 import { businessDay } from "../time/businessDay";
 import { CHECK_FROM, runShopCheck } from "./run";
 
-/** Past this the rest wait for the next touched tick, and health says how many are waiting. */
+/** Past this the rest wait for the next tick, and health says how many are waiting. Real shops go first. */
 export const SWEEP_MAX_SHOPS = 25;
 /** Under half the poll job's deadline, so a long sweep can't hold the job past it. */
 export const SWEEP_BUDGET_MS = 4 * 60_000;
@@ -27,7 +27,7 @@ export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: num
     `select s.id from shops s
      where (s.kind = 'REAL' or s.created_at > $1::timestamptz - make_interval(hours => $2))
        and exists (select 1 from recalls r where r.recall_date >= $3::date and r.first_seen_at > s.recalls_checked_through)
-     order by s.recalls_checked_through`,
+     order by (s.kind = 'REAL') desc, s.recalls_checked_through`,
     [opts.now.toISOString(), DEMO_SHOP_HOURS, CHECK_FROM],
   );
 

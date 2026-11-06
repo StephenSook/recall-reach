@@ -196,6 +196,15 @@ describe("checking stored shops against new recalls", () => {
     expect(await sweep({ maxShops: 2 })).toMatchObject({ shopsChecked: 1, shopsWaiting: 0 });
   });
 
+  it("does a real shop first, however many demo shops are behind", async () => {
+    const demo = await addShop("DEMO", "Older demo");
+    await db.query("update shops set recalls_checked_through = now() - interval '1 day' where id = $1", [demo]);
+    await pull(brezza);
+    await sweep({ maxShops: 1 });
+    expect(await brezzaRows(shopId)).toHaveLength(1);
+    expect(await brezzaRows(demo)).toEqual([]);
+  });
+
   it("starts no new shop once its time is up", async () => {
     await pull(brezza);
     expect(await sweep({ budgetMs: -1 })).toMatchObject({ shopsChecked: 0, shopsWaiting: 1 });
