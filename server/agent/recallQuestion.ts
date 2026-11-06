@@ -24,7 +24,7 @@ The question must:
 - Not mention the recall, CPSC or safety. Use straight quotes and no dashes.
 - Rest on CPSC's exact words. Copy the words it depends on into evidence, exactly as written.
 
-If CPSC lists several values, such as serial number prefixes, lot codes or dates, name every one of them or ask about something else. Naming only some would tell the owner of another that theirs is fine.
+Do not put a serial number, lot code, date code or model in the question. If that is the only thing that sets this product apart, abstain.
 
 Set every_recalled_unit to true only if CPSC's text says every recalled unit has this trait. One color from a list of colors is not that.
 
@@ -65,40 +65,26 @@ const NOT_PLAIN = /[\u2013\u2014\u2018\u2019\u201C\u201D]/;
 /** A yes has to mean it matches, and a negative turns that around. */
 const NEGATIVE = /\b(not|never|without|lacks?|missing|no|none|isn't|doesn't|don't|aren't)\b/i;
 
-/** Serial prefixes, lot codes and the like: anything with a digit in it. */
-const codes = (text: string) => (text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? []).map((c) => c.toUpperCase());
-
 /**
- * A code in a question has to be CPSC's and in the words it rests on, with every other code in the same field, or the
- * owner of one left out is told theirs is fine. Whole fields, because a list can run over sentences and a quote can be
- * cut down to the part the question names. This refuses some good questions, and a question with no code still works.
+ * A serial prefix, lot code or model in a question: anything with a digit, except a plain feature like 12-cup or 2-in-1.
+ * None is allowed. A list is easy to leave part of, and the owner of one left out would be told theirs is fine. Recalls
+ * that list models get a rule's question instead, which checks the whole list.
  */
-function codesProblem(question: string, evidence: string, recall: Snapshot & { productWords: string }): OurText | null {
-  const asked = new Set(codes(question));
-  const quoted = codes(evidence);
-  if ([...asked].some((c) => !quoted.includes(c))) return ourText("Every code in the question has to be in the evidence.");
-  const places = [...recall.quotable, recall.productWords].map(normalized);
-  for (const code of asked) {
-    const homes = places.filter((s) => codes(s).includes(code));
-    if (homes.length === 0) return ourText("A code in the question is not in CPSC's text. Use CPSC's own, or ask about something else.");
-    if (!homes.every((s) => codes(s).every((c) => asked.has(c)))) return ourText("Name every value CPSC lists, or ask about something else.");
-  }
-  return null;
-}
+const FEATURE = /^\d{1,2}-[a-z]{2,}(-\d{1,2})?$/;
+const hasIdentifier = (text: string) => (text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? []).some((token) => !FEATURE.test(token));
 
 const COMMON = new Set(["does", "your", "have", "with", "that", "this", "from", "were", "been", "they", "their", "into", "will", "when", "each", "other", "there", "located"]);
 const longWords = (text: string) => (text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !COMMON.has(w));
 const shareAWord = (a: string, b: string) => longWords(a).some((x) => longWords(b).some((y) => x.startsWith(y) || y.startsWith(x)));
 
 /** Null means it passed. */
-function answerProblem(answer: Answer, recall: Snapshot & { productWords: string }): OurText | null {
+function answerProblem(answer: Answer, recall: Snapshot): OurText | null {
   const { question, evidence } = answer;
   if (question === null) return answer.abstain_reason?.trim() ? null : ourText("Give the reason in abstain_reason, or write a question.");
   if (!evidence) return ourText("Copy the CPSC words the question rests on into evidence.");
   if (!quoted(recall.quotable, evidence)) return ourText("The evidence is not in CPSC's text. Copy the exact words.");
-  const problem = codesProblem(question, evidence, recall);
-  if (problem) return problem;
-  if (codes(question).length === 0 && !shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
+  if (hasIdentifier(question)) return ourText("Do not put a serial number, lot code or model in the question. Ask about something else a parent can see, or give the reason in abstain_reason.");
+  if (!shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
   const q = question.trim();
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
   if (!q.endsWith("?") || q.indexOf("?") !== q.length - 1 || !YES_OR_NO_OPENING.test(q)) return ourText("Write one question a parent can answer Yes or No.");
@@ -114,7 +100,7 @@ async function runLoop(
   db: Queryable,
   client: Anthropic,
   model: string,
-  recall: Snapshot & { number: string; productWords: string },
+  recall: Snapshot & { number: string },
   now: Date,
   spent: Spent,
 ): Promise<{ outcome: Outcome; answer: Answer | null; model: string }> {

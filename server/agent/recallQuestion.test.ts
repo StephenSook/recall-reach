@@ -163,75 +163,32 @@ describe("the question Claude writes for a family", () => {
     ])("refuses %s", (_name, question) => refused(question));
   });
 
-  describe("a recall that lists several values", () => {
+  describe("a question with an identifier in it", () => {
     const LIST = "begins with any one of the following six digits: 083723, 078352, 084105, 078591, 078592, 084106, or 086409";
-    const sentBack = async (question: string) => {
-      const { client, requests } = fakeClaude([[answer({ question, evidence: LIST })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "Too many to ask." })]]);
-      await write("27065", client);
-      return lastReply(requests[1])[0];
-    };
+    const LABEL = "The 17-digit serial number for the battery pack is printed on a label";
+    const abstain = answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "Only a code sets this apart." });
 
-    // A real answer from the live test: an owner of one of the other five would have answered No.
-    it("refuses a question naming only some of them", async () => {
-      expect(await sentBack("Does your battery pack have a serial number starting with 083723 or 078352?")).toMatchObject({ is_error: true });
-    });
-
-    it("can't be got around by quoting only the part it names", async () => {
-      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack have a serial number starting with 083723?", evidence: "083723" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27065", client);
+    // The first is a real answer from the live test: an owner of one of the other five would have answered No.
+    it.each([
+      ["part of a list", "Does your battery pack have a serial number starting with 083723 or 078352?", LIST],
+      ["all of a list", "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?", LIST],
+      ["one code, quoted alone", "Does your battery pack have a serial number starting with 083723?", "083723"],
+      ["a code CPSC never wrote", "Does your battery pack say Z99999 on its label?", LABEL],
+      ["a model with letters", "Does your battery pack say S1 on its label?", LABEL],
+    ])("refuses %s", async (_name, question, evidence) => {
+      const { client, requests } = fakeClaude([[answer({ question, evidence })], [abstain]]);
+      expect(await write("27065", client)).toBe("ABSTAINED");
       expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
     });
 
-    it("refuses a code CPSC never wrote", async () => {
-      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack say Z99999 on its label?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27065", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("can't be got around by a code that also stands alone elsewhere in the record", async () => {
-      await db.query("update recalls set remedies = remedies || '[\"Call about pack 083723.\"]'::jsonb where recall_number = '27065'");
-      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack have a serial number starting with 083723?", evidence: "Call about pack 083723." })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27065", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("treats the models across CPSC's product list as one list", async () => {
-      await db.query(`update recalls set products = '[{"name":"Chair A","model":"AB123","type":null,"units":null},{"name":"Chair B","model":"CD456","type":null,"units":null}]'::jsonb where recall_number = '27040'`);
-      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair say AB123 on its label?", evidence: "AB123" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27040", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("refuses a code that is CPSC's but not in the words the question says it rests on", async () => {
-      const { client, requests } = fakeClaude([[answer({ question: "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27065", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("takes a question naming every code in the field", async () => {
-      await db.query("update recalls set description = $1, title = 'Packs Recalled', products = '[]'::jsonb, hazards = '[]'::jsonb, remedies = '[]'::jsonb where recall_number = '27065'", [`The pack serial ${LIST}.`]);
-      const whole = "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?";
-      const { client } = fakeClaude([[answer({ question: whole, evidence: LIST })]]);
+    it("takes a question that asks what a parent can see, with no code", async () => {
+      const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number on the bottom?", evidence: LABEL })]]);
       expect(await write("27065", client)).toBe("WROTE");
     });
 
-    it("can't be got around by a list that runs over two sentences", async () => {
-      await db.query("update recalls set description = 'Pack serials begin 083723. They also begin 078352.', title = 'Packs Recalled', products = '[]'::jsonb, hazards = '[]'::jsonb, remedies = '[]'::jsonb where recall_number = '27065'");
-      const { client, requests } = fakeClaude([[answer({ question: "Does your pack's serial begin 083723?", evidence: "Pack serials begin 083723." })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27065", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("treats codes in CPSC's product names as one list too", async () => {
-      await db.query(`update recalls set products = '[{"name":"Chair AB123","model":"","type":null,"units":null},{"name":"Chair CD456","model":"","type":null,"units":null}]'::jsonb where recall_number = '27040'`);
-      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair say AB123 on its label?", evidence: "Chair AB123" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
-      await write("27040", client);
-      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
-    });
-
-    it("takes a question about the list that names none of them", async () => {
-      const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number on the bottom?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })]]);
-      expect(await write("27065", client)).toBe("WROTE");
+    it.each(["Does your French press have a 12-cup glass carafe?", "Does your French press have a 2-in-1 glass carafe?"])("takes a plain feature with a number in it: %s", async (question) => {
+      const { client } = fakeClaude([[answer({ question, evidence: "French Press coffee makers with replaceable glass" })]]);
+      expect(await write("27055", client)).toBe("WROTE");
     });
   });
 
