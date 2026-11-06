@@ -38,6 +38,9 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
         A Shopify order export works as it is. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on. <a href="/sample-order-file.csv">Try a sample file</a>.
       </p>
       <p className="note">
+        This checks CPSC recalls. Car seats are recalled through NHTSA, so check <a href="https://www.nhtsa.gov/recalls">nhtsa.gov/recalls</a>.
+      </p>
+      <p className="note">
         We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.
       </p>
       <p className="note">
