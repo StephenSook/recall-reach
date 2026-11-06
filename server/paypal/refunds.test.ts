@@ -10,7 +10,7 @@ import { createContactCipher } from "../privacy/contactCipher";
 import { createRecordKey } from "../privacy/recordKey";
 import { createPayPalClient, type PayPalClient } from "./client";
 import { valueToCents } from "./orders";
-import { approveRefund, askPayPalAgain, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents } from "./refunds";
+import { approveRefund, askPayPalAgain, executeRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents, sendSellerToPayPal } from "./refunds";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -396,6 +396,63 @@ describe("refunds", () => {
       const m = await setUp();
       const message = await approve(m.id, SESSION, NOW, fakePayPal({ createTime: "2026-05-01T00:00:00Z" }).client).catch((e: Error) => e.message);
       expect(message).toBe("PayPal refund window closed. Check the recall page for the next steps.");
+    });
+  });
+
+  describe("a refund with no clear answer leaves the seller a way forward", () => {
+    async function stuckRefund() {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundSteps: ["down", "down", "down"] });
+      const r = await execute(a.approvalId, pp.client);
+      return { m, r, pp };
+    }
+    const read = (refundId: string, client: PayPalClient) => reconcileRefund(db, client, { shopId, refundId, recordKey: key, now: NOW });
+
+    it("names the order and the amount, because the capture id is not something a seller has", async () => {
+      const { r, pp } = await stuckRefund();
+      expect((await read(r.refundId, pp.client)).stuck).toEqual({ orderNumber: "#R1", sentToPayPal: false });
+    });
+
+    it("records that the seller was sent to PayPal, once", async () => {
+      const { r, pp } = await stuckRefund();
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW });
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: new Date(NOW.getTime() + 60_000) });
+      expect((await read(r.refundId, pp.client)).stuck?.sentToPayPal).toBe(true);
+      const { rows } = await db.query<{ seller_sent_to_paypal_at: Date }>("select seller_sent_to_paypal_at from refunds");
+      expect(rows[0].seller_sent_to_paypal_at.getTime()).toBe(NOW.getTime());
+    });
+
+    it("never frees the line: a new request id could refund the same sale twice", async () => {
+      const { m, r } = await stuckRefund();
+      await sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW });
+      expect(await refusal(approve(m.id))).toBe("REFUND_ALREADY_IN_PROGRESS");
+    });
+
+    it("shows PayPal's answer when the repeat was refused", async () => {
+      const { r } = await stuckRefund();
+      await agedFromNow(r.refundId);
+      const later = new Date(NOW.getTime() + 7 * 60_000);
+      const refusing = fakePayPal({ refundSteps: [422] });
+      await askPayPalAgain(db, refusing.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      const rec = await reconcileRefund(db, fakePayPal().client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(rec.exceptions).toContain("PayPal refused the repeat (REFUND_AMOUNT_EXCEEDED). Check PayPal directly before doing anything else.");
+    });
+
+    it("is not offered once the refund has a clear answer", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const r = await execute(a.approvalId, pp.client);
+      expect((await read(r.refundId, pp.client)).stuck).toBeNull();
+      expect(await refusal(sendSellerToPayPal(db, { shopId, refundId: r.refundId, now: NOW }))).toBe("NOTHING_TO_ASK");
+    });
+
+    it("refuses another shop's refund", async () => {
+      const { r } = await stuckRefund();
+      const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
+      expect(await refusal(sendSellerToPayPal(db, { shopId: other, refundId: r.refundId, now: NOW }))).toBe("NO_SUCH_REFUND");
+      expect(await refusal(sendSellerToPayPal(db, { shopId, refundId: "not-a-uuid", now: NOW }))).toBe("NO_SUCH_REFUND");
     });
   });
 
@@ -1228,6 +1285,7 @@ describe("refunds", () => {
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(rec).toEqual({
         canAskAgain: false,
+        stuck: null,
         ledger: { status: "refunded", amountCents: 9000, currency: "USD" },
         capture: { status: "REFUNDED", amountCents: 9000, currency: "USD" },
         refund: { status: "COMPLETED", amountCents: 9000, currency: "USD" },

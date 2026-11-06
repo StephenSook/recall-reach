@@ -66,6 +66,18 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       ) : (
         <p data-testid="no-exceptions">All four records agree.</p>
       )}
+      {rec.stuck ? (
+        <section data-testid="stuck">
+          <p>
+            Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. If no refund shows, refund it there.
+          </p>
+          <form action="/api/queue/refunds/open-paypal" method="post">
+            <input type="hidden" name="refundId" value={id} />
+            <button type="submit">Open PayPal</button>
+          </form>
+          {rec.stuck.sentToPayPal ? <p>Seller sent to PayPal</p> : null}
+        </section>
+      ) : null}
       {rec.canAskAgain ? (
         <form action="/api/queue/refunds/ask-again" method="post">
           <input type="hidden" name="refundId" value={id} />

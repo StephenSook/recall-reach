@@ -20,6 +20,20 @@ test("a lost refund answer is recovered by asking PayPal again, with one refund 
   await expect(page.getByTestId("exceptions")).toContainText("No clear answer from PayPal yet.");
   expect(paypal()).toEqual({ posts: 3, made: 1, requestIds: 1 });
 
+  // The seller is not left at a dead end: they are told where to look, by a number they recognize.
+  await expect(page.getByTestId("stuck")).toContainText("If no refund shows, refund it there.");
+  await expect(page.getByTestId("stuck")).toContainText("DEMO-");
+  const refundId = page.url().split("/").pop() ?? "";
+  const toPayPal = await page.request.post("/api/queue/refunds/open-paypal", {
+    form: { refundId },
+    headers: { origin: new URL(page.url()).origin },
+    maxRedirects: 0,
+  });
+  expect(toPayPal.status()).toBe(303);
+  expect(toPayPal.headers().location).toBe("https://www.sandbox.paypal.com/unifiedtransactions/");
+  await page.reload();
+  await expect(page.getByTestId("stuck")).toContainText("Seller sent to PayPal");
+
   await page.getByRole("button", { name: "Ask PayPal again" }).click();
 
   await expect(page.getByTestId("ledger")).toContainText("refunded");
@@ -27,6 +41,7 @@ test("a lost refund answer is recovered by asking PayPal again, with one refund 
   await expect(page.getByTestId("refund")).toContainText("COMPLETED");
   await expect(page.getByTestId("capture")).toContainText("REFUNDED");
   await expect(page.getByRole("button", { name: "Ask PayPal again" })).toHaveCount(0);
+  await expect(page.getByTestId("stuck")).toHaveCount(0);
   expect(paypal()).toEqual({ posts: 4, made: 1, requestIds: 1 });
 
   await page.goto("/queue");

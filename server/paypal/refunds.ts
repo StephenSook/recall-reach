@@ -72,6 +72,9 @@ export function refundAmountCents(line: { unitPriceCents: number; quantity: numb
   return Math.max(0, line.unitPriceCents * line.quantity - line.discountCents);
 }
 
+/** PayPal's own list of a seller's activity. Sandbox only, like everything here. */
+export const PAYPAL_ACTIVITY_URL = "https://www.sandbox.paypal.com/unifiedtransactions/";
+
 export const refundedAmount = (cents: number, currency: string) => `${centsToValue(cents)} ${currency}`;
 
 const LINE_COLUMNS = "order_number, line_no, title, sku, quantity, unit_price_cents, discount_cents, currency, ordered_on, order_incomplete";
@@ -548,6 +551,17 @@ export async function askPayPalAgain(
   );
 }
 
+/** Records that the seller was sent to look in PayPal. It changes nothing else: the line stays blocked. */
+export async function sendSellerToPayPal(db: Queryable, input: { shopId: string; refundId: string; now?: Date }): Promise<void> {
+  const now = input.now ?? new Date();
+  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
+  if (!UUID.test(input.refundId)) throw notFound();
+  const { rows } = await db.query<{ status: string }>("select status from refunds where id = $1 and shop_id = $2", [input.refundId, input.shopId]);
+  if (!rows[0]) throw notFound();
+  if (rows[0].status !== "unconfirmed") throw new RefundRefused("NOTHING_TO_ASK", "This refund already has a clear answer.");
+  await db.query("update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz) where id = $1", [input.refundId, now.toISOString()]);
+}
+
 const refundSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -557,6 +571,8 @@ const refundSchema = z.object({
 export interface Reconciliation {
   /** No clear answer, and it is still safe to repeat the stored request. */
   canAskAgain: boolean;
+  /** No clear answer and no PayPal refund id. Only PayPal itself can say what happened. */
+  stuck: { orderNumber: string; sentToPayPal: boolean } | null;
   ledger: { status: string; amountCents: number; currency: string };
   capture: { status: string; amountCents: number; currency: string } | null;
   refund: { status: string; amountCents: number; currency: string } | null;
@@ -580,11 +596,15 @@ export async function reconcileRefund(
     refund_ref_hmac: string | null;
     created_at: Date;
     send_lease_until: Date | null;
+    failure: string | null;
+    seller_sent_to_paypal_at: Date | null;
+    order_number: string;
     capture_id: string | null;
     paypal_refund_id: string | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, p.capture_id, p.refund_id as paypal_refund_id
-     from refunds r left join paypal_refund_refs p on p.refund_row_id = r.id
+    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, r.failure, r.seller_sent_to_paypal_at,
+            l.order_number, p.capture_id, p.refund_id as paypal_refund_id
+     from refunds r join order_lines l on l.id = r.order_line_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
     [input.refundId, input.shopId],
   );
@@ -620,6 +640,7 @@ export async function reconcileRefund(
   if (unanswered && !canAskAgain) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");
+  if (status === "unconfirmed" && row.failure?.startsWith("PayPal refused the repeat")) exceptions.push(row.failure);
   if (refund && (refund.amountCents !== row.amount_cents || refund.currency !== row.currency)) {
     exceptions.push("PayPal's refund amount differs from the ledger.");
   }
@@ -630,6 +651,7 @@ export async function reconcileRefund(
 
   return {
     canAskAgain,
+    stuck: status === "unconfirmed" && !row.paypal_refund_id ? { orderNumber: row.order_number, sentToPayPal: row.seller_sent_to_paypal_at !== null } : null,
     ledger: { status, amountCents: row.amount_cents, currency: row.currency },
     capture: captureFacts ? { status: captureFacts.status, amountCents: captureFacts.amountCents, currency: captureFacts.currency } : null,
     refund,
