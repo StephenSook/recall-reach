@@ -344,6 +344,9 @@ const leaseEnd = (startedAt: number, now: Date) => new Date(now.getTime() + (per
 /** The whole send has to fit inside the limit, retries included, so the last moment to begin is a lease early. */
 const tooOldToRepeat = (createdAt: Date, atMs: number) => atMs + SEND_LEASE_MS - createdAt.getTime() > ASK_AGAIN_MS;
 
+/** The slowest single attempt: 60 s for the request and 30 s for its token. One begun later might outlive its lease. */
+const LAST_ATTEMPT_MS = 90_000;
+
 /** The time now, on the same clock as `now` (tests set it), however long the checks since then have taken. */
 const timeSince = (startedAt: number, now: Date) => new Date(now.getTime() + (performance.now() - startedAt)).toISOString();
 
@@ -451,11 +454,12 @@ async function sendRefund(
 
   // From here the outcome is unknown. A send that lost the row or outlived its lease must not go out at all,
   // because a reservation past its lease may be given up and the line freed.
-  const sending = await db.query(
+  const sendAt = Date.parse(timeSince(send.startedAt, now));
+  const sending = await db.query<{ send_lease_until: Date }>(
     `update refunds set status = 'unconfirmed', updated_at = $3::timestamptz
-     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $3::timestamptz
-     returning id`,
-    [send.rowId, send.holder, timeSince(send.startedAt, now)],
+     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $4::timestamptz
+     returning send_lease_until`,
+    [send.rowId, send.holder, new Date(sendAt).toISOString(), new Date(sendAt + LAST_ATTEMPT_MS).toISOString()],
   );
   if (sending.rows.length === 0) {
     const { rows } = await db.query<{ status: RefundOutcome["status"]; failure: string | null }>("select status, failure from refunds where id = $1", [send.rowId]);
@@ -463,9 +467,13 @@ async function sendRefund(
   }
 
   try {
+    // An attempt begun in time finishes inside the lease, and nobody is sent to refund by hand until the lease
+    // ends. So a send held up for any reason, including between attempts, cannot land after that.
+    const leaseLeft = sending.rows[0].send_lease_until.getTime() - sendAt - LAST_ATTEMPT_MS;
     const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${send.captureId}/refund`, {
       requestId: send.requestId,
       body: { amount: { currency_code: send.currency, value: centsToValue(send.amountCents) } },
+      notAfter: Date.now() + leaseLeft,
     });
     const status = ledgerStatusFor(data.status);
     return await settle(status, status === "failed" ? `PayPal status ${data.status}` : null, data.id);

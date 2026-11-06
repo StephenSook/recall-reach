@@ -45,6 +45,8 @@ export interface RequestOptions {
   body?: unknown;
   /** Sent as PayPal-Request-Id; also makes the request safe to retry. */
   requestId?: string;
+  /** The last moment, by Date.now(), that an attempt may begin. Used where a late request could do harm. */
+  notAfter?: number;
   query?: Record<string, string | number>;
 }
 
@@ -91,6 +93,7 @@ export function createPayPalClient(opts: {
       let refreshedAfter401 = false;
       let uncertain = false;
       for (let attempt = 1; ; attempt++) {
+        if (ro.notAfter !== undefined && Date.now() > ro.notAfter) throw new Error("too late to send this request");
         try {
           const headers: Record<string, string> = { Authorization: `Bearer ${await opts.tokens.get()}` };
           if (ro.body !== undefined) headers["Content-Type"] = "application/json";

@@ -153,6 +153,35 @@ describe("PayPal client", () => {
     expect(err.message).not.toContain("ABCDEFGH");
   });
 
+  describe("a request with a last moment to begin", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("sends nothing once that moment has passed", async () => {
+      const s = scripted([ok({})]);
+      await expect(s.client.request("POST", "/v2/x", { requestId: "r1", notAfter: Date.now() - 1 })).rejects.toThrow(/too late/);
+      expect(s.calls).toHaveLength(0);
+    });
+
+    it("stops retrying once that moment has passed, and the outcome stays unknown", async () => {
+      const replies: Reply[] = [new TypeError("network down"), ok({ id: "second" })];
+      const s = scripted(replies);
+      const start = Date.now();
+      const notAfter = start + 1000;
+      vi.spyOn(Date, "now").mockImplementation(() => (s.calls.length === 0 ? start : start + 5000));
+      const err = await s.client.request("POST", "/v2/x", { requestId: "r1", notAfter }).catch((e: unknown) => e);
+      expect(s.calls).toHaveLength(1);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(PayPalApiError);
+    });
+
+    it("goes ahead while there is time", async () => {
+      const s = scripted([ok({ id: "fine" })]);
+      await expect(s.client.request("POST", "/v2/x", { requestId: "r1", notAfter: Date.now() + 60_000 })).resolves.toMatchObject({ data: { id: "fine" } });
+    });
+  });
+
   it("refuses a path that is not a PayPal API path", async () => {
     const s = scripted([]);
     await expect(s.client.request("GET", "https://evil.example/x")).rejects.toThrow(/path/);

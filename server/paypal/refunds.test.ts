@@ -597,6 +597,36 @@ describe("refunds", () => {
       expect(pp.posts()).toEqual([]);
     });
 
+    it("does not begin a send too close to the end of its lease to finish inside it", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const nearlyOver = afterReserving(async () => {
+        await db.query("update refunds set send_lease_until = $1::timestamptz", [new Date(NOW.getTime() + 60_000).toISOString()]);
+      });
+      const r = await executeRefund(nearlyOver, pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW });
+      expect(r.status).toBe("reserved");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("gives the send a last moment to begin, early enough to finish before its lease ends", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      let notAfter: number | undefined;
+      const watching: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "POST") notAfter = opts?.notAfter;
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      const before = Date.now();
+      await execute(a.approvalId, watching);
+      // 6 minutes of lease, less 90 seconds: the slowest single attempt, with its token request.
+      expect(notAfter).toBeGreaterThanOrEqual(before + 4.4 * 60_000);
+      expect(notAfter).toBeLessThanOrEqual(Date.now() + 4.6 * 60_000);
+    });
+
     it("giving up cannot overwrite a send that began while it was deciding", async () => {
       const m = await setUp();
       const a = await approve(m.id);
