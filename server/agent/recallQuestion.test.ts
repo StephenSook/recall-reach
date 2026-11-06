@@ -9,7 +9,7 @@ import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { DAILY_CAP_MICROS } from "./claude";
 import { writtenQuestion } from "./questionStore";
-import { QUESTION_TOOLS, wordsOutsideEvidence, writeRecallQuestion } from "./recallQuestion";
+import { dependsOnWhatTheyMayNotHave, QUESTION_TOOLS, restsOnEvidence, wordsOutsideEvidence, writeRecallQuestion } from "./recallQuestion";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-06T15:00:00Z");
@@ -173,6 +173,63 @@ describe("the question Claude writes for a family", () => {
       expect(wordsOutsideEvidence("Does your finger light toy project space themed patterns like astronauts, rockets or planets?", quote, lights)).toEqual(["planets"]);
     });
 
+    describe("what counts as the same word", () => {
+      const kind = { title: "X Recalls Toys Due to Risk", productNames: [] };
+      const outside = (question: string, evidence: string) => wordsOutsideEvidence(question, evidence, kind);
+
+      it("doesn't let two words meet because they shorten to almost nothing", () => {
+        expect(outside("Does your toy have a red band?", "a toy with a ring band")).toEqual(["red"]);
+        expect(outside("Does your toy have a bed?", "a toy with a bing")).toEqual(["bed"]);
+      });
+
+      it("doesn't take a longer word for the shorter one inside it", () => {
+        expect(outside("Does your toy have a handle?", "a toy with a hand")).toEqual(["handle"]);
+        expect(outside("Is your toy careful?", "a toy with care")).toEqual(["careful"]);
+        expect(outside("Is your toy woodland green?", "a green wood toy")).toEqual(["woodland"]);
+      });
+
+      it("still takes real forms of one word", () => {
+        for (const [question, evidence] of [
+          ["Does your toy have strings?", "a toy with a string"],
+          ["Does your toy have a string?", "a toy with strings"],
+          ["Does your toy have a rattling ring?", "a toy with a rattle ring"],
+          ["Does your toy have batteries?", "a toy with a battery"],
+          ["Does your toy have a blue dress?", "a toy with blue dresses"],
+          ["Does your toy have a rotating arm?", "a toy that can rotate its arm"],
+          ["Does your toy have a drawstring?", "a toy with drawstrings"],
+          ["Does your toy project a star?", "a toy with star projections"],
+          ["Is your toy wooden?", "a wood toy"],
+        ]) {
+          expect(outside(question, evidence), question).toEqual([]);
+        }
+      });
+
+      it("checks an accented word like any other, instead of skipping its letters", () => {
+        expect(outside("Does your toy have a résumé?", "a toy with a sum")).not.toEqual([]);
+      });
+    });
+
+    describe("the quote has to be what the question is about", () => {
+      it("isn't satisfied by a question that only names the product", () => {
+        expect(restsOnEvidence("Does your swing seat look like a swing seat?", "sold at stores nationwide")).toBe(false);
+      });
+
+      it("is satisfied when something it asks is in the quote", () => {
+        expect(restsOnEvidence("Does your swing seat have a yellow chain?", "The yellow chain")).toBe(true);
+      });
+
+      it("sends that back too", async () => {
+        const { client, requests } = fakeClaude([[answer({ question: "Does your high chair look like a high chair?", evidence: "several color combinations" })], [answer()]]);
+        await write("27040", client);
+        expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+      });
+
+      it("doesn't take a hazard in a title as the kind of product, however the title joins it", () => {
+        const title = { title: "X Recalls Swing Seats Because of Fall Hazard", productNames: [] };
+        expect(wordsOutsideEvidence("Does your swing seat have a fall hazard chain?", "a chain", title)).toEqual(["fall", "hazard"]);
+      });
+    });
+
     it("sends a question with outside words back, and takes the corrected one", async () => {
       const { client, requests } = fakeClaude([[answer({ question: "Does your high chair convert into a table and chair set with wheels?" })], [answer()]]);
       expect(await write("27040", client)).toBe("WROTE");
@@ -184,6 +241,51 @@ describe("the question Claude writes for a family", () => {
       const { client, requests } = fakeClaude([[answer()]]);
       await write("27040", client);
       expect(JSON.stringify(requests[0].body.system)).not.toMatch(/high chair|chair|sterilizer|sleeper|bath seat|jumper|swing|drawstring|short set/i);
+    });
+  });
+
+  describe("a secondhand buyer has to be able to answer it", () => {
+    it.each([
+      ["Does your dumpling toy come in a tan plastic container shaped like a bamboo steamer?"],
+      ["Does your finger light have Finger Flashlights printed on a label on the front of the package?"],
+      ["Is your toy packaged in a tan plastic container?"],
+      ["Does your toy have a box with a blue stripe?"],
+      ["Does your toy have a carton with a blue stripe?"],
+      ["Does your finger light have three internal button cell batteries?"],
+      ["Does your toy have a chain inside it?"],
+      ["Does your stacking toy come with eight pattern cards?"],
+      ["Does your toy have a hang tag with a blue stripe?"],
+      ["Is your toy in an individually wrapped packet?"],
+    ])("refuses what a family with no packaging, or no way to look inside, can't answer: %s", (question) => {
+      expect(dependsOnWhatTheyMayNotHave(question)).toBe(true);
+    });
+
+    it.each([
+      ["Does your high chair convert into a table and chair set?"],
+      ["Does your swing seat have a chain coated in yellow plastic?"],
+      ["Does your fire truck toy have a white plastic rotating ladder and a black plastic connector that looks like a fire hose?"],
+      ["Does your busy board have cartoon dinosaurs printed on the front?"],
+      ["Does your teething toy have four strings in various colors?"],
+      ["Does your battery pack have a label with a serial number printed on it?"],
+      ["Does your boxer style toy have a coming soon sticker?"],
+      ["Is your coin purse black with a picture of a dalmatian on the front?"],
+    ])("leaves a real trait of the product alone: %s", (question) => {
+      expect(dependsOnWhatTheyMayNotHave(question)).toBe(false);
+    });
+
+    it("sends such a question back, and an abstention after it is a fine answer", async () => {
+      const abstain = answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "Only its packaging sets it apart." });
+      const { client, requests } = fakeClaude([[answer({ question: "Does your high chair come in a table and chair set?" })], [abstain]]);
+      expect(await write("27040", client)).toBe("ABSTAINED");
+      expect(lastReply(requests[1])[0]).toMatchObject({ type: "tool_result", is_error: true });
+    });
+
+    it("tells the model why, and what not to ask", async () => {
+      const { client, requests } = fakeClaude([[answer()]]);
+      await write("27040", client);
+      const system = JSON.stringify(requests[0].body.system);
+      expect(system).toContain("A secondhand buyer usually has no packaging");
+      expect(system).toContain("every similar product would have one");
     });
   });
 

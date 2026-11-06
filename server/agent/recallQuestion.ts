@@ -19,6 +19,8 @@ const SYSTEM = `You write one question for a parent who may own a product in a C
 
 The question must:
 - Ask about something visible on the product itself: a feature, a part, a shape, or a printed label. Not where or when it was bought, and not the hazard.
+- Be answerable with the product alone. A secondhand buyer usually has no packaging, may not have what it was sold with, and can't see inside it. So do not ask about a package, box, container, wrapper or hang tag, about what it came with, or about internal parts. If only those set this product apart, abstain.
+- Tell this product apart from similar ones. Do not ask whether a label or a part exists if every similar product would have one.
 - Be answerable Yes or No, where Yes means the product matches what CPSC describes.
 - Be one short sentence in plain words, naming the kind of product, as in "Does your lamp ...?". Do not ask about the brand: the shop already matched that.
 - Not mention the recall, CPSC or safety. Use straight quotes and no dashes.
@@ -78,19 +80,38 @@ const hasIdentifier = (text: string) => numbered(text).some((token) => !FEATURE.
 const ASKING_WORDS = new Set(
   "a an and any are as at be by can come comes could did do does for from had has have in include includes into is it its like look looks of on one or show shows than that the their them there these this those to up use uses was were will with you your".split(" "),
 );
-const wordsOf = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-const stem = (w: string) => w.replace(/(ies|es|s|ed|ing)$/, "");
-/** Rings and ring, coated and coating, wood and wooden. A short word has to match outright, so "car" isn't "carafe". */
-function sameWord(a: string, b: string): boolean {
-  if (a === b || stem(a) === stem(b)) return true;
-  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
-  return shorter.length >= 4 && longer.startsWith(shorter);
-}
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 
-/** The kind of product, in CPSC's own words: its product names, and its title from "Recalls" up to "Due to". */
+/**
+ * A word and the forms it could be of: strings and string, coated and coating, batteries and battery, rattling and rattle,
+ * wood and wooden, projections and project. A suffix only comes off a long enough word, so red and ring never meet.
+ */
+function formsOf(word: string): string[] {
+  const forms = [word];
+  const off = (suffix: string, longEnough: number, add = "") => {
+    for (const w of [...forms]) if (w.length >= longEnough && w.endsWith(suffix)) forms.push(w.slice(0, -suffix.length) + add);
+  };
+  off("ies", 5, "y");
+  off("sses", 6, "ss");
+  if (/(ch|sh|x|z)es$/.test(word)) off("es", 5);
+  if (!word.endsWith("ss")) off("s", 4);
+  off("ing", 7);
+  off("ed", 6);
+  off("en", 6);
+  off("ion", 7);
+  off("e", 5);
+  return forms;
+}
+const sameWord = (a: string, b: string) => {
+  const forms = formsOf(a);
+  return formsOf(b).some((form) => forms.includes(form));
+};
+
+/** The kind of product, in CPSC's own words: its product names, and its title from "Recalls" up to where the hazard starts. */
 function productWords(recall: { title: string; productNames: string[] }): string[] {
-  const kind = /\bRecall(?:s|ed)?\s+(.*?)(?:\s+Due to\b|$)/.exec(recall.title)?.[1] ?? recall.title.split(/\s+Due to\b/)[0];
-  return wordsOf(`${kind} ${recall.productNames.join(" ")}`);
+  const hazardStarts = /\s+(?:Due to|Because of)\b|[;,]\s+Risk\b/;
+  const kind = /\bRecall(?:s|ed)?\s+(.*)$/.exec(recall.title)?.[1] ?? recall.title;
+  return wordsOf(`${kind.split(hazardStarts)[0]} ${recall.productNames.join(" ")}`);
 }
 
 /**
@@ -102,6 +123,19 @@ export function wordsOutsideEvidence(question: string, evidence: string, recall:
   return wordsOf(question).filter((w) => !ASKING_WORDS.has(w) && !allowed.some((a) => sameWord(w, a)));
 }
 
+/** Something it asks has to be in the quote. Otherwise a question that only names the product could rest on any words at all. */
+export function restsOnEvidence(question: string, evidence: string): boolean {
+  const inQuote = wordsOf(evidence);
+  return wordsOf(question).some((w) => !ASKING_WORDS.has(w) && inQuote.some((q) => sameWord(w, q)));
+}
+
+/**
+ * A secondhand family usually has no package, may be missing what it was sold with, and can't see inside the product, so
+ * their honest "no" says nothing. If the product really is a box or container this refuses that too, and abstaining is fine.
+ */
+const WHAT_THEY_MAY_NOT_HAVE = /\b(packag(e|es|ed|ing)|packets?|containers?|box|boxes|cartons?|wrappers?|wrapped|wrapping|hang ?tags?|internal|inside|interior|(come|comes|came|sold|shipped) (in|with))\b/i;
+export const dependsOnWhatTheyMayNotHave = (question: string) => WHAT_THEY_MAY_NOT_HAVE.test(question);
+
 /** Null means it passed. */
 function answerProblem(answer: Answer, recall: Snapshot & { title: string; productNames: string[] }): OurText | null {
   const { question, evidence } = answer;
@@ -110,11 +144,13 @@ function answerProblem(answer: Answer, recall: Snapshot & { title: string; produ
   if (!quoted(recall.quotable, evidence)) return ourText("The evidence is not in CPSC's text. Copy the exact words.");
   if (hasIdentifier(question)) return ourText("Do not put a serial number, lot code or model in the question. Ask about something else a parent can see, or give the reason in abstain_reason.");
   if (numbered(question).some((token) => !numbered(evidence).includes(token))) return ourText("A number in the question has to be in the evidence.");
+  if (!restsOnEvidence(question, evidence)) return ourText("The evidence has to be what the question asks about, not just the kind of product.");
   if (wordsOutsideEvidence(question, evidence, recall).length > 0) return ourText("A word in the question is not in the evidence. Apart from small words and the kind of product, use only words CPSC wrote in the evidence, or give the reason in abstain_reason.");
   const q = question.trim();
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
   if (!q.endsWith("?") || q.indexOf("?") !== q.length - 1 || !YES_OR_NO_OPENING.test(q)) return ourText("Write one question a parent can answer Yes or No.");
   if (OFF_LIMITS.test(q)) return ourText("Ask about the product itself. Do not mention the recall, CPSC, safety or how it was bought.");
+  if (dependsOnWhatTheyMayNotHave(q)) return ourText("A secondhand buyer may have only the product. Do not ask about packaging, what it came with, or anything inside it. Ask about the product itself, or give the reason in abstain_reason.");
   if (NEGATIVE.test(q)) return ourText("Ask it so that Yes means the product matches what CPSC describes, with no negative.");
   if (NOT_PLAIN.test(q)) return ourText("Use straight quotes and no dashes.");
   return null;
