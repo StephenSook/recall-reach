@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPayPalClient, PayPalApiError } from "./client";
-import { createRefundThroughToolkit, refundsThroughToolkit, toolkitSetup, type CreateRefundCall } from "./toolkitRefund";
+import { createRefundThroughToolkit, refundsThroughToolkit, toolkitSetup, warmToolkit, type CreateRefundCall } from "./toolkitRefund";
 
 type Mode = number | "ok" | "drop" | "hang" | "trickle";
 
@@ -342,6 +342,14 @@ describe("create_refund through the toolkit", () => {
       } finally {
         vi.unstubAllEnvs();
       }
+    });
+
+    it("can load ahead of the first refund, contacting nothing and printing nothing", () => {
+      const contactedBefore = contacted.length;
+      const printedBefore = printed.length;
+      warmToolkit();
+      expect(contacted.length).toBe(contactedBefore);
+      expect(printed.length).toBe(printedBefore);
     });
 
     it("loads no stray .env file and prints nothing when it is loaded", async () => {

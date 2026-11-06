@@ -64,6 +64,11 @@ function load(): Loaded {
   return loaded;
 }
 
+/** Loads the package now, so nobody's first refund waits for it. A refund would load it anyway, so this moves the memory earlier and adds none. */
+export function warmToolkit(): void {
+  load();
+}
+
 function refundToolkit(call: CreateRefundCall): Toolkit {
   const { PayPalMCPToolkit, debug } = load();
   // With DEBUG set, its logger prints the capture id, and logs outlive the 48-hour rule. So off, whatever DEBUG says.

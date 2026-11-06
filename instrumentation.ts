@@ -2,6 +2,12 @@
 // (server/jobs/appJobs.ts) in the Node runtime. Set JOBS_ENABLED=false to run without them.
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // A few seconds on one thread, so not while the host is still asking whether this server is up.
+  setTimeout(() => {
+    import("./server/paypal/toolkitRefund")
+      .then(({ warmToolkit }) => warmToolkit())
+      .catch(() => console.warn("the refund toolkit did not load ahead of time: the first refund will load it"));
+  }, 15_000);
   if (process.env.JOBS_ENABLED === "false") return;
   if (!process.env.DATABASE_URL) {
     console.warn("background jobs not started: DATABASE_URL is not set");
