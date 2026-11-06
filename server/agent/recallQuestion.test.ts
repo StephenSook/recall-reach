@@ -186,9 +186,17 @@ describe("the question Claude writes for a family", () => {
       expect(await write("27065", client)).toBe("WROTE");
     });
 
-    it.each(["Does your French press have a 12-cup glass carafe?", "Does your French press have a 2-in-1 glass carafe?"])("takes a plain feature with a number in it: %s", async (question) => {
-      const { client } = fakeClaude([[answer({ question, evidence: "French Press coffee makers with replaceable glass" })]]);
+    const QUOTE = "12-cup Bistro, Brazil, Caffettiera, Chambord, Crema, Java, Jesper, and Kenya model French Press coffee makers with replaceable glass";
+
+    it("takes a plain feature with a number in it, when CPSC's words say it", async () => {
+      const { client } = fakeClaude([[answer({ question: "Does your French press have a 12-cup glass carafe?", evidence: QUOTE })]]);
       expect(await write("27055", client)).toBe("WROTE");
+    });
+
+    it.each(["Does your French press have a 2-in-1 glass carafe?", "Does your French press have a 20-cup glass carafe?"])("refuses a feature number the quote doesn't say: %s", async (question) => {
+      const { client, requests } = fakeClaude([[answer({ question, evidence: QUOTE })], [abstain]]);
+      expect(await write("27055", client)).toBe("ABSTAINED");
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
     });
   });
 

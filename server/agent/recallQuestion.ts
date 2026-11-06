@@ -71,7 +71,8 @@ const NEGATIVE = /\b(not|never|without|lacks?|missing|no|none|isn't|doesn't|don'
  * that list models get a rule's question instead, which checks the whole list.
  */
 const FEATURE = /^\d{1,2}-[a-z]{2,}(-\d{1,2})?$/;
-const hasIdentifier = (text: string) => (text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? []).some((token) => !FEATURE.test(token));
+const numbered = (text: string): string[] => text.match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g) ?? [];
+const hasIdentifier = (text: string) => numbered(text).some((token) => !FEATURE.test(token));
 
 const COMMON = new Set(["does", "your", "have", "with", "that", "this", "from", "were", "been", "they", "their", "into", "will", "when", "each", "other", "there", "located"]);
 const longWords = (text: string) => (text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !COMMON.has(w));
@@ -84,6 +85,7 @@ function answerProblem(answer: Answer, recall: Snapshot): OurText | null {
   if (!evidence) return ourText("Copy the CPSC words the question rests on into evidence.");
   if (!quoted(recall.quotable, evidence)) return ourText("The evidence is not in CPSC's text. Copy the exact words.");
   if (hasIdentifier(question)) return ourText("Do not put a serial number, lot code or model in the question. Ask about something else a parent can see, or give the reason in abstain_reason.");
+  if (numbered(question).some((token) => !numbered(evidence).includes(token))) return ourText("A number in the question has to be in the evidence.");
   if (!shareAWord(question, evidence)) return ourText("The evidence has to be what the question asks about.");
   const q = question.trim();
   if (q.length > MAX_QUESTION_LENGTH) return ourText("Make the question shorter: one short sentence.");
