@@ -358,6 +358,10 @@ small,
   padding-left: 22px;
   list-style: revert;
 }
+pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .window pre {
   margin-block: 8px;
   padding: 10px;

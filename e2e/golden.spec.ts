@@ -289,6 +289,17 @@ test.describe("Recall Replay", () => {
   });
 });
 
+for (const width of [1280, 390]) {
+  test(`no page anyone can open logged out runs off the side at ${width} wide`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of ["/", "/judge", "/replay", "/safety", "/eval", "/evidence/paypal", "/evidence/ag-grid", "/privacy", "/check"]) {
+      await page.goto(path);
+      const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+      expect.soft(scroll, `${path} at ${width}`).toBeLessThanOrEqual(client);
+    }
+  });
+}
+
 test("the safety checks run live, and every one is refused", async ({ page }) => {
   await page.goto("/safety");
   await page.getByRole("button", { name: /^Run them/ }).click();
