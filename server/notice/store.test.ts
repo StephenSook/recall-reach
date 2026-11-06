@@ -93,6 +93,69 @@ describe("notices", () => {
     expect(await refusal(prepareNotice(db, { shopId, matchId: rows[0].id }))).toBe("NOTHING_TO_SEND");
   });
 
+  describe("what may go out for one sale", () => {
+    /** A second recall this same sale could belong to, as the matcher would have saved it. */
+    const alsoCouldBe = async (matchId: string, recallNumber: string, verdict: string, strength: string) => {
+      const { rows } = await db.query<{ id: string }>(
+        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, verdict, matched, missing, reason, strength)
+         select m.shop_id, r.recall_id, r.raw_sha256, m.order_line_id, $3, '[]'::jsonb, '[]'::jsonb, 'r', $4
+         from recall_matches m, recalls r where m.id = $1 and r.recall_number = $2
+         returning id`,
+        [matchId, recallNumber, verdict, strength],
+      );
+      return rows[0].id;
+    };
+
+    it("sends nothing on product words alone: the shop's text does not name the brand", async () => {
+      const weak = await matchFor("27040", line({ orderNumber: "#W1", title: "wooden convertible high chair" }));
+      const { rows } = await db.query<{ strength: string; verdict: string }>("select strength, verdict from recall_matches where id = $1", [weak]);
+      expect(rows[0]).toEqual({ strength: "PRODUCT_WORDS", verdict: "SCOPE_GAP" });
+      expect(await refusal(prepareNotice(db, { shopId, matchId: weak }))).toBe("PRODUCT_WORDS_ONLY");
+    });
+
+    it("asks a family one question about one sale, however many recalls it could belong to", async () => {
+      const first = await matchFor("27040", line({ orderNumber: "#G2", title: "Costway high chair" }));
+      const second = await alsoCouldBe(first, "27072", "SCOPE_GAP", "BRAND");
+      await prepareNotice(db, { shopId, matchId: first });
+      expect(await refusal(prepareNotice(db, { shopId, matchId: second }))).toBe("ALREADY_ASKED");
+    });
+
+    it("holds that line when two requests race", async () => {
+      const first = await matchFor("27040", line({ orderNumber: "#G3", title: "Costway high chair" }));
+      const second = await alsoCouldBe(first, "27072", "SCOPE_GAP", "BRAND");
+      const results = await Promise.allSettled([prepareNotice(db, { shopId, matchId: first }), prepareNotice(db, { shopId, matchId: second })]);
+      expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+      const { rows } = await db.query("select 1 from notices");
+      expect(rows).toHaveLength(1);
+    });
+
+    it("does not ask a question when a recall on this sale is already confirmed", async () => {
+      const confirmed = await matchFor("27072", line({ orderNumber: "#G4" }));
+      const gap = await alsoCouldBe(confirmed, "27040", "SCOPE_GAP", "BRAND");
+      expect(await refusal(prepareNotice(db, { shopId, matchId: gap }))).toBe("ALREADY_ASKED");
+    });
+
+    it("still sends each confirmed recall: each is a separate hazard", async () => {
+      const first = await matchFor("27072", line({ orderNumber: "#G5" }));
+      const second = await alsoCouldBe(first, "27027", "MATCH", "CONFIRMED");
+      expect((await prepareNotice(db, { shopId, matchId: first })).kind).toBe("SAFETY_NOTICE");
+      expect((await prepareNotice(db, { shopId, matchId: second })).kind).toBe("SAFETY_NOTICE");
+    });
+
+    it("still sends a safety notice after a check request, when the recall was confirmed later", async () => {
+      const gap = await matchFor("27040", line({ orderNumber: "#G6", title: "Costway high chair" }));
+      await prepareNotice(db, { shopId, matchId: gap });
+      const confirmed = await alsoCouldBe(gap, "27072", "MATCH", "CONFIRMED");
+      expect((await prepareNotice(db, { shopId, matchId: confirmed })).kind).toBe("SAFETY_NOTICE");
+    });
+
+    it("the same approval twice is still one notice", async () => {
+      const gap = await matchFor("27040", line({ orderNumber: "#G7", title: "Costway high chair" }));
+      const a = await prepareNotice(db, { shopId, matchId: gap });
+      expect((await prepareNotice(db, { shopId, matchId: gap })).noticeId).toBe(a.noticeId);
+    });
+  });
+
   it("moves through the states the seller sees", async () => {
     const m = await matchFor("27072", line({}));
     const { noticeId } = await prepareNotice(db, { shopId, matchId: m });

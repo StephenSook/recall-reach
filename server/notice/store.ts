@@ -10,7 +10,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -20,6 +20,7 @@ export class NoticeRefused extends Error {
 }
 
 const twoOrders = () => new NoticeRefused("TWO_POSSIBLE_ORDERS", "Two possible orders. Resolve which order this is first.");
+const alreadyAsked = () => new NoticeRefused("ALREADY_ASKED", "This sale already has a message. One sale gets one question.");
 const noNotice = () => new NoticeRefused("NO_SUCH_NOTICE", "No such notice for this shop.");
 
 export type NoticeState = "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED";
@@ -35,21 +36,36 @@ export async function prepareNotice(
   input: { shopId: string; matchId: string },
 ): Promise<{ noticeId: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }> {
   if (!UUID.test(input.matchId)) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
-  const { rows } = await db.query<{ verdict: string; join_state: string | null; order_line_id: string | null }>(
-    "select verdict, join_state, order_line_id from recall_matches where id = $1 and shop_id = $2",
+  const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null }>(
+    "select verdict, strength, join_state, order_line_id from recall_matches where id = $1 and shop_id = $2",
     [input.matchId, input.shopId],
   );
   const m = rows[0];
   if (!m) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
   if (m.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
   if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
+  if (m.strength === "PRODUCT_WORDS") {
+    throw new NoticeRefused("PRODUCT_WORDS_ONLY", "The shop's text shares only product words with this recall. Nothing goes out on that.");
+  }
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
+  const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>("select id, kind from notices where match_id = $1", [input.matchId]);
+  if (existing.rows[0]) return { noticeId: existing.rows[0].id, kind: existing.rows[0].kind };
+  if (kind === "CHECK_REQUEST") {
+    const taken = await db.query(
+      `select 1 from notices where order_line_id = $1
+       union all select 1 from recall_matches where order_line_id = $1 and verdict = 'MATCH' and id <> $2`,
+      [m.order_line_id, input.matchId],
+    );
+    if (taken.rows.length > 0) throw alreadyAsked();
+  }
+  // The index settles a race between two requests. Here a second notice for the match is the same notice.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
-    `insert into notices (shop_id, match_id, kind) values ($1, $2, $3)
-     on conflict (match_id) do update set kind = notices.kind
+    `insert into notices (shop_id, match_id, kind, order_line_id) values ($1, $2, $3, $4)
+     on conflict do nothing
      returning id, kind`,
-    [input.shopId, input.matchId, kind],
+    [input.shopId, input.matchId, kind, m.order_line_id],
   );
+  if (!saved.rows[0]) throw alreadyAsked();
   return { noticeId: saved.rows[0].id, kind: saved.rows[0].kind };
 }
 
