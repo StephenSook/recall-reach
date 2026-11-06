@@ -70,6 +70,32 @@ describe("a phone's token", () => {
     expect(await registerPushToken(db, shopId, TOKEN)).toBe(false);
   });
 
+  it("follows the phone to the shop it's on now, so it stops hearing about the one it left", async () => {
+    const other = await createShop(db, { name: "Other", kind: "REAL" });
+    await registerPushToken(db, shopId, TOKEN);
+    await registerPushToken(db, other, TOKEN);
+    expect(await tokens()).toEqual([]);
+    expect(await tokens(other)).toEqual([TOKEN]);
+  });
+
+  it("leaves another phone on the old shop alone", async () => {
+    const other = await createShop(db, { name: "Other", kind: "REAL" });
+    await registerPushToken(db, shopId, "ExponentPushToken[staying]");
+    await registerPushToken(db, shopId, TOKEN);
+    await registerPushToken(db, other, TOKEN);
+    expect(await tokens()).toEqual(["ExponentPushToken[staying]"]);
+  });
+
+  it("counts a phone seen again as new, so the one dropped is the one gone longest", async () => {
+    for (let i = 0; i < 5; i++) {
+      await registerPushToken(db, shopId, `ExponentPushToken[t${i}]`);
+      await db.query("update push_tokens set created_at = now() - make_interval(mins => $1) where token = $2", [10 - i, `ExponentPushToken[t${i}]`]);
+    }
+    await registerPushToken(db, shopId, "ExponentPushToken[t0]");
+    await registerPushToken(db, shopId, "ExponentPushToken[t9]");
+    expect((await tokens()).sort()).toEqual(["ExponentPushToken[t0]", "ExponentPushToken[t2]", "ExponentPushToken[t3]", "ExponentPushToken[t4]", "ExponentPushToken[t9]"]);
+  });
+
   it("keeps the five newest for a shop", async () => {
     for (let i = 0; i < 7; i++) {
       await registerPushToken(db, shopId, `ExponentPushToken[t${i}]`);
@@ -105,22 +131,39 @@ describe("a phone's token", () => {
 
     it("posts to Expo's push service, and sends nothing with no phone", async () => {
       const none = expo();
-      expect(await pushNewCards(db, shopId, { matchIds: [matchId] }, none as unknown as typeof fetch)).toBe(0);
+      expect(await pushNewCards(db, shopId, [matchId], none as unknown as typeof fetch)).toBe(0);
       expect(none).not.toHaveBeenCalled();
 
       await registerPushToken(db, shopId, TOKEN);
       const some = expo();
-      expect(await pushNewCards(db, shopId, { recallIds: [recallId] }, some as unknown as typeof fetch)).toBe(1);
+      expect(await pushNewCards(db, shopId, [matchId], some as unknown as typeof fetch)).toBe(1);
       expect(some.mock.calls[0][0]).toBe("https://exp.host/--/api/v2/push/send");
       expect(JSON.parse(String(some.mock.calls[0][1].body))).toEqual([expect.objectContaining({ to: TOKEN, body: "Recall 27018: something you listed needs a look", data: { path: `/queue#sale-${matchId}` } })]);
       expect(String(some.mock.calls[0][1].body)).not.toContain("SENTINEL");
+    });
+
+    it("opens the card the seller can see, when this recall sits under a stronger one on the same item", async () => {
+      const stronger = fixture.filter((r) => r.RecallNumber === "27072");
+      await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(JSON.stringify(stronger), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+      const other = await db.query<{ recall_id: number; raw_sha256: string }>("select recall_id, raw_sha256 from recalls where recall_number = '27072'");
+      const { rows } = await db.query<{ id: string }>(
+        `insert into recall_matches (shop_id, recall_id, recall_sha256, shop_item_id, verdict, matched, missing, reason, strength)
+         values ($1, $2, $3, '00000000-0000-4000-8000-0000000000aa', 'MATCH', '[]', '[]', 'r', 'CONFIRMED') returning id`,
+        [shopId, other.rows[0].recall_id, other.rows[0].raw_sha256],
+      );
+      await registerPushToken(db, shopId, TOKEN);
+      const f = expo();
+      await pushNewCards(db, shopId, [matchId], f as unknown as typeof fetch);
+      const [message] = JSON.parse(String(f.mock.calls[0][1].body)) as { body: string; data: { path: string } }[];
+      expect(message.body).toBe("Recall 27018: something you listed needs a look");
+      expect(message.data.path).toBe(`/queue#sale-${rows[0].id}`);
     });
 
     it("stays quiet about a card that only shares a word with a recall", async () => {
       await db.query("update recall_matches set strength = 'PRODUCT_WORDS' where id = $1", [matchId]);
       await registerPushToken(db, shopId, TOKEN);
       const f = expo();
-      expect(await pushNewCards(db, shopId, { recallIds: [recallId] }, f as unknown as typeof fetch)).toBe(0);
+      expect(await pushNewCards(db, shopId, [matchId], f as unknown as typeof fetch)).toBe(0);
       expect(f).not.toHaveBeenCalled();
     });
 
@@ -128,17 +171,18 @@ describe("a phone's token", () => {
       await db.query("update recall_matches set verdict = 'CLEARED' where id = $1", [matchId]);
       await registerPushToken(db, shopId, TOKEN);
       const f = expo();
-      expect(await pushNewCards(db, shopId, { matchIds: [matchId] }, f as unknown as typeof fetch)).toBe(0);
+      expect(await pushNewCards(db, shopId, [matchId], f as unknown as typeof fetch)).toBe(0);
     });
 
     it.each([
       ["a refused connection", () => Promise.reject(new TypeError("fetch failed"))],
       ["a server error", () => new Response("no", { status: 500 })],
       ["an answer that isn't json", () => new Response("<html>", { status: 200 })],
+      ["an answer far too long to be real", () => new Response(JSON.stringify({ data: "x".repeat(2_000_000) }), { status: 200 })],
     ])("never throws on %s, and logs no token", async (_name, answer) => {
       const logged = vi.spyOn(console, "error").mockImplementation(() => {});
       await registerPushToken(db, shopId, TOKEN);
-      await expect(pushNewCards(db, shopId, { matchIds: [matchId] }, expo(answer as () => Promise<Response>) as unknown as typeof fetch)).resolves.toBe(0);
+      await expect(pushNewCards(db, shopId, [matchId], expo(answer as () => Promise<Response>) as unknown as typeof fetch)).resolves.toBe(0);
       expect(JSON.stringify(logged.mock.calls)).not.toContain("abc-123");
     });
 
@@ -150,7 +194,7 @@ describe("a phone's token", () => {
         const sent = JSON.parse(String(init.body)) as { to: string }[];
         return new Response(JSON.stringify({ data: sent.map((m) => (m.to === TOKEN ? { status: "error", details: { error: "DeviceNotRegistered" } } : { status: "ok" })) }), { status: 200 });
       });
-      expect(await pushNewCards(db, shopId, { matchIds: [matchId] }, f as unknown as typeof fetch)).toBe(1);
+      expect(await pushNewCards(db, shopId, [matchId], f as unknown as typeof fetch)).toBe(1);
       expect(await tokens()).toEqual([other]);
     });
   });

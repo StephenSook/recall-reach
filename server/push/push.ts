@@ -1,6 +1,8 @@
 // The phone app's one job: buzz when a card lands. Apple, Google and Expo are third parties, so a push can carry only a
 // public recall number and our own card id. It is built from those two values, so nothing else can reach the wire.
 import type { Queryable } from "../db/types";
+import { readCappedBody } from "../http/body";
+import { loadQueue, toCards } from "../queue/queue";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const TOKEN = /^Expo(?:nent)?PushToken\[[A-Za-z0-9_-]{1,200}\]$/;
@@ -10,6 +12,8 @@ const MAX_TOKENS_PER_SHOP = 5;
 /** A burst of new recalls is one glance at the queue, not a row of buzzes. */
 const MAX_PUSHES = 3;
 const SEND_TIMEOUT_MS = 5000;
+/** Far more than a ticket per message needs. This runs on a webhook's path, so a long answer isn't read. */
+const MAX_ANSWER_BYTES = 64_000;
 
 export interface CardPush {
   recallNumber: string;
@@ -33,13 +37,15 @@ export function pushMessage(card: CardPush, token: string): PushMessage | null {
   return { to: token, title: "Recall Reach", body: `Recall ${card.recallNumber}: ${what} needs a look`, data: { path: `/queue#sale-${card.matchId}` }, sound: "default", priority: "high", channelId: "cards" };
 }
 
+/** A phone follows the shop it's on now. A token is on one shop at a time, so it stops hearing about one it has left. */
 export async function registerPushToken(db: Queryable, shopId: string, token: string): Promise<boolean> {
   if (!TOKEN.test(token)) return false;
   const { rows } = await db.query(
-    "insert into push_tokens (shop_id, token) select id, $2 from shops where id = $1 on conflict (shop_id, token) do update set created_at = push_tokens.created_at returning 1",
+    "insert into push_tokens (shop_id, token) select id, $2 from shops where id = $1 on conflict (shop_id, token) do update set created_at = now() returning 1",
     [shopId, token],
   );
   if (rows.length === 0) return false;
+  await db.query("delete from push_tokens where token = $1 and shop_id <> $2", [token, shopId]);
   await db.query(
     "delete from push_tokens where shop_id = $1 and token not in (select token from push_tokens where shop_id = $1 order by created_at desc, token desc limit $2)",
     [shopId, MAX_TOKENS_PER_SHOP],
@@ -51,20 +57,26 @@ export async function registerPushToken(db: Queryable, shopId: string, token: st
  * Tells a shop's phones about cards that just landed: a brand or model, not a shared word. It never throws, because a
  * sale or a recall is already safely on the queue by now, and a push is only a nudge to go and look. Returns how many went.
  */
-export async function pushNewCards(db: Queryable, shopId: string, which: { matchIds: string[] } | { recallIds: number[] }, fetchImpl: typeof fetch = fetch): Promise<number> {
+export async function pushNewCards(db: Queryable, shopId: string, matchIds: string[], fetchImpl: typeof fetch = fetch): Promise<number> {
   try {
+    if (matchIds.length === 0) return 0;
     const { rows: phones } = await db.query<{ token: string }>("select token from push_tokens where shop_id = $1", [shopId]);
     if (phones.length === 0) return 0;
     const { rows: cards } = await db.query<{ id: string; recall_number: string; listed: boolean }>(
       `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed
        from recall_matches m join recalls r on r.recall_id = m.recall_id
-       where m.shop_id = $1 and m.verdict <> 'CLEARED' and m.strength in ('CONFIRMED', 'BRAND')
-         and (m.id = any($2::uuid[]) or m.recall_id = any($3::int[]))
+       where m.shop_id = $1 and m.id = any($2::uuid[]) and m.verdict <> 'CLEARED' and m.strength in ('CONFIRMED', 'BRAND')
        order by r.recall_number desc, (m.strength = 'CONFIRMED') desc, (m.shop_item_id is null) desc
-       limit $4`,
-      [shopId, "matchIds" in which ? which.matchIds : [], "recallIds" in which ? which.recallIds : [], MAX_PUSHES],
+       limit $3`,
+      [shopId, matchIds, MAX_PUSHES],
     );
-    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: c.id, kind: c.listed ? "listed" : "sold" }, p.token) ?? []));
+    if (cards.length === 0) return 0;
+    // Only a card's lead has an anchor on the page, so a recall nested under a stronger one opens that card.
+    const leadOf = new Map<string, string>();
+    for (const card of toCards((await loadQueue(db, shopId, "push")).rows).cards) {
+      for (const row of [card.lead, ...card.also]) leadOf.set(row.matchId, card.lead.matchId);
+    }
+    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: leadOf.get(c.id) ?? c.id, kind: c.listed ? "listed" : "sold" }, p.token) ?? []));
     if (messages.length === 0) return 0;
     const res = await fetchImpl(EXPO_PUSH_URL, {
       method: "POST",
@@ -76,7 +88,12 @@ export async function pushNewCards(db: Queryable, shopId: string, which: { match
       console.error("push failed: Expo answered", res.status);
       return 0;
     }
-    const { data } = (await res.json()) as { data?: { status?: string; details?: { error?: string } }[] };
+    const answer = await readCappedBody(res, MAX_ANSWER_BYTES, { timeoutMs: SEND_TIMEOUT_MS });
+    if (!answer.ok) {
+      console.error("push failed: Expo's answer was too long or too slow");
+      return 0;
+    }
+    const { data } = JSON.parse(new TextDecoder().decode(answer.body)) as { data?: { status?: string; details?: { error?: string } }[] };
     const tickets = Array.isArray(data) ? data : [];
     const gone = messages.filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered").map((m) => m.to);
     if (gone.length > 0) await db.query("delete from push_tokens where shop_id = $1 and token = any($2::text[])", [shopId, gone]);

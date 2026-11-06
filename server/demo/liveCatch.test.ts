@@ -257,17 +257,18 @@ describe("a sale as it happens", () => {
       await buyWithEmail();
       const f = expo();
       expect(await catchWith(f)).toBe("CAUGHT");
-      const wire = String(f.mock.calls[0][1].body);
-      const [message] = JSON.parse(wire) as { body: string; data: { path: string } }[];
-      expect(message.body).toBe("Recall 27018: something you sold needs a look");
       const { id } = (await line()) as { id: string };
       const cardId = (await loadQueue(db, shopId, "s")).rows.find((r) => r.recordId === id && r.verdict === "MATCH")?.matchId;
-      expect(message.data.path).toBe(`/queue#sale-${cardId}`);
 
-      const { order_number, title, sku } = (await line()) as { order_number: string; title: string; sku: string };
-      for (const secretWord of [PAYPAL_ITEM_NAME, "CAPTURE", "ORDER", BUYER, "sentinel", order_number, title, sku, "ONTHEWEI", "MY002", CAPTURED_AT, "2800", "1800", "18.00", "28.00"]) {
-        expect(wire, secretWord).not.toContain(secretWord);
-      }
+      // The whole request, field by field, so nothing can be added to it and still pass.
+      expect(f).toHaveBeenCalledTimes(1);
+      const [url, init] = f.mock.calls[0];
+      expect(url).toBe("https://exp.host/--/api/v2/push/send");
+      expect(init.method).toBe("POST");
+      expect(init.headers).toEqual({ "content-type": "application/json", accept: "application/json" });
+      expect(JSON.parse(String(init.body))).toEqual([
+        { to: TOKEN, title: "Recall Reach", body: "Recall 27018: something you sold needs a look", data: { path: `/queue#sale-${cardId}` }, sound: "default", priority: "high", channelId: "cards" },
+      ]);
     });
 
     it("doesn't buzz twice when PayPal delivers the same sale twice", async () => {

@@ -255,6 +255,18 @@ describe("checking stored shops against new recalls", () => {
       expect(f).toHaveBeenCalledTimes(1);
     });
 
+    it("stays quiet about a recall the shop's first check already put on its queue", async () => {
+      await pull(brezza);
+      const fresh = await addShop("REAL", "Fresh shop");
+      expect((await brezzaRows(fresh)).length).toBe(1);
+      await db.query("update shops set recalls_checked_through = now() - interval '1 day' where id = $1", [fresh]);
+      await db.query("update shops set recalls_checked_through = now() + interval '1 day' where id <> $1", [fresh]);
+      await registerPushToken(db, fresh, TOKEN);
+      const f = expo();
+      expect(await sweepWith(f)).toMatchObject({ shopsChecked: 1, shopsFailed: 0 });
+      expect(f).not.toHaveBeenCalled();
+    });
+
     it("says listed for a store's listing", async () => {
       const store = await createShop(db, { name: "A store", kind: "REAL" });
       await db.query("insert into shop_items (shop_id, title, source) values ($1, 'Baby Brezza SuperFast Sterilizer Dryer BRZ0083', 'test')", [store]);

@@ -19,6 +19,16 @@ export interface SweepSummary {
   shopsWaiting: number;
 }
 
+/** Only rows this check added: a recall can be looked at twice, and a phone hears about a card once. A failure here isn't the shop's. */
+async function buzzAboutNewCards(db: Db, shopId: string, recallIds: number[], before: string[], pushFetch?: typeof fetch): Promise<void> {
+  try {
+    const added = await db.query<{ id: string }>("select id from recall_matches where shop_id = $1 and recall_id = any($2::int[]) and not (id = any($3::uuid[]))", [shopId, recallIds, before]);
+    await pushNewCards(db, shopId, added.rows.map((r) => r.id), pushFetch);
+  } catch (err) {
+    console.error("push skipped:", err instanceof Error ? err.name : "unknown error");
+  }
+}
+
 export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: number; budgetMs?: number; pushFetch?: typeof fetch }): Promise<SweepSummary> {
   const started = Date.now();
   const budgetMs = opts.budgetMs ?? SWEEP_BUDGET_MS;
@@ -41,9 +51,10 @@ export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: num
         [id, CHECK_FROM],
       );
       const recallIds = rows.map((r) => r.recall_id);
+      const before = await db.query<{ id: string }>("select id from recall_matches where shop_id = $1 and recall_id = any($2::int[])", [id, recallIds]);
       await runShopCheck(db, id, { today: businessDay(opts.now), onlyRecallIds: recallIds });
       shopsChecked++;
-      await pushNewCards(db, id, { recallIds }, opts.pushFetch);
+      await buzzAboutNewCards(db, id, recallIds, before.rows.map((r) => r.id), opts.pushFetch);
     } catch (err) {
       // One shop's failure stays with that shop. Its marker has not moved, so it is tried again next time.
       shopsFailed++;

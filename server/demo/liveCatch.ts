@@ -212,6 +212,6 @@ export async function catchLiveSale(db: Db, client: PayPalClient, input: { captu
     const seconds = Math.max(0, Math.round((input.now.getTime() - capturedAt) / 100) / 10);
     await db.query("insert into live_catch_runs (seconds, caught_at) values ($1, $2)", [seconds, input.now.toISOString()]);
   }
-  await pushNewCards(db, line.shop_id, { matchIds: caught.rows.map((r) => r.id) }, input.pushFetch);
+  await pushNewCards(db, line.shop_id, caught.rows.map((r) => r.id), input.pushFetch);
   return "CAUGHT";
 }
