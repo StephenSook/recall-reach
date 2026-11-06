@@ -6,11 +6,13 @@
 // acting twice (measured 2026-11-05 on a refund: same id, same refund). Nothing here logs.
 import { createTokenProvider, PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
 
-/** A path safe to log: any segment carrying a digit (capture, order, refund ids) becomes ":id". */
+const ID_FOLLOWS = new Set(["captures", "refunds", "orders", "authorizations"]);
+
+/** A path safe to log: the segment after a resource name is an id, whatever it is made of. Any segment with a digit is too. */
 function pathTemplate(path: string): string {
   return path
     .split("/")
-    .map((segment, i) => (i > 1 && /\d/.test(segment) ? ":id" : segment))
+    .map((segment, i, all) => (i > 1 && (ID_FOLLOWS.has(all[i - 1]) || /\d/.test(segment)) ? ":id" : segment))
     .join("/");
 }
 

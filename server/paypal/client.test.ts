@@ -141,6 +141,18 @@ describe("PayPal client", () => {
     expect((err as PayPalApiError).uncertain).toBe(false);
   });
 
+  it.each([
+    ["/v2/payments/captures/ABCDEFGH/refund", "/v2/payments/captures/:id/refund"],
+    ["/v2/payments/captures/ABCDEFGH", "/v2/payments/captures/:id"],
+    ["/v2/payments/refunds/ABCDEFGH", "/v2/payments/refunds/:id"],
+    ["/v2/checkout/orders/ABCDEFGH", "/v2/checkout/orders/:id"],
+    ["/v1/reporting/transactions", "/v1/reporting/transactions"],
+  ])("hides an id by where it sits, whatever it is made of: %s", (path, template) => {
+    const err = new PayPalApiError(422, "GET", path);
+    expect(err.path).toBe(template);
+    expect(err.message).not.toContain("ABCDEFGH");
+  });
+
   it("refuses a path that is not a PayPal API path", async () => {
     const s = scripted([]);
     await expect(s.client.request("GET", "https://evil.example/x")).rejects.toThrow(/path/);
