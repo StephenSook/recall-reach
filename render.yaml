@@ -49,20 +49,20 @@ services:
       - key: DATABASE_URL
         fromService:
           type: web
-          name: recall-reach-web
+          name: recall-reach-web-e022 # the web service's real name on Render
           envVarKey: DATABASE_URL
       - key: PAYPAL_CLIENT_ID
         fromService:
           type: web
-          name: recall-reach-web
+          name: recall-reach-web-e022 # the web service's real name on Render
           envVarKey: PAYPAL_CLIENT_ID
       - key: PAYPAL_CLIENT_SECRET
         fromService:
           type: web
-          name: recall-reach-web
+          name: recall-reach-web-e022 # the web service's real name on Render
           envVarKey: PAYPAL_CLIENT_SECRET
       - key: SHOP_DATA_KEY
         fromService:
           type: web
-          name: recall-reach-web
+          name: recall-reach-web-e022 # the web service's real name on Render
           envVarKey: SHOP_DATA_KEY
