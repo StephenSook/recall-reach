@@ -5,7 +5,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
-import { familyView, prepareNotice, recordFamilyAnswer } from "../notice/store";
+import { familyView, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "../notice/store";
 import { createContactCipher } from "../privacy/contactCipher";
 import { pendingQuestions, reviewQuestion } from "./questionReview";
 import { QUESTION_VERSION, writtenQuestion } from "./questionStore";
@@ -129,6 +129,20 @@ describe("a person reviewing Claude's questions", () => {
       it("stops it being asked on the family's page even after the mail went out, since a person said it was wrong", async () => {
         const noticeId = await prepared();
         await db.query("update notices set sent_at = now() where id = $1", [noticeId]);
+        await reject();
+        expect(await asked(noticeId)).not.toBe(QUESTION);
+      });
+
+      it("stops it being asked of a family who only said not sure: they can still answer", async () => {
+        const noticeId = await prepared();
+        await recordFamilyAnswer(db, noticeId, "not_sure");
+        await reject();
+        expect(await asked(noticeId)).not.toBe(QUESTION);
+      });
+
+      it("stops it being asked of a family who only said they stopped using it", async () => {
+        const noticeId = await prepared();
+        await recordFamilyStopped(db, noticeId);
         await reject();
         expect(await asked(noticeId)).not.toBe(QUESTION);
       });

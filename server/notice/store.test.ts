@@ -460,6 +460,28 @@ describe("notices", () => {
       expect(await recordFamilyAnswer(db, noticeId, "no")).toBe("CANT_TELL");
     });
 
+    describe("an answer to a question that has since changed", () => {
+      const open = async (orderNumber: string) => {
+        await write({ review: "ACCEPTED" });
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap(orderNumber) });
+        const view = await familyView(db, noticeId);
+        return { noticeId, asked: view?.question?.question ?? "" };
+      };
+
+      it("is refused, so a family's No is never scored against words they did not read", async () => {
+        const { noticeId, asked } = await open("#Q8");
+        await db.query("update notices set written_question = null where id = $1", [noticeId]);
+        expect(await refusal(recordFamilyAnswer(db, noticeId, "no", asked))).toBe("QUESTION_CHANGED");
+        const { rows } = await db.query<{ check_result: string | null }>("select check_result from notices where id = $1", [noticeId]);
+        expect(rows[0].check_result).toBeNull();
+      });
+
+      it("is taken when it is still the question on the page", async () => {
+        const { noticeId, asked } = await open("#Q9");
+        expect(await recordFamilyAnswer(db, noticeId, "no", asked)).toBe("DOESNT_MATCH");
+      });
+    });
+
     it("takes a no as can't tell until a person accepted it", async () => {
       await write();
       const { noticeId } = await prepareNotice(db, { shopId, matchId: await gap("#Q5") });

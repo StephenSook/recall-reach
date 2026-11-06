@@ -11,7 +11,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER" | "EVIDENCE_CHANGED";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER" | "EVIDENCE_CHANGED" | "QUESTION_CHANGED";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -236,7 +236,7 @@ export async function recordFamilyStopped(db: Queryable, noticeId: string): Prom
 }
 
 /** The first real answer stands. The link has no login, so anyone holding it could otherwise change what the seller sees. */
-export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer: string): Promise<CheckResult> {
+export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer: string, askedOnPage?: string): Promise<CheckResult> {
   const { rows } = await db.query<{
     recall_number: string;
     title: string;
@@ -258,6 +258,8 @@ export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer
   if (notice.kind !== "CHECK_REQUEST") throw new NoticeRefused("NOT_A_QUESTION", "This message does not ask a question.");
   if (notice.expired) throw linkExpired();
   const question = askedOf(notice);
+  // The page they answered may be older than the question now. An answer only counts against the words they read.
+  if (askedOnPage !== undefined && askedOnPage !== question.question) throw new NoticeRefused("QUESTION_CHANGED", "The question has changed. Please read it again.");
   const said = answer.trim();
   const offered = question.kind === "model" ? said.length > 0 : ["yes", "no", "not_sure"].includes(said);
   if (!offered) throw new NoticeRefused("NO_ANSWER", "That is not an answer to this question.");

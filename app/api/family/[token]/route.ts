@@ -13,7 +13,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const form = await request.formData();
   try {
     if (form.get("action") === "stopped") await recordFamilyStopped(getDb(), noticeId);
-    else await recordFamilyAnswer(getDb(), noticeId, String(form.get("answer") ?? "").slice(0, 80));
+    else {
+      const asked = form.get("asked");
+      await recordFamilyAnswer(getDb(), noticeId, String(form.get("answer") ?? "").slice(0, 80), typeof asked === "string" ? asked : undefined);
+    }
   } catch (err) {
     if (!(err instanceof NoticeRefused)) throw err;
     // The page shows the link's real state, so a refused post just lands back on it.

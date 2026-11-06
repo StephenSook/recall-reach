@@ -175,6 +175,24 @@ describe("the question Claude writes for a family", () => {
       expect(await sentBack("Does your battery pack have a serial number starting with 083723 or 078352?")).toMatchObject({ is_error: true });
     });
 
+    it("can't be got around by quoting only the part it names", async () => {
+      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack have a serial number starting with 083723?", evidence: "083723" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27065", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("refuses a code CPSC never wrote", async () => {
+      const { client, requests } = fakeClaude([[answer({ question: "Does your battery pack say Z99999 on its label?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })], [answer({ question: null, evidence: null, every_recalled_unit: false, abstain_reason: "None." })]]);
+      await write("27065", client);
+      expect(lastReply(requests[1])[0]).toMatchObject({ is_error: true });
+    });
+
+    it("takes a question naming the whole list", async () => {
+      const whole = "Does your pack's serial start with 083723, 078352, 084105, 078591, 078592, 084106 or 086409?";
+      const { client } = fakeClaude([[answer({ question: whole, evidence: LIST })]]);
+      expect(await write("27065", client)).toBe("WROTE");
+    });
+
     it("takes a question about the list that names none of them", async () => {
       const { client } = fakeClaude([[answer({ question: "Does your battery pack have a label with a serial number on the bottom?", evidence: "The 17-digit serial number for the battery pack is printed on a label" })]]);
       expect(await write("27065", client)).toBe("WROTE");

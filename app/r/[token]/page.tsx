@@ -58,6 +58,7 @@ export default async function FamilyPage({ params }: { params: Promise<{ token: 
             </p>
             <p>Until you can check, stop using it and keep it out of children&apos;s reach.</p>
             <form action={action} method="post">
+              <input type="hidden" name="asked" value={view.question.question} />
               {view.question.kind === "model" ? (
                 <>
                   <label className="field">

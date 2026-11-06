@@ -37,8 +37,8 @@ export async function pendingQuestions(db: Queryable, opts: { limit: number; fir
 
 /**
  * False if nothing changed: the words are not the ones this person read, or it was already decided.
- * Rejecting also takes the question off any message the family has not answered, in one statement, so a question a
- * person said is wrong is no longer asked. What a family already answered stays as the record of what they were asked.
+ * Rejecting also takes the question off any message the family has not settled, in one statement, so a question a
+ * person said is wrong is no longer asked. "Not sure" settles nothing. A real answer stays as the record of what was asked.
  */
 export async function reviewQuestion(
   db: Queryable,
@@ -55,7 +55,7 @@ export async function reviewQuestion(
        update notices n set written_question = null
        from recall_matches m
        where $1 = 'REJECTED' and m.id = n.match_id and m.recall_id in (select recall_id from decided)
-         and n.written_question ->> 'question' = $4 and n.responded_at is null
+         and n.written_question ->> 'question' = $4 and (n.check_result is null or n.check_open)
      )
      select recall_id from decided`,
     [input.decision, input.recallNumber, QUESTION_VERSION, input.question, input.decision === "ACCEPTED" && input.scopeConfirmed === true],
