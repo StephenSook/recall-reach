@@ -100,7 +100,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       verdict: r.verdict as QueueRow["verdict"],
       salePath: (r.sale_path as QueueRow["salePath"]) ?? null,
       joinState: (r.join_state as string | null) ?? null,
-      strength: (r.strength as Strength | null) ?? "BRAND",
+      strength: (r.strength as Strength | null) ?? (r.verdict === "MATCH" ? "CONFIRMED" : "PRODUCT_WORDS"),
       matched: r.matched as string[],
       missing: r.missing as string[],
       reason: String(r.reason),

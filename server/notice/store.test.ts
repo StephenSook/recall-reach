@@ -113,6 +113,33 @@ describe("notices", () => {
       expect(await refusal(prepareNotice(db, { shopId, matchId: weak }))).toBe("PRODUCT_WORDS_ONLY");
     });
 
+    it("treats a row with no recorded strength as not enough to contact a family", async () => {
+      const gap = await matchFor("27040", line({ orderNumber: "#L1", title: "Costway high chair" }));
+      await db.query("update recall_matches set strength = null where id = $1", [gap]);
+      expect(await refusal(prepareNotice(db, { shopId, matchId: gap }))).toBe("PRODUCT_WORDS_ONLY");
+    });
+
+    it("still sends a confirmed match with no recorded strength: the verdict rests on a model or look", async () => {
+      const confirmed = await matchFor("27072", line({ orderNumber: "#L2" }));
+      await db.query("update recall_matches set strength = null where id = $1", [confirmed]);
+      expect((await prepareNotice(db, { shopId, matchId: confirmed })).kind).toBe("SAFETY_NOTICE");
+    });
+
+    it("composes nothing if the evidence has weakened since the notice was prepared", async () => {
+      const gap = await matchFor("27040", line({ orderNumber: "#L3", title: "Costway high chair" }));
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: gap });
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#L3", title: "wooden convertible high chair" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      expect(await refusal(compose(noticeId))).toBe("PRODUCT_WORDS_ONLY");
+    });
+
+    it("composes nothing once the match has been cleared", async () => {
+      const gap = await matchFor("27040", line({ orderNumber: "#L4", title: "Costway high chair" }));
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: gap });
+      await db.query("update recall_matches set verdict = 'CLEARED', strength = 'BRAND' where id = $1", [gap]);
+      expect(await refusal(compose(noticeId))).toBe("NOTHING_TO_SEND");
+    });
+
     it("asks a family one question about one sale, however many recalls it could belong to", async () => {
       const first = await matchFor("27040", line({ orderNumber: "#G2", title: "Costway high chair" }));
       const second = await alsoCouldBe(first, "27072", "SCOPE_GAP", "BRAND");

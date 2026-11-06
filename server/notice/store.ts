@@ -21,6 +21,14 @@ export class NoticeRefused extends Error {
 
 const twoOrders = () => new NoticeRefused("TWO_POSSIBLE_ORDERS", "Two possible orders. Resolve which order this is first.");
 const alreadyAsked = () => new NoticeRefused("ALREADY_ASKED", "This sale already has a message. One sale gets one question.");
+/** A confirmed match rests on a model or look. Anything else needs the brand behind it, and unknown is not that. */
+function refuseWeakEvidence(match: { verdict: string; strength: string | null }): void {
+  if (match.verdict === "CLEARED") throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
+  if (match.verdict !== "MATCH" && match.strength !== "BRAND") {
+    throw new NoticeRefused("PRODUCT_WORDS_ONLY", "The shop's text shares only product words with this recall. Nothing goes out on that.");
+  }
+}
+
 const noNotice = () => new NoticeRefused("NO_SUCH_NOTICE", "No such notice for this shop.");
 
 export type NoticeState = "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED";
@@ -44,9 +52,7 @@ export async function prepareNotice(
   if (!m) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
   if (m.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
   if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
-  if (m.strength === "PRODUCT_WORDS") {
-    throw new NoticeRefused("PRODUCT_WORDS_ONLY", "The shop's text shares only product words with this recall. Nothing goes out on that.");
-  }
+  refuseWeakEvidence(m);
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
   const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>("select id, kind from notices where match_id = $1", [input.matchId]);
   if (existing.rows[0]) return { noticeId: existing.rows[0].id, kind: existing.rows[0].kind };
@@ -108,6 +114,8 @@ export async function composeForSeller(
     RecallRow & {
       kind: string;
       join_state: string | null;
+      verdict: string;
+      strength: string | null;
       item_title: string;
       ordered_on: string;
       buyer_email_enc: string | null;
@@ -115,7 +123,7 @@ export async function composeForSeller(
       order_line_id: string;
     }
   >(
-    `select n.kind, m.join_state, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select n.kind, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
@@ -128,6 +136,7 @@ export async function composeForSeller(
   const n = rows[0];
   if (!n) throw noNotice();
   if (n.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
+  refuseWeakEvidence(n); // the line may have been corrected since the notice was prepared
 
   const context = {
     recall: { recallNumber: n.recall_number, url: n.url, products: n.products, hazards: n.hazards, remedies: n.remedies },
