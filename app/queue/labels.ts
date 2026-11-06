@@ -14,6 +14,7 @@ export const NOTICE_STATE = {
   FAMILY_RESPONDED: "Family responded",
 } as const;
 export const REFUND_STATE: Record<string, string> = {
+  reserved: "Refund not sent yet",
   pending: "Refund pending at PayPal",
   refunded: "Refunded",
   failed: "Refund failed",

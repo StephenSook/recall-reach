@@ -399,6 +399,90 @@ describe("refunds", () => {
     });
   });
 
+  describe("before anything is sent", () => {
+    /** Wraps the database so something happens right after the reservation commits. */
+    const afterReserving = (then: () => Promise<void>): typeof db => ({
+      ...db,
+      transaction: async (fn) => {
+        const out = await db.transaction(fn);
+        await then();
+        return out;
+      },
+    });
+    const crash = async () => {
+      throw new Error("the process died here");
+    };
+    const statusOf = async () => (await db.query<{ status: string; failure: string | null }>("select status, failure from refunds")).rows[0];
+
+    it("says the outcome is unknown before the request leaves, so a crash mid-send cannot read as not sent", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const seen: string[] = [];
+      const watching: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          if (method === "POST") seen.push((await statusOf()).status);
+          return pp.client.request(method, path, opts);
+        }) as PayPalClient["request"],
+      };
+      await execute(a.approvalId, watching);
+      expect(seen).toEqual(["unconfirmed"]);
+    });
+
+    it("frees the line when a reservation was never sent and its lease has run out", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow("died");
+      expect((await statusOf()).status).toBe("reserved");
+      expect(pp.posts()).toEqual([]);
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      const later = new Date(NOW.getTime() + 7 * 60_000);
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: rows[0].id, recordKey: key, now: later });
+      expect(rec.ledger.status).toBe("failed");
+      expect((await statusOf()).failure).toBe("Never sent to PayPal.");
+      await expect(approve(m.id, SESSION, later, pp.client)).resolves.toBeDefined();
+    });
+
+    it("leaves a reservation alone while its lease is running: the send may be about to happen", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow();
+      const { rows } = await db.query<{ id: string }>("select id from refunds");
+      const rec = await reconcileRefund(db, pp.client, { shopId, refundId: rows[0].id, recordKey: key, now: new Date(NOW.getTime() + 60_000) });
+      expect(rec.ledger.status).toBe("reserved");
+      expect(await refusal(askPayPalAgain(db, pp.client, { shopId, refundId: rows[0].id, recordKey: key, now: new Date(NOW.getTime() + 60_000) }))).toBe("REFUND_BEING_SENT");
+    });
+
+    it("sends nothing if the reservation was given up before the send began", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal();
+      const givenUp = afterReserving(async () => {
+        await db.query("update refunds set status = 'failed', failure = 'Never sent to PayPal.', send_lease_until = null, send_lease_id = null");
+      });
+      const r = await executeRefund(givenUp, pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW });
+      expect(r.status).toBe("failed");
+      expect(pp.posts()).toEqual([]);
+    });
+
+    it("counts a reservation against the payment's balance", async () => {
+      const m = await setUp(line({ unitPriceCents: 6000 }), { amountCents: 10000 });
+      const a = await approve(m.id);
+      const pp = fakePayPal({ amountCents: 10000 });
+      await expect(executeRefund(afterReserving(crash), pp.client, { shopId, sessionId: SESSION, approvalId: a.approvalId, recordKey: key, now: NOW })).rejects.toThrow();
+      await storeOrderLines(db, shopId, [line({ lineNo: 2, sku: "PAPA-2", unitPriceCents: 5000 })], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      const { rows } = await db.query<{ id: string }>(
+        `select m.id from recall_matches m join recalls r using (recall_id) join order_lines l on l.id = m.order_line_id
+         where m.shop_id = $1 and r.recall_number = '27027' and l.line_no = 2`,
+        [shopId],
+      );
+      expect(await refusal(approve(rows[0].id, SESSION, NOW, pp.client))).toBe("AMOUNT_ABOVE_REMAINING");
+    });
+  });
+
   describe("the payment's date", () => {
     const LATE = new Date("2027-04-14T15:00:00Z");
     const tryAt = async (createTime: string, now = LATE) => {

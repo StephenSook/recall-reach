@@ -202,7 +202,7 @@ export async function approveRefund(
 
 export interface RefundOutcome {
   refundId: string;
-  status: "pending" | "refunded" | "failed" | "unconfirmed";
+  status: "reserved" | "pending" | "refunded" | "failed" | "unconfirmed";
   amountCents: number;
   currency: string;
   failure: string | null;
@@ -276,7 +276,7 @@ export async function executeRefund(
     if (consumed.rows.length === 0) throw invalid();
     const inserted = await tx.query<{ id: string; request_id: string; send_lease_id: string }>(
       `insert into refunds (approval_id, shop_id, order_line_id, amount_cents, currency, status, send_lease_until, send_lease_id)
-       values ($1, $2, $3, $4, $5, 'pending', $6::timestamptz, gen_random_uuid())
+       values ($1, $2, $3, $4, $5, 'reserved', $6::timestamptz, gen_random_uuid())
        on conflict (order_line_id) where status <> 'failed' do nothing
        returning id, request_id, send_lease_id`,
       [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency, leaseEnd(startedAt, now)],
@@ -312,7 +312,7 @@ async function moveLedger(
        failure = case when $4::boolean then $5 else failure end,
        send_lease_until = case when $6::uuid is null then send_lease_until end,
        send_lease_id = case when $6::uuid is null then send_lease_id end
-     where id = $1 and status in ('pending', 'unconfirmed') and ($6::uuid is null or send_lease_id = $6::uuid)
+     where id = $1 and status in ('reserved', 'pending', 'unconfirmed') and ($6::uuid is null or send_lease_id = $6::uuid)
      returning status`,
     [refundRowId, to, now.toISOString(), extra.failure !== undefined, extra.failure ?? null, extra.holder ?? null],
   );
@@ -426,6 +426,18 @@ async function sendRefund(
     return { refundId: send.rowId, status, amountCents: send.amountCents, currency: send.currency, failure: status === answer ? failure : null };
   };
 
+  // From here the outcome is unknown. If this send no longer holds the row, it must not go out at all.
+  const sending = await db.query(
+    `update refunds set status = 'unconfirmed', updated_at = $3::timestamptz
+     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed')
+     returning id`,
+    [send.rowId, send.holder, now.toISOString()],
+  );
+  if (sending.rows.length === 0) {
+    const { rows } = await db.query<{ status: RefundOutcome["status"]; failure: string | null }>("select status, failure from refunds where id = $1", [send.rowId]);
+    return { refundId: send.rowId, status: rows[0].status, amountCents: send.amountCents, currency: send.currency, failure: rows[0].failure };
+  }
+
   try {
     const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${send.captureId}/refund`, {
       requestId: send.requestId,
@@ -480,6 +492,7 @@ export async function askPayPalAgain(
   );
   const row = rows[0];
   if (!row) throw notFound();
+  if (row.status === "reserved") throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
   if (row.status !== "unconfirmed" || row.paypal_refund_id) {
     throw new RefundRefused("NOTHING_TO_ASK", "PayPal already has a record of this refund. Check it against PayPal.");
   }
@@ -549,10 +562,11 @@ export async function reconcileRefund(
     currency: string;
     refund_ref_hmac: string | null;
     created_at: Date;
+    send_lease_until: Date | null;
     capture_id: string | null;
     paypal_refund_id: string | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, p.capture_id, p.refund_id as paypal_refund_id
+    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, p.capture_id, p.refund_id as paypal_refund_id
      from refunds r left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
     [input.refundId, input.shopId],
@@ -575,6 +589,10 @@ export async function reconcileRefund(
 
   // Our ledger follows PayPal's own answer about the refund.
   let status = row.status;
+  // A reservation moves to unconfirmed before it is sent, so one whose lease ran out was never sent.
+  if (status === "reserved" && (row.send_lease_until === null || row.send_lease_until.getTime() <= now.getTime())) {
+    status = await moveLedger(db, input.refundId, "failed", now, { failure: "Never sent to PayPal." });
+  }
   if (status === "pending" || status === "unconfirmed") {
     if (refund?.status === "COMPLETED") status = "refunded";
     else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") status = "failed";
@@ -586,6 +604,7 @@ export async function reconcileRefund(
   const unanswered = status === "unconfirmed" && !row.paypal_refund_id && row.capture_id !== null;
   const canAskAgain = unanswered && now.getTime() - row.created_at.getTime() <= ASK_AGAIN_MS;
   if (unanswered && !canAskAgain) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
+  if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");
   if (refund && (refund.amountCents !== row.amount_cents || refund.currency !== row.currency)) {
     exceptions.push("PayPal's refund amount differs from the ledger.");
@@ -593,7 +612,7 @@ export async function reconcileRefund(
   if (status === "refunded" && captureFacts && captureFacts.status !== "REFUNDED" && captureFacts.status !== "PARTIALLY_REFUNDED") {
     exceptions.push("The ledger says refunded, but PayPal's payment does not show a refund.");
   }
-  if (!webhookSeen && status !== "failed") exceptions.push("PayPal's webhook has not arrived yet.");
+  if (!webhookSeen && status !== "failed" && status !== "reserved") exceptions.push("PayPal's webhook has not arrived yet.");
 
   return {
     canAskAgain,
