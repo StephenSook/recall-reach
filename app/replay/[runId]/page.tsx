@@ -21,7 +21,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
           {counts.checked} recalls in {seconds(replay.ms)} seconds
         </span>
       </header>
-      <p>Every real CPSC recall we hold, checked against the demo shop in one run.</p>
+      <p>Every real CPSC recall from 2025 on, checked against the demo shop in one run.</p>
       <div className="stats" data-testid="replay-counts">
         <div className="stat">
           <span className="stat-value">{counts.checked}</span>

@@ -7,6 +7,12 @@ import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 import type { SearchCoverage } from "../paypal/transactions";
 
+/**
+ * How far back a shop is checked. Resale goods are old, so a 2022 recall still describes things on shelves today.
+ * Anything older that CPSC republishes is stored but not checked, because those years aren't all here.
+ */
+export const CHECK_FROM = "2022-01-01";
+
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
 const TOP_CANDIDATES = 20;
 /** word_similarity of a shop title to the recall's title and product names. Low, because a miss here is silent. */
@@ -16,6 +22,9 @@ export interface RunSummary {
   /** Null when only one record was checked: that says nothing about the shop's coverage. */
   runId: string | null;
   recallsChecked: number;
+  /** The dates of the recalls really checked, read from the recalls themselves. Null when there were none. */
+  recallsFrom: string | null;
+  recallsTo: string | null;
   matches: number;
   scopeGaps: number;
   cleared: number;
@@ -52,7 +61,7 @@ const CANDIDATES_SQL = `
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
       upper(title || ' ' || description) as doc
     from recalls
-    where $5::int[] is null or recall_id = any($5::int[])
+    where recall_date >= $6::date and ($5::int[] is null or recall_id = any($5::int[]))
   ),
   scored as (
     select r.recall_id, i.kind, i.id, i.title, i.description, i.ordered_on,
@@ -117,11 +126,17 @@ export async function runShopCheck(
      * repeat can't touch a card someone acted on, and the shop counts as checked only when this commits.
      */
     onlyRecallIds?: number[];
+    /** For a run with its own stated window. Otherwise CHECK_FROM. */
+    recallsFrom?: string;
     failedMonths?: string[];
   },
 ): Promise<RunSummary> {
   const paypalSearched = opts.paypalSearched ?? false;
-  const { rows: counted } = await db.query<{ n: string }>("select count(*)::text as n from recalls");
+  const recallsFrom = opts.recallsFrom ?? CHECK_FROM;
+  const { rows: counted } = await db.query<{ n: string; first: string | null; last: string | null }>(
+    "select count(*)::text as n, min(recall_date)::text as first, max(recall_date)::text as last from recalls where recall_date >= $1::date",
+    [recallsFrom],
+  );
   const { rows: shopText } = await db.query<{ id: string; text: string }>(
     `select id, title as text from order_lines where shop_id = $1
      union all select id, title || ' ' || description from shop_items where shop_id = $1`,
@@ -134,6 +149,7 @@ export async function runShopCheck(
     TOP_CANDIDATES,
     JSON.stringify(tokens),
     opts.onlyRecallIds ?? null,
+    recallsFrom,
   ]);
   const candidates = allCandidates.filter((c) => c.within_cap && (!opts.onlyRecordId || c.id === opts.onlyRecordId));
   const candidatesNotChecked = allCandidates.length - candidates.length;
@@ -217,19 +233,23 @@ export async function runShopCheck(
       // The shop's own record of what it was checked against stays true.
       await tx.query(
         `update shop_runs set candidates_not_checked = candidates_not_checked + $2,
-           recalls_checked = (select count(*) from recalls where first_seen_at <= (select recalls_checked_through from shops where id = $1))
+           (recalls_checked, recalls_from, recalls_to) = (
+             select count(*), min(recall_date), max(recall_date) from recalls
+             where recall_date >= $3::date and first_seen_at <= (select recalls_checked_through from shops where id = $1))
          where id = (select id from shop_runs where shop_id = $1 order by finished_at desc limit 1)`,
-        [shopId, candidatesNotChecked],
+        [shopId, candidatesNotChecked, recallsFrom],
       );
     }
     const { rows } = opts.onlyRecordId || opts.onlyRecallIds ? { rows: [] } : await tx.query<{ id: string }>(
-      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read)
-       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13) returning id`,
-      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0],
+      `insert into shop_runs (shop_id, recalls_checked, matches, scope_gaps, cleared, searched_from, searched_to, unidentified_payments, candidates_not_checked, paypal_searched, search_windows, failed_windows, rows_read, recalls_from, recalls_to)
+       values ($1, $2, $3, $4, $5, $6::date, $7::date, $8, $9, $10, $11, $12, $13, $14::date, $15::date) returning id`,
+      [shopId, Number(counted[0].n), counts.MATCH, counts.SCOPE_GAP, counts.CLEARED, searchedFrom, searchedTo, joined.unidentifiedPayments, candidatesNotChecked, paypalSearched, opts.search?.windows ?? 0, opts.search?.failedWindows.length ?? 0, opts.search?.rowsRead ?? 0, counted[0].first, counted[0].last],
     );
     return {
       runId: rows[0]?.id ?? null,
       recallsChecked: Number(counted[0].n),
+      recallsFrom: counted[0].first,
+      recallsTo: counted[0].last,
       matches: counts.MATCH,
       scopeGaps: counts.SCOPE_GAP,
       cleared: counts.CLEARED,

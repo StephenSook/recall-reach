@@ -3,7 +3,7 @@
 // and no message goes anywhere.
 import type { Db } from "../db/types";
 import { businessDay } from "../time/businessDay";
-import { runShopCheck } from "./run";
+import { CHECK_FROM, runShopCheck } from "./run";
 
 /** Past this the rest wait for the next touched tick, and health says how many are waiting. */
 export const SWEEP_MAX_SHOPS = 25;
@@ -26,9 +26,9 @@ export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: num
   const { rows: behind } = await db.query<{ id: string }>(
     `select s.id from shops s
      where (s.kind = 'REAL' or s.created_at > $1::timestamptz - make_interval(hours => $2))
-       and exists (select 1 from recalls r where r.first_seen_at > s.recalls_checked_through)
+       and exists (select 1 from recalls r where r.recall_date >= $3::date and r.first_seen_at > s.recalls_checked_through)
      order by s.recalls_checked_through`,
-    [opts.now.toISOString(), DEMO_SHOP_HOURS],
+    [opts.now.toISOString(), DEMO_SHOP_HOURS, CHECK_FROM],
   );
 
   let shopsChecked = 0;
@@ -37,8 +37,8 @@ export async function checkStoredShops(db: Db, opts: { now: Date; maxShops?: num
     if (Date.now() - started > budgetMs) break;
     try {
       const { rows } = await db.query<{ recall_id: number }>(
-        "select r.recall_id from recalls r join shops s on r.first_seen_at > s.recalls_checked_through where s.id = $1",
-        [id],
+        "select r.recall_id from recalls r join shops s on r.first_seen_at > s.recalls_checked_through where s.id = $1 and r.recall_date >= $2::date",
+        [id, CHECK_FROM],
       );
       await runShopCheck(db, id, { today: businessDay(opts.now), onlyRecallIds: rows.map((r) => r.recall_id) });
       shopsChecked++;

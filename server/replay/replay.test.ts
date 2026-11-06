@@ -5,7 +5,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Method, PayPalClient } from "../paypal/client";
-import { latestReplay, loadReplay, proveReplay, REPLAYS_KEPT, runReplay } from "./replay";
+import { latestReplay, loadReplay, proveReplay, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -59,6 +59,29 @@ describe("Recall Replay", () => {
     it("gives a recall its strongest outcome when several items come near it", async () => {
       const replay = await loadReplay(db, (await run()).runId);
       expect(replay?.rows.find((r) => r.recallNumber === "27072")?.outcome).toBe("MATCH"); // the near miss on the same recall clears
+    });
+
+    describe("its own window", () => {
+      const older: unknown[] = JSON.parse(readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8"));
+      const loadOlder = () => {
+        const fetchImpl = async () => new Response(JSON.stringify(older), { status: 200, headers: { "content-type": "application/json" } });
+        return pullRecalls(db, { field: "RecallDate", start: "2022-08-01", end: "2022-08-31" }, { fetchImpl: fetchImpl as typeof fetch });
+      };
+
+      it("keeps to 2025 on when older recalls are loaded, and has no row for them", async () => {
+        const before = (await loadReplay(db, (await run()).runId))!;
+        await loadOlder();
+        const after = (await loadReplay(db, (await run()).runId))!;
+        expect(after.counts).toEqual(before.counts);
+        expect(after.rows.map((r) => r.recallNumber)).not.toContain("22200");
+        expect(after.rows.every((r) => r.recallDate >= REPLAY_FROM)).toBe(true);
+      });
+
+      it("isn't called changed because an older recall came in", async () => {
+        const { runId } = await run();
+        await loadOlder();
+        expect((await proveReplay(db, runId))?.sameRecalls).toBe(true);
+      });
     });
 
     it("counts add up to every recall", async () => {

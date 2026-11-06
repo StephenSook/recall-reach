@@ -20,7 +20,7 @@ export default async function LatestReplay({ searchParams }: { searchParams: Pro
       <header className="page-head">
         <h1>Recall Replay</h1>
       </header>
-      <p>Every real CPSC recall we hold, checked against the demo shop in one run.</p>
+      <p>Every real CPSC recall from 2025 on, checked against the demo shop in one run.</p>
       {message ? (
         <p role="alert" className="alert">
           {message}

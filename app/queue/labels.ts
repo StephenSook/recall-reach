@@ -69,7 +69,8 @@ export function coverageLine(c: NonNullable<QueueData["coverage"]>): string {
       ? `PayPal's history was only partly read: ${c.failedWindows} of ${c.searchWindows} searches failed.`
       : "PayPal's history was not searched.";
   const left = c.candidatesNotChecked > 0 ? ` ${c.candidatesNotChecked} candidates were not checked.` : "";
-  return `${searched} Checked ${c.recallsChecked} recalls.${left}`;
+  const range = c.recallsFrom && c.recallsTo ? `, ${c.recallsFrom} to ${c.recallsTo}` : "";
+  return `${searched} Checked ${c.recallsChecked.toLocaleString("en-US")} recalls${range}.${left}`;
 }
 
 /** Whether anything may go out on this row at all: there has to be a buyer, one order, and more than product words. */

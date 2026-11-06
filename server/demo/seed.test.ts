@@ -157,6 +157,30 @@ describe("seedDemoShop", () => {
       expect(rows[0].searched_to).toBe(asked.at(-1)?.end_date.slice(0, 10));
     });
 
+    it("has its MamaRoo case once recall 22200 is loaded, and its question is about the recall", async () => {
+      const older = readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8");
+      const fetchImpl = async () => new Response(older, { status: 200, headers: { "content-type": "application/json" } });
+      await pullRecalls(db, { field: "RecallDate", start: "2022-08-01", end: "2022-08-31" }, { fetchImpl: fetchImpl as typeof fetch });
+      const { shopId, run } = await seed(fakePayPal().client);
+      expect(run.unidentifiedPayments).toBe(1);
+      const { rows } = await db.query<{ recall_number: string; verdict: string; strength: string }>(
+        `select r.recall_number, m.verdict, m.strength from recall_matches m join recalls r using (recall_id) join order_lines l on l.id = m.order_line_id
+         where m.shop_id = $1 and l.sku = 'DEMO-MAMAROO' and r.recall_number = '22200'`,
+        [shopId],
+      );
+      expect(rows).toEqual([{ recall_number: "22200", verdict: "SCOPE_GAP", strength: "BRAND" }]);
+    });
+
+    it("a run with a later window leaves out a case older than it", async () => {
+      const older = readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8");
+      const fetchImpl = async () => new Response(older, { status: 200, headers: { "content-type": "application/json" } });
+      await pullRecalls(db, { field: "RecallDate", start: "2022-08-01", end: "2022-08-31" }, { fetchImpl: fetchImpl as typeof fetch });
+      const { shopId, run } = await seedDemoShop(db, fakePayPal().client, { today: TODAY, secret: SECRET, recallsFrom: "2025-01-01" });
+      expect(run.unidentifiedPayments).toBe(1);
+      const { rows } = await db.query("select id from order_lines where shop_id = $1 and sku = 'DEMO-MAMAROO'", [shopId]);
+      expect(rows).toEqual([]);
+    });
+
     it("leaves out a case whose recall isn't loaded, along with its standing payment", async () => {
       const { shopId, run } = await seed(fakePayPal().client);
       const lines = await db.query("select id from order_lines where shop_id = $1 and sku = 'DEMO-MAMAROO'", [shopId]);

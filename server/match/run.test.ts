@@ -56,6 +56,40 @@ describe("runShopCheck", () => {
       )
     ).rows;
 
+  describe("how far back a shop is checked", () => {
+    const fixture: Record<string, unknown>[] = JSON.parse(fixtureText);
+    const brezza = fixture.find((r) => r.RecallNumber === "27072")!;
+    const answering = (records: unknown[]) => ({ fetchImpl: (async () => new Response(JSON.stringify(records), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+    const older: unknown[] = JSON.parse(readFileSync(new URL("../../test/fixtures/cpsc/recall_22200.json", import.meta.url), "utf8"));
+
+    it("checks a recall from 2022, and says the real number and dates", async () => {
+      await pullRecalls(db, { field: "RecallDate", start: "2022-08-01", end: "2022-08-31" }, answering(older));
+      await store([line("#1", "4moms MamaRoo Multi-Motion Swing", "2022-05-17")]);
+      const summary = await runShopCheck(db, shopId, { today: TODAY });
+      expect(summary).toMatchObject({ recallsChecked: 56, recallsFrom: "2022-08-15", recallsTo: "2026-11-05" });
+      expect((await rows()).map((r) => r.recall_number)).toContain("22200");
+      const run = await db.query("select recalls_checked, recalls_from, recalls_to from shop_runs where shop_id = $1", [shopId]);
+      expect(run.rows).toEqual([{ recalls_checked: 56, recalls_from: "2022-08-15", recalls_to: "2026-11-05" }]);
+    });
+
+    it("leaves out an older recall CPSC republished, and doesn't count it", async () => {
+      const republished = { ...brezza, RecallID: 900001, RecallNumber: "99001", RecallDate: "1998-12-01T00:00:00", LastPublishDate: "2026-11-04T00:00:00" };
+      await pullRecalls(db, { field: "LastPublishDate", start: "2026-11-04", end: "2026-11-05" }, answering([republished]));
+      await store([line("#1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15")]);
+      const summary = await runShopCheck(db, shopId, { today: TODAY });
+      expect(summary).toMatchObject({ recallsChecked: 55, recallsFrom: "2026-10-01" });
+      expect((await rows()).map((r) => r.recall_number)).not.toContain("99001");
+    });
+
+    it("can be asked for a later start, for a run with its own stated window", async () => {
+      await pullRecalls(db, { field: "RecallDate", start: "2022-08-01", end: "2022-08-31" }, answering(older));
+      await store([line("#1", "4moms MamaRoo Multi-Motion Swing", "2022-05-17")]);
+      const summary = await runShopCheck(db, shopId, { today: TODAY, recallsFrom: "2025-01-01" });
+      expect(summary).toMatchObject({ recallsChecked: 55, recallsFrom: "2026-10-01" });
+      expect((await rows()).map((r) => r.recall_number)).not.toContain("22200");
+    });
+  });
+
   it("finds the golden-path cases on real recalls, with verdict, path and join", async () => {
     await store([
       line("#N1", "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", "2026-09-15"),

@@ -11,7 +11,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Db } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { createShop, storeOrderLines } from "../import/store";
-import { runShopCheck, type RunSummary } from "../match/run";
+import { CHECK_FROM, runShopCheck, type RunSummary } from "../match/run";
 import type { PayPalClient } from "../paypal/client";
 import { createCardOrder } from "../paypal/orders";
 import { failedMonths, searchTransactions, type SearchCoverage } from "../paypal/transactions";
@@ -99,12 +99,14 @@ export async function seedDemoShop(
     now?: Date;
     /** False makes no new sale: for a run that only looks. Default true. */
     freshCaptures?: boolean;
+    /** For a run with its own stated window: a case older than this stays out, with its payment. */
+    recallsFrom?: string;
   },
 ): Promise<{ shopId: string; run: RunSummary; search: SearchCoverage }> {
   const now = opts.now ?? new Date();
   const { rows: recalls } = await db.query<{ recall_number: string; recall_date: string }>(
-    "select recall_number, recall_date from recalls where recall_number = any($1::text[])",
-    [[...CASES.map((c) => c.recallNumber), SHELF_ITEM.recallNumber]],
+    "select recall_number, recall_date from recalls where recall_number = any($1::text[]) and recall_date >= $2::date",
+    [[...CASES.map((c) => c.recallNumber), SHELF_ITEM.recallNumber], opts.recallsFrom ?? CHECK_FROM],
   );
   const recallDate = new Map(recalls.map((r) => [r.recall_number, r.recall_date]));
   for (const c of [...CASES, SHELF_ITEM]) {
@@ -190,6 +192,7 @@ export async function seedDemoShop(
     paypalSearched: coverage.complete,
     failedMonths: failedMonths(coverage.failedWindows),
     search: coverage,
+    recallsFrom: opts.recallsFrom,
   });
   return { shopId, run, search: coverage };
 }

@@ -76,10 +76,16 @@ describe("how Claude checked it, in words", () => {
 });
 
 describe("coverageLine", () => {
-  const coverage = { recallsChecked: 934, searchedFrom: "2026-09-01", searchedTo: "2026-11-06", unidentifiedPayments: 2, paypalSearched: true, candidatesNotChecked: 0, searchWindows: 3, failedWindows: 0 };
+  const coverage = { recallsChecked: 934, recallsFrom: null, recallsTo: null, searchedFrom: "2026-09-01", searchedTo: "2026-11-06", unidentifiedPayments: 2, paypalSearched: true, candidatesNotChecked: 0, searchWindows: 3, failedWindows: 0 };
 
   it("says what was searched when PayPal's history was really read", () => {
     expect(coverageLine(coverage)).toBe("Searched 2026-09-01 to 2026-11-06. 2 payments couldn't be identified. Checked 934 recalls.");
+  });
+
+  it("says the real number and dates of the recalls it checked", () => {
+    expect(coverageLine({ ...coverage, recallsChecked: 1855, recallsFrom: "2022-01-06", recallsTo: "2026-11-05", paypalSearched: false })).toBe(
+      "PayPal's history was not searched. Checked 1,855 recalls, 2022-01-06 to 2026-11-05.",
+    );
   });
 
   it("claims no search, dates or payment count when it was not", () => {

@@ -87,6 +87,22 @@ describe("checking stored shops against new recalls", () => {
     expect(await brezzaRows(shopId)).toEqual(before);
   });
 
+  it("doesn't check a shop against an older recall CPSC republished, and doesn't stay behind on it", async () => {
+    const republished = { ...brezza[0], RecallID: 900001, RecallNumber: "99001", RecallDate: "1998-12-01T00:00:00", LastPublishDate: "2026-11-04T00:00:00" };
+    const fetchImpl = async () => new Response(JSON.stringify([republished]), { status: 200, headers: { "content-type": "application/json" } });
+    await pullRecalls(db, { field: "LastPublishDate", start: "2026-11-04", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
+    expect(await sweep()).toMatchObject({ shopsChecked: 0, shopsFailed: 0, shopsWaiting: 0 });
+    const { rows } = await db.query("select 1 from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '99001'", [shopId]);
+    expect(rows).toEqual([]);
+  });
+
+  it("keeps the shop's stated range true when a new recall comes in", async () => {
+    await pull(brezza);
+    await sweep();
+    const { rows } = await db.query<{ recalls_to: string }>("select recalls_to from shop_runs where shop_id = $1", [shopId]);
+    expect(rows).toEqual([{ recalls_to: "2026-11-05" }]);
+  });
+
   it("does nothing at all when no recall is new", async () => {
     expect(await sweep()).toMatchObject({ shopsChecked: 0, shopsFailed: 0, shopsWaiting: 0 });
   });

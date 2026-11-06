@@ -1,0 +1,100 @@
+[
+ {
+  "RecallID": 9372,
+  "RecallNumber": "22200",
+  "RecallDate": "2022-08-15T00:00:00",
+  "Description": "The MamaRoo is a baby swing that offers multiple motions and speeds. Buttons on the base control the motion, speed and sound. The model number is located on the bottom of the unit. This recall includes only MamaRoo models that use a 3-point harness: versions 1.0 and 2.0 (model number 4M-005), version 3.0 (model number 1026), and version 4.0 (model number 1037). The MamaRoo model that uses a 5-point harness is not included in this recall. The RockaRoo is a baby rocker with front to back gliding motion. The base has an analog knob and power button to control the range of motion of the rocker. The model number 4M-012 is located on the bottom of the unit.",
+  "URL": "https://www.cpsc.gov/Recalls/2022/4moms-Recalls-More-than-2-Million-MamaRoo-and-RockaRoo-Infant-Swings-and-Rockers-Due-to-Entanglement-and-Strangulation-Hazards-One-Death-Reported",
+  "Title": "4moms Recalls More than 2 Million MamaRoo and RockaRoo Infant Swings and Rockers Due to Entanglement and Strangulation Hazards; One Death Reported",
+  "ConsumerContact": "4moms toll-free at 877-870-7390 from 8 a.m. to 5 p.m. ET Monday through Friday, by email at safetyandrecall@4moms.com or online at https://www.4momsrecall.expertinquiry.com or https://www.4moms.com and click on SAFETY & RECALL at the top of the page for more information. 4moms is contacting all known purchasers directly.",
+  "LastPublishDate": "2022-08-15T00:00:00",
+  "Products": [
+   {
+    "Name": "4moms MamaRoo Baby Swing, versions 1.0 through 4.0 and RockaRoo Baby Rockers",
+    "Description": "",
+    "Model": "",
+    "Type": "",
+    "CategoryID": "",
+    "NumberOfUnits": "Two million MamaRoo swings and 220,000 RockaRoo rockers. In addition, 60,000 MamaRoo and 10,000 RockaRoo were sold in Canada"
+   }
+  ],
+  "Inconjunctions": [
+   {
+    "URL": "https://recalls-rappels.canada.ca/en/alert-recall/4moms-mamaroo-and-rockaroo-infant-swings-and-rockers-recalled-due-non-occupant"
+   }
+  ],
+  "Images": [
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/MamaRoostraphanging.jpg",
+    "Caption": "Strap dangling from recalled 4moms MamaRoo swing"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/MamaRoo_4M-005.jpg",
+    "Caption": "Recalled My Clubhouse Playhouse in original box"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/MamaRoo_1026.jpg",
+    "Caption": "Recalled 4moms MamaRoo (Model 4M-005)"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/MamaRoo_1037jpg.jpg",
+    "Caption": "Recalled 4moms MamaRoo (Model 1026)"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/MamaRoo4_ModelNumber56.jpg",
+    "Caption": "Location of model number of a MamaRoo"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/RockaRoo_4M-012.jpg",
+    "Caption": "Recalled 4moms RockaRoo (Model 4M-012)"
+   },
+   {
+    "URL": "https://www.cpsc.gov/s3fs-public/RockaRoo_ModelNumber38.jpg",
+    "Caption": "Location of model number of a RockaRoo"
+   }
+  ],
+  "Injuries": [
+   {
+    "Name": "4moms has received two reports of entanglement incidents involving infants who became caught in the strap under the unoccupied MamaRoo infant swing after they crawled under the seat, including a 10-month-old infant who died from asphyxiation, and a 10-month-old infant who suffered bruising to his neck before being rescued by a caregiver. No incidents involving the RockaRoo have been reported."
+   }
+  ],
+  "Manufacturers": [],
+  "Retailers": [
+   {
+    "Name": "BuyBuy Baby and Target stores nationwide and online at 4moms.com and Amazon from January 2010 through August 2022 for between $160 and $250.",
+    "CompanyID": ""
+   }
+  ],
+  "Importers": [],
+  "Distributors": [
+   {
+    "Name": "Thorley Industries, LLC, d.b.a. 4moms, of Pittsburgh, Pennsylvania",
+    "CompanyID": ""
+   }
+  ],
+  "SoldAtLabel": null,
+  "ManufacturerCountries": [
+   {
+    "Country": "China"
+   }
+  ],
+  "ProductUPCs": [],
+  "Hazards": [
+   {
+    "Name": "When the swing or rocker is not in use, their restraint straps can dangle below the seat and non-occupant crawling infants can become entangled in the straps, posing a strangulation hazard.",
+    "HazardType": "",
+    "HazardTypeID": ""
+   }
+  ],
+  "Remedies": [
+   {
+    "Name": "Consumers with infants who can crawl should immediately stop using the recalled swings and rockers, place them in an area where crawling infants cannot access and contact 4moms immediately to register for a free strap fastener that will prevent the straps from extending under the swing when not in use."
+   }
+  ],
+  "RemedyOptions": [
+   {
+    "Option": "Repair"
+   }
+  ]
+ }
+]
