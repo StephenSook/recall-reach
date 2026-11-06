@@ -4,6 +4,7 @@ import type { Recall, RecallProduct } from "../cpsc/schema";
 import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
 import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
+import { BUSINESS_TIME_ZONE_SQL } from "../time/businessDay";
 
 /** Distinct titles checked per recall. Anything past this is counted on the run, not dropped quietly. */
 const TOP_CANDIDATES = 20;
@@ -85,7 +86,7 @@ export async function joinShop(
     paid_on: string | null;
     capture_id: string | null;
   }>(
-    "select id, order_number, items, (captured_at at time zone 'UTC')::date::text as paid_on, capture_id from paypal_payments where shop_id = $1",
+    `select id, order_number, items, (captured_at at time zone ${BUSINESS_TIME_ZONE_SQL})::date::text as paid_on, capture_id from paypal_payments where shop_id = $1`,
     [shopId],
   );
   const joined = joinOrderLines(

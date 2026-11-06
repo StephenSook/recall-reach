@@ -749,8 +749,13 @@ describe("refunds", () => {
     });
 
     it("reads a time zone offset rather than dropping it", async () => {
-      // 23:30 at -07:00 on the recall's date is already the next day in UTC, the calendar the join uses.
+      // 23:30 at -07:00 on the recall's date is already 02:30 the next day in New York.
       expect((await tryAt("2026-10-15T23:30:00-07:00", NOW)).status).toBe("refunded");
+    });
+
+    it("counts a payment late on the recall's own US date as that date, though UTC has moved on", async () => {
+      // 03:30 UTC on Oct 16 is 23:30 on Oct 15 in New York, the recall's date, so it is not after the recall.
+      expect(await refusal(tryAt("2026-10-16T03:30:00Z", NOW))).toBe("PAYMENT_NOT_AFTER_RECALL");
     });
 
     it("refuses a date it cannot read: nothing moves on a guess", async () => {

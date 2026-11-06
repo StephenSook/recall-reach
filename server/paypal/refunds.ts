@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db, Queryable } from "../db/types";
 import { joinShop } from "../match/run";
+import { businessDay } from "../time/businessDay";
 import type { RecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./orders";
@@ -179,7 +180,7 @@ export async function approveRefund(
   if (m.order_incomplete) {
     throw new RefundRefused("ORDER_INCOMPLETE", "A row of this order could not be read, so this amount cannot be trusted. Fix the file and import it again.");
   }
-  const captureId = await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, now.toISOString().slice(0, 10));
+  const captureId = await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, businessDay(now));
   const open = await db.query("select 1 from refunds where order_line_id = $1 and status <> 'failed'", [m.order_line_id]);
   if (open.rows.length > 0) {
     throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
@@ -252,7 +253,7 @@ export async function executeRefund(
     throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
   }
 
-  const today = now.toISOString().slice(0, 10);
+  const today = businessDay(now);
   const captureId = await identifiedCapture(db, input.shopId, approval.order_line_id, approval.paypal_payment_id, today);
 
   const { capture, refundedByPayPal } = await refusePayPalFacts(db, client, captureId, {
@@ -428,7 +429,7 @@ function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date
   if (now.getTime() - paidAt > REFUND_WINDOW_DAYS * 86_400_000) {
     throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed. Check the recall page for the next steps.");
   }
-  const paidOn = new Date(paidAt).toISOString().slice(0, 10); // UTC, the calendar the join uses
+  const paidOn = businessDay(new Date(paidAt));
   if (paidOn <= recallDate) {
     throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
   }
@@ -539,7 +540,7 @@ export async function askPayPalAgain(
   if (tooOldToRepeat(row.created_at, now.getTime())) throw tooOldNow();
   // The same checks as a first send, except one: a capture showing a refund may be showing this one.
   const { recallDate } = await approvedFactsHold(db, row);
-  const today = now.toISOString().slice(0, 10);
+  const today = businessDay(now);
   if ((await identifiedCapture(db, input.shopId, row.order_line_id, row.paypal_payment_id, today)) !== row.capture_id) {
     throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
   }

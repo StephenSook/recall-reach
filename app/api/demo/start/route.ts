@@ -2,6 +2,7 @@ import { seedDemoShop } from "@/server/demo/seed";
 import { getDb } from "@/server/db/pg";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { sessionCookie, SESSION_COOKIE } from "@/server/session/session";
+import { businessDay } from "@/server/time/businessDay";
 import { baseUrl, fromThisSite, refused, secret, seeOther } from "@/server/web/http";
 import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
@@ -16,9 +17,8 @@ export async function POST(request: Request): Promise<Response> {
   const visitor = clientIp(request.headers);
   if (!visitor || !perVisitor(visitor) || !everyone("all")) return seeOther(request, "/?demo=busy");
   try {
-    const today = new Date().toISOString().slice(0, 10);
     const { shopId } = await seedDemoShop(getDb(), payPalClientFromEnv(), {
-      today,
+      today: businessDay(),
       secret: secret("SHOP_DATA_KEY"),
       demoEmail: process.env.DEMO_BUYER_EMAIL || undefined,
     });
