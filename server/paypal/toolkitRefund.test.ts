@@ -6,6 +6,7 @@ import http from "node:http";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPayPalClient, PayPalApiError } from "./client";
@@ -314,6 +315,23 @@ describe("create_refund through the toolkit", () => {
     it("prints nothing of its own", async () => {
       await toStub(call());
       expect(printed.filter((line) => !line.includes("vitest"))).toEqual([]);
+    });
+
+    it("can't print a capture id, even with its debug logger switched on", async () => {
+      const { entry } = await toolkitSetup(call());
+      (createRequire(entry)("debug") as { enable(namespaces: string): void }).enable("agent-toolkit:*");
+      const logged: string[] = [];
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(((text: string) => {
+        logged.push(String(text));
+        return true;
+      }) as typeof process.stderr.write);
+      try {
+        await toStub(call({ captureId: "PRIVATECAPTURE" }));
+      } finally {
+        stderr.mockRestore();
+      }
+      expect(logged.join("")).not.toContain("PRIVATECAPTURE");
+      expect(logged).toEqual([]);
     });
 
     it("loads no stray .env file and prints nothing when it is loaded", async () => {

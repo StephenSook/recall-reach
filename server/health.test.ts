@@ -138,6 +138,7 @@ describe("getHealth", () => {
       const health = await getHealth(db, { ...env, DEBUG: "*" }, undefined, NOW);
       expect(health).toMatchObject({ ok: false, checks: { logging: false, database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true } });
       expect((await getHealth(db, { ...env, DEBUG: "" }, undefined, NOW)).checks.logging).toBe(true);
+      expect((await getHealth(db, { ...env, NODE_DEBUG: "fetch" }, undefined, NOW)).checks.logging).toBe(false);
     });
 
     it("says so about DEBUG when the database is down too", async () => {

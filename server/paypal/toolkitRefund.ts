@@ -40,6 +40,8 @@ interface Loaded {
   PayPalMCPToolkit: typeof Toolkit;
   axiosDefaults: ToolkitAxios["defaults"];
   entry: string;
+  /** The same copy of debug the toolkit logs through. */
+  debug: { disable(): unknown };
 }
 
 let loaded: Loaded | undefined;
@@ -57,13 +59,15 @@ function load(): Loaded {
       config.signal ??= AbortSignal.timeout(axiosDefaults.timeout ?? TIMEOUT_MS);
       return config;
     });
-    loaded = { PayPalMCPToolkit, axiosDefaults, entry };
+    loaded = { PayPalMCPToolkit, axiosDefaults, entry, debug: createRequire(entry)("debug") as Loaded["debug"] };
   }
   return loaded;
 }
 
 function refundToolkit(call: CreateRefundCall): Toolkit {
-  const { PayPalMCPToolkit } = load();
+  const { PayPalMCPToolkit, debug } = load();
+  // With DEBUG set, its logger prints the capture id, and logs outlive the 48-hour rule. So off, whatever DEBUG says.
+  debug.disable();
   return new PayPalMCPToolkit({
     accessToken: call.accessToken,
     configuration: { actions: { payments: { createRefund: true } }, context: { sandbox: true, request_id: call.requestId } },

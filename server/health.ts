@@ -27,7 +27,7 @@ export interface Health {
     poll: boolean;
     /** Replay has a run from the last two days: the hourly job keeps one from the last day. */
     replay: boolean;
-    /** DEBUG is unset. With it set, the PayPal toolkit's debug logger prints a capture id, and logs outlive the 48-hour rule. */
+    /** DEBUG and NODE_DEBUG are unset. With them set, libraries can print PayPal's URLs, ids included, and logs outlive the 48-hour rule. */
     logging: boolean;
   };
   database: { ok: boolean };
@@ -74,14 +74,14 @@ const iso = (value: unknown): string | null =>
 /** Public status for /api/health. Never includes secrets or database error text. */
 export async function getHealth(
   db: Queryable,
-  env: { PAYPAL_WEBHOOK_ID?: string; RECORD_HMAC_SECRET?: string; DEBUG?: string },
+  env: { PAYPAL_WEBHOOK_ID?: string; RECORD_HMAC_SECRET?: string; DEBUG?: string; NODE_DEBUG?: string },
   poll: RecallPollStatus = { lastPollAt: null, lastPollOk: null, dbTouched: null },
   now: Date = new Date(),
 ): Promise<Health> {
   const checkedAt = now.toISOString();
   const webhookOk = Boolean(env.PAYPAL_WEBHOOK_ID) && recordKeyWorks(env.RECORD_HMAC_SECRET);
   const pollOk = poll.lastPollOk !== false;
-  const loggingOk = !env.DEBUG;
+  const loggingOk = !env.DEBUG && !env.NODE_DEBUG;
   const paypalBase = { environment: "sandbox" as const, webhookConfigured: webhookOk };
   try {
     const byYear = await recallCountsByYear(db);
