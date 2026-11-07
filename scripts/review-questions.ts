@@ -6,7 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { pendingQuestions, reviewQuestion } from "../server/agent/questionReview";
 import { getDb } from "../server/db/pg";
 import { askHidden } from "./askHidden";
-import { FILM_RECALLS } from "./write-recall-questions";
+import { DEMO_PATH_RECALLS } from "./write-recall-questions";
 
 const limitArg = process.argv.indexOf("--limit");
 const limit = limitArg > 0 ? Number(process.argv[limitArg + 1]) : 20;
@@ -16,7 +16,7 @@ async function main() {
     process.env.DATABASE_URL = await askHidden("Paste the database URL from the Neon console (it won't show): ", process.stdin, process.stdout);
   }
   const db = getDb();
-  const pending = await pendingQuestions(db, { limit, first: FILM_RECALLS });
+  const pending = await pendingQuestions(db, { limit, first: DEMO_PATH_RECALLS });
   if (pending.length === 0) {
     console.log("Nothing waiting for review.");
     return;

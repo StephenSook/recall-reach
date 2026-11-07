@@ -5,8 +5,8 @@ import { agentClientFromEnv } from "../server/agent/claude";
 import { writeRecallQuestion, type QuestionStatus } from "../server/agent/recallQuestion";
 import { getDb } from "../server/db/pg";
 
-/** Every no-identifier recall the film shows, so these are written and read first. */
-export const FILM_RECALLS = ["27040"];
+/** The no-identifier recalls on the demo path, so these are written and read first. */
+export const DEMO_PATH_RECALLS = ["27040"];
 
 const limitArg = process.argv.indexOf("--limit");
 const limit = limitArg > 0 ? Number(process.argv[limitArg + 1]) : 20;
@@ -17,7 +17,7 @@ async function main() {
   const db = getDb();
   const { rows } = await db.query<{ recall_id: number }>(
     "select recall_id from recalls order by (recall_number = any($1::text[])) desc, recall_date desc, recall_number desc",
-    [FILM_RECALLS],
+    [DEMO_PATH_RECALLS],
   );
   const tally = new Map<QuestionStatus, number>();
   let asked = 0;

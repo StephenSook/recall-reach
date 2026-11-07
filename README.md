@@ -47,6 +47,20 @@ For agents and marketplaces, the same check is an MCP tool, `check_recall`, on [
 { "mcpServers": { "recall-reach": { "type": "http", "url": "https://recall-reach-web-e022.onrender.com/api/mcp" } } }
 ```
 
+## The PayPal calls
+
+Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/evidence/paypal) checks these against the code.
+
+| PayPal | What it does here | File |
+|---|---|---|
+| `GET /v1/reporting/transactions` (Transaction Search) | Finds a shop's sales near a recall, read again on every run | `server/paypal/transactions.ts` |
+| `POST /v2/checkout/orders`, then capture and `GET` (Orders v2) | Makes the demo shop's sandbox sales and reads them back | `server/paypal/orders.ts` |
+| `GET /v2/payments/captures/{id}` (Payments) | Reads a payment before anything is refunded | `server/paypal/orders.ts` |
+| `GET /v1/customer/disputes` (Customer Disputes) | Holds a refund if the payment has a dispute | `server/paypal/disputes.ts` |
+| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved, from the app's own code | `server/paypal/toolkitRefund.ts` |
+| `GET /v2/payments/refunds/{id}` (Server SDK `getRefund`) | Reads the refund back so the records can be compared | `server/paypal/sdkRefundRead.ts` |
+| `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is verified | `server/paypal/webhookHandler.ts` |
+
 ## What stays where
 
 - **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text and the shop's own item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.

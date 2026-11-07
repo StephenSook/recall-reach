@@ -49,7 +49,7 @@ describe("a person reviewing Claude's questions", () => {
       });
     });
 
-    it("puts the recalls in the film first, then the newest", async () => {
+    it("puts the demo path recalls first, then the newest", async () => {
       await write("27040");
       await write("27065");
       await write("27067");

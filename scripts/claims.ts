@@ -20,6 +20,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/paypal/transactions.ts", find: "export async function searchTransactions" },
       { file: "server/demo/seed.ts", call: "searchTransactions" },
+      { file: "README.md", find: "`GET /v1/reporting/transactions`" },
     ],
   },
   {
@@ -31,6 +32,7 @@ export const CLAIMS: Claim[] = [
       { file: "server/demo/liveCatch.ts", call: "getOrder" },
       { file: "server/demo/liveCatch.ts", call: "createPayPalOrder" },
       { file: "server/demo/liveCatch.ts", call: "captureOrder" },
+      { file: "README.md", find: "`POST /v2/checkout/orders`" },
     ],
   },
   {
@@ -39,6 +41,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
       { file: "server/paypal/refunds.ts", call: "disputeOnCapture" },
+      { file: "README.md", find: "`GET /v1/customer/disputes`" },
     ],
   },
   {
@@ -47,6 +50,8 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/paypal/refunds.ts", find: "/v2/payments/refunds/" },
       { file: "app/api/queue/refunds/execute/route.ts", call: "executeRefund" },
+      { file: "server/paypal/orders.ts", find: "/v2/payments/captures/" },
+      { file: "README.md", find: "`GET /v2/payments/captures/\\{id\\}`" },
     ],
   },
   {
@@ -55,6 +60,8 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/paypal/webhookHandler.ts", call: "verifyWebhook" },
       { file: "app/api/paypal/webhook/route.ts", call: "handleWebhookDelivery" },
+      { file: "server/paypal/webhookHandler.ts", find: "PAYMENT.CAPTURE.COMPLETED" },
+      { file: "README.md", find: "`PAYMENT\\.CAPTURE\\.COMPLETED`" },
     ],
   },
   {
@@ -63,6 +70,7 @@ export const CLAIMS: Claim[] = [
     evidence: [
       { file: "server/paypal/toolkitRefund.ts", find: "export function refundsThroughToolkit" },
       { file: "server/paypal/client.ts", call: "refundsThroughToolkit" },
+      { file: "README.md", find: "Agent Toolkit\\), which calls" },
     ],
   },
   {
@@ -72,6 +80,7 @@ export const CLAIMS: Claim[] = [
       { file: "package.json", find: '"@paypal/paypal-server-sdk":' },
       { file: "server/paypal/sdkRefundRead.ts", call: "getRefund" },
       { file: "server/paypal/client.ts", call: "refundReadsThroughServerSdk" },
+      { file: "README.md", find: "`GET /v2/payments/refunds/\\{id\\}`" },
     ],
   },
   {
