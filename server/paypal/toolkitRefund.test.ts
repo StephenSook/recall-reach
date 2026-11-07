@@ -12,7 +12,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createPayPalClient, PayPalApiError } from "./client";
 import { createRefundThroughToolkit, refundsThroughToolkit, toolkitInUse, toolkitSetup, warmToolkit, type CreateRefundCall } from "./toolkitRefund";
 
-type Mode = number | "ok" | "drop" | "hang" | "trickle";
+type Mode = number | "ok" | "drop" | "hang" | "trickle" | "time-limit";
+const timeLimit = JSON.parse(readFileSync(new URL("../../test/fixtures/paypal/refund-time-limit.json", import.meta.url), "utf8")) as { status: number; body: unknown };
 
 describe("create_refund through the toolkit", () => {
   let server: http.Server;
@@ -57,6 +58,11 @@ describe("create_refund through the toolkit", () => {
           return;
         }
         res.setHeader("content-type", "application/json");
+        if (mode === "time-limit") {
+          // PayPal's own answer, from its negative test on the sandbox.
+          res.statusCode = timeLimit.status;
+          return void res.end(JSON.stringify(timeLimit.body));
+        }
         if (typeof mode === "number") {
           res.statusCode = mode;
           return void res.end(JSON.stringify({ name: "REFUSED", message: "Refused.", details: [{ issue: "SOME_ISSUE", description: "PayPal said no about 9AB12345CD6789012." }] }));
@@ -214,6 +220,18 @@ describe("create_refund through the toolkit", () => {
     it("names a refusal PayPal described in its measured words", async () => {
       const real = "The requested action could not be performed, semantically incorrect, or failed business validation.: The refund amount must be less than or equal to the capture amount that has not yet been refunded.";
       expect((await issueOf(real)).details[0].issue).toBe("REFUND_AMOUNT_EXCEEDED");
+    });
+
+    it("names PayPal's real 180-day refusal, which the toolkit passes on only in words", async () => {
+      mode = "time-limit";
+      const fetchThrough = refundsThroughToolkit(undefined, (c) => createRefundThroughToolkit(c, { baseUrl: base }));
+      const res = await fetchThrough("https://api-m.sandbox.paypal.com/v2/payments/captures/CAPTURE-1/refund", {
+        method: "POST",
+        headers: { Authorization: "Bearer t", "PayPal-Request-Id": "r-time-limit" },
+        body: JSON.stringify({ amount: { currency_code: "USD", value: "1.00" } }),
+      });
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { details: { issue?: string }[] }).details[0].issue).toBe("REFUND_TIME_LIMIT_EXCEEDED");
     });
 
     it("keeps an issue code PayPal wrote out, if it is one this app knows", async () => {

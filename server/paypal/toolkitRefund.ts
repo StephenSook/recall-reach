@@ -153,7 +153,11 @@ const refundBody = z.object({
 // or a buyer. What a refusal leaves behind goes into the ledger, which outlives the 48-hour rule, so only a
 // code this app already knows is kept. Each phrase is PayPal's own, as measured on the sandbox.
 const KNOWN_ISSUES = ["REFUND_AMOUNT_EXCEEDED", "CAPTURE_FULLY_REFUNDED", "REFUND_TIME_LIMIT_EXCEEDED", "TRANSACTION_REFUSED", "PERMISSION_DENIED"];
-const KNOWN_PHRASES: [RegExp, string][] = [[/must be less than or equal to the capture amount/i, "REFUND_AMOUNT_EXCEEDED"]];
+const KNOWN_PHRASES: [RegExp, string][] = [
+  [/must be less than or equal to the capture amount/i, "REFUND_AMOUNT_EXCEEDED"],
+  // From PayPal's own negative test of the 180-day limit, Nov 7, 2026 (test/fixtures/paypal/refund-time-limit.json).
+  [/over the time limit to perform a refund/i, "REFUND_TIME_LIMIT_EXCEEDED"],
+];
 
 function knownIssue(message: string): string | undefined {
   return KNOWN_ISSUES.find((code) => message.includes(code)) ?? KNOWN_PHRASES.find(([phrase]) => phrase.test(message))?.[1];

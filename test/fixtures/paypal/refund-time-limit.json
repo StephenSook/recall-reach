@@ -1,0 +1,22 @@
+{
+  "status": 422,
+  "body": {
+    "name": "UNPROCESSABLE_ENTITY",
+    "details": [
+      {
+        "issue": "REFUND_TIME_LIMIT_EXCEEDED",
+        "description": "You are over the time limit to perform a refund on this capture"
+      }
+    ],
+    "message": "The requested action could not be completed, was semantically incorrect, or failed business validation.",
+    "debug_id": "DEBUG",
+    "links": [
+      {
+        "href": "https://developer.paypal.com/docs/limited-release/orders/api/#error-REFUND_TIME_LIMIT_EXCEEDED",
+        "rel": "information_link",
+        "method": "GET"
+      }
+    ]
+  },
+  "source": "PayPal sandbox, PayPal-Mock-Response with mock_application_codes REFUND_TIME_LIMIT_EXCEEDED, on a capture already fully refunded, Nov 7, 2026. Ids and the debug id are taken out."
+}
