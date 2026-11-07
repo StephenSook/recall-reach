@@ -46,6 +46,9 @@ function Bar({ label, parts }: { label: string; parts: { name: string; n: number
   );
 }
 
+/** What eval/results.json said on Nov 6, at commit 09c957e, before the rules read CPSC's limits within a model (1590550, 225e050). */
+const EARLIER_CONFIRMED = 58;
+
 export default function EvalPage() {
   const results = JSON.parse(read("results.json")) as EvalResults;
   const claude = JSON.parse(read("claude-held-out.json")) as { asked: number; model: string; summary: ReturnType<typeof scoreClaude> };
@@ -172,6 +175,9 @@ export default function EvalPage() {
           <p className="note" data-testid="eval-stated-limited">
             The other {stated.matcher.asks} ask instead. On {stated.matcher.limitedAsks} of them CPSC limits the recall within the model, by VIN, a code or a look-up, so the model alone can&apos;t settle it.
           </p>
+          <p className="note" data-testid="eval-stated-earlier">
+            An earlier version confirmed {EARLIER_CONFIRMED} of these {stated.matcher.recalls}. That was wrong for {EARLIER_CONFIRMED - stated.matcher.confirmed.k} recalls CPSC limits within the model, so it asks on those now.
+          </p>
         </>
       ) : null}
 
@@ -206,6 +212,10 @@ export default function EvalPage() {
           </tbody>
         </table>
       </div>
+
+      <p data-testid="eval-claude-short">
+        Where it falls short: on {claude.summary.lookAlikes.cantTell.k} of {claude.summary.lookAlikes.cantTell.n} look-alikes Claude said it can&apos;t tell, so the seller still has to ask. It called none of the {claude.asked} the same product, but with Claude&apos;s own labels that isn&apos;t proof.
+      </p>
 
       <h2 className="section-title">What this does not show</h2>
       <ul className="limits">

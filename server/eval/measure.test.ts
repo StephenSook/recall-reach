@@ -188,6 +188,13 @@ describe("the eval on the real labels", () => {
     await db.close();
   }, 240_000);
 
+  it("the earlier run the card names moved only the recalls CPSC limits within the model", () => {
+    const { statedModels } = JSON.parse(load("results.json")) as { statedModels: { matcher: { confirmed: { k: number }; limitedAsks: number } } };
+    const page = readFileSync("app/eval/page.tsx", "utf8");
+    const earlier = Number(/const EARLIER_CONFIRMED = (\d+);/.exec(page)?.[1]);
+    expect(earlier - statedModels.matcher.confirmed.k).toBe(statedModels.matcher.limitedAsks);
+  });
+
   it("the committed Claude summary is what its cached findings say, so CI checks it without spending anything", () => {
     const cached = JSON.parse(load("claude-held-out.json")) as { findings: Record<string, ClaudeFinding>; summary: unknown };
     const heldOut = parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out");
