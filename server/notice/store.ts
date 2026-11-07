@@ -47,7 +47,9 @@ async function recheckIfRecallChanged(db: Queryable, input: { shopId: string; ma
   const { rows } = await db.query<Pick<Recall, "title" | "description" | "products" | "retailers"> & { raw_sha256: string; recall_date: string; item_title: string; ordered_on: string | null }>(
     `select r.raw_sha256, r.title, r.description, r.products, r.retailers, r.recall_date::text as recall_date, l.title as item_title, l.ordered_on::text as ordered_on
      from recall_matches m join recalls r on r.recall_id = m.recall_id join order_lines l on l.id = m.order_line_id
-     where m.id = $1 and m.shop_id = $2 and m.recall_sha256 is distinct from r.raw_sha256`,
+     where m.id = $1 and m.shop_id = $2 and m.recall_sha256 is distinct from r.raw_sha256
+       -- What already went out stays on record as it was, with what it rested on.
+       and not exists (select 1 from notices n where n.match_id = m.id and (n.sent_at is not null or n.responded_at is not null))`,
     [input.matchId, input.shopId],
   );
   const r = rows[0];

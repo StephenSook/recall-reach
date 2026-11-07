@@ -186,6 +186,17 @@ describe("notices", () => {
         expect(noticeId).toBeTruthy();
       });
 
+      it("approving again doesn't change what a notice already sent rested on", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await markSent(db, { shopId, noticeId });
+        await cpscChanges("This recall involves sterilizer dryers, model ZZ9999.");
+        await prepareNotice(db, { shopId, matchId: m }).catch(() => null);
+        const { rows } = await db.query<{ verdict: string; strength: string }>("select verdict, strength from recall_matches where id = $1", [m]);
+        expect(rows[0]).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        await expect(compose(noticeId)).resolves.toBeTruthy();
+      });
+
       it("leaves a notice already sent as it was", async () => {
         const m = await matchFor("27072", brezzaLine());
         const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
