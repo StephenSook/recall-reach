@@ -53,6 +53,41 @@ describe("POST /api/studio/turn", () => {
     expect((await res.json()).error).toContain("today's limit");
   });
 
+  it("lets only two turns wait on Claude at once, so a burst can't pass the day's limit together", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    paths.create.mockImplementation(async () => {
+      await held;
+      return answer;
+    });
+    const waiting = [post(turn), post(turn)];
+    await vi.waitFor(() => expect(paths.create).toHaveBeenCalledTimes(2));
+    const busy = await post(turn);
+    expect(busy.status).toBe(429);
+    expect((await busy.json()).error).toContain("busy");
+    expect(paths.create).toHaveBeenCalledTimes(2);
+    release();
+    for (const res of await Promise.all(waiting)) expect(res.status).toBe(200);
+    expect((await post(turn)).status).toBe(200);
+  });
+
+  it("refuses a conversation past 160 KB, in words a visitor can act on, and asks Claude nothing", async () => {
+    const long = { ...turn, input: [...turn.input, { ...turn.input[0], content: [{ type: "text", text: "x".repeat(19_000) }] }] };
+    const big = { ...long, input: Array.from({ length: 9 }, () => long.input[1]) };
+    expect(JSON.stringify(big).length).toBeGreaterThan(160 * 1024);
+    const res = await post(big);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe("This chat is too long. Start a new chat to keep going.");
+    expect(paths.create).not.toHaveBeenCalled();
+  });
+
+  it("frees a turn's place when Claude fails", async () => {
+    paths.create.mockRejectedValue(new Error("overloaded"));
+    for (let i = 0; i < 4; i++) expect((await post(turn)).status).toBe(502);
+    paths.create.mockResolvedValue(answer);
+    expect((await post(turn)).status).toBe(200);
+  });
+
   it.each([
     ["another site", () => post(turn, "https://example.com")],
     ["something that isn't a turn", () => post({ input: [{ type: "image_generation" }], responseFormat: { type: "text" } })],
