@@ -75,6 +75,13 @@ async function attemptOnce(url: string, fetchImpl: typeof fetch, timeoutMs: numb
     const preview = body.slice(0, 80).replace(/\s+/g, " ");
     throw new Error(`CPSC response is not a JSON array (possibly a firewall challenge page): "${preview}"`);
   }
+  // CPSC reports its own database failing as HTTP 200 and one fake row, with the error in Title (measured 2026-11-07).
+  // Reading that as data would mark the dates as read and could skip a recall published meanwhile.
+  const errorRow = payload.find((r) => {
+    const row = r as { RecallID?: unknown; RecallNumber?: unknown } | null;
+    return row?.RecallID === 0 && row?.RecallNumber === null;
+  }) as { Title?: unknown } | undefined;
+  if (errorRow) throw new RetryableError(`CPSC reported an error: "${String(errorRow.Title).slice(0, 80)}"`);
   return payload;
 }
 

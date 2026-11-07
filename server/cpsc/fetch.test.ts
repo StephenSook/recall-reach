@@ -76,6 +76,39 @@ describe("fetchRecalls", () => {
     await expect(fetchRecalls(oneDay, s.deps)).rejects.toThrow(/outside the requested range/);
   });
 
+  describe("when CPSC reports its own failure with HTTP 200", () => {
+    // Measured 2026-11-07: one row, RecallID 0, nulls throughout, and the error in Title.
+    const errorRow = { RecallID: 0, RecallNumber: null, RecallDate: null, LastPublishDate: null, Title: "Error retrieving Recalls: The underlying provider failed on Open." };
+    const range = { field: "LastPublishDate", start: "2026-11-06", end: "2026-11-07" } as const;
+
+    it("is a failed fetch, tried again, and never data", async () => {
+      let calls = 0;
+      const fetchImpl = (async () => {
+        calls++;
+        return new Response(JSON.stringify([errorRow]), { status: 200 });
+      }) as typeof fetch;
+      await expect(fetchRecalls(range, { fetchImpl, sleep: async () => {} })).rejects.toThrow(/CPSC reported an error: "Error retrieving Recalls/);
+      expect(calls).toBeGreaterThan(1);
+    });
+
+    it("recovers if the next try answers", async () => {
+      const answers = [[errorRow], []];
+      const fetchImpl = (async () => new Response(JSON.stringify(answers.shift()), { status: 200 })) as typeof fetch;
+      expect(await fetchRecalls(range, { fetchImpl, sleep: async () => {} })).toEqual([]);
+    });
+
+    it("still takes an empty answer as no recalls", async () => {
+      const fetchImpl = (async () => new Response("[]", { status: 200 })) as typeof fetch;
+      expect(await fetchRecalls(range, { fetchImpl, sleep: async () => {} })).toEqual([]);
+    });
+
+    it("leaves a real record with a bad field for the schema to report", async () => {
+      const row = { RecallID: 99, RecallNumber: null, LastPublishDate: "2026-11-06T00:00:00", Title: "A real recall" };
+      const fetchImpl = (async () => new Response(JSON.stringify([row]), { status: 200 })) as typeof fetch;
+      expect(await fetchRecalls(range, { fetchImpl, sleep: async () => {} })).toEqual([row]);
+    });
+  });
+
   it("retries a 503 and returns the next good answer", async () => {
     const s = scripted([new Response("busy", { status: 503 }), json(fixtureText)]);
     const records = await fetchRecalls(FIXTURE_RANGE, s.deps);
