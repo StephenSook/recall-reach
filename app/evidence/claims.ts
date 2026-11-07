@@ -61,5 +61,14 @@ export const AG_GRID_CLAIMS: Claim[] = [
   { what: "CSV export of the Tell CPSC list, limited to columns with no buyer data", file: "app/queue/MatchGrid.tsx", find: "exportDataAsCsv" },
   { what: "A pinned row says how many rows are shown", file: "app/queue/MatchGrid.tsx", find: "pinnedBottomRowData" },
   { what: "Pagination on Recall Replay", file: "app/replay/ReplayGrid.tsx", find: "paginationPageSize" },
-  { what: "Community edition only, with a theme set from the app's own colors", file: "app/gridSetup.ts", find: "themeQuartz" },
+  { what: "AG Grid Community on those three pages, with a theme set from the app's own colors", file: "app/gridSetup.ts", find: "themeQuartz" },
+];
+
+/** AG Studio, on /studio only. Its agent's query tool sends rows to the model, so the page's rows hold no PayPal value. */
+export const AG_STUDIO_CLAIMS: Claim[] = [
+  { what: "AG Studio 3.0.0 draws the recall dashboard, with its own agents", file: "app/studio/StudioDashboard.tsx", find: "createAiHarness" },
+  { what: "The agents run on Claude through this site's route, which drops any tool named for money", file: "server/studio/turn.ts", find: "MONEY.test" },
+  { what: "The outcome column draws each result as a coloured chip", file: "app/studio/StudioDashboard.tsx", find: "createCellRenderer" },
+  { what: "Its rows are CPSC's recalls and the demo shop's own titles, read from no PayPal table", file: "server/studio/dataset.ts", find: "STUDIO_TABLES" },
+  { what: "A browser test captures what the agent sends and fails on any value PayPal returned", file: "e2e/local/studio-payload.spec.ts", find: "sends the model no value PayPal returned" },
 ];
