@@ -242,6 +242,12 @@ describe("verdictFor", () => {
         expect(verdictFor(ac, { title: "Midea Window Air Conditioners 1PACU12000 LOT12000" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
 
+      it("a code opening with a model's digits is a near-miss, and a labelled number isn't", () => {
+        expect(nearMissCodes("This recall involves dryers, model BRZ0083.", "Acme dryer 0083XB")).toEqual(["0083XB"]);
+        expect(nearMissCodes("This recall involves swings, model A12345.", "Acme swing 12345B")).toEqual(["12345B"]);
+        expect(nearMissCodes("This recall involves dryers, model 1PACU12000.", "Acme dryer LOT12000")).toEqual([]);
+      });
+
       it("a word in front of the exact model isn't a near-miss", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper SLEEPER PAPA03001AI" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });

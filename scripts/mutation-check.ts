@@ -27,7 +27,7 @@ export const PLANTS: Plant[] = [
   { about: "a near-miss beside the exact model no longer stops a confirm", file: "server/match/verdict.ts", find: "if (shown.length > 0 && nearMissCode.length > 0) {", put: "if (false) {", test: VERDICT },
   { about: "a SKU holding the model is exempt again", file: "server/match/verdict.ts", find: "return rest.includes(n) || (n.length >= 6 && longestRun(rest, n).length / n.length >= 0.8);", put: "return false;", test: VERDICT },
   { about: "a limited recall can be confirmed by its model", file: "server/match/verdict.ts", find: "if (shown.length > 0 && limited) {", put: "if (false) {", test: VERDICT },
-  { about: "digits alone count as a shared code", file: "server/match/verdict.ts", find: 'run.length >= 4 && /[A-Z]/.test(run) &&', put: "run.length >= 4 &&", test: VERDICT },
+  { about: "digits after a label count as a shared code", file: "server/match/verdict.ts", find: "return run.length >= 4 && sharesACode &&", put: "return run.length >= 4 &&", test: VERDICT },
   { about: "a prepared notice can be a question nobody approved", file: "server/notice/store.ts", find: 'if (input.onlyIfMatch && kind !== "SAFETY_NOTICE") throw', put: "if (false) throw", test: "server/notice/standing.test.ts" },
   { about: "an answered second notice stays ready", file: "server/notice/store.ts", find: "subject: n.second_prepared_at && !n.responded_at ?", put: "subject: n.second_prepared_at ?", test: "server/notice/standing.test.ts" },
   { about: "the model can see a listing over budget", file: "server/agent/shopper.ts", find: "found.filter((l) => l.priceCents <= input.budgetCents)", put: "found", test: SHOPPER },

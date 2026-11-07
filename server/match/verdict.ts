@@ -138,9 +138,12 @@ function resemblesModel(token: string, listed: string[]): boolean {
     const opening = letters(normalizeModel(m));
     if (opening.length >= 2 && letters(plain) === opening) return true;
     const n = unconfuse(normalizeModel(m));
-    // Digits alone aren't a shared code: 12000BTU isn't 1PACU12000, it's a size that happens to read the same.
     const run = longestRun(t, n);
-    return run.length >= 4 && /[A-Z]/.test(run) && (run.length / t.length >= 0.6 || (n.length >= 8 && run.length / n.length >= 0.6));
+    // Digits after a label aren't a shared code: LOT12000 is a lot number that happens to read like 1PACU12000. A code that
+    // opens with them can be: 0083X for BRZ0083. Letters are read before they're unconfused, so an L stays a letter.
+    const at = t.indexOf(run);
+    const sharesACode = at === 0 || /[A-Z]/.test(plain.slice(at, at + run.length));
+    return run.length >= 4 && sharesACode && (run.length / t.length >= 0.6 || (n.length >= 8 && run.length / n.length >= 0.6));
   });
 }
 
