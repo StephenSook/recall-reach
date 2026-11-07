@@ -29,6 +29,15 @@ export const DEFECTS: Defect[] = [
     open: false,
   },
   {
+    title: "A CPSC outage read as ours, and an error row was stored as a read",
+    found:
+      "From about Nov 7, 2026, 00:05 UTC, CPSC's API answered HTTP 200 with one fake row, its error in the title. We stored that as a partial read, so /api/health answered 503 and those dates counted as read. The poll starts a day back, so nothing was skipped this time.",
+    changed: "That row is now a failed fetch and marks nothing as read. /api/health answers 200, names CPSC and says since when, and 503 stays for this site's own failures.",
+    commits: ["9d51025", "6fdda6e"],
+    checked: "During the same outage, on the deployed site: the demo shop's 9 items, Replay's 934 recalls and its recount, the public check and the MCP tool all answered from the recalls held here. Catching up once CPSC returns is still to be read.",
+    open: true,
+  },
+  {
     title: "Sandbox refunds of $30 and up started staying PENDING",
     found:
       "From Nov 6, 2026, 17:37 UTC, PayPal's sandbox answered refunds of $30 and up with PENDING, reason ECHECK, including calls with no app code in the way. Refunds of $1, $5 and $20 completed. We don't know why.",
