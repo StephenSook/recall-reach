@@ -92,9 +92,15 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
     },
     {
       service: "Claude",
-      state: !env.claudeKeySet ? "problem" : !db ? "unknown" : h.claude.fresh ? "ok" : "problem",
-      reading: !env.claudeKeySet ? "No key set. The Claude check says it's unavailable." : !db ? NOT_READ : h.claude.lastOkAt ? `Last good answer ${ranAt(h.claude.lastOkAt)}.` : "No good answer on record.",
-      measures: "The last good answer on record, from a check or a daily call on the cheapest model, and whether it's under 2 days old. This page never calls Claude.",
+      state: !env.claudeKeySet ? "problem" : !db ? "unknown" : h.claude.fresh && h.claude.mainModelFresh ? "ok" : "problem",
+      reading: !env.claudeKeySet
+        ? "No key set. The Claude check says it's unavailable."
+        : !db
+          ? NOT_READ
+          : !h.claude.lastOkAt
+            ? "No good answer on record."
+            : `Last good answer ${ranAt(h.claude.lastOkAt)}. Main model last answered ${h.claude.mainModelOkAt ? ranAt(h.claude.mainModelOkAt) : "not on record"}.`,
+      measures: "The last good answers on record, from a check or the daily calls, and whether each is under 2 days old. A check can fall back to the cheaper model, so the main model has its own date. This page never calls Claude.",
     },
   ];
 }

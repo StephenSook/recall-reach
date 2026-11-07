@@ -13,7 +13,7 @@ const healthy: Health = {
   poll: { lastPollAt: "2026-11-07T11:45:00.000Z", lastPollOk: true, dbTouched: false },
   replay: { lastRunAt: "2026-11-07T10:00:00.000Z" },
   market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true },
-  claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true },
+  claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true, mainModelOkAt: "2026-11-07T08:00:00.000Z", mainModelFresh: true },
   warnings: { count: 381, lastOkAt: "2026-11-07T08:00:00.000Z", fresh: true },
   degraded: null,
   paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
@@ -64,6 +64,15 @@ describe("the status page's lines", () => {
     expect(line(healthy, "Claude")?.reading).toMatch(/^Last good answer Nov 7, 2026, /);
     expect(line(healthy, "Claude")?.measures).toContain("never calls Claude");
     expect(line(healthy, "Claude", false)).toMatchObject({ state: "problem", reading: "No key set. The Claude check says it's unavailable." });
+  });
+
+  it("gives the main model its own date, and calls it a problem when only the fallback is answering", () => {
+    expect(line(healthy, "Claude")?.reading).toContain("Main model last answered Nov 7, 2026, ");
+    const fallingBack = { ...healthy, claude: { ...healthy.claude, mainModelOkAt: "2026-11-01T08:00:00.000Z", mainModelFresh: false } };
+    expect(line(fallingBack, "Claude")).toMatchObject({ state: "problem" });
+    expect(line(fallingBack, "Claude")?.reading).toContain("Main model last answered Nov 1, 2026, ");
+    const never = { ...healthy, claude: { ...healthy.claude, mainModelOkAt: null, mainModelFresh: false } };
+    expect(line(never, "Claude")?.reading).toContain("Main model last answered not on record.");
   });
 
   it("gives PayPal's last verified delivery, and says no PayPal call is made here", () => {

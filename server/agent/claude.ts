@@ -48,13 +48,13 @@ function costOf(message: BetaMessage): number {
 export async function askClaude(
   db: Queryable,
   client: Anthropic,
-  ask: { model: string; system: string; tools: BetaToolUnion[]; messages: BetaMessageParam[]; now: Date; capMicros?: number },
+  ask: { model: string; system: string; tools: BetaToolUnion[]; messages: BetaMessageParam[]; now: Date; capMicros?: number; maxTokens?: number },
   spent: Spent,
 ): Promise<BetaMessage> {
   if ((await spentToday(db, ask.now)) >= (ask.capMicros ?? DAILY_CAP_MICROS)) throw new OverBudget();
   const response = await client.beta.messages.create({
     model: ask.model,
-    max_tokens: 8000,
+    max_tokens: ask.maxTokens ?? 8000,
     system: ask.system,
     tools: ask.tools,
     tool_choice: { type: "auto" },
@@ -80,25 +80,39 @@ const countSpend = (db: Queryable, now: Date, cost: number) =>
 
 const PING_EVERY_MS = 20 * 3_600_000;
 
-export type PingResult = "OK" | "NOT_DUE" | "OVER_BUDGET" | "NO_ANSWER";
+export type PingResult = "OK" | "NOT_DUE" | "OVER_BUDGET" | "NO_ANSWER" | "MAIN_MODEL_DOWN";
+
+/** The smallest real call on one model, with no data in it. An empty reply is paid for and isn't an answer. */
+async function saysOk(db: Queryable, client: Anthropic, model: string, now: Date): Promise<boolean> {
+  const response = await client.beta.messages.create({ model, max_tokens: 5, messages: [{ role: "user", content: "Say ok." }] });
+  await countSpend(db, now, costOf(response));
+  return response.content.some((block) => block.type === "text" && block.text.trim().length > 0);
+}
 
 /**
- * The smallest real call, on the cheapest model and with no data in it, so a spent balance can't stay green while nobody
- * presses "Check with Claude". It counts under the day's cap. An error is thrown, so the job says so.
+ * So a spent balance can't stay green while nobody presses "Check with Claude". It counts under the day's cap. The cheapest
+ * model says whether the account can answer at all, and an error there is thrown, so the job says so. Then the main model,
+ * since a check that fell back still reads as a good answer, and this is what shows the main one has stopped.
  */
 export async function pingClaude(db: Queryable, client: Anthropic, now: Date): Promise<PingResult> {
-  const { rows } = await db.query<{ last_ok_at: unknown }>("select last_ok_at from claude_pings");
+  const { rows } = await db.query<{ last_ok_at: unknown; last_main_ok_at: unknown }>("select last_ok_at, last_main_ok_at from claude_pings");
   const last = rows[0] ? new Date(rows[0].last_ok_at as string).getTime() : null;
-  if (last !== null && now.getTime() - last < PING_EVERY_MS) return "NOT_DUE";
+  if (last !== null && rows[0].last_main_ok_at !== null && now.getTime() - last < PING_EVERY_MS) return "NOT_DUE";
   if ((await spentToday(db, now)) >= DAILY_CAP_MICROS) return "OVER_BUDGET";
-  const response = await client.beta.messages.create({ model: FALLBACK_MODEL, max_tokens: 5, messages: [{ role: "user", content: "Say ok." }] });
-  await countSpend(db, now, costOf(response));
-  if (!response.content.some((block) => block.type === "text" && block.text.trim().length > 0)) return "NO_ANSWER";
+  if (!(await saysOk(db, client, FALLBACK_MODEL, now))) return "NO_ANSWER";
   await db.query(
     `insert into claude_pings (only_row, last_ok_at) values (true, $1)
      on conflict (only_row) do update set last_ok_at = excluded.last_ok_at`,
     [now.toISOString()],
   );
+  let mainOk = false;
+  try {
+    mainOk = await saysOk(db, client, MODEL, now);
+  } catch (err) {
+    console.error(`Claude's main model didn't answer: ${err instanceof Anthropic.APIError ? `HTTP ${err.status}` : err instanceof Error ? err.name : "unknown error"}`);
+  }
+  if (!mainOk) return "MAIN_MODEL_DOWN";
+  await db.query("update claude_pings set last_main_ok_at = $1", [now.toISOString()]);
   return "OK";
 }
 
@@ -106,6 +120,16 @@ export async function pingClaude(db: Queryable, client: Anthropic, now: Date): P
 export async function lastClaudeAnswer(db: Queryable): Promise<string | null> {
   const { rows } = await db.query<{ at: unknown }>(
     `select greatest((select max(created_at) from agent_runs where outcome = 'FINDING'), (select last_ok_at from claude_pings)) as at`,
+  );
+  const at = rows[0]?.at;
+  return at ? new Date(at as string).toISOString() : null;
+}
+
+/** The same, from the main model only. Calls nothing. */
+export async function lastMainModelAnswer(db: Queryable): Promise<string | null> {
+  const { rows } = await db.query<{ at: unknown }>(
+    `select greatest((select max(created_at) from agent_runs where outcome = 'FINDING' and model like $1), (select last_main_ok_at from claude_pings)) as at`,
+    [`${MODEL}%`],
   );
   const at = rows[0]?.at;
   return at ? new Date(at as string).toISOString() : null;

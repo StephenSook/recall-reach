@@ -5,7 +5,7 @@ const BASE = "https://site.test";
 
 /** The real site's words, trimmed to what the probe reads. */
 const GOOD: Record<string, string> = {
-  "/api/health": JSON.stringify({ claude: { fresh: true, lastOkAt: "2026-11-07T00:00:00.000Z" }, ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, market: { fresh: true } }),
+  "/api/health": JSON.stringify({ claude: { fresh: true, lastOkAt: "2026-11-07T00:00:00.000Z", mainModelFresh: true, mainModelOkAt: "2026-11-07T00:00:00.000Z" }, ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, market: { fresh: true } }),
   "/replay": `<main><p>934 Recalls checked</p><p>3 Recalls matched</p><a href="/api/proof/1f597fa0-6d9b-4a42-8ea2-923a79d466f6">Recount these numbers</a></main>`,
   "/api/proof/1f597fa0-6d9b-4a42-8ea2-923a79d466f6": JSON.stringify({ agree: true }),
   "/eval": "<main>37 of 83 2 of 83 11 of 12 52 of 60 One labeller</main>",
@@ -69,13 +69,19 @@ describe("probe", () => {
     const withClaude = (claude: object | undefined) => JSON.stringify({ ...JSON.parse(GOOD["/api/health"]), claude });
 
     it("fails when it's over 2 days old, and says when it last worked", async () => {
-      const checks = await probe(BASE, site({ "/api/health": withClaude({ fresh: false, lastOkAt: "2026-11-01T00:00:00.000Z" }) }).fetchImpl);
+      const checks = await probe(BASE, site({ "/api/health": withClaude({ fresh: false, lastOkAt: "2026-11-01T00:00:00.000Z", mainModelFresh: true, mainModelOkAt: "2026-11-07T00:00:00.000Z" }) }).fetchImpl);
       expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["Claude"]);
       expect(checks.find((c) => c.name === "Claude")?.detail).toContain("2026-11-01");
     });
 
     it("fails when health stops saying, rather than taking silence for good news", async () => {
       expect(await failed({ "/api/health": withClaude(undefined) })).toContain("Claude");
+    });
+
+    it("has its own line for the main model, so a fallback can't hide it stopping", async () => {
+      const checks = await probe(BASE, site({ "/api/health": withClaude({ fresh: true, lastOkAt: "2026-11-07T00:00:00.000Z", mainModelFresh: false, mainModelOkAt: "2026-11-01T00:00:00.000Z" }) }).fetchImpl);
+      expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["Claude's main model"]);
+      expect(checks.find((c) => c.name === "Claude's main model")?.detail).toContain("2026-11-01");
     });
 
     it("passes when it's fresh", async () => {

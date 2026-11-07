@@ -55,7 +55,7 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
 
   const checks: Check[] = [];
   let cpscSince: string | null = null;
-  let claude: { fresh?: boolean; lastOkAt?: string | null } | undefined;
+  let claude: { fresh?: boolean; lastOkAt?: string | null; mainModelFresh?: boolean; mainModelOkAt?: string | null } | undefined;
   checks.push(
     await attempt("health", async () => {
       const { status, body } = await read("/api/health");
@@ -73,6 +73,8 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
     }),
   );
   checks.push(claude?.fresh === true ? pass("Claude", `last good answer ${claude.lastOkAt}`) : fail("Claude", `no good answer in 2 days: last ${claude?.lastOkAt ?? "none on record"}. Its balance may be spent.`));
+  // Two days, with a call every 20 hours: one quiet or failed day can't turn this red.
+  checks.push(claude?.mainModelFresh === true ? pass("Claude's main model", `last answered ${claude.mainModelOkAt}`) : fail("Claude's main model", `no answer in 2 days: last ${claude?.mainModelOkAt ?? "none on record"}. Checks may be falling back to the cheaper model.`));
   if (cpscSince !== null) checks.push(fail("CPSC is failing", `since ${cpscSince}. Not this site's code: it works from the recalls it holds.`));
   let replayHtml = "";
   checks.push(

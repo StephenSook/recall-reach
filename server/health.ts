@@ -1,4 +1,4 @@
-import { lastClaudeAnswer } from "./agent/claude";
+import { lastClaudeAnswer, lastMainModelAnswer } from "./agent/claude";
 import { lastWarningRead, warningCount } from "./warnings/warnings";
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
@@ -63,7 +63,7 @@ export interface Health {
   /** CPSC's warnings file, apart from recalls. Not part of ok. Fresh means read in the last 8 days: CPSC updates it weekly. */
   warnings: { count: number; lastOkAt: string | null; fresh: boolean };
   /** Claude's last good answer. Not part of ok: everything else works without it. The probe fails on it, so nobody finds out from a judge. */
-  claude: { lastOkAt: string | null; fresh: boolean };
+  claude: { lastOkAt: string | null; fresh: boolean; mainModelOkAt: string | null; mainModelFresh: boolean };
   paypal: {
     /** Webhook certificates are accepted only from PayPal sandbox hosts (server/paypal/webhooks.ts). */
     environment: "sandbox";
@@ -81,12 +81,12 @@ const MAX_CLAUDE_AGE_MS = 2 * 86_400_000;
 const MAX_WARNINGS_AGE_MS = 8 * 86_400_000;
 
 /** Its own try, so this query failing can't call the rest of the app down. */
-async function lastClaudeAnswerOrNull(db: Queryable): Promise<string | null> {
+async function claudeAnswers(db: Queryable): Promise<{ any: string | null; main: string | null }> {
   try {
-    return await lastClaudeAnswer(db);
+    return { any: await lastClaudeAnswer(db), main: await lastMainModelAnswer(db) };
   } catch (err) {
     console.error("health check: Claude query failed:", err instanceof Error ? err.message : err);
-    return null;
+    return { any: null, main: null };
   }
 }
 
@@ -151,7 +151,8 @@ export async function getHealth(
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
     const marketOkAt = await lastMarketSearch(db);
-    const claudeOkAt = await lastClaudeAnswerOrNull(db);
+    const claudeOk = await claudeAnswers(db);
+    const claudeRecent = (at: string | null) => at !== null && now.getTime() - Date.parse(at) <= MAX_CLAUDE_AGE_MS;
     const warningsRead = { count: await warningCount(db), lastOkAt: await lastWarningRead(db) };
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
@@ -195,7 +196,7 @@ export async function getHealth(
       poll,
       replay: { lastRunAt },
       market: { lastOkAt: marketOkAt, fresh: marketOkAt !== null && now.getTime() - Date.parse(marketOkAt) <= MAX_MARKET_AGE_MS },
-      claude: { lastOkAt: claudeOkAt, fresh: claudeOkAt !== null && now.getTime() - Date.parse(claudeOkAt) <= MAX_CLAUDE_AGE_MS },
+      claude: { lastOkAt: claudeOk.any, fresh: claudeRecent(claudeOk.any), mainModelOkAt: claudeOk.main, mainModelFresh: claudeRecent(claudeOk.main) },
       warnings: { ...warningsRead, fresh: warningsRead.lastOkAt !== null && now.getTime() - Date.parse(warningsRead.lastOkAt) <= MAX_WARNINGS_AGE_MS },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
@@ -212,7 +213,7 @@ export async function getHealth(
       poll,
       replay: { lastRunAt: null },
       market: { lastOkAt: null, fresh: false },
-      claude: { lastOkAt: null, fresh: false },
+      claude: { lastOkAt: null, fresh: false, mainModelOkAt: null, mainModelFresh: false },
       warnings: { count: 0, lastOkAt: null, fresh: false },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
