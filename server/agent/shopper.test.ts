@@ -34,8 +34,8 @@ const SEAT = listing("raw-seat", "Bath Seat", 3199);
 const TUB = listing("raw-tub", "Folding Tub", 2499);
 const DEAR = listing("raw-dear", "Gold Seat", 90000);
 
-const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, sameMaker: [], checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
-const flagged: TextCheckAnswer = { ...clear, results: [{ recallNumber: "26266", title: "CheerKid Recalls Baby Bath Seats", recallDate: "2026-02-12", url: "https://www.cpsc.gov/x", verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, reason: "r", missing: [] }] };
+const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, mentioned: { recalls: [], total: 0 }, checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
+const flagged: TextCheckAnswer = { ...clear, results: [{ recallNumber: "26266", title: "CheerKid Recalls Baby Bath Seats", recallDate: "2026-02-12", url: "https://www.cpsc.gov/x", verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, sharesWords: false, reason: "r", missing: [] }] };
 
 const deps = (over: Partial<ShopperDeps> = {}): ShopperDeps => ({
   search: async () => [SEAT, TUB, DEAR],

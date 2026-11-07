@@ -35,6 +35,19 @@ test("an owner types what's on a label, and reads each kind of answer", async ({
   await page.getByRole("button", { name: "Check it" }).click();
   await expect(page.getByTestId("item-answer")).toHaveAttribute("data-kind", "CANT_TELL");
 
+  // Another maker's product, of a kind that has recalls. It says what it knows, and folds the rest.
+  await page.getByLabel("What's on the label").fill("Graco high chair");
+  await page.getByRole("button", { name: "Check it" }).click();
+  const sameKind = page.getByTestId("item-answer");
+  await expect(sameKind).toHaveAttribute("data-kind", "NOT_NAMED");
+  await expect(sameKind).toContainText('No recall names "Graco high chair".');
+  await expect(sameKind).toContainText("That doesn't mean it's safe.");
+  const list = page.getByTestId("same-kind");
+  await expect(list.getByRole("link").first()).toBeHidden();
+  await list.locator("summary").click();
+  await expect(list.getByRole("link").first()).toBeVisible();
+  expect(await overflow(page)).toBeLessThanOrEqual(0);
+
   // Nothing near, and the count comes from what was read.
   await page.getByLabel("What's on the label").fill("zzqx vvbn plmk");
   await page.getByRole("button", { name: "Check it" }).click();

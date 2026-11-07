@@ -10,7 +10,7 @@ import { cartHash, createSlip, finishShopperOrder, readFinishedSlip, SlipRefused
 const NOW = new Date("2026-11-07T15:00:00Z");
 const LISTING: BuyableListing = { id: "raw-tub", title: "Folding Tub", brand: "Acme", priceCents: 2499, currency: "USD" };
 const key = createRecordKey("test-record-key-secret-0123456789abcdef");
-const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, sameMaker: [], checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
+const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, mentioned: { recalls: [], total: 0 }, checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
 
 function fakePayPal(over: { failCreate?: boolean; order?: (invoice: string) => Record<string, unknown> } = {}) {
   const calls: { method: string; path: string; body?: unknown }[] = [];
@@ -111,9 +111,9 @@ describe("an offer from the shopping agent", () => {
   });
 
   it.each([
-    ["a recall names it now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "MATCH", strength: "CONFIRMED", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
-    ["a recall names its maker and line now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
-    ["a code close to a recalled model shows now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a recall names it now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "MATCH", strength: "CONFIRMED", tiedToRecall: true, sharesWords: false, reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a recall names its maker and line now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, sharesWords: false, reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a code close to a recalled model shows now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: true, sharesWords: false, reason: "r", missing: [] }] } as TextCheckAnswer],
     ["the check couldn't finish", { ...clear, notJudged: 1 }],
     ["a year didn't load", { ...clear, checked: { ...clear.checked, yearsMissing: [2025] } }],
   ])("starts nothing if %s", async (_name, answer) => {
@@ -125,7 +125,7 @@ describe("an offer from the shopping agent", () => {
 
   it("isn't stopped by a recall of the same kind of product", async () => {
     const { id } = await createSlip(db, LISTING, NOW);
-    const similar = { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: false, reason: "r", missing: [] }] } as TextCheckAnswer;
+    const similar = { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: false, sharesWords: false, reason: "r", missing: [] }] } as TextCheckAnswer;
     expect(await code(start(id, fakePayPal().client, { check: async () => similar }))).toBe("no refusal");
   });
 

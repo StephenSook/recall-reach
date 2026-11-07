@@ -12,6 +12,11 @@ let visitor = "198.51.100.1";
 const getDb = vi.hoisted(() => vi.fn());
 vi.mock("@/server/db/pg", () => ({ getDb }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "true-client-ip": visitor }) }));
+const coverage = vi.hoisted(() => ({ complete: false }));
+vi.mock("@/server/cpsc/load", async (original) => {
+  const real = await original<typeof import("@/server/cpsc/load")>();
+  return { ...real, missingRecallYears: async (...args: Parameters<typeof real.missingRecallYears>) => (coverage.complete ? [] : real.missingRecallYears(...args)) };
+});
 
 import CheckPage from "./page";
 
@@ -26,6 +31,7 @@ const unescape = (text: string) => text.replaceAll("&#x27;", "'");
 describe("the check page", () => {
   let real: Awaited<ReturnType<typeof testDb>>;
   beforeEach(async () => {
+    coverage.complete = false;
     real = await testDb();
     await migrate(real);
     db = real;
@@ -65,9 +71,22 @@ describe("the check page", () => {
 
     it("reads a maker typed alone as something to read, not as nothing", async () => {
       const page = unescape(await html({ title: "Baby Brezza", model: "" }));
-      expect(page).toContain("The maker matches, and nothing else does.");
+      expect(page).toContain("Can't tell yet.");
       expect(page).toContain('href="/recall/27072"');
       expect(page).not.toContain("No recall in");
+    });
+
+    it("folds away recalls that only share the kind of product, showing each one's maker", async () => {
+      // In a month's recalls one high chair would make "chair" a rare word, so give it company.
+      await real.query("update recalls set description = description || ' A high chair.' where recall_number in ('27012', '27072')");
+      // This fixture holds one month, and this test isn't about the other years.
+      coverage.complete = true;
+      const page = unescape(await html({ title: "Graco high chair", model: "" }));
+      expect(page.replaceAll("&quot;", '"')).toContain('No recall names "Graco high chair".');
+      const fold = page.slice(page.indexOf('data-testid="same-kind"'));
+      expect(fold).toMatch(/<summary>Show (it|the \d+)<\/summary>/);
+      expect(fold).toContain('href="/recall/27040"');
+      expect(fold).toContain("Costway");
     });
 
     it("keeps what was typed in the form, and says what it checked", async () => {

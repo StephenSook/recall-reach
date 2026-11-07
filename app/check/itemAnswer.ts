@@ -1,4 +1,4 @@
-// What a shop owner reads after typing one item. Nothing here reads as clear unless every recall was read and none came near.
+// What a shop owner reads after typing one item. Nothing here reads as clear unless every recall was read and none has what was typed.
 import type { TextCheckAnswer, TextCheckResult } from "@/server/match/textCheck";
 
 export interface RecallToRead {
@@ -8,15 +8,17 @@ export interface RecallToRead {
 }
 
 export interface ItemAnswer {
-  kind: "MATCH" | "CANT_TELL" | "NOTHING" | "UNFINISHED";
+  kind: "MATCH" | "CANT_TELL" | "NOT_NAMED" | "NOTHING" | "UNFINISHED";
   says: string;
   matches: RecallToRead[];
   toRead: RecallToRead[];
+  /** Recalls that only share a kind of product, for the owner to open if their label says one of these makers. */
+  folded: RecallToRead[];
   further: string | null;
   gap: string | null;
 }
 
-const KIND_ONLY_SHOWN = 5;
+const SHARED_SHOWN = 5;
 const MISSING_LENGTH = 140;
 
 /** A recall can list dozens of models, and this has to read on a phone. */
@@ -31,31 +33,39 @@ const further = (count: number) => (count > 0 ? `${count} more came up. Add the 
 const yearList = (years: number[]) => (years.length > 1 ? `${years.slice(0, -1).join(", ")} and ${years.at(-1)}` : String(years[0]));
 const readThese = (count: number) => `Read ${count === 1 ? "this recall" : "these recalls"} and compare what you have.`;
 
-export function readItemAnswer(answer: TextCheckAnswer): ItemAnswer {
+export function readItemAnswer(answer: TextCheckAnswer, typed: string): ItemAnswer {
   const matches = answer.results.filter((r) => r.verdict === "MATCH");
   const tied = answer.results.filter((r) => r.verdict !== "MATCH" && r.tiedToRecall);
   const kindOnly = answer.results.filter((r) => r.verdict !== "MATCH" && !r.tiedToRecall);
   const { recalls, from, yearsMissing } = answer.checked;
   const gap = yearsMissing.length > 0 ? `We don't hold CPSC's ${yearList(yearsMissing)} recalls right now, so there may be more.` : answer.notJudged > 0 ? "More came near than we could read. Add the maker or model." : null;
-  const nothingElse = { matches: [], toRead: [], further: null, gap: null };
+  const nothingElse = { matches: [], toRead: [], folded: [], further: null, gap: null };
 
   if (matches.length > 0) {
     const says = matches.length === 1 ? "This matches a recall. That doesn't say this one is recalled: read it and compare the model." : `This matches ${matches.length} recalls. That doesn't say this one is recalled: read them and compare the model.`;
-    return { kind: "MATCH", says, matches: matches.map(toRow), toRead: tied.map(toRow), further: further(kindOnly.length + answer.more), gap };
+    return { kind: "MATCH", says, matches: matches.map(toRow), toRead: tied.map(toRow), folded: [], further: further(kindOnly.length + answer.more), gap };
   }
   if (tied.length > 0) {
-    return { kind: "CANT_TELL", says: `Can't tell yet. ${readThese(tied.length)}`, matches: [], toRead: tied.map(toRow), further: further(kindOnly.length + answer.more), gap };
+    return { kind: "CANT_TELL", says: `Can't tell yet. ${readThese(tied.length)}`, matches: [], toRead: tied.map(toRow), folded: [], further: further(kindOnly.length + answer.more), gap };
   }
-  if (kindOnly.length > 0) {
-    const count = kindOnly.length + answer.more;
-    const says = count === 1 ? "Can't tell yet. 1 recall covers this kind of product. Add the maker and model, or read it." : `Can't tell yet. ${count} recalls cover this kind of product. Add the maker and model, or read them.`;
-    const shown = kindOnly.slice(0, KIND_ONLY_SHOWN);
-    return { kind: "CANT_TELL", says, matches: [], toRead: shown.map(toRow), further: further(count - shown.length), gap };
+  // Past what the rules tied: the recalls that could be this, then the ones that only share a kind of product. With a year
+  // missing or some unread, "no recall names it" can't be said, so they all count as could-be.
+  const couldBe = gap ? kindOnly : kindOnly.filter((r) => r.sharesWords);
+  const sameKind = gap ? [] : kindOnly.filter((r) => !r.sharesWords);
+  const shared = [...couldBe.map(toRow), ...answer.mentioned.recalls.map((r) => ({ ...r, missing: null }))];
+  if (shared.length > 0) {
+    const count = kindOnly.length + answer.more + answer.mentioned.total;
+    const says = count === 1 ? "Can't tell yet. 1 recall shares words with this. Read it and compare what you have." : `Can't tell yet. ${count} recalls share words with this. Read them and compare what you have.`;
+    const shown = shared.slice(0, SHARED_SHOWN);
+    return { kind: "CANT_TELL", says, matches: [], toRead: shown, folded: [], further: further(count - shown.length), gap };
   }
-  // The rules rule out a maker typed alone, because no product word is shared. That isn't the same as no recall naming it.
-  if (answer.sameMaker.length > 0) {
-    const says = `Can't tell yet. The maker matches, and nothing else does. ${readThese(answer.sameMaker.length)}`;
-    return { kind: "CANT_TELL", says, matches: [], toRead: answer.sameMaker.map((r) => ({ ...r, missing: null })), further: null, gap };
+  if (sameKind.length > 0) {
+    const count = sameKind.length + answer.more;
+    const says =
+      count === 1
+        ? `No recall names "${typed}". 1 recall of the same kind doesn't name it. If your label says its maker, read that recall. That doesn't mean it's safe.`
+        : `No recall names "${typed}". ${count} recalls of the same kind don't name it. If your label says one of their makers, read that recall. That doesn't mean it's safe.`;
+    return { kind: "NOT_NAMED", says, matches: [], toRead: [], folded: sameKind.map((r) => ({ recallNumber: r.recallNumber, title: r.title, missing: null })), further: null, gap: null };
   }
 
   if (recalls === 0 || !from) return { kind: "UNFINISHED", says: "Can't say yet. No recalls are held here right now.", ...nothingElse };

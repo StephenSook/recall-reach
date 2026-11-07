@@ -50,11 +50,66 @@ describe("GET /api/check", () => {
     expect(body.results.map((r: { verdict: string }) => r.verdict)).not.toContain("MATCH");
   });
 
-  it("names a recall that's only from the same maker, so a maker typed alone can't read as nothing", async () => {
-    const body = await results("title=Baby+Brezza");
-    expect(body.results).toEqual([]);
-    expect(body.sameMaker).toEqual([expect.objectContaining({ recallNumber: "27072" })]);
-    expect((await results("title=zzqx+vvbn+plmk")).sameMaker).toEqual([]);
+  describe("when the rules rule a recall out, but CPSC's text has what was typed", () => {
+    const mentioned = async (query: string) => {
+      const body = await results(query);
+      return { named: body.results.map((r: { recallNumber: string }) => r.recallNumber), mentioned: body.mentioned.recalls.map((r: { recallNumber: string }) => r.recallNumber), total: body.mentioned.total };
+    };
+
+    it("names a recall from the maker alone", async () => {
+      expect((await mentioned("title=Baby+Brezza")).mentioned).toContain("27072");
+    });
+
+    it("names one from a single product word the rules can't settle on", async () => {
+      expect((await mentioned("title=sterilizer")).mentioned).toContain("27072");
+    });
+
+    it("names one from part of the maker's name, when one word of it is rare", async () => {
+      await real.query("update recalls set title = 'Zorbex USA Recalls French Press Coffee Makers' where recall_number = '27072'");
+      expect((await mentioned("title=Zorbex")).mentioned).toContain("27072");
+      expect((await mentioned("title=Zorbex+Chambord+eight+cup")).mentioned).toContain("27072");
+    });
+
+    it("names one from a number the rules read as too short to be a model", async () => {
+      await real.query("update recalls set description = 'This recall involves swings, models 1026 and 4M-1037.' where recall_number = '27012'");
+      expect((await mentioned("model=1026")).mentioned).toContain("27012");
+    });
+
+    it("names one from a maker too short to count as a word", async () => {
+      await real.query("update recalls set title = 'H&M Recalls Bath Mats', description = 'This recall involves bath mats.' where recall_number = '27072'");
+      expect((await mentioned(`title=${encodeURIComponent("H&M")}`)).mentioned).toContain("27072");
+    });
+
+    it("says which results share what was typed, and which only share the kind of product", async () => {
+      await real.query("update recalls set description = description || ' A high chair.' where recall_number in ('27012', '27072')");
+      const results_ = async (query: string) => (await results(query)).results as { recallNumber: string; sharesWords: boolean; tiedToRecall: boolean }[];
+      const graco = await results_(`title=${encodeURIComponent("Graco high chair")}`);
+      expect(graco.length).toBeGreaterThan(0);
+      for (const r of graco) expect(r).toMatchObject({ tiedToRecall: false, sharesWords: false });
+      expect((await results_(`title=${encodeURIComponent("high chair")}`)).some((r) => r.sharesWords)).toBe(true);
+    });
+
+    it("doesn't repeat a recall that's already a result, and counts the rest", async () => {
+      const found = await mentioned("title=chair");
+      expect(found.mentioned.filter((n: string) => found.named.includes(n))).toEqual([]);
+      expect(found.total).toBeGreaterThanOrEqual(found.mentioned.length);
+    });
+
+    it("isn't looked for once a recall is tied to the text", async () => {
+      expect(await mentioned("title=Baby+Brezza+sterilizer&model=BRZ0083")).toMatchObject({ mentioned: [], total: 0 });
+    });
+
+    it("stays empty when CPSC's text doesn't have it", async () => {
+      expect(await mentioned("title=zzqx+vvbn+plmk")).toMatchObject({ mentioned: [], total: 0 });
+    });
+  });
+
+  it("reads a model typed into the label field as that model, spaced or not", async () => {
+    for (const title of ["BRZ 0083", "BRZ0083", "brz-0083"]) expect((await results(`title=${encodeURIComponent(title)}`)).results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH" });
+  });
+
+  it("reads a long number typed alone into the label field as a model to read", async () => {
+    expect((await results("title=406198")).results[0]).toMatchObject({ recallNumber: "27012", verdict: "SCOPE_GAP", tiedToRecall: true });
   });
 
   it("lists a recall tied to the text before ones that only share a kind of product", async () => {

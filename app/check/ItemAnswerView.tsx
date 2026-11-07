@@ -33,6 +33,12 @@ export function ItemAnswerView({ answer, checked }: { answer: ItemAnswer; checke
       <RecallLinks recalls={answer.matches} />
       {answer.matches.length > 0 && answer.toRead.length > 0 ? <p className="item-also">Can&apos;t tell yet:</p> : null}
       <RecallLinks recalls={answer.toRead} />
+      {answer.folded.length > 0 ? (
+        <details className="check-details" data-testid="same-kind">
+          <summary>{answer.folded.length === 1 ? "Show it" : `Show the ${answer.folded.length}`}</summary>
+          <RecallLinks recalls={answer.folded} />
+        </details>
+      ) : null}
       {answer.further ? <p className="note">{answer.further}</p> : null}
       {answer.gap ? <p className="note">{answer.gap}</p> : null}
     </section>

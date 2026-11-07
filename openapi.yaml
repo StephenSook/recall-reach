@@ -222,7 +222,7 @@ components:
         error: { type: string }
     CheckResult:
       type: object
-      required: [recallNumber, title, recallDate, verdict, strength, tiedToRecall, reason, missing]
+      required: [recallNumber, title, recallDate, verdict, strength, tiedToRecall, sharesWords, reason, missing]
       properties:
         recallNumber: { type: string }
         title: { type: string }
@@ -236,6 +236,9 @@ components:
         tiedToRecall:
           type: boolean
           description: The text has this recall's model, a code close to it, or its maker and product line. Otherwise it only shares a kind of product.
+        sharesWords:
+          type: boolean
+          description: Its text has what was given, all of it or a word few recalls have, so it could be this item. Otherwise it only shares a kind of product. Only set when no recall is tied to the text.
         reason: { type: string }
         missing:
           type: array
@@ -243,7 +246,7 @@ components:
           items: { type: string }
     CheckAnswer:
       type: object
-      required: [results, more, cleared, notJudged, sameMaker, checked, note]
+      required: [results, more, cleared, notJudged, mentioned, checked, note]
       properties:
         results:
           type: array
@@ -257,15 +260,20 @@ components:
         notJudged:
           type: integer
           description: Recalls that came near but weren't judged, because too many did. Above zero, an empty list doesn't mean nothing was found.
-        sameMaker:
-          type: array
-          description: Recalls ruled out but from the same maker. A maker given alone ends up here, so an empty results list isn't the same as nothing near.
-          items:
-            type: object
-            required: [recallNumber, title]
-            properties:
-              recallNumber: { type: string }
-              title: { type: string }
+        mentioned:
+          type: object
+          description: Past the results, recalls whose text has what was given. A maker or a product word given alone ends up here, so an empty results list isn't the same as nothing near. Only looked for when no recall is tied to the text.
+          required: [recalls, total]
+          properties:
+            total: { type: integer }
+            recalls:
+              type: array
+              items:
+                type: object
+                required: [recallNumber, title]
+                properties:
+                  recallNumber: { type: string }
+                  title: { type: string }
         checked:
           type: object
           required: [recalls, yearsMissing]

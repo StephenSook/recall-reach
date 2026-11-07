@@ -34,6 +34,7 @@ const CHECK_OUTPUT = {
       verdict: z.enum(["MATCH", "SCOPE_GAP"]).describe("MATCH: the text shows what the recall names. SCOPE_GAP: it comes close, but the text can't show this item is covered."),
       strength: z.string(),
       tiedToRecall: z.boolean().describe("The text has this recall's model, a code close to it, or its maker and product line. Otherwise it only shares a kind of product."),
+      sharesWords: z.boolean().describe("Its text has what was given: all of it, or a word few recalls have. Otherwise it only shares a kind of product. Only set when no recall is tied to the text."),
       reason: z.string(),
       missing: z.array(z.string()),
     }),
@@ -41,7 +42,7 @@ const CHECK_OUTPUT = {
   more: z.number().describe("Found, past what's listed."),
   cleared: z.number().describe("Came near and were ruled out."),
   notJudged: z.number().describe("Came near but weren't judged. Above zero, an empty list doesn't mean nothing was found."),
-  sameMaker: z.array(z.object({ recallNumber: z.string(), title: z.string() })).describe("Ruled out, but from the same maker. A maker given alone ends up here, so don't read an empty results list as nothing near."),
+  mentioned: z.object({ recalls: z.array(z.object({ recallNumber: z.string(), title: z.string() })), total: z.number() }).describe("Past the results, recalls whose text has what was given. A maker or a product word given alone ends up here, so don't read an empty results list as nothing near. Only looked for when no recall is tied to the text."),
   checked: z.object({ recalls: z.number(), from: z.string().nullable(), to: z.string().nullable(), yearsMissing: z.array(z.number()) }),
   note: z.string(),
 };

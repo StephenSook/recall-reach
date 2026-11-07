@@ -146,7 +146,7 @@ describe("openapi.yaml", () => {
       expect(misfits(schemaFor("/api/check"), { results: [], cleared: "none", checked: { recalls: 1 } })).toEqual([
         "answer.more is missing",
         "answer.notJudged is missing",
-        "answer.sameMaker is missing",
+        "answer.mentioned is missing",
         "answer.note is missing",
         "answer.cleared is not an integer",
         "answer.checked.yearsMissing is missing",

@@ -4,7 +4,7 @@ import { missingRecallYears } from "../cpsc/load";
 import { cpscPhoto } from "../cpsc/photo";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
-import { modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor } from "./verdict";
+import { modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
 import type { Recall } from "../cpsc/schema";
 
 export const MAX_TITLE = 200;
@@ -27,6 +27,8 @@ export type TextCheckResult = {
   strength: VerdictResult["strength"];
   /** The text has this recall's model, a code close to it, or its maker and product line. Otherwise it only shares a kind of product. */
   tiedToRecall: boolean;
+  /** Its text has what was given: all of it, or a word few recalls have, so it could be this item. Otherwise it only shares a kind of product. Only set when no recall is tied to the text. */
+  sharesWords: boolean;
   reason: string;
   missing: string[];
 };
@@ -39,8 +41,11 @@ export interface TextCheckAnswer {
   cleared: number;
   /** Came near but weren't judged, because too many did. Above zero, an empty list doesn't mean nothing was found. */
   notJudged: number;
-  /** Ruled out, but from the same maker. A maker typed alone ends up here, and that isn't the same as nothing coming near. */
-  sameMaker: { recallNumber: string; title: string }[];
+  /**
+   * Recalls past the results whose text has what was given, as sharesWords reads it. The rules clear what they can't tie to a
+   * product, so a maker or one product word given alone ends up here. Only looked for when no recall is tied to the text.
+   */
+  mentioned: { recalls: { recallNumber: string; title: string }[]; total: number };
   checked: { recalls: number; from: string | null; to: string | null; yearsMissing: number[] };
   note: string;
 }
@@ -62,22 +67,65 @@ const standaloneNumbers = (text: string) => new Set(text.split(/[^A-Za-z0-9]+/))
 
 /** A model is only digits on some recalls, and the rules read codes with letters. Long enough not to be a year or a count. */
 const MIN_DIGITS_MODEL = 5;
+/** A word this few recalls have says something on its own, about 3 in 1,000 of those held: Bodum does, stroller and wooden don't. */
+const RARE_WORD_SHARE = 0.003;
+const MAX_WORDS_SOUGHT = 8;
+
+/** Neighbouring words that read as one code when joined: BRZ 0083 is BRZ0083. These only widen what gets read: the rules still decide. */
+function joinedCodes(text: string): string[] {
+  const parts = text.toUpperCase().split(/\s+/).map(normalizeModel).filter(Boolean);
+  return parts.slice(1).map((part, i) => parts[i] + part).filter((t) => t.length >= 4 && /\d/.test(t) && /[A-Z]/.test(t));
+}
+
+/**
+ * Recalls whose text could be what was typed: the whole of it in a row, every word of it, or a word few recalls have. Reading the
+ * text itself, so it doesn't lean on the rules, which clear what they can't tie to a product. Separators become spaces, so the
+ * pieces of a date don't read as one number.
+ */
+async function recallsWithTypedWords(db: Queryable, text: string): Promise<{ recallNumber: string; title: string }[]> {
+  const phrase = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (phrase.length < 2) return [];
+  const sought = [...words(text)].slice(0, MAX_WORDS_SOUGHT);
+  const { rows } = await db.query<{ recall_number: string; title: string }>(
+    `with sought as (select unnest($2::text[]) as word),
+     held as (
+       select r.recall_number, r.title, r.recall_date,
+         ' ' || regexp_replace(lower(r.title || ' ' || r.description || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(r.products) p), '')), '[^a-z0-9]+', ' ', 'g') || ' ' as text
+       from recalls r where r.recall_date >= $1::date
+     ),
+     rarity as (select s.word, count(h.recall_number) as recalls from sought s left join held h on position(s.word in h.text) > 0 group by s.word)
+     select h.recall_number, h.title
+     from held h
+     where position(' ' || $3 || ' ' in h.text) > 0
+       or (
+         cardinality($2::text[]) > 0
+         and (
+           not exists (select 1 from sought s where position(s.word in h.text) = 0)
+           or exists (select 1 from rarity x where x.recalls <= greatest(1, ceil((select count(*) from held) * $4::float8)) and position(x.word in h.text) > 0)
+         )
+       )
+     order by h.recall_date desc, h.recall_number desc`,
+    [CHECK_FROM, sought, phrase, RARE_WORD_SHARE],
+  );
+  return rows.map((r) => ({ recallNumber: r.recall_number, title: r.title }));
+}
 
 export async function checkText(
   db: Queryable,
   input: TextCheck,
   today: string,
-  opts: { maxCandidates?: number; maxResults?: number } = {},
+  opts: { maxCandidates?: number; maxResults?: number; mentions?: boolean } = {},
 ): Promise<TextCheckAnswer> {
   const text = `${input.title} ${input.model}`.trim();
-  const typedModel = normalizeModel(input.model);
+  // A number typed alone counts as the model, whichever field it went in.
+  const typedModel = normalizeModel(input.model) || (/^[\d\s.-]+$/.test(input.title) ? normalizeModel(input.title) : "");
   const { rows: counted } = await db.query<{ n: string; first: string | null; last: string | null }>(
     "select count(*)::text as n, min(recall_date)::text as first, max(recall_date)::text as last from recalls where recall_date >= $1::date",
     [CHECK_FROM],
   );
   const yearsMissing = await missingRecallYears(db, Number(CHECK_FROM.slice(0, 4)), today);
   // Compared with the punctuation out of both sides, as the rules do: BRZ-0083 and BRZ 0083 are BRZ0083.
-  const tokens = [...new Set([...modelTokens(text.toUpperCase()).map(normalizeModel), typedModel])].filter((t) => t.length >= 3);
+  const tokens = [...new Set([...modelTokens(text.toUpperCase()).map(normalizeModel), ...joinedCodes(text), typedModel])].filter((t) => t.length >= 3);
   const { rows } = await db.query<Pick<Recall, "title" | "description" | "products" | "retailers"> & { recall_number: string; recall_date: string; url: string | null; near: string }>(
     `with near as (
        select recall_id,
@@ -110,11 +158,15 @@ export async function checkText(
     }
     return { recall, tied, verdict };
   });
-  // A cut-off list has to keep the recalls that name this text, ahead of ones that only share a kind of product.
-  const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied ? 1 : 2);
-  const found = judged
-    .filter((j) => j.verdict.verdict !== "CLEARED")
-    .sort((a, b) => rank(a) - rank(b));
+
+  const kept = judged.filter((j) => j.verdict.verdict !== "CLEARED");
+  const withWords = opts.mentions === false || kept.some((j) => j.tied) ? [] : await recallsWithTypedWords(db, text);
+  const hasWords = new Set(withWords.map((r) => r.recallNumber));
+  // A cut-off list has to keep the recalls that could be this text, ahead of ones that only share a kind of product.
+  const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied ? 1 : hasWords.has(j.recall.recall_number) ? 2 : 3);
+  const found = kept.sort((a, b) => rank(a) - rank(b));
+  const foundNumbers = new Set(found.map((j) => j.recall.recall_number));
+  const past = withWords.filter((r) => !foundNumbers.has(r.recallNumber));
   const limit = opts.maxResults ?? MAX_RESULTS;
   return {
     results: found.slice(0, limit).map(({ recall, tied, verdict }) => ({
@@ -125,16 +177,14 @@ export async function checkText(
       verdict: verdict.verdict as TextCheckResult["verdict"],
       strength: verdict.strength,
       tiedToRecall: tied,
+      sharesWords: hasWords.has(recall.recall_number),
       reason: verdict.reason,
       missing: verdict.missing,
     })),
     more: Math.max(0, found.length - limit),
     cleared: judged.filter((j) => j.verdict.verdict === "CLEARED").length,
     notJudged: Math.max(0, Number(rows[0]?.near ?? 0) - rows.length),
-    sameMaker: judged
-      .filter((j) => j.verdict.verdict === "CLEARED" && j.verdict.strength === "BRAND")
-      .slice(0, limit)
-      .map(({ recall }) => ({ recallNumber: recall.recall_number, title: recall.title })),
+    mentioned: { recalls: past.slice(0, limit), total: past.length },
     checked: { recalls: Number(counted[0].n), from: counted[0].first, to: counted[0].last, yearsMissing },
     note: NOTE,
   };
@@ -155,7 +205,7 @@ export function readListingCheck(answer: TextCheckAnswer, listing: { brand: stri
 
 /** Every result, and the listing's whole text: cutting it short could drop the model that names a recall. */
 export const checkListing = (db: Queryable, listing: { title: string; brand: string | null }, today: string) =>
-  checkText(db, { title: `${listing.brand ?? ""} ${listing.title}`.trim(), model: "" }, today, { maxResults: MAX_CANDIDATES });
+  checkText(db, { title: `${listing.brand ?? ""} ${listing.title}`.trim(), model: "" }, today, { maxResults: MAX_CANDIDATES, mentions: false });
 
 const RECALL_NUMBER = /^[A-Za-z0-9-]{1,16}$/;
 

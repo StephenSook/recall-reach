@@ -27,6 +27,8 @@ const ERRORS: Record<string, string> = {
 };
 
 const NOTHING_TYPED = "Type what's on the label, or a model number.";
+/** Enough to open the whole list of a product kind. The public API's own list stays shorter. */
+const MAX_SHOWN = 60;
 
 const typed = (value: string | string[] | undefined) => (typeof value === "string" ? value : undefined);
 
@@ -36,7 +38,8 @@ async function checkItem(title: string, model: string): Promise<{ answer: ItemAn
   if ("error" in input) return { refused: NOTHING_TYPED };
   if (!publicCheckAllowed(await headers())) return { refused: ERRORS.BUSY };
   try {
-    return { answer: readItemAnswer(await checkText(getDb(), input, businessDay())), checked: `${input.title} ${input.model}`.trim() };
+    const checked = `${input.title} ${input.model}`.trim();
+    return { answer: readItemAnswer(await checkText(getDb(), input, businessDay(), { maxResults: MAX_SHOWN }), checked), checked };
   } catch (err) {
     // The name only: a database error can quote the text it was given.
     console.error("one item check failed:", err instanceof Error ? err.name : "unknown error");
