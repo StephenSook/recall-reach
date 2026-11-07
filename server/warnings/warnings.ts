@@ -73,6 +73,9 @@ export function parseWarningsCsv(text: string): Warning[] {
     });
   }
   if (rows.length < MIN_ROWS) throw new WarningsUnreadable(`CPSC's warnings file had only ${rows.length} rows`);
+  // A file with the right first column and the rest missing or blank must not overwrite what's held. 7 of 382 were blank when measured.
+  const blank = rows.filter((w) => !w.hazard.trim() && !w.consumerAction.trim()).length;
+  if (rows.some((w) => !w.product.trim()) || blank > rows.length / 4) throw new WarningsUnreadable("CPSC's warnings file is missing its text");
   return rows;
 }
 
@@ -147,8 +150,10 @@ export function descriptiveWords(products: string[]): Set<string> {
  */
 export function nearWarning(w: Pick<Warning, "product" | "description">, title: string, maker: string): boolean {
   if (!wordsOf(title).includes(maker)) return false;
-  const { verdict, strength } = verdictFor({ title: `${maker} Recalls ${w.product}`, description: w.description, products: [{ name: w.product, model: "", type: null, units: null }], retailers: [] }, { title });
-  return verdict !== "CLEARED" && (strength === "BRAND" || strength === "CONFIRMED");
+  const { verdict, strength, matched } = verdictFor({ title: `${maker} Recalls ${w.product}`, description: w.description, products: [{ name: w.product, model: "", type: null, units: null }], retailers: [] }, { title });
+  if (verdict === "CLEARED") return false;
+  // The maker alone isn't enough: the same maker's other product isn't what CPSC warned about.
+  return strength === "CONFIRMED" || (strength === "BRAND" && matched.some((m) => m.startsWith("product:")));
 }
 
 /** Adds what these titles came near, and says how many it added. Only ever adds, and touches no recall row. */
@@ -203,13 +208,17 @@ export async function checkStoredShopsAgainstWarnings(db: Queryable, opts: { bud
   const { rows } = await db.query<{ id: string }>(
     `select id from shops
      where kind = 'REAL' and (warnings_checked_at is null or warnings_checked_at < (select ok_at from safety_warning_reads))
-     order by warnings_checked_at nulls first, id`,
+     order by warnings_tried_at nulls first, id`,
   );
   const started = Date.now();
   const budget = opts.budgetMs ?? STORED_SHOPS_BUDGET_MS;
   let checked = 0;
+  let tried = 0;
   for (const { id } of rows) {
-    if (Date.now() - started >= budget || checked >= (opts.maxShops ?? Infinity)) break;
+    if (Date.now() - started >= budget || tried >= (opts.maxShops ?? Infinity)) break;
+    tried++;
+    // Before the check, so one that keeps failing goes to the back of the line.
+    await db.query("update shops set warnings_tried_at = now() where id = $1", [id]).catch(() => null);
     if (await checkShopAgainstWarnings(db, id)) checked++;
   }
   return { checked, waiting: rows.length - checked };

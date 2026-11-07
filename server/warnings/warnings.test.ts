@@ -52,6 +52,8 @@ describe("reading CPSC's warnings file", () => {
     ["a CSV with other columns", `"a","b"\r\n"1","2"`],
     ["a file with far too few rows", csv(row())],
     ["nothing", ""],
+    ["the right first column and none of the rest", ['"Product Safety Warning Number","Product Safety Warning Date"', ...Array.from({ length: 120 }, (_, i) => `"26-${i}","October 1, 2026"`)].join("\r\n")],
+    ["rows with the hazards blank", csv(...Array.from({ length: 120 }, (_, i) => row({ number: `26-${i}`, hazard: "", action: "" })))],
   ])("refuses %s, and never reads it as data", (_name, text) => {
     expect(() => parseWarningsCsv(text)).toThrow(WarningsUnreadable);
   });
@@ -172,6 +174,31 @@ describe("keeping them", () => {
     it("reads a long title only as far as a title can be", async () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [`${"x ".repeat(300)}Mbabyjon crib bumpers`])).toBe(0);
       expect(await checkTitlesAgainstWarnings(db, shopId, [`Mbabyjon crib bumpers ${"x ".repeat(300)}`])).toBe(1);
+    });
+
+    it("a different product from the same maker isn't a match, even when CPSC's text points elsewhere", async () => {
+      await db.query("update safety_warnings set description = 'Check the website to determine whether your model is affected.' where warning_number = '27-002'");
+      expect(await checkTitlesAgainstWarnings(db, shopId, ["Mbabyjon coffee mug"])).toBe(0);
+      expect(await checkTitlesAgainstWarnings(db, shopId, ["Mbabyjon crib bumpers"])).toBe(1);
+    });
+
+    it("a shop that keeps failing goes to the back, so it can't hold up the rest", async () => {
+      const second = await createShop(db, { name: "Second", kind: "REAL" });
+      await db.query("insert into shop_items (shop_id, title, source) values ($1, 'Mbabyjon crib bumpers', 'test'), ($2, 'Mbabyjon crib bumpers', 'test')", [shopId, second]);
+      await db.query("insert into safety_warning_reads (ok_at) values ('2026-11-07T00:00:00Z')");
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const failing = {
+        query: async (sql: string, params?: unknown[]) => {
+          if (sql.includes("from order_lines") && params?.[0] === firstInLine.id) throw new Error("slow");
+          return db.query(sql, params);
+        },
+      } as unknown as typeof db;
+      const firstInLine = (await db.query<{ id: string }>("select id from shops where kind = 'REAL' order by warnings_checked_at nulls first, id limit 1")).rows[0];
+      await checkStoredShopsAgainstWarnings(failing, { budgetMs: 60_000, maxShops: 1 });
+      await checkStoredShopsAgainstWarnings(failing, { budgetMs: 60_000, maxShops: 1 });
+      error.mockRestore();
+      const { rows } = await db.query<{ id: string }>("select id from shops where warnings_checked_at is not null");
+      expect(rows.map((r) => r.id)).toEqual([[shopId, second].find((id) => id !== firstInLine.id)]);
     });
 
     it("adds each title once, however often it's checked", async () => {
