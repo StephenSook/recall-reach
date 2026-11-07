@@ -102,6 +102,16 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 - This checks CPSC recalls. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls.
 - Tested on demo data and public listings. No real shop has run it yet.
 
+## What the real sandbox did
+
+Measured on PayPal's sandbox, each with its date. The app is built around these, not around what a doc led us to expect.
+
+- **Nov 5, 2026.** Repeating a refund with the same `PayPal-Request-Id` returned the first refund, HTTP 200 with the same id, so nothing was paid twice. A new request id on a fully refunded payment was refused: HTTP 422, `CAPTURE_FULLY_REFUNDED`.
+- **Nov 5, 2026.** A new sale wasn't in Transaction Search right after it was made: 0 rows. It was there when read again about 213 minutes later. PayPal documents up to 3 hours. So a shop can't find its newest sales, and the demo reads an older pool of real sandbox sales for its history.
+- **Nov 6, 2026.** `custom_field` came back on no Transaction Search row, even for a payment that set `custom_id`. So the app links sales by invoice id or SKU.
+- **Nov 6, 2026.** Read at 17:52 UTC, `/v1/reporting/balances` answered with an `as_of_time` of 12:59:59 UTC, about 5 hours old. A balance read isn't the balance right now.
+- **Nov 6, 2026.** From 17:37 UTC, refunds of $30 and up answered `PENDING` with reason `ECHECK`, including calls with no app code in the way. Refunds of $1, $5 and $20 completed. We don't know why. It's open at `/evidence/defects`.
+
 ## How it's built
 
 Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Community for the queue and Recall Replay. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
