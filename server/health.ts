@@ -138,8 +138,8 @@ export async function getHealth(
       `select ${OVERDUE} as any`,
       [checkedAt, PAYPAL_RETENTION_HOURS],
     );
-    const lastPoll = await db.query<{ status: string; finished_at: unknown }>(
-      "select status, finished_at from cpsc_pulls where status <> 'running' and range_field = 'LastPublishDate' order by finished_at desc limit 1",
+    const lastPoll = await db.query<{ status: string; finished_at: unknown; error: string | null }>(
+      "select status, finished_at, error from cpsc_pulls where status <> 'running' and range_field = 'LastPublishDate' order by finished_at desc limit 1",
     );
     const polledAt = iso(lastPoll.rows[0]?.finished_at);
     const outage = await db.query<{ last_good: unknown; since: unknown }>(
@@ -166,7 +166,9 @@ export async function getHealth(
     };
     const recent = (at: string | null) => at !== null && now.getTime() - Date.parse(at) <= MAX_PULL_AGE_MS;
     const lastStatus = lastPoll.rows[0]?.status;
-    const cpscFailing = (poll.lastPollOk === false && recent(poll.lastPollAt)) || (lastStatus !== undefined && lastStatus !== "ok" && recent(polledAt));
+    // A failed row can be our own write failing after CPSC answered. Only CPSC's own errors, which all say so, count as CPSC.
+    const cpscSaidSo = lastStatus === "partial" || (lastStatus === "failed" && lastPoll.rows[0]?.error?.startsWith("CPSC ") === true);
+    const cpscFailing = (poll.lastPollOk === false && recent(poll.lastPollAt)) || (cpscSaidSo && recent(polledAt));
     const oursOff = Object.entries(checks).some(([name, on]) => !on && name !== "lastPull" && name !== "poll");
     const allOk = Object.values(checks).every(Boolean);
     return {

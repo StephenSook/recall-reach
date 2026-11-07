@@ -76,8 +76,8 @@ describe("getHealth", () => {
     const SECRET = "r".repeat(32);
     const env = { PAYPAL_WEBHOOK_ID: WEBHOOK_ID, RECORD_HMAC_SECRET: SECRET };
     const NOW = new Date("2026-11-06T12:00:00Z");
-    const pulled = (status: string, finished = "2026-11-06T11:30:00Z") =>
-      db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', $1, $2::timestamptz)", [status, finished]);
+    const pulled = (status: string, finished = "2026-11-06T11:30:00Z", error: string | null = status === "failed" ? "CPSC request failed: HTTP 503" : null) =>
+      db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at, error) values ('LastPublishDate', '2026-11-05', '2026-11-06', $1, $2::timestamptz, $3)", [status, finished, error]);
     const check = (poll?: Parameters<typeof getHealth>[2]) => getHealth(db, env, poll, NOW);
 
     it("says which build answered, shortened, and null when it can't tell", async () => {
@@ -129,6 +129,13 @@ describe("getHealth", () => {
       it("isn't CPSC when the last failure is old too, because nothing has tried since", async () => {
         await allElseWell();
         await pulled("failed", "2026-11-06T02:00:00Z");
+        expect(await check()).toMatchObject({ ok: false, degraded: null });
+      });
+
+      it("isn't CPSC when our own write failed: CPSC answered, and we couldn't store it", async () => {
+        await allElseWell();
+        await pulled("ok", "2026-11-06T08:00:00Z");
+        await pulled("failed", "2026-11-06T11:30:00Z", "duplicate key value violates unique constraint");
         expect(await check()).toMatchObject({ ok: false, degraded: null });
       });
 
