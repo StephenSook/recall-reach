@@ -9,30 +9,67 @@ export default function JudgeDoor() {
       </header>
       <p>Real CPSC recalls and real PayPal sandbox payments, on a demo shop made just for you.</p>
       <StartDemoButton />
+      <p className="note" data-testid="demo-changes">
+        What the demo changes: a shop of its own, with its own sandbox sales, notices and refunds, all deleted after 48 hours. It emails nobody. Refunds use PayPal sandbox test money. No real money moves.
+      </p>
+      <div className="window table-window">
+        <table className="ledger" data-testid="time-table">
+          <thead>
+            <tr>
+              <th>If you have</th>
+              <th>Do this</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>30 seconds</td>
+              <td>
+                <Link href="/replay">Recall Replay</Link>, and press its recount.
+              </td>
+            </tr>
+            <tr>
+              <td>3 minutes</td>
+              <td>Start a demo shop, then steps 1 to 3.</td>
+            </tr>
+            <tr>
+              <td>10 minutes</td>
+              <td>All the steps.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <ol className="window cleared-list" data-testid="itinerary">
         <li>
           <strong>Tell a family.</strong> Open the card for recall 27072, press Approve this notice, then open it in mail and follow its link to the family&apos;s page.
+          <span className="quiet">Look for CPSC&apos;s own words in the message, and that it opens in your mail, not ours.</span>
         </li>
         <li>
           <strong>Refund a sale made after a recall.</strong> On the card for recall 27027, press Review refund, then the refund button, then Check it against PayPal.
+          <span className="quiet">Look for four records side by side, and whether they agree. If PayPal hasn&apos;t finished the refund, the page says so.</span>
         </li>
         <li>
           <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue. PayPal can take a minute or two. With a PayPal sandbox buyer login, Buy with a PayPal sandbox login does the same on PayPal&apos;s own page.
+          <span className="quiet">Look for a new card arriving with nothing pressed, and how many seconds it took.</span>
         </li>
         <li>
           <strong>See the refund windows.</strong> In the queue, open a sale&apos;s row, then Why this came up, then Refund windows.
+          <span className="quiet">Look for each sale&apos;s 180 days as a bar, with a line at the recall date and one at today.</span>
         </li>
         <li>
           <strong>Ask what a recall needs.</strong> On the card for recall 27040, press Approve this check request and answer on the family&apos;s page.
+          <span className="quiet">Look for the answer changing the seller&apos;s card, with no money moved.</span>
         </li>
         <li>
           <strong>See it stay quiet.</strong> <Link href="/replay">Recall Replay</Link> runs every recall from 2025 on, and you can recount it. <Link href="/eval">The eval</Link> has held-out numbers beside a word-match baseline.
+          <span className="quiet">Look for how many recalls had nothing near them, and where the eval says it falls short.</span>
         </li>
         <li>
           <strong>Try to break it.</strong> <Link href="/safety">The safety checks</Link> try five attacks on the real code.
+          <span className="quiet">Look for what stopped each one, and the test that pins it.</span>
         </li>
         <li>
-          <strong>Ask the shopping agent.</strong> <Link href="/shopper">Press a chip</Link> and wait about ten seconds. Look for a listing it wouldn&apos;t offer, with the recall named, and open What the agent did. Listings change, so a run may come back different, and it may not stop any. It uses real Claude and real listings, on a small daily limit.
+          <strong>Ask the shopping agent.</strong> <Link href="/shopper">Press a chip</Link> and wait about ten seconds. It uses real Claude and real listings, on a small daily limit.
+          <span className="quiet">Look for a listing it wouldn&apos;t offer, with the recall named, and open What the agent did. Listings change, so a run may come back different, and it may not stop any.</span>
         </li>
       </ol>
       <h2 className="section-title">From a terminal</h2>
