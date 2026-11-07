@@ -140,6 +140,12 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "PayPal reached from one folder",
+    status: "claimed",
+    feature: true,
+    evidence: [{ file: "server/paypal/boundary.test.ts", find: "gives Claude's code no way to PayPal's" }],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,
