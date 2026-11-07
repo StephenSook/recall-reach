@@ -11,6 +11,24 @@ export interface Defect {
 
 export const DEFECTS: Defect[] = [
   {
+    title: "Check one item could say no recall named something when one did",
+    found:
+      "Code review of the new form, three rounds running. Bodum, sterilizer and BRZ 0083 in the label field, then plurals and a letter wrong, all read as no recall. The rules clear what they can't tie to a product, and the page turned that into a statement about every recall. A crafted link could also put words inside the answer.",
+    changed:
+      "It now also reads CPSC's text directly for what was typed. A miss says we didn't find a recall naming this, which is all a search can say. Nothing typed goes in that sentence.",
+    commits: ["2d38e21", "3acfc16", "300f593"],
+    checked: "787 cases typed from 150 recalls' own text, with plurals and a dropped letter: none read as not found. That's typing built from CPSC's words, not owners' typing, so a miss is still possible.",
+    open: false,
+  },
+  {
+    title: "A size beside an exact model stopped it confirming",
+    found: "Code review found 12000-BTU beside a recalled model read as a second code, after a change of ours the same night. The first fix was too wide, and let 7928-OZ pass beside a recall listing 7927-OZ.",
+    changed: "A size says nothing about which unit this is, unless this recall's own models are shaped that way.",
+    commits: ["a1d2cc7", "ffff51c"],
+    checked: "Sizes added beside the model in 1,374 confirmed cases from CPSC's records: none stopped confirming. 7928-OZ is a near-miss again.",
+    open: false,
+  },
+  {
     title: "A store check read a shared brand as a reason to pull an item",
     found:
       "We ran the check on one real store's public listings. A title that only shared a word with a recall read as if it should come off the shelf, and one card said same line when the shared words only said who the product was for.",
