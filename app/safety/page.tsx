@@ -3,6 +3,7 @@ import { RunAgainButton } from "@/app/replay/RunAgainButton";
 import { getDb } from "@/server/db/pg";
 import { latestSafetyRun, type AttackOutcome } from "@/server/safety/attacks";
 import { TESTED_BY } from "./testedBy";
+import { TrickCheck } from "./TrickCheck";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,7 @@ export default async function SafetyPage({ searchParams }: { searchParams: Promi
           ))}
         </section>
       ) : null}
+      <TrickCheck />
       <p className="note">
         PayPal and the model are stand-ins here, so a check never moves sandbox money or spends anything. The webhook check, the refund rules, the agent&apos;s tools and the matcher are the real code, on throwaway shops that are deleted afterwards. {run ? `Run ${ranAt(run.ranAt)}.` : null}
       </p>

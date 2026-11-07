@@ -90,7 +90,7 @@ export type TraceEntry = { tool: string; ok: boolean; item?: string; query?: str
 type Outcome = "FINDING" | "NO_FINDING" | "REFUSED" | "STEP_LIMIT";
 
 /** Null means it passed. */
-function findingProblem(finding: Finding, recall: Snapshot, item: Snapshot): OurText | null {
+export function findingProblem(finding: Finding, recall: Pick<Snapshot, "quotable">, item: Pick<Snapshot, "quotable">): OurText | null {
   if (finding.item_id !== TARGET) return ourText("Record the finding for item-1.");
   for (const e of finding.evidence) {
     if (e.source === "recall" && !quoted(recall.quotable, e.quote)) return ourText("A recall quote is not in the recall's text. Copy the exact words.");
