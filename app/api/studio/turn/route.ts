@@ -20,6 +20,8 @@ const MAX_ANSWER_TOKENS = 2000;
 /**
  * The day's limit is checked before a call and counted after it, so turns waiting together could all pass it. At most
  * this many wait at once, so a burst passes the limit by two turns at most, about $0.70. AG Studio sends one turn at a time.
+ * That bound needs the spend written: a database that answered reads but refused writes would let calls go uncounted.
+ * Accepted, since every other page here would be failing too.
  */
 const MAX_WAITING = 2;
 let waiting = 0;
