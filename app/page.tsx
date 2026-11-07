@@ -6,6 +6,7 @@ const DEMO_MESSAGES: Record<string, string> = {
   failed: "The demo shop could not be set up. Please try again.",
   busy: "Too many demo shops from here. Try again in an hour.",
   deleted: "Your shop's data was deleted.",
+  noqueue: "Start a demo shop to see its queue.",
 };
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ demo?: string | string[] }> }) {

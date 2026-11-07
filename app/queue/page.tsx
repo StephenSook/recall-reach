@@ -98,7 +98,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
             <p>
               Notice: <strong data-testid="notice-state">{NOTICE_STATE[row.notice.state]}</strong>
             </p>
-            {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it</p> : null}
+            {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it. Recall steps not confirmed.</p> : null}
             {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
             {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
             {notifiable && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
@@ -227,7 +227,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[]; answered?: string | string[] }> }) {
   const session = await currentSession();
-  if (!session) redirect("/");
+  if (!session) redirect("/?demo=noqueue");
   const { rows, shop, listings, coverage, pendingLiveSales, unidentified } = await loadQueue(getDb(), session.shopId, session.sessionId);
   // A session can outlast its shop, which is deleted with its data. There is no queue left to show.
   if (!shop) redirect("/");

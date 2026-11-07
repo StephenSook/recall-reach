@@ -121,7 +121,7 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
   await expect(recall(page, "27072").locator(".chips")).toContainText("Family responded");
   await expect(recall(page, "27072").locator(".chips")).not.toContainText("Needs review");
   await expect(page.locator(".page-head")).toContainText("8 items wait for you");
-  await expect(recall(page, "27072").getByTestId("family-report")).toHaveText("Family says they stopped using it");
+  await expect(recall(page, "27072").getByTestId("family-report")).toHaveText("Family says they stopped using it. Recall steps not confirmed.");
 
   // REFUND ELIGIBLE: a real sandbox capture made today, truly after the recall date.
   const papablic = recall(page, "27027");
@@ -460,6 +460,14 @@ test("the safety checks run live, and every one is refused", async ({ page }) =>
   await expect(page.getByTestId("safety-clock")).toContainText("5 of 5 refused");
   await expect(page.locator('article[data-outcome="REFUSED"]')).toHaveCount(5);
   await expect(page.locator('article[data-attack="forged-webhook"]')).toContainText("401");
+});
+
+test("the Queue link with no shop says what to do, rather than looking like nothing happened", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Queue" }).click();
+  await expect(page).toHaveURL(/\/\?demo=noqueue$/);
+  await expect(page.getByRole("alert")).toHaveText("Start a demo shop to see its queue.");
+  await expect(page.getByRole("button", { name: "Try it as a demo shop" })).toBeVisible();
 });
 
 test("the judge's door works logged out, and every page it names is there", async ({ page, request }) => {

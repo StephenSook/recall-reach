@@ -33,5 +33,5 @@ test("a shop checks its own file, sees real matches with refunds off, and delete
   await page.getByRole("button", { name: "Delete everything" }).click();
   await expect(page.locator(".alert")).toHaveText("Your shop's data was deleted.");
   await page.goto("/queue");
-  await expect(page).toHaveURL(/\/$/); // the session is gone with the shop
+  await expect(page).toHaveURL(/\/\?demo=noqueue$/); // the session is gone with the shop
 });

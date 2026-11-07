@@ -13,6 +13,10 @@ describe("home page", () => {
     expect(await render("busy")).toContain("Too many demo shops from here. Try again in an hour.");
   });
 
+  it("says what to do when someone reaches the queue with no shop", async () => {
+    expect(await render("noqueue")).toContain("Start a demo shop to see its queue.");
+  });
+
   it("shows no message otherwise, and never repeats what the address says", async () => {
     const page = await render("<b>anything</b>");
     expect(page).not.toContain('role="alert"');

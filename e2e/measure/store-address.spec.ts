@@ -48,5 +48,5 @@ test("a store types its address, sees what needs a check with no claim about sal
   }
   await expect(page.locator(".alert")).toHaveText("Your shop's data was deleted.");
   await page.goto("/queue");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/\?demo=noqueue$/);
 });
