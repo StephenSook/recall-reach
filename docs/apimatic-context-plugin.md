@@ -6,7 +6,9 @@ Its eight TypeScript skills were copied into this project only. Its files are Ma
 
 Separately, APIMatic's CLI generated a TypeScript SDK and a docs portal from our own [`openapi.yaml`](../openapi.yaml), on Nov 7, 2026: the SDK is in [`sdk/typescript`](../sdk/typescript), and the portal is static files in `public/api-docs`, served at [`/api-docs`](https://recall-reach-web-e022.onrender.com/api-docs) by this site, so it doesn't depend on an APIMatic account staying open. Its settings are in [`apimatic/apimatic.json`](../apimatic/apimatic.json). `scripts/sdk.test.ts` checks the SDK's models read what the real routes answer, and `scripts/sdk-live.ts` calls the deployed site through it. Validating the spec first found six errors, all missing descriptions and a YAML quoting slip, which were fixed in the spec itself.
 
-To generate them again, with an APIMatic login: put `openapi.yaml` in `src/spec/` and `apimatic.json` in `src/` of an empty folder, then run `apimatic api validate --file src/spec/openapi.yaml`, `apimatic sdk generate -l typescript -i .` and `apimatic portal generate -i .` there.
+To generate them again, with an APIMatic login: put `openapi.yaml` in `src/spec/` and `apimatic.json` in `src/` of an empty folder, then run `apimatic api validate --file src/spec/openapi.yaml`, `apimatic sdk generate -l typescript -i .` and `apimatic portal generate -i .` there. Copy the SDK's source to `sdk/typescript` and the portal to `public/api-docs`, then, last, run `pnpm exec tsx scripts/apimatic-tidy.ts sdk/typescript public/api-docs`. APIMatic's templates write dashes and curly quotes, which our own writing doesn't use: it turns a dash between words into a comma, and in scripts and style sheets writes any other one as its escape, so the code is unchanged. `scripts/apimatic-tidy.test.ts` fails if one is left.
+
+The portal's Send button, on the check's page, was tried once in a browser on Nov 7, 2026: it called the deployed site with the BRZ0083 example and showed the answer, HTTP 200 with recall 27072 first.
 
 ## What it changed
 
