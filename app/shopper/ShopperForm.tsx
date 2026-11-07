@@ -25,7 +25,7 @@ const CHECK_WORDS = { NAMES_A_RECALL: "its words match a recall", NO_MATCH_FOUND
 function Steps({ steps }: { steps: ShopperView["steps"] }) {
   if (steps.length === 0) return null;
   return (
-    <details className="window" data-testid="shopper-steps">
+    <details className="window shopper-result" data-testid="shopper-steps">
       <summary>What the agent did ({steps.length} steps)</summary>
       <ol>
         {steps.map((step, i) =>
@@ -119,7 +119,7 @@ export function ShopperForm() {
       {view && view.outcome !== "PICKED" ? <p role="status" data-testid="shopper-said">{SAID[view.outcome]}</p> : null}
       {view
         ? view.blocked.map((b) => (
-            <article key={b.title} className="window" data-testid="shopper-blocked">
+            <article key={b.title} className="window shopper-result" data-testid="shopper-blocked">
               <h2 className="section-title">Not offered: {b.title}</h2>
               <p>{money(b.priceCents)}. This listing&apos;s words match a recall: its model, or its maker and product line. That doesn&apos;t say this item is recalled or that a store did anything wrong. The agent can&apos;t offer it, so a person should read the recall.</p>
               <ul>
@@ -133,7 +133,7 @@ export function ShopperForm() {
           ))
         : null}
       {view?.pick ? (
-        <article className="window" data-testid="shopper-pick">
+        <article className="window shopper-result" data-testid="shopper-pick">
           <h2 className="section-title">Offered: {view.pick.title}</h2>
           <p>
             {view.pick.brand ? `${view.pick.brand}. ` : ""}

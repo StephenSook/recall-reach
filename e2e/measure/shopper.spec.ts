@@ -26,5 +26,6 @@ test("it searches, checks a listing against recalls, and shows what it did", asy
   } else {
     await expect(page.getByTestId("shopper-said")).toBeVisible();
   }
-  console.log(main.replace(/\s+/g, " ").slice(0, 1200));
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT, fullPage: true });
+  console.log(main.replace(/\s+/g, " ").slice(0, 1800));
 });

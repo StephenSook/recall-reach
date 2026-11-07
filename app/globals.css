@@ -879,3 +879,12 @@ pre {
   font-size: 14px;
   color: var(--color-body);
 }
+
+/* The shopping agent's results. */
+.shopper-result {
+  margin-top: 16px;
+  padding: 14px 16px;
+}
+.shopper-result > .section-title {
+  margin-top: 0;
+}
