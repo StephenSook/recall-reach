@@ -1,3 +1,4 @@
+import { lastClaudeAnswer } from "./agent/claude";
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
 import type { RecallPollStatus } from "./jobs/appJobs";
@@ -51,6 +52,8 @@ export interface Health {
    * and a free tier going quiet is not the app being down.
    */
   market: { lastOkAt: string | null; fresh: boolean };
+  /** Claude's last good answer. Not part of ok: everything else works without it. The probe fails on it, so nobody finds out from a judge. */
+  claude: { lastOkAt: string | null; fresh: boolean };
   paypal: {
     /** Webhook certificates are accepted only from PayPal sandbox hosts (server/paypal/webhooks.ts). */
     environment: "sandbox";
@@ -64,8 +67,18 @@ const MAX_PULL_AGE_MS = 2.5 * 3_600_000;
 const MAX_REPLAY_AGE_MS = 48 * 3_600_000;
 /** Each recall is searched again after 7 days and nothing is due until then, so a healthy search can go quiet for most of a week. */
 const MAX_MARKET_AGE_MS = 8 * 86_400_000;
+const MAX_CLAUDE_AGE_MS = 2 * 86_400_000;
 
 /** Its own try, so this query failing can't call the rest of the app down. */
+async function lastClaudeAnswerOrNull(db: Queryable): Promise<string | null> {
+  try {
+    return await lastClaudeAnswer(db);
+  } catch (err) {
+    console.error("health check: Claude query failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 async function lastMarketSearch(db: Queryable): Promise<string | null> {
   try {
     const { rows } = await db.query<{ at: unknown }>("select max(searched_at) as at from recall_sweeps where status = 'ok'");
@@ -120,6 +133,7 @@ export async function getHealth(
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
     const marketOkAt = await lastMarketSearch(db);
+    const claudeOkAt = await lastClaudeAnswerOrNull(db);
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
     const checks = {
@@ -153,6 +167,7 @@ export async function getHealth(
       poll,
       replay: { lastRunAt },
       market: { lastOkAt: marketOkAt, fresh: marketOkAt !== null && now.getTime() - Date.parse(marketOkAt) <= MAX_MARKET_AGE_MS },
+      claude: { lastOkAt: claudeOkAt, fresh: claudeOkAt !== null && now.getTime() - Date.parse(claudeOkAt) <= MAX_CLAUDE_AGE_MS },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
   } catch (err) {
@@ -166,6 +181,7 @@ export async function getHealth(
       poll,
       replay: { lastRunAt: null },
       market: { lastOkAt: null, fresh: false },
+      claude: { lastOkAt: null, fresh: false },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
   }

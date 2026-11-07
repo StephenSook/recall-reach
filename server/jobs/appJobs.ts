@@ -50,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; refreshSafety?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; refreshSafety?: (at: Date) => Promise<string>; pingClaude?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -207,6 +207,18 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
       }
     }
 
+    // Also on the heartbeat, and it keeps its own day. It says why it failed, never what the answer held.
+    let claude: string | null = null;
+    let claudeError: unknown = null;
+    if (heartbeat && deps.pingClaude && Date.now() - started < JOB_BUDGET_MS) {
+      try {
+        claude = await deps.pingClaude(at);
+      } catch (err) {
+        claudeError = err;
+        console.error(`Claude daily call failed: ${err instanceof Error ? err.name : "unknown error"}`);
+      }
+    }
+
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
     const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : touchDb ? " (shops waiting)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
@@ -219,10 +231,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
         (touchDb && sweep && sweep.shopsWaiting > 0 ? `, ${sweep.shopsWaiting} waiting` : "") +
         (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : "") +
         (safety && safety !== "FRESH" ? `, safety ${safety.toLowerCase()}` : "") +
-        (market ? `, market searched ${market.searched}, ${market.left} left${market.failed > 0 ? `, ${market.failed} failed` : ""}` : ""),
+        (market ? `, market searched ${market.searched}, ${market.left} left${market.failed > 0 ? `, ${market.failed} failed` : ""}` : "") +
+        (claude && claude !== "NOT_DUE" ? `, claude ${claude.toLowerCase()}` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? safetyError ?? marketError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? safetyError ?? marketError ?? claudeError;
     if (failure) throw failure;
   };
 

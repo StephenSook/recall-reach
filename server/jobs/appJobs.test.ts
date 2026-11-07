@@ -94,6 +94,38 @@ describe("the recall poll job", () => {
     });
   });
 
+  describe("the daily call to Claude", () => {
+    it("is asked on the hourly heartbeat, not on every poll, and says when it ran", async () => {
+      const pingClaude = vi.fn(async () => "OK");
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, pingClaude });
+      for (let tick = 0; tick < HEARTBEAT_TICKS + 1; tick++) await job.run();
+      expect(pingClaude).toHaveBeenCalledTimes(2);
+      expect(info[0]).toContain("claude ok");
+    });
+
+    it("stays quiet when it isn't due", async () => {
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, pingClaude: async () => "NOT_DUE" });
+      await job.run();
+      expect(info[0]).not.toContain("claude");
+    });
+
+    it("reports a failure without stopping the poll, and logs no message from the service", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const cpsc = cpscAnswering(() => nov5);
+        const [job] = appJobs(db, { ...cpsc.deps, pingClaude: async () => Promise.reject(new TypeError("what the service said")) });
+        await expect(job.run()).rejects.toThrow();
+        expect(recallPollStatus().lastPollOk).toBe(true);
+        expect(error.mock.calls.flat().join(" ")).toContain("TypeError");
+        expect(error.mock.calls.flat().join(" ")).not.toContain("what the service said");
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   describe("keeping Replay fresh", () => {
     it("is asked on the hourly heartbeat, not on every poll", async () => {
       const refreshReplay = vi.fn(async () => "FRESH" as const);

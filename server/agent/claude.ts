@@ -67,12 +67,48 @@ export async function askClaude(
   spent.input += response.usage.input_tokens;
   spent.output += response.usage.output_tokens;
   spent.cost += cost;
-  await db.query(
+  await countSpend(db, ask.now, cost);
+  return response;
+}
+
+const countSpend = (db: Queryable, now: Date, cost: number) =>
+  db.query(
     `insert into agent_spend (day, cost_micros) values ($1::date, $2)
      on conflict (day) do update set cost_micros = agent_spend.cost_micros + excluded.cost_micros`,
-    [businessDay(ask.now), cost],
+    [businessDay(now), cost],
   );
-  return response;
+
+const PING_EVERY_MS = 20 * 3_600_000;
+
+export type PingResult = "OK" | "NOT_DUE" | "OVER_BUDGET" | "NO_ANSWER";
+
+/**
+ * The smallest real call, on the cheapest model and with no data in it, so a spent balance can't stay green while nobody
+ * presses "Check with Claude". It counts under the day's cap. An error is thrown, so the job says so.
+ */
+export async function pingClaude(db: Queryable, client: Anthropic, now: Date): Promise<PingResult> {
+  const { rows } = await db.query<{ last_ok_at: unknown }>("select last_ok_at from claude_pings");
+  const last = rows[0] ? new Date(rows[0].last_ok_at as string).getTime() : null;
+  if (last !== null && now.getTime() - last < PING_EVERY_MS) return "NOT_DUE";
+  if ((await spentToday(db, now)) >= DAILY_CAP_MICROS) return "OVER_BUDGET";
+  const response = await client.beta.messages.create({ model: FALLBACK_MODEL, max_tokens: 5, messages: [{ role: "user", content: "Say ok." }] });
+  await countSpend(db, now, costOf(response));
+  if (!response.content.some((block) => block.type === "text" && block.text.trim().length > 0)) return "NO_ANSWER";
+  await db.query(
+    `insert into claude_pings (only_row, last_ok_at) values (true, $1)
+     on conflict (only_row) do update set last_ok_at = excluded.last_ok_at`,
+    [now.toISOString()],
+  );
+  return "OK";
+}
+
+/** The newest good answer on record, from a real check or the daily call. Calls nothing. */
+export async function lastClaudeAnswer(db: Queryable): Promise<string | null> {
+  const { rows } = await db.query<{ at: unknown }>(
+    `select greatest((select max(created_at) from agent_runs where outcome = 'FINDING'), (select last_ok_at from claude_pings)) as at`,
+  );
+  const at = rows[0]?.at;
+  return at ? new Date(at as string).toISOString() : null;
 }
 
 const canTryAnotherModel = (err: unknown) =>

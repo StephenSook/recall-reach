@@ -12,6 +12,7 @@ const healthy: Health = {
   poll: { lastPollAt: "2026-11-07T11:45:00.000Z", lastPollOk: true, dbTouched: false },
   replay: { lastRunAt: "2026-11-07T10:00:00.000Z" },
   market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true },
+  claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true },
   paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
 };
 const line = (h: Health, name: string, claude = true) => statusLines(h, { claudeKeySet: claude }).find((l) => l.service === name);
@@ -32,8 +33,9 @@ describe("the status page's lines", () => {
     }
   });
 
-  it("calls Claude only key present, and says this page doesn't call it", () => {
-    expect(line(healthy, "Claude")).toMatchObject({ state: "ok", reading: "Key present" });
+  it("gives Claude's last good answer, and says this page doesn't call it", () => {
+    expect(line(healthy, "Claude")?.state).toBe("ok");
+    expect(line(healthy, "Claude")?.reading).toMatch(/^Last good answer Nov 7, 2026, /);
     expect(line(healthy, "Claude")?.measures).toContain("never calls Claude");
     expect(line(healthy, "Claude", false)).toMatchObject({ state: "problem", reading: "No key set. The Claude check says it's unavailable." });
   });

@@ -58,9 +58,9 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
     },
     {
       service: "Claude",
-      state: env.claudeKeySet ? "ok" : "problem",
-      reading: env.claudeKeySet ? "Key present" : "No key set. The Claude check says it's unavailable.",
-      measures: "Whether a key is set. This page never calls Claude, so this doesn't show the service answers.",
+      state: !env.claudeKeySet ? "problem" : !db ? "unknown" : h.claude.fresh ? "ok" : "problem",
+      reading: !env.claudeKeySet ? "No key set. The Claude check says it's unavailable." : !db ? NOT_READ : h.claude.lastOkAt ? `Last good answer ${ranAt(h.claude.lastOkAt)}.` : "No good answer on record.",
+      measures: "The last good answer on record, from a check or a daily call on the cheapest model, and whether it's under 2 days old. This page never calls Claude.",
     },
   ];
 }

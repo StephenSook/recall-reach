@@ -86,6 +86,31 @@ describe("getHealth", () => {
       expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
     });
 
+    describe("Claude's last good answer", () => {
+      const allElseWell = async () => {
+        await pulled("ok");
+        await replayed("2026-11-06T02:00:00Z");
+      };
+      const answered = (at: string) => db.query("insert into claude_pings (last_ok_at) values ($1)", [at]);
+
+      it("says when, and that it's fresh, without being part of ok", async () => {
+        await allElseWell();
+        await answered("2026-11-05T10:00:00Z");
+        expect(await check()).toMatchObject({ ok: true, claude: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true } });
+      });
+
+      it("goes stale after 2 days, and ok stays true", async () => {
+        await allElseWell();
+        await answered("2026-11-03T10:00:00Z");
+        expect(await check()).toMatchObject({ ok: true, claude: { fresh: false } });
+      });
+
+      it("isn't fresh with no answer on record", async () => {
+        await allElseWell();
+        expect(await check()).toMatchObject({ ok: true, claude: { lastOkAt: null, fresh: false } });
+      });
+    });
+
     describe("the market search", () => {
       const swept = async (status: "ok" | "failed", at: string, recallNumber: string) => {
         const fetchImpl = async () => new Response(fixtureText, { status: 200, headers: { "content-type": "application/json" } });

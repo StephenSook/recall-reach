@@ -26,6 +26,8 @@ export async function register(): Promise<void> {
     import("./server/demo/seed"),
   ]);
   const { refreshSafety } = await import("./server/safety/attacks");
+  const { agentClientFromEnv, pingClaude } = await import("./server/agent/claude");
+  const claude = agentClientFromEnv();
   const shopDataKey = process.env.SHOP_DATA_KEY;
   startScheduler(
     appJobs(getDb(), {
@@ -35,6 +37,7 @@ export async function register(): Promise<void> {
         : undefined,
       refreshSafety: shopDataKey ? (at) => refreshSafety(getDb(), { now: at, secret: shopDataKey }) : undefined,
       sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at, undefined, DEMO_RECALL_NUMBERS),
+      pingClaude: claude ? (at) => pingClaude(getDb(), claude, at) : undefined,
     }),
   );
   console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");
