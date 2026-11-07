@@ -47,19 +47,26 @@ async function capture(page: Page): Promise<string[]> {
   return payloads;
 }
 
-/** What a value could look like if it reached a payload: strings, cents as dollars, and timestamps to the minute. */
+/** A time to the minute, the ways a page or a model might write it. A date alone would match CPSC's own recall dates. */
+function timeForms(at: Date): string[] {
+  const iso = at.toISOString();
+  const [y, m, d, hh, mm] = [iso.slice(0, 4), iso.slice(5, 7), iso.slice(8, 10), iso.slice(11, 13), iso.slice(14, 16)];
+  return [iso.slice(0, 16), `${y}-${m}-${d} ${hh}:${mm}`, `${m}/${d}/${y} ${hh}:${mm}`];
+}
+
+/** An amount in cents, the ways it might be written. */
+const centForms = (cents: number): string[] => [String(cents), (cents / 100).toFixed(2), (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })];
+
+/** What a value could look like if it reached a payload: strings, amounts and times. */
 function forms(rows: Record<string, unknown>[]): Set<string> {
   const found = new Set<string>();
   const walk = (v: unknown, key = ""): void => {
-    if (v instanceof Date) {
-      const iso = v.toISOString();
-      found.add(iso.slice(0, 16));
-      found.add(iso.slice(0, 16).replace("T", " "));
-    } else if (typeof v === "number") {
-      if (key.endsWith("_cents") && v >= 100) found.add((v / 100).toFixed(2));
+    if (v instanceof Date) timeForms(v).forEach((f) => found.add(f));
+    else if (typeof v === "number") {
+      if (key.endsWith("_cents") && v >= 100) centForms(v).forEach((f) => found.add(f));
     } else if (typeof v === "string") {
-      // A date alone would match CPSC's own recall dates, which the page shows. Anything longer is PayPal's own.
-      if (/^\d+\.\d{2}$/.test(v) || (v.length >= 6 && !/^\d{4}-\d{2}-\d{2}$/.test(v))) found.add(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : v);
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) && !Number.isNaN(Date.parse(v))) timeForms(new Date(v)).forEach((f) => found.add(f));
+      else if (/^\d+\.\d{2}$/.test(v) || (v.length >= 6 && !/^\d{4}-\d{2}-\d{2}$/.test(v))) found.add(v);
     } else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
     else if (v && typeof v === "object" && !Buffer.isBuffer(v)) for (const [k, x] of Object.entries(v)) walk(x, k);
   };
@@ -81,6 +88,15 @@ async function payPalValues(db: pg.Client): Promise<string[]> {
   const shops = await read(SHOP_SOURCES);
   return [...(await read(await labelled("data-source: paypal")))].filter((v) => !shops.has(v));
 }
+
+/** The PayPal values found in a payload. A number counts only standing alone, so 1800 doesn't match inside 18000. */
+const leaked = (text: string, values: string[]): string[] =>
+  values.filter((v) => {
+    const forms = [v, JSON.stringify(v).slice(1, -1)];
+    if (!/^[\d.,:/ T-]+$/.test(v)) return forms.some((f) => text.includes(f));
+    const alone = new RegExp(`(?<![\\d.,])${v.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}(?![\\d.,])`);
+    return alone.test(text);
+  });
 
 /** The output AG Studio's tool gave for a named call, from the payloads. */
 const outputOf = (payloads: string[], name: string): string | undefined => {
@@ -113,7 +129,8 @@ test("AG Studio's agent sends the model no value PayPal returned", async ({ page
     );
     await db.query("insert into paypal_calls (shop_id, method, path_template, status, ms, debug_id) values ($1, 'GET', '/PLANTED-PAYPAL-PATH', 200, 1, $2)", [shop, PLANTED[3]]);
     const values = await payPalValues(db);
-    for (const p of [...PLANTED, (PLANTED_CENTS / 100).toFixed(2), PLANTED_AT.slice(0, 16)]) expect(values).toContain(p);
+    const plantedForms = [...PLANTED, ...centForms(PLANTED_CENTS), ...timeForms(new Date(PLANTED_AT))];
+    for (const p of plantedForms) expect(values).toContain(p);
 
     // A PayPal value copied into the rows the page reads stays forbidden: the check never trusts a derived table.
     await db.query("begin");
@@ -128,9 +145,11 @@ test("AG Studio's agent sends the model no value PayPal returned", async ({ page
     await page.getByPlaceholder("Ask the AI Assistant...").fill("Show me the recalls");
     await page.getByRole("button", { name: "Send" }).click();
 
-    // The run finishes: the lead hears the data agent's own summary back, so complete_task was taken as valid.
+    // The run finishes: the lead hears the data agent's own summary back, so complete_task was taken as valid, and the
+    // lead's own last answer shows on the page.
     await expect.poll(() => outputOf(payloads, "delegate_to") ?? "", { timeout: 60_000 }).toContain(SUMMARY);
     expect(outputOf(payloads, "delegate_to")).toMatch(/^\{"success":true/);
+    await expect(page.getByText("Done.", { exact: true })).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(2000); // a retry, if one went out, would show up here
     // Lead delegates, data agent queries, data agent finishes, lead answers. No retries.
     expect(payloads).toHaveLength(4);
@@ -140,8 +159,14 @@ test("AG Studio's agent sends the model no value PayPal returned", async ({ page
     expect(queryAnswer).toMatch(/^\{"success":true/);
     expect(recallNumbers.filter((n) => queryAnswer?.includes(n)).length).toBeGreaterThan(10);
 
+    // The check catches each planted form put where a leak would land: in place of a recall number in the query's answer.
+    const shown = recallNumbers.find((n) => queryAnswer?.includes(n)) ?? "";
+    const withQuery = payloads.find((p) => p.includes('"execute_query"') && p.includes(shown)) ?? "";
+    expect(leaked(withQuery, values)).toEqual([]);
+    for (const p of plantedForms) expect(leaked(withQuery.replace(shown, p), values), p).not.toEqual([]);
+
     const all = payloads.join("\n");
-    expect(values.filter((v) => all.includes(v) || all.includes(JSON.stringify(v).slice(1, -1)))).toEqual([]);
+    expect(leaked(all, values)).toEqual([]);
     // Nor any PayPal field by name.
     expect(all).not.toMatch(/capture_id|order_id|debug_id|amount_cents|payer_|payee|PayPal/i);
   } finally {
