@@ -277,12 +277,18 @@ export const CLAIMS: Claim[] = [
     ],
   },
   { name: "Render", status: "claimed", evidence: [{ file: "render.yaml", find: "type: web" }] },
+  // Seen on the deployed site Nov 7, 2026: a manual start ran as Render task run trn-08d4gdbnkvfpgnmlg00anrc50, whose row
+  // replay_task_runs holds (FRESH), read back from /api/health.
+  {
+    name: "Render Workflows",
+    status: "claimed",
+    evidence: [{ file: "render.yaml", find: "type: workflow" }, { file: "workflows/replayTask.ts", call: "task" }, { file: "workflows/replayTask.ts", call: "recordTaskRun" }],
+  },
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
 
   // Being built on /studio. Claimed only once the deployed page shows it licensed and its agent changing the view.
   { name: "AG Studio", status: "cut", why: "Built, but not yet seen licensed and working on the deployed site.", mentions: ["ag studio", "ag-studio"], allowedIn: ["app/studio/", "server/studio/", "app/api/studio/"] },
-  { name: "Render Workflows", status: "cut", why: "Skipped: a daily job does this.", mentions: ["render workflows"] },
   { name: "Trained scorer", status: "cut", why: "The matcher is rules. No model was trained.", mentions: ["trained scorer", "train_scorer"] },
   { name: "Hybrid search", status: "cut", why: "Trigrams and model numbers. No embeddings.", mentions: ["hybrid search", "embedding"] },
   { name: "Mobile app", status: "cut", why: "Skipped. The family page and /check work at phone width.", mentions: ["testflight", "mobile app"] },

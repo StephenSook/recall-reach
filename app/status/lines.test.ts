@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Health } from "@/server/health";
 import { statusLines, WHAT_HAPPENS } from "./lines";
+import { CLAIMS } from "@/scripts/claims";
 
 const NOW = "2026-11-07T12:00:00.000Z";
 const healthy: Health = {
@@ -145,7 +146,9 @@ describe("the status page's lines", () => {
     expect(line(down, "Channel3")?.state).toBe("unknown");
   });
 
-  it("says nothing of Render Workflows until a real run has been proved", () => {
-    expect(JSON.stringify(statusLines(healthy, { claudeKeySet: true }))).not.toMatch(/workflow/i);
+  it("names Render Workflows only while the claims ledger claims it, which a real run had to prove", () => {
+    const named = /render workflows/i.test(JSON.stringify(statusLines(healthy, { claudeKeySet: true })));
+    expect(named).toBe(true);
+    expect(CLAIMS.find((c) => c.name === "Render Workflows")?.status).toBe("claimed");
   });
 });
