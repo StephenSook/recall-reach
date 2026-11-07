@@ -6,6 +6,7 @@ const NOW = "2026-11-07T12:00:00.000Z";
 const healthy: Health = {
   ok: true,
   checkedAt: NOW,
+  build: null,
   checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true },
   database: { ok: true },
   cpsc: { recalls: 1855, byYear: {}, lastPull: { id: 1, status: "ok", rangeField: "LastPublishDate", rangeStart: "a", rangeEnd: "b", finishedAt: "2026-11-07T11:30:00.000Z" } },

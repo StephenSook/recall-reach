@@ -15,6 +15,8 @@ const OVERDUE = [
 export interface Health {
   ok: boolean;
   checkedAt: string;
+  /** The commit this answer came from, as Render reports it. Null when not on Render. */
+  build: string | null;
   /** What ok is made of. It is true only when every one of these is. */
   checks: {
     database: boolean;
@@ -110,11 +112,12 @@ const iso = (value: unknown): string | null =>
 /** Public status for /api/health. Never includes secrets or database error text. */
 export async function getHealth(
   db: Queryable,
-  env: { PAYPAL_WEBHOOK_ID?: string; RECORD_HMAC_SECRET?: string; DEBUG?: string; NODE_DEBUG?: string },
+  env: { PAYPAL_WEBHOOK_ID?: string; RECORD_HMAC_SECRET?: string; DEBUG?: string; NODE_DEBUG?: string; RENDER_GIT_COMMIT?: string },
   poll: RecallPollStatus = { lastPollAt: null, lastPollOk: null, dbTouched: null },
   now: Date = new Date(),
 ): Promise<Health> {
   const checkedAt = now.toISOString();
+  const build = env.RENDER_GIT_COMMIT?.slice(0, 7) || null;
   const webhookOk = Boolean(env.PAYPAL_WEBHOOK_ID) && recordKeyWorks(env.RECORD_HMAC_SECRET);
   const pollOk = poll.lastPollOk !== false;
   const loggingOk = !env.DEBUG && !env.NODE_DEBUG;
@@ -163,6 +166,7 @@ export async function getHealth(
     const allOk = Object.values(checks).every(Boolean);
     return {
       ok: allOk,
+      build,
       degraded: !allOk && cpscFailing && !oursOff ? { source: "CPSC", since: iso(outage.rows[0]?.since) ?? poll.lastPollAt, lastGoodAt: iso(outage.rows[0]?.last_good) } : null,
       checkedAt,
       checks,
@@ -191,6 +195,7 @@ export async function getHealth(
     console.error("health check: database query failed:", err instanceof Error ? err.message : err);
     return {
       ok: false,
+      build,
       degraded: null,
       checkedAt,
       checks: { database: false, webhook: webhookOk, lastPull: false, purge: false, poll: pollOk, replay: false, logging: loggingOk },

@@ -80,6 +80,12 @@ describe("getHealth", () => {
       db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', $1, $2::timestamptz)", [status, finished]);
     const check = (poll?: Parameters<typeof getHealth>[2]) => getHealth(db, env, poll, NOW);
 
+    it("says which build answered, shortened, and null when it can't tell", async () => {
+      await pulled("ok");
+      expect((await getHealth(db, { ...env, RENDER_GIT_COMMIT: "cdeac06abcdef0123456789abcdef0123456789" }, undefined, NOW)).build).toBe("cdeac06");
+      expect((await check()).build).toBeNull();
+    });
+
     it("is ok when every named check passes", async () => {
       await pulled("ok");
       await replayed("2026-11-06T02:00:00Z");

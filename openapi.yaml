@@ -321,6 +321,7 @@ components:
       required: [ok, checkedAt, checks, database, market]
       properties:
         ok: { type: boolean }
+        build: { type: string, nullable: true, description: The commit this answer came from. }
         degraded:
           type: object
           nullable: true

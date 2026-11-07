@@ -11,7 +11,7 @@ const STATE: Record<LineState, string> = { ok: "OK", problem: "Problem", unknown
 
 async function readHealth(): Promise<Health | null> {
   try {
-    return await getHealth(getDb(), { PAYPAL_WEBHOOK_ID: process.env.PAYPAL_WEBHOOK_ID, RECORD_HMAC_SECRET: process.env.RECORD_HMAC_SECRET, DEBUG: process.env.DEBUG, NODE_DEBUG: process.env.NODE_DEBUG }, recallPollStatus());
+    return await getHealth(getDb(), { PAYPAL_WEBHOOK_ID: process.env.PAYPAL_WEBHOOK_ID, RECORD_HMAC_SECRET: process.env.RECORD_HMAC_SECRET, DEBUG: process.env.DEBUG, NODE_DEBUG: process.env.NODE_DEBUG, RENDER_GIT_COMMIT: process.env.RENDER_GIT_COMMIT }, recallPollStatus());
   } catch (err) {
     // getDb() throws when DATABASE_URL is missing or malformed.
     console.error("status page failed:", err instanceof Error ? err.name : "unknown error");
@@ -37,7 +37,9 @@ export default async function StatusPage() {
               </li>
             ))}
           </ul>
-          <p className="note">Read {ranAt(health.checkedAt)}. The same data is at /api/health.</p>
+          <p className="note" data-testid="status-build">
+            Read {ranAt(health.checkedAt)}{health.build ? `, from build ${health.build}` : ""}. The same data is at /api/health.
+          </p>
         </>
       ) : (
         <p role="alert" className="alert">
