@@ -51,6 +51,11 @@ describe("the public recall page", () => {
     expect(await page()).not.toContain("<img");
   });
 
+  it("gives CPSC's Spanish site and phone number, in that one line of Spanish", async () => {
+    const html = await page();
+    expect(html).toContain('<span lang="es">En español:</span> <a href="https://www.cpsc.gov/es">cpsc.gov/es</a>. CPSC: <a href="tel:+18006382772">800-638-2772</a>.');
+  });
+
   it("says nothing about a shop, a payment, Claude or a match, and has no form", async () => {
     const html = await page();
     expect(html).not.toMatch(/shop|paypal|claude|match|refund|<form/i);

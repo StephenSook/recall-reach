@@ -1,6 +1,7 @@
 // What a family sees. The real page and the public sample both draw this, so the two can't drift apart.
 import type { CheckResult, FamilyView } from "@/server/notice/store";
 import { CopyRecallLink } from "./CopyRecallLink";
+import { CpscInSpanish } from "./CpscInSpanish";
 
 function ResultText({ result, url }: { result: CheckResult; url: string }) {
   if (result === "MATCHES") {
@@ -139,6 +140,7 @@ export function FamilyNotice({ view, action }: { view: FamilyView; action: strin
           </form>
         ) : null}
         <footer>
+          <CpscInSpanish />
           <p>Recall details come from the U.S. CPSC. {action === null ? "A real notice names the shop that sent it." : `This page was sent by ${view.shopName}.`}</p>
         </footer>
       </div>

@@ -23,6 +23,10 @@ const view: FamilyView = {
 const html = (action: string | null, over: Partial<FamilyView> = {}) => renderToStaticMarkup(createElement(FamilyNotice, { view: { ...view, ...over }, action }));
 
 describe("what a family sees", () => {
+  it.each([["a real notice", "/api/family/abc"], ["the sample", null]])("on %s, gives CPSC's Spanish site and phone number", (_name, action) => {
+    expect(html(action)).toContain('<span lang="es">En español:</span> <a href="https://www.cpsc.gov/es">cpsc.gov/es</a>. CPSC: <a href="tel:+18006382772">800-638-2772</a>.');
+  });
+
   it("on a real notice, names the shop, posts to its own link and isn't called a sample", () => {
     const page = html("/api/family/abc");
     expect(page).toContain('action="/api/family/abc"');

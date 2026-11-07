@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { isRecallNumber, readPublicRecall } from "@/server/match/textCheck";
+import { CpscInSpanish } from "@/app/r/CpscInSpanish";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function PublicRecallPage({ params }: { params: Promise<{ n
           <a href={recall.url}>Open CPSC&apos;s recall page</a>
         </p>
         <footer>
+          <CpscInSpanish />
           <p>From CPSC&apos;s public recall record.</p>
         </footer>
       </div>
