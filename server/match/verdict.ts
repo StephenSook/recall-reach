@@ -85,7 +85,8 @@ function editDistance(a: string, b: string): number {
 /** The model with only separators between its characters ("BRZ 0083"), and no extra character on either side. */
 export function writtenApart(model: string): RegExp {
   const body = [...normalizeModel(model)].join("[\\s._/-]*");
-  return new RegExp(`(?<![A-Z0-9])${body}(?![A-Z0-9])`);
+  // A suffix joined by punctuation makes it another code: PAPA03001AI-X isn't PAPA03001AI. A space doesn't.
+  return new RegExp(`(?<![A-Z0-9])(?<![A-Z0-9][._/-])${body}(?![A-Z0-9])(?![._/-][A-Z0-9])`);
 }
 
 /** Same letters up front and about the same length, so a code like X200 does not count as a sibling. */
@@ -236,6 +237,10 @@ export function verdictFor(
   const itemCodes = modelTokens(upper);
   const shownCodes = new Set(itemCodes.map(normalizeModel));
   const shown = recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
+  // A code that looks like CPSC's model and isn't exactly it could be another unit. One that looks nothing like it, such as
+  // 2-IN-1 or a shop's own SKU, says nothing about the model.
+  const listed = new Set(recallModels.map(normalizeModel));
+  const nearMissCode = itemCodes.filter((t) => !listed.has(normalizeModel(t)) && (isSiblingModel(t, recallModels) || isVariantOf(t, recallModels)));
   const limited = limitedWithinModel(recall.description);
   if (shown.length > 0 && limited) {
     return {
@@ -244,6 +249,15 @@ export function verdictFor(
       matched: [...matched, `model: ${shown.join(", ")}`],
       missing: ["the unit's date, lot, serial number or VIN: CPSC recalled only part of this model"],
       reason: `The shop's text names recalled model ${shown.join(", ")}, but CPSC limits the recall by date, lot, serial number or VIN.`,
+    };
+  }
+  if (shown.length > 0 && nearMissCode.length > 0) {
+    return {
+      verdict: "SCOPE_GAP",
+      strength: "BRAND",
+      matched: [...matched, `model: ${shown.join(", ")}`],
+      missing: [`which unit this is: the shop's text also has ${nearMissCode.join(", ")}`],
+      reason: `The shop's text names recalled model ${shown.join(", ")}, and also ${nearMissCode.join(", ")}, so it can't show which unit this is.`,
     };
   }
   if (shown.length > 0) {
@@ -289,11 +303,7 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  // A code that looks like CPSC's model and isn't exactly it could be another unit, so the title's words can't pin it.
-  // One that looks nothing like it, such as 2-IN-1 or a shop's own SKU, says nothing about the model.
-  const listed = new Set(recallModels.map(normalizeModel));
-  const nearMissCode = itemCodes.some((t) => !listed.has(normalizeModel(t)) && (isSiblingModel(t, recallModels) || isVariantOf(t, recallModels)));
-  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && !nearMissCode) {
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && nearMissCode.length === 0) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",

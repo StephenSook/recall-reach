@@ -196,6 +196,17 @@ describe("verdictFor", () => {
         for (const code of ["PAPA03001AI", "PAPA-03001AI", "papa03001ai"]) expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper ${code}` })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
 
+      it("a suffix on the model makes it another code", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars and moon PAPA03001AI-X" }).strength).not.toBe("CONFIRMED");
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI X" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
+      it("the exact model beside a near-miss code can't confirm which unit it is", () => {
+        const twoCodes = { ...PAPABLIC, title: "Acme Recalls Batteries", description: "This recall involves Acme CR2032 batteries, packaging code 2023-V3.", products: [{ name: "Acme Batteries", model: "", type: null, units: null }] };
+        expect(verdictFor(twoCodes, { title: "Acme CR2032 Batteries 2023-V3" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        expect(verdictFor(twoCodes, { title: "Acme CR2032 Batteries packaging 2023-V4" }).strength).not.toBe("CONFIRMED");
+      });
+
       it("the demo's title has no code, so it stays a match", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon, like new" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
