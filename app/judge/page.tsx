@@ -36,6 +36,9 @@ export default function JudgeDoor() {
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"`}</pre>
+      <h2 className="section-title">From an agent</h2>
+      <pre data-testid="mcp-add">claude mcp add --transport http recall-reach https://recall-reach-web-e022.onrender.com/api/mcp</pre>
+      <p>Two read-only tools, no key: check_recall and get_recall.</p>
       <h2 className="section-title">On a phone</h2>
       <p>
         <a href="https://github.com/StephenSook/recall-reach/releases/download/android-1.0.0/recall-reach-android-1.0.0.apk">Android build</a>, queue only. Push is iPhone only. Not tested on a device. The repository and this download are public from Nov 11.

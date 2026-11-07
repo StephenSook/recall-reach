@@ -45,6 +45,10 @@ Each recent recall's product name also goes to [Channel3](https://recall-reach-w
 
 For agents and marketplaces, the same check is an MCP tool, `check_recall`, on [`/api/mcp`](https://recall-reach-web-e022.onrender.com/evidence/api), with `get_recall` beside it to read one recall by its number. A result names a recall to read, not a finding about the item. No key, and nothing sent is stored. The API is described in [`openapi.yaml`](openapi.yaml), and a test checks it against the code.
 
+```bash
+claude mcp add --transport http recall-reach https://recall-reach-web-e022.onrender.com/api/mcp
+```
+
 ```json
 { "mcpServers": { "recall-reach": { "type": "http", "url": "https://recall-reach-web-e022.onrender.com/api/mcp" } } }
 ```
