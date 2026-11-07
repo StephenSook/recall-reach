@@ -38,6 +38,31 @@ export const DEFECTS: Defect[] = [
     open: true,
   },
   {
+    title: "A title one character off a model could read as a confirmed match",
+    found:
+      "An outside review ran the real matcher on a title with a code one character from CPSC's model, plus two words from CPSC's description. It came back confirmed, and a confirmed match can lead to a notice and a refund. Found in review of the code, not by tuning on the held-out set.",
+    changed: "A title carrying any code that isn't CPSC's exact model can't be confirmed by its look, so it asks the family instead.",
+    commits: ["4827c76"],
+    checked: "New tests cover codes one edit away, and an unrelated code. The eval, Replay and the demo queue gave the same numbers before and after.",
+    open: false,
+  },
+  {
+    title: "An uploaded sale could miss a recall the public check found",
+    found: "The public check ignored punctuation in a model number, and the shop check didn't. A title with MY-002 could miss CPSC's MY002 unless similar words happened to save it.",
+    changed: "Both sides now drop punctuation before comparing, in the shop check too.",
+    commits: ["fe43ee0"],
+    checked: "A test through the real SQL finds the recall with a hyphen or dots on either side. The eval, Replay and the demo queue gave the same numbers before and after.",
+    open: false,
+  },
+  {
+    title: "Asking PayPal again about a refund skipped the dispute check",
+    found: "If a refund's first request never reached PayPal, asking again is the real first refund, and a dispute may have opened since. That path never read disputes, though a first send does.",
+    changed: "Asking again now reads PayPal's disputes first, and sends nothing if there is one or the answer can't be read.",
+    commits: ["de71c0a"],
+    checked: "New tests with a stand-in PayPal: a dispute stops it, and so does an unreadable answer. Not yet run on the sandbox.",
+    open: false,
+  },
+  {
     title: "Sandbox refunds of $30 and up started staying PENDING",
     found:
       "From Nov 6, 2026, 17:37 UTC, PayPal's sandbox answered refunds of $30 and up with PENDING, reason ECHECK, including calls with no app code in the way. Refunds of $1, $5 and $20 completed. We don't know why.",
