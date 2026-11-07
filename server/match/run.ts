@@ -99,9 +99,14 @@ async function withinCap(db: Queryable, candidates: Candidate[]): Promise<Candid
   const crowded = [...byRecall].filter(([, group]) => new Set(group.map((c) => c.title.toLowerCase())).size > TOP_CANDIDATES).map(([id]) => id);
   const { rows } = crowded.length > 0 ? await db.query<{ recall_id: number; text: string }>("select recall_id, title || ' ' || description as text from recalls where recall_id = any($1::int[])", [crowded]) : { rows: [] };
   const recallText = new Map(rows.map((r) => [r.recall_id, r.text]));
+  const named = new Map<Candidate, boolean>();
   const namesModel = (c: Candidate) => {
+    const known = named.get(c);
+    if (known !== undefined) return known;
     const text = recallText.get(c.recall_id);
-    return text !== undefined && modelsShown(text, `${c.title} ${c.description ?? ""}`).length > 0;
+    const answer = text !== undefined && modelsShown(text, `${c.title} ${c.description ?? ""}`).length > 0;
+    named.set(c, answer);
+    return answer;
   };
   const rankKey = (c: Candidate) => `${namesModel(c)}|${c.similarity}|${c.title.toLowerCase()}`;
   const kept: Candidate[] = [];
