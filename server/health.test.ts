@@ -89,7 +89,14 @@ describe("getHealth", () => {
     it("is ok when every named check passes", async () => {
       await pulled("ok");
       await replayed("2026-11-06T02:00:00Z");
-      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
+      expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z", lastTaskRun: null } });
+    });
+
+    it("says the refresh task's last run as the task wrote it, and leaves ok alone, since a start can be skipped", async () => {
+      await pulled("ok");
+      await replayed("2026-11-06T02:00:00Z");
+      await db.query("insert into replay_task_runs (task_run_id, started_at, finished_at, outcome) values ('trn-9', '2026-11-06T11:00:00Z', '2026-11-06T11:00:02Z', 'FAILED')");
+      expect(await check()).toMatchObject({ ok: true, replay: { lastTaskRun: { taskRunId: "trn-9", outcome: "FAILED", finishedAt: "2026-11-06T11:00:02.000Z" } } });
     });
 
     describe("when only CPSC is failing", () => {

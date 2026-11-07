@@ -6,6 +6,7 @@ import type { RecallPollStatus } from "./jobs/appJobs";
 import { toolkitInUse, type ToolkitInUse } from "./paypal/toolkitRefund";
 import { createRecordKey } from "./privacy/recordKey";
 import { PAYPAL_RETENTION_HOURS, PAYPAL_SOURCED } from "./privacy/retention";
+import { lastTaskRun, type TaskRun } from "./replay/taskRuns";
 
 const PAST_THE_RULE = "$1::timestamptz - make_interval(hours => $2)";
 const OVERDUE = [
@@ -50,7 +51,8 @@ export interface Health {
   } | null;
   /** The background poll's last run, held in memory: a quiet poll never touches the database. */
   poll: RecallPollStatus;
-  replay: { lastRunAt: string | null };
+  /** lastTaskRun is the refresh task's own record of its last run. Not part of ok: its daily start can be skipped, and the web service refreshes then. */
+  replay: { lastRunAt: string | null; lastTaskRun: TaskRun | null };
   /**
    * The search of the wider market (Channel3). Not part of ok: it feeds one side page, whose rows carry their own dates,
    * and a free tier going quiet is not the app being down.
@@ -153,6 +155,7 @@ export async function getHealth(
     );
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
+    const lastTask = await lastTaskRun(db);
     const marketOkAt = await lastMarketSearch(db);
     const claudeOk = await claudeAnswers(db);
     const claudeRecent = (at: string | null) => at !== null && now.getTime() - Date.parse(at) <= MAX_CLAUDE_AGE_MS;
@@ -197,7 +200,7 @@ export async function getHealth(
           : null,
       },
       poll,
-      replay: { lastRunAt },
+      replay: { lastRunAt, lastTaskRun: lastTask },
       market: { lastOkAt: marketOkAt, fresh: marketOkAt !== null && now.getTime() - Date.parse(marketOkAt) <= MAX_MARKET_AGE_MS },
       claude: { lastOkAt: claudeOk.any, fresh: claudeRecent(claudeOk.any), mainModelOkAt: claudeOk.main, mainModelFresh: claudeRecent(claudeOk.main) },
       warnings: { ...warningsRead, fresh: warningsRead.lastOkAt !== null && now.getTime() - Date.parse(warningsRead.lastOkAt) <= MAX_WARNINGS_AGE_MS },
@@ -214,7 +217,7 @@ export async function getHealth(
       database: { ok: false },
       cpsc: null,
       poll,
-      replay: { lastRunAt: null },
+      replay: { lastRunAt: null, lastTaskRun: null },
       market: { lastOkAt: null, fresh: false },
       claude: { lastOkAt: null, fresh: false, mainModelOkAt: null, mainModelFresh: false },
       warnings: { count: 0, lastOkAt: null, fresh: false },

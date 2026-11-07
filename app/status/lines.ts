@@ -38,10 +38,14 @@ export const WHAT_HAPPENS: { when: string; does: string; seen: string }[] = [
 
 const NOT_READ = "Can't tell: this is stored in the database, which did not answer.";
 
+/** What each outcome of the refresh task means, in the task's own words for it. */
+const TASK_DID = { FRESH: "the numbers were fresh, so it changed nothing", RAN: "it ran Replay again", DISCARDED: "it ran Replay but kept the last run", FAILED: "it failed" } as const;
+
 export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLine[] {
   const db = h.database.ok;
   const pull = h.cpsc?.lastPull;
   const verified = h.paypal.lastVerifiedWebhookAt;
+  const task = h.replay.lastTaskRun;
   const paypalReading = !h.paypal.webhookConfigured ? "Webhook isn't set up, so a delivery can't be verified." : verified ? `Last verified delivery ${ranAt(verified)}.` : "Webhook ID set. No delivery on record.";
   return [
     {
@@ -83,6 +87,19 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
       state: !db ? "unknown" : h.checks.replay ? "ok" : "problem",
       reading: !db ? NOT_READ : h.replay.lastRunAt ? `Last run ${ranAt(h.replay.lastRunAt)}.` : "No run on record.",
       measures: "The newest stored run, and whether it's under 2 days old.",
+    },
+    {
+      service: "Replay's daily task",
+      state: !db || !task || !task.finishedAt ? "unknown" : task.outcome === "FAILED" ? "problem" : "ok",
+      reading: !db
+        ? NOT_READ
+        : !task
+          ? "No run on record."
+          : !task.finishedAt
+            ? `Started ${ranAt(task.startedAt)}, not finished.`
+            : `Last run finished ${ranAt(task.finishedAt)}: ${TASK_DID[task.outcome ?? "FAILED"]}.${task.taskRunId ? ` Run ${task.taskRunId}.` : ""}`,
+      measures:
+        "The row the refresh task writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass 28 hours.",
     },
     {
       service: "Channel3",

@@ -11,7 +11,7 @@ const healthy: Health = {
   database: { ok: true },
   cpsc: { recalls: 1855, byYear: {}, lastPull: { id: 1, status: "ok", rangeField: "LastPublishDate", rangeStart: "a", rangeEnd: "b", finishedAt: "2026-11-07T11:30:00.000Z" } },
   poll: { lastPollAt: "2026-11-07T11:45:00.000Z", lastPollOk: true, dbTouched: false },
-  replay: { lastRunAt: "2026-11-07T10:00:00.000Z" },
+  replay: { lastRunAt: "2026-11-07T10:00:00.000Z", lastTaskRun: { taskRunId: "trn-abc", startedAt: "2026-11-07T09:00:00.000Z", finishedAt: "2026-11-07T09:00:02.000Z", outcome: "FRESH" } },
   market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true },
   claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true, mainModelOkAt: "2026-11-07T08:00:00.000Z", mainModelFresh: true },
   warnings: { count: 381, lastOkAt: "2026-11-07T08:00:00.000Z", fresh: true },
@@ -43,9 +43,28 @@ describe("what happens when something outside fails", () => {
   });
 });
 
+describe("the refresh task's line", () => {
+  const task = (lastTaskRun: Health["replay"]["lastTaskRun"]) => line({ ...healthy, replay: { ...healthy.replay, lastTaskRun } }, "Replay's daily task");
+
+  it("says what the task's last run did, from the row the task wrote itself, with the host's run id", () => {
+    expect(task(healthy.replay.lastTaskRun)).toMatchObject({ state: "ok", reading: expect.stringMatching(/^Last run finished .+: the numbers were fresh, so it changed nothing\. Run trn-abc\.$/) });
+    expect(task({ ...healthy.replay.lastTaskRun!, outcome: "RAN" })?.reading).toContain("it ran Replay again");
+    expect(task({ ...healthy.replay.lastTaskRun!, outcome: "FAILED" })).toMatchObject({ state: "problem", reading: expect.stringContaining("it failed") });
+  });
+
+  it("says when the task has never run, or is still running", () => {
+    expect(task(null)).toMatchObject({ state: "unknown", reading: "No run on record." });
+    expect(task({ taskRunId: null, startedAt: "2026-11-07T09:00:00.000Z", finishedAt: null, outcome: null })).toMatchObject({ state: "unknown", reading: expect.stringMatching(/^Started .+, not finished\.$/) });
+  });
+
+  it("says what stands in when its daily start is skipped", () => {
+    expect(task(null)?.measures).toContain("once the numbers pass 28 hours");
+  });
+});
+
 describe("the status page's lines", () => {
   it("has one line for each outside service, in a fixed order", () => {
-    expect(statusLines(healthy, { claudeKeySet: true }).map((l) => l.service)).toEqual(["Postgres", "CPSC recalls", "CPSC warnings", "PayPal webhooks", "PayPal data rule", "Recall Replay", "Channel3", "Claude"]);
+    expect(statusLines(healthy, { claudeKeySet: true }).map((l) => l.service)).toEqual(["Postgres", "CPSC recalls", "CPSC warnings", "PayPal webhooks", "PayPal data rule", "Recall Replay", "Replay's daily task", "Channel3", "Claude"]);
   });
 
   it("says on every line what the reading measures", () => {
@@ -109,7 +128,7 @@ describe("the status page's lines", () => {
   });
 
   it("shows the database down, and doesn't invent the rest", () => {
-    const down: Health = { ...healthy, ok: false, checks: { ...healthy.checks, database: false, lastPull: false, purge: false, replay: false }, database: { ok: false }, cpsc: null, replay: { lastRunAt: null }, market: { lastOkAt: null, fresh: false }, paypal: { ...healthy.paypal, lastVerifiedWebhookAt: null } };
+    const down: Health = { ...healthy, ok: false, checks: { ...healthy.checks, database: false, lastPull: false, purge: false, replay: false }, database: { ok: false }, cpsc: null, replay: { lastRunAt: null, lastTaskRun: null }, market: { lastOkAt: null, fresh: false }, paypal: { ...healthy.paypal, lastVerifiedWebhookAt: null } };
     expect(line(down, "Postgres")).toMatchObject({ state: "problem", reading: "Did not answer" });
     expect(line(down, "CPSC recalls")?.state).toBe("unknown");
     expect(line(down, "Recall Replay")?.state).toBe("unknown");
