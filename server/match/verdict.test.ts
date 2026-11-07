@@ -198,6 +198,16 @@ describe("verdictFor", () => {
         expect(v.reason.length).toBeLessThan(200);
       });
 
+      it("a near-miss written with a space is a near-miss too", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars moon PAPA 03001AX" }).strength).not.toBe("CONFIRMED");
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI PAPA 03001AX" }).verdict).toBe("SCOPE_GAP");
+      });
+
+      it("a shop's own number sharing a few digits doesn't stop a short exact model", () => {
+        const short = { ...PAPABLIC, title: "Valco Recalls Strollers", description: "This recall involves Valco strollers, model N0001.", products: [{ name: "Valco Strollers", model: "", type: null, units: null }] };
+        expect(verdictFor(short, { title: "Valco strollers N0001 SKU00001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
       it("a model written with a space is the model, not a second code", () => {
         for (const title of ["Papablic bedside sleeper PAPA 03001AI", "Papablic bedside sleeper PAPA03001AI PAPA 03001AI"]) {
           expect(verdictFor(PAPABLIC, { title })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });

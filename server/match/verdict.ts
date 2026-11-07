@@ -117,10 +117,25 @@ function resemblesModel(token: string, listed: string[]): boolean {
     const opening = letters(normalizeModel(m));
     if (opening.length >= 2 && letters(plain) === opening) return true;
     const n = unconfuse(normalizeModel(m));
-    const run = Math.max(4, Math.ceil(n.length * 0.6));
+    // Long enough that a shop's own number sharing a few digits doesn't count: N0001 beside SKU00001 is still N0001.
+    const run = Math.max(6, Math.ceil(n.length * 0.6));
     for (let i = 0; i + run <= n.length; i++) if (t.includes(n.slice(i, i + run))) return true;
     return false;
   });
+}
+
+/** Two neighbouring words that read as one code close to a listed model: PAPA 03001AX. */
+function spacedNearMisses(upper: string, listed: ReadonlySet<string>, recallModels: string[]): string[] {
+  // Split on spaces only: the hyphens in SWGR5-V2-SLV join one code, and its pieces aren't another.
+  const parts = upper.slice(0, MAX_TEXT).split(/\s+/).map(normalizeModel).filter(Boolean);
+  const found = new Set<string>();
+  for (let i = 0; i + 1 < parts.length; i++) {
+    const joined = parts[i] + parts[i + 1];
+    // After a listed model, the next word is just the next word: PAPA03001AI X is that model.
+    if (listed.has(parts[i]) || listed.has(joined) || !MODEL_TOKEN.test(joined)) continue;
+    if (isSiblingModel(joined, recallModels)) found.add(joined);
+  }
+  return [...found];
 }
 
 /** The ways a shop's code can name a listed model: whole, or as a slash between models, BRZ0083/BRZ0154. */
@@ -159,6 +174,9 @@ export function modelsNamedInText(text: string): string[] {
 /** Lower-case words, with a light plural strip, so "Dryers" and "dryer" meet. */
 /** Words for who a product is for. They appear across a brand's whole range, so sharing one says nothing about what it is. */
 const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "kid", "child", "children", "boy", "girl", "men", "mens", "women", "womens", "ladie", "adult", "youth", "junior", "unisex"]);
+
+/** The words that say what a product is, leaving out who it's for. */
+export const whatItIs = (text: string): string[] => [...words(text)].filter((w) => !WHO_ITS_FOR.has(w));
 
 function words(text: string): Set<string> {
   const out = new Set<string>();
@@ -277,6 +295,7 @@ export function verdictFor(
   const nearMissCode = modelTokens(upper, MAX_TEXT)
     .filter((t) => !listed.has(normalizeModel(t)) && !slashList(t, listed) && !spelledOut.has(t))
     .filter((t) => isSiblingModel(t, recallModels) || isVariantOf(t, recallModels) || resemblesModel(t, recallModels))
+    .concat(spacedNearMisses(upper, listed, recallModels))
     .map((t) => t.slice(0, MAX_TOKEN));
   const limited = limitedWithinModel(recall.description);
   if (shown.length > 0 && limited) {
