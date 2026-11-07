@@ -1,6 +1,6 @@
 // Two people running the demo at once, on a running deployment. Neither may see or change the other's shop. Each start makes
-// real sandbox captures, so this uses two of a visitor's demo starts. It makes no refund. OTHER_REFUND_ID, if set, is a refund
-// row from a third shop, which neither may open.
+// real sandbox captures, so this uses two of a visitor's demo starts. It makes no refund. OTHER_REFUND_ID is a refund row from a
+// third shop, which neither may open. It's required, so this can't pass by skipping that check.
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
 /** Each is a browser of its own, with its own cookies and so its own session. */
@@ -66,17 +66,20 @@ test("two demo shops started together can't see or change each other's", async (
     const matchId = await papablic(one.page).locator('input[name="matchId"]').first().getAttribute("value");
     expect(matchId).toBeTruthy();
     const headers = { origin: baseURL ?? "" };
-    await two.page.request.post("/api/queue/notices", { form: { matchId: matchId! }, headers, maxRedirects: 0 });
-    await two.page.request.post("/api/queue/refunds/approve", { form: { matchId: matchId! }, headers, maxRedirects: 0 });
+    // Each route answers with its refusal in the address. Without this, a request refused for some other reason would pass too.
+    for (const path of ["/api/queue/notices", "/api/queue/refunds/approve"]) {
+      const res = await two.page.request.post(path, { form: { matchId: matchId! }, headers, maxRedirects: 0 });
+      expect(res.status(), path).toBe(303);
+      expect(new URL(res.headers().location ?? "", baseURL).searchParams.get("message"), path).toBeTruthy();
+    }
     await one.page.reload();
     await expect(papablic(one.page).getByTestId("notice-state")).toHaveCount(0);
     await expect(papablic(one.page).getByRole("button", { name: /^Refund / })).toHaveCount(0);
 
     // A refund page belongs to its shop. Neither can open a third shop's.
     const other = process.env.OTHER_REFUND_ID;
-    if (other) {
-      for (const shop of [one, two]) expect((await shop.page.goto(`/queue/refunds/${other}`))?.status()).toBe(404);
-    }
+    expect(other, "set OTHER_REFUND_ID to a refund row from a third shop").toBeTruthy();
+    for (const shop of [one, two]) expect((await shop.page.goto(`/queue/refunds/${other}`))?.status()).toBe(404);
 
     // Without a session, there's no queue at all.
     const nobody = await browser.newContext();
