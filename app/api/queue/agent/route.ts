@@ -19,6 +19,7 @@ export async function POST(request: Request): Promise<Response> {
   const form = await request.formData();
   const result = await checkRecordWithClaude(getDb(), client, { shopId: session.shopId, recordId: String(form.get("recordId") ?? ""), now: new Date() });
   if (result.overBudget) return withMessage(request, "Claude check has reached today's limit. Everything else still works.");
+  if (result.busy) return withMessage(request, "Too many checks at once. Try again in a moment.");
   if (result.unavailable) {
     console.error(`Claude check unavailable: ${result.failedStatuses.join(", ") || "no status"}`);
     return withMessage(request, UNAVAILABLE);

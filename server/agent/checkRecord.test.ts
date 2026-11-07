@@ -36,7 +36,7 @@ function fakeClaude(status?: number, reads: [string, Record<string, unknown>][] 
         : [toolUse("record_finding", { item_id: "item-1", finding: "CANT_TELL", evidence: [{ source: "recall", quote: "Costway Convertible High Chairs" }], missing_field: "Whether it converts", reason: "The title does not say." })];
     return Response.json({ id: "m", type: "message", role: "assistant", model: body.model, content, stop_reason: "tool_use", stop_sequence: null, usage });
   };
-  return { client: new Anthropic({ apiKey: "k", fetch: fetchImpl as typeof fetch, maxRetries: 0 }), requests };
+  return { client: new Anthropic({ apiKey: "k", fetch: fetchImpl as typeof fetch, maxRetries: 0 }), requests, fetchImpl };
 }
 
 describe("checking a sale with Claude", () => {
@@ -143,6 +143,32 @@ describe("checking a sale with Claude", () => {
       const { client, requests } = fakeClaude();
       expect(await check(client)).toMatchObject({ overBudget: false });
       expect(requests.length).toBeGreaterThan(0);
+    });
+
+    it("takes only a few own-file checks at once, so checks already running can't eat through the rest", async () => {
+      await realShop();
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const answering = fakeClaude();
+      const slow = new Anthropic({
+        apiKey: "k",
+        maxRetries: 0,
+        fetch: (async (url: unknown, init?: RequestInit) => {
+          await held;
+          return answering.fetchImpl(url, init);
+        }) as typeof fetch,
+      });
+      const running = [check(slow), check(slow), check(slow)];
+      await expect.poll(async () => (await check(fakeClaude().client)).busy, { timeout: 5000 }).toBe(true);
+      release();
+      await Promise.all(running);
+      expect(await check(fakeClaude().client)).toMatchObject({ busy: false });
+    });
+
+    it("never turns the demo shop away for that", async () => {
+      expect(await check(fakeClaude().client)).toMatchObject({ busy: false, overBudget: false });
     });
 
     it("keeps less for shops than the day's cap, so there's something to keep", () => {

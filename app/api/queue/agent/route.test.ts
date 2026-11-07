@@ -60,8 +60,13 @@ describe("POST /api/queue/agent", () => {
   });
 
   it("says when the day's limit is reached", async () => {
-    check.mockResolvedValue({ unavailable: false, overBudget: true, failedStatuses: [] });
+    check.mockResolvedValue({ unavailable: false, overBudget: true, busy: false, failedStatuses: [] });
     expect(message(await post())).toBe("Claude check has reached today's limit. Everything else still works.");
+  });
+
+  it("says when too many are running at once", async () => {
+    check.mockResolvedValue({ unavailable: false, overBudget: false, busy: true, failedStatuses: [] });
+    expect(message(await post())).toBe("Too many checks at once. Try again in a moment.");
   });
 
   it("limits how often one shop can ask", async () => {
