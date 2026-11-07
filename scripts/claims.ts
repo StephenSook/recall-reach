@@ -146,6 +146,15 @@ export const CLAIMS: Claim[] = [
     evidence: [{ file: "server/paypal/boundary.test.ts", find: "gives Claude's code no way to PayPal's" }],
   },
   {
+    name: "Published numbers tested on saved records",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "server/replay/savedRecords.test.ts", call: "runReplay" },
+      { file: "server/eval/measure.test.ts", find: "the committed results are what the code produces now" },
+    ],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,
