@@ -466,7 +466,8 @@ test("the Queue link with no shop says what to do, rather than looking like noth
   await page.goto("/");
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Queue" }).click();
   await expect(page).toHaveURL(/\/\?demo=noqueue$/);
-  await expect(page.getByRole("alert")).toHaveText("Start a demo shop to see its queue.");
+  // Next.js adds its own empty route announcer with role alert after a client navigation, so name the page's own.
+  await expect(page.getByRole("alert").filter({ hasText: "Start a demo shop" })).toHaveText("Start a demo shop to see its queue.");
   await expect(page.getByRole("button", { name: "Try it as a demo shop" })).toBeVisible();
 });
 
