@@ -105,6 +105,15 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Postman collection",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "postman/recall-reach.postman_collection.json", find: "stored and recounted agree" },
+      { file: "scripts/postman.test.ts", find: "calls only what the OpenAPI file documents" },
+    ],
+  },
+  {
     name: "Check one item",
     status: "claimed",
     feature: true,

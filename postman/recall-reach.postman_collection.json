@@ -1,0 +1,347 @@
+{
+  "info": {
+    "name": "Recall Reach public API",
+    "description": "The public, read-only API on the deployed site. No key. Nothing here can change anything or reach a shop. Run it with: pnpm dlx newman run postman/recall-reach.postman_collection.json",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://recall-reach-web-e022.onrender.com"
+    }
+  ],
+  "item": [
+    {
+      "name": "Is it up",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/live",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "live"
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health says sandbox, and names the Agent Toolkit",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"PayPal is the sandbox\", () => pm.expect(body.paypal.environment).to.eql(\"sandbox\"));",
+              "pm.test(\"the Toolkit version comes from the package\", () => pm.expect(body.paypal.toolkit.version).to.match(/^\\d+\\.\\d+\\.\\d+/));",
+              "pm.test(\"once loaded, it has one tool and no other\", () => { if (body.paypal.toolkit.loaded) pm.expect(body.paypal.toolkit.tools).to.have.lengthOf(1); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "A recalled model names its recall",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "check"
+          ],
+          "query": [
+            {
+              "key": "title",
+              "value": "Baby%20Brezza%20sterilizer"
+            },
+            {
+              "key": "model",
+              "value": "BRZ0083"
+            }
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"recall 27072 comes first, as a match\", () => { pm.expect(body.results[0].recallNumber).to.eql(\"27072\"); pm.expect(body.results[0].verdict).to.eql(\"MATCH\"); });",
+              "pm.test(\"it says this is a recall to read, not a finding\", () => pm.expect(body.note).to.include(\"not a finding\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "A maker alone isn't a nothing",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/check?title=Bodum",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "check"
+          ],
+          "query": [
+            {
+              "key": "title",
+              "value": "Bodum"
+            }
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "const named = body.results.concat(body.mentioned.recalls).map((r) => r.recallNumber);",
+              "pm.test(\"recall 27055 is there to read\", () => pm.expect(named).to.include(\"27055\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Text no recall has says so, and what it read",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/check?title=zzqx%20vvbn%20plmk",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "check"
+          ],
+          "query": [
+            {
+              "key": "title",
+              "value": "zzqx%20vvbn%20plmk"
+            }
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"nothing to read\", () => { pm.expect(body.results).to.eql([]); pm.expect(body.mentioned.total).to.eql(0); });",
+              "pm.test(\"it says how many recalls it read\", () => pm.expect(body.checked.recalls).to.be.above(1000));",
+              "pm.test(\"no year of recalls is missing\", () => pm.expect(body.checked.yearsMissing).to.eql([]));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Nothing to check is refused",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/check?title=a",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "check"
+          ],
+          "query": [
+            {
+              "key": "title",
+              "value": "a"
+            }
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 400\", () => pm.response.to.have.status(400));",
+              "pm.test(\"it says what it wants\", () => pm.expect(pm.response.json().error).to.include(\"title\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "The newest recall day, against the demo shop",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/recalls/today/matches?shop=demo",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "recalls",
+            "today",
+            "matches"
+          ],
+          "query": [
+            {
+              "key": "shop",
+              "value": "demo"
+            }
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"it comes from a Replay run\", () => pm.expect(body.runId).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"runId\", body.runId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "That Replay run recounts to its stored numbers",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/proof/{{runId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proof",
+            "{{runId}}"
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"stored and recounted agree, on a real run\", () => { pm.expect(body.stored.checked).to.be.above(0); pm.expect(body.recomputed).to.eql(body.stored); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "The MCP server has two read-only tools",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "{{baseUrl}}/api/mcp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "mcp"
+          ]
+        },
+        "header": [
+          {
+            "key": "content-type",
+            "value": "application/json"
+          },
+          {
+            "key": "accept",
+            "value": "application/json, text/event-stream"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const text = pm.response.text();",
+              "const body = JSON.parse(text.includes(\"data: \") ? text.split(\"data: \")[1].split(\"\\n\")[0] : text);",
+              "const tools = body.result.tools;",
+              "pm.test(\"check_recall and get_recall, and nothing else\", () => pm.expect(tools.map((t) => t.name).sort()).to.eql([\"check_recall\", \"get_recall\"]));",
+              "pm.test(\"neither can change anything\", () => tools.forEach((t) => pm.expect(t.annotations.readOnlyHint).to.eql(true)));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
