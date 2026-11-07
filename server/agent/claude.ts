@@ -48,7 +48,17 @@ function costOf(message: BetaMessage): number {
 export async function askClaude(
   db: Queryable,
   client: Anthropic,
-  ask: { model: string; system: string; tools: BetaToolUnion[]; messages: BetaMessageParam[]; now: Date; capMicros?: number; maxTokens?: number },
+  ask: {
+    model: string;
+    system: string;
+    tools: BetaToolUnion[];
+    messages: BetaMessageParam[];
+    now: Date;
+    capMicros?: number;
+    maxTokens?: number;
+    /** Defaults to auto. With no tools, neither tools nor a choice is sent. */
+    toolChoice?: { type: "auto" } | { type: "any" } | { type: "none" } | { type: "tool"; name: string };
+  },
   spent: Spent,
 ): Promise<BetaMessage> {
   if ((await spentToday(db, ask.now)) >= (ask.capMicros ?? DAILY_CAP_MICROS)) throw new OverBudget();
@@ -56,8 +66,7 @@ export async function askClaude(
     model: ask.model,
     max_tokens: ask.maxTokens ?? 8000,
     system: ask.system,
-    tools: ask.tools,
-    tool_choice: { type: "auto" },
+    ...(ask.tools.length > 0 ? { tools: ask.tools, tool_choice: ask.toolChoice ?? { type: "auto" as const } } : {}),
     output_config: { effort: "medium" },
     cache_control: { type: "ephemeral" },
     messages: ask.messages,

@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { AGENT_TOOLS } from "./recallAgent";
 import { QUESTION_TOOLS } from "./recallQuestion";
 import { SHOPPER_TOOLS } from "./shopper";
+import { readTurn, toClaude } from "../studio/turn";
 
 /** Claude can't ask for what it has no field for. Words that would let a model name, move or size money. */
 const MONEY = /amount|currency|capture|refund|payee/i;
 
 /** Every tool any model is offered, listed here. A new file defining a tool fails below until it's added. */
-const TOOL_FILES = ["server/agent/recallAgent.ts", "server/agent/recallQuestion.ts", "server/agent/shopper.ts"];
+const TOOL_FILES = ["server/agent/recallAgent.ts", "server/agent/recallQuestion.ts", "server/agent/shopper.ts", "server/studio/turn.ts"];
 
 describe("what Claude's tools can say about money", () => {
   it.each([
@@ -28,6 +29,22 @@ describe("what Claude's tools can say about money", () => {
     expect(files.length).toBeGreaterThan(100); // a scan of nothing would pass
     const defining = files.filter((f) => /\binput_schema\s*:/.test(readFileSync(f, "utf8")));
     expect(defining.sort()).toEqual(TOOL_FILES);
+  });
+
+  it("the dashboard's agent is never offered one of AG Studio's tools that names money", () => {
+    const turn = readTurn({
+      input: [{ type: "message", role: "user", content: [{ type: "text", text: "x" }] }],
+      tools: [
+        { name: "add_widget", description: "Adds a widget.", parameters: { type: "object", properties: {} } },
+        { name: "set_amount", description: "Sets a value.", parameters: { type: "object", properties: {} } },
+        { name: "configure", description: "Configures.", parameters: { type: "object", properties: { refund: { type: "string" } } } },
+      ],
+      responseFormat: { type: "text" },
+    });
+    if ("error" in turn) throw new Error(turn.error);
+    const offered = toClaude(turn).tools;
+    expect(offered.map((t) => t.name)).toEqual(["add_widget"]);
+    expect(JSON.stringify(offered)).not.toMatch(MONEY);
   });
 
   it("would catch one", () => {
