@@ -88,7 +88,7 @@ export const DEFECTS: Defect[] = [
       "The refund page says a pending refund isn't finished, and doesn't blame a late webhook. The demo's shelf item now costs $18. That avoids the problem and doesn't fix it, and nothing says $18 will keep working.",
     commits: ["db96fb8", "1558a0b"],
     checked:
-      "Read Nov 6, 2026, 22:39 UTC: two $90 refunds were still pending after 5 hours. Read Nov 7, 13:28 UTC: still pending after 20 hours, unchanged since they were made. Then three new refunds, $90, $90 of a $500 sale and $18, all came back pending, reason ECHECK, so the $18 no longer avoids it. The balance read $55,956.00. Still open.",
+      "Read Nov 6, 2026, 22:39 UTC: two $90 refunds were still pending after 5 hours. Read Nov 7, 13:28 UTC: still pending after 20 hours, unchanged since they were made. Then three new refunds, $90, $90 of a $500 sale and $18, all came back pending, reason ECHECK, so the $18 no longer avoids it. The balance read $55,956.00. A lead, not a finding: a $24.00 sandbox payout the same morning came back INSUFFICIENT_FUNDS. So the sandbox account's real balance appears empty while the balance report says otherwise. A refund can fall back to a bank, which would wait as ECHECK, and a payout can't. Still open.",
     open: true,
   },
 ];
