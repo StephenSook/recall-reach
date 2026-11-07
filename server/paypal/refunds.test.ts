@@ -1325,6 +1325,20 @@ describe("refunds", () => {
       return { m, r, pp };
     }
 
+    it("reads PayPal's disputes before asking again, since the repeat may be the real first refund", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      const disputed = fakePayPal({ disputes: [{ status: "OPEN" }] });
+      expect(await refusal(again(r.refundId, disputed.client, LATER))).toBe("PAYMENT_DISPUTED");
+      expect(disputed.posts()).toEqual([]);
+    });
+
+    it("sends nothing again if the disputes can't be read", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      const down = fakePayPal({ disputes: "down" });
+      expect(await refusal(again(r.refundId, down.client, LATER))).toBe("DISPUTES_UNREADABLE");
+      expect(down.posts()).toEqual([]);
+    });
+
     it("finds a refund that landed when every answer was lost, and makes no second refund", async () => {
       const { r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
       const first = pp.posts()[0];

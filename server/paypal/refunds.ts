@@ -415,10 +415,7 @@ async function refusePayPalFacts(
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
   }
   refusePaymentDates(capture, facts.recallDate, facts.now);
-  // A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back.
-  const dispute = await disputeOnCapture(client, captureId);
-  if (dispute === "DISPUTED") throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
-  if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so nothing was refunded. Please try again.");
+  await refuseDisputed(client, captureId);
   const ledger = await ledgerOnCapture(q, captureId);
   const refundedByPayPal = await refundedPerPayPal(client, capture, ledger.knownRefundId);
   refuseAboveRemaining(capture.amountCents, refundedByPayPal, ledger, facts.amountCents, facts.currency);
@@ -507,6 +504,13 @@ async function sendRefund(
  * currency and request id. Measured 2026-11-05: PayPal answers a repeated id with the original refund, and
  * it ignores a changed amount, so this always sends what the row holds. It is a person's explicit action.
  */
+/** A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back. */
+async function refuseDisputed(client: PayPalClient, captureId: string): Promise<void> {
+  const dispute = await disputeOnCapture(client, captureId);
+  if (dispute === "DISPUTED") throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+  if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so nothing was refunded. Please try again.");
+}
+
 export async function askPayPalAgain(
   db: Queryable,
   client: PayPalClient,
@@ -550,7 +554,8 @@ export async function askPayPalAgain(
   if (!row.capture_id) throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Check PayPal directly.");
   const tooOldNow = () => new RefundRefused("TOO_OLD_TO_ASK_AGAIN", "This request is too old to send again safely. Check PayPal directly.");
   if (tooOldToRepeat(row.created_at, now.getTime())) throw tooOldNow();
-  // The same checks as a first send, except one: a capture showing a refund may be showing this one.
+  // A first send's checks, except what this refund could itself have changed if it landed: a capture showing a refund,
+  // and the amount left. If the first request never reached PayPal, this is the real first refund, so disputes are read too.
   const { recallDate } = await approvedFactsHold(db, row);
   const today = businessDay(now);
   if ((await identifiedCapture(db, input.shopId, row.order_line_id, row.paypal_payment_id, today)) !== row.capture_id) {
@@ -562,6 +567,7 @@ export async function askPayPalAgain(
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
   }
   refusePaymentDates(capture, recallDate, now);
+  await refuseDisputed(client, row.capture_id);
 
   // Those checks can take minutes, so the limit and the lease are read on the clock as it stands now.
   const claimAt = timeSince(startedAt, now);
