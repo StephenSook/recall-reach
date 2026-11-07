@@ -11,7 +11,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { loadQueue } from "../queue/queue";
-import { checkResult, composeForSeller, familyAnswerFrom, familyView, sampleFamilyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
+import { checkResult, composeForSeller, familyAnswerFrom, familyView, recordFamilyPassedOn, sampleFamilyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -434,6 +434,16 @@ describe("notices", () => {
     expect(await state()).toBe("MARKED_SENT");
     await recordFamilyStopped(db, noticeId);
     expect(await state()).toBe("FAMILY_RESPONDED");
+  });
+
+  it("the family saying they passed it on shows on the card, and moves no state or count", async () => {
+    const m = await matchFor("27072", line({}));
+    const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+    await markSent(db, { shopId, noticeId });
+    await recordFamilyPassedOn(db, noticeId);
+    expect(noticeState((await db.query<Parameters<typeof noticeState>[0]>("select * from notices where id = $1", [noticeId])).rows[0])).toBe("MARKED_SENT");
+    expect((await familyView(db, noticeId))?.passedOn).toBe(true);
+    expect((await familyView(db, noticeId))?.stopped).toBe(false);
   });
 
   it("another shop cannot move a notice", async () => {
@@ -875,6 +885,7 @@ describe("notices", () => {
       const noticeId = await check("#F4");
       await lapse(noticeId);
       expect(await refusal(recordFamilyStopped(db, noticeId))).toBe("LINK_EXPIRED");
+      expect(await refusal(recordFamilyPassedOn(db, noticeId))).toBe("LINK_EXPIRED");
     });
 
     it("still shows what CPSC says after it has expired, because the hazard has not gone away", async () => {

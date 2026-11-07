@@ -1,5 +1,6 @@
 // What a family sees. The real page and the public sample both draw this, so the two can't drift apart.
 import type { CheckResult, FamilyView } from "@/server/notice/store";
+import { CopyRecallLink } from "./CopyRecallLink";
 
 function ResultText({ result, url }: { result: CheckResult; url: string }) {
   if (result === "MATCHES") {
@@ -110,13 +111,30 @@ export function FamilyNotice({ view, action }: { view: FamilyView; action: strin
             <button type="button" className="btn big" disabled>
               I&apos;ve stopped using it
             </button>
-            <p>In a real notice, this tells the shop. Here it does nothing.</p>
+            <button type="button" className="btn btn-outline" disabled style={{ marginTop: 12 }}>
+              I passed it on
+            </button>
+            <p>In a real notice, these tell the shop. Here they do nothing.</p>
           </div>
         ) : !view.expired ? (
           <form action={action} method="post" style={{ marginTop: 24 }}>
             <input type="hidden" name="action" value="stopped" />
             <button type="submit" className="btn big">
               I&apos;ve stopped using it
+            </button>
+          </form>
+        ) : null}
+        {action !== null && view.passedOn ? (
+          <div id="passed-on" data-testid="passed-on" className="result" style={{ marginTop: 12 }}>
+            <p>Thanks. Share this with whoever has it now.</p>
+            {/* CPSC's public record, never this link: this one can answer for this family. */}
+            <CopyRecallLink path={`/recall/${encodeURIComponent(view.recallNumber)}`} />
+          </div>
+        ) : action !== null && !view.expired ? (
+          <form action={action} method="post" style={{ marginTop: 12 }}>
+            <input type="hidden" name="action" value="passed_on" />
+            <button type="submit" className="btn btn-outline">
+              I passed it on
             </button>
           </form>
         ) : null}

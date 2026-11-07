@@ -99,6 +99,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
               Notice: <strong data-testid="notice-state">{NOTICE_STATE[row.notice.state]}</strong>
             </p>
             {row.notice.stopped ? <p data-testid="family-report">Family says they stopped using it. Recall steps not confirmed.</p> : null}
+            {row.notice.passedOn ? <p data-testid="family-passed-on">Family says they passed it on.</p> : null}
             {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
             {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
             {notifiable && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}

@@ -12,7 +12,7 @@ const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   refund: null,
   ...over,
 });
-const told = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED", kind = "SAFETY_NOTICE", result: string | null = null) => ({ id: "n", kind, state, stopped: false, result });
+const told = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED", kind = "SAFETY_NOTICE", result: string | null = null) => ({ id: "n", kind, state, stopped: false, passedOn: false, result });
 const refund = (status: string) => ({ id: "r", status, amountCents: 100, currency: "USD", failure: null });
 
 describe("paymentLine", () => {
@@ -157,7 +157,7 @@ describe("coverageLine", () => {
 });
 
 describe("needsApproval", () => {
-  const notice = (kind: string, state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED") => ({ id: "n", kind, state, stopped: false, result: null });
+  const notice = (kind: string, state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT" | "FAMILY_RESPONDED") => ({ id: "n", kind, state, stopped: false, passedOn: false, result: null });
 
   it("asks for approval when nothing has been prepared", () => {
     expect(needsApproval({ verdict: "MATCH", notice: null })).toBe(true);
@@ -359,7 +359,7 @@ describe("a store read from its listings", () => {
   describe("work a seller still owes never sits apart", () => {
     const word = (over = {}) => ({ recordId: "a", strength: "PRODUCT_WORDS" as const, ...none, ...over });
     const pendingRefund = { id: "r", status: "pending", amountCents: 100, currency: "USD", failure: null };
-    const asked = { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT" as const, stopped: false, result: "CANT_TELL" };
+    const asked = { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT" as const, stopped: false, passedOn: false, result: "CANT_TELL" };
 
     it.each([
       ["a refund in flight, after the evidence weakened", { lead: word({ refund: pendingRefund }), also: [] }],
@@ -392,7 +392,7 @@ describe("a store read from its listings", () => {
 });
 
 describe("a notice on a recall CPSC has changed", () => {
-  const notice = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT") => ({ id: "n", kind: "SAFETY_NOTICE", state, stopped: false, result: null });
+  const notice = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT") => ({ id: "n", kind: "SAFETY_NOTICE", state, stopped: false, passedOn: false, result: null });
 
   it.each(["PREPARED", "OPENED_IN_MAIL"] as const)("needs approving again while it's %s", (state) => {
     expect(needsApproval({ verdict: "MATCH", notice: notice(state), recallChanged: true })).toBe(true);

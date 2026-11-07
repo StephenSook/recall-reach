@@ -51,20 +51,20 @@ describe("which rows can be approved from the grid", () => {
     ["a listing, with no buyer to reach", { isListing: true }],
     ["two possible orders", { joinState: "AMBIGUOUS_JOIN" }],
     ["product words only", { strength: "PRODUCT_WORDS" }],
-    ["already approved", { notice: { id: "n", kind: "CHECK_REQUEST", state: "PREPARED", stopped: false, result: null } }],
+    ["already approved", { notice: { id: "n", kind: "CHECK_REQUEST", state: "PREPARED", stopped: false, passedOn: false, result: null } }],
   ])("%s cannot be", (_name, over) => {
     expect(by(build([row(over)]), "m1").approvable).toBe(false);
   });
 });
 
 describe("needs review and done", () => {
-  const sent = row({ matchId: "sent", recordId: "sale-2", notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, result: null } });
+  const sent = row({ matchId: "sent", recordId: "sale-2", notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, passedOn: false, result: null } });
   const rows = build([row({ matchId: "waiting" }), sent, row({ matchId: "other", recordId: "sale-2", recallNumber: "25206", recallDate: "2020-01-01" })]);
   const inIt = (tab: Parameters<typeof inTab>[1]) => rows.filter((r) => inTab(r, tab)).map((r) => r.matchId).sort();
 
   it("needs review holds only sales that still wait on the seller", () => expect(inIt("needs")).toEqual(["waiting"]));
   it("a family's no keeps a sale with other possible recalls in needs review", () => {
-    const answeredNo = row({ matchId: "lead", notice: { id: "n", kind: "CHECK_REQUEST", state: "FAMILY_RESPONDED", stopped: false, result: "DOESNT_MATCH" } });
+    const answeredNo = row({ matchId: "lead", notice: { id: "n", kind: "CHECK_REQUEST", state: "FAMILY_RESPONDED", stopped: false, passedOn: false, result: "DOESNT_MATCH" } });
     const near = row({ matchId: "near", recallNumber: "25206", recallDate: "2020-01-01" });
     const built = build([answeredNo, near]);
     expect(built.filter((r) => inTab(r, "needs")).map((r) => r.matchId)).toEqual(["lead"]);
@@ -81,7 +81,7 @@ describe("needs review and done", () => {
 
 describe("what a row says", () => {
   it("follows what happened: a sent notice", () => {
-    expect(by(build([row({ notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, result: null } })]), "m1").state).toBe("You marked sent");
+    expect(by(build([row({ notice: { id: "n", kind: "CHECK_REQUEST", state: "MARKED_SENT", stopped: false, passedOn: false, result: null } })]), "m1").state).toBe("You marked sent");
   });
 
   it("follows what happened: a refund, which is no longer on offer", () => {

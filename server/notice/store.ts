@@ -280,6 +280,14 @@ export async function recordFamilyStopped(db: Queryable, noticeId: string): Prom
   await db.query("update notices set family_stopped = true, responded_at = coalesce(responded_at, now()) where id = $1", [noticeId]);
 }
 
+/** The family's own report. It shows on the seller's card, and isn't an answer: the notice stays where it was and no count moves. */
+export async function recordFamilyPassedOn(db: Queryable, noticeId: string): Promise<void> {
+  const { rows } = await db.query<{ expired: boolean }>("select family_link_expires_at <= now() as expired from notices where id = $1", [noticeId]);
+  if (!rows[0]) throw noNotice();
+  if (rows[0].expired) throw linkExpired();
+  await db.query("update notices set family_passed_on = true where id = $1", [noticeId]);
+}
+
 /** The first real answer stands. The link has no login, so anyone holding it could otherwise change what the seller sees. */
 export async function recordFamilyAnswer(db: Queryable, noticeId: string, answer: string, askedOnPage?: string): Promise<CheckResult> {
   const { rows } = await db.query<{
@@ -339,6 +347,7 @@ export interface FamilyView {
   remedies: string[];
   question: CheckQuestion | null;
   stopped: boolean;
+  passedOn: boolean;
   result: CheckResult | null;
   /** The link no longer takes answers. CPSC's words still show: the hazard has not gone away. */
   expired: boolean;
@@ -375,6 +384,7 @@ export async function sampleFamilyView(db: Queryable, recallNumber: string): Pro
     remedies: r.remedies,
     question: null,
     stopped: false,
+    passedOn: false,
     result: null,
     expired: false,
     answerOpen: false,
@@ -385,9 +395,9 @@ export async function sampleFamilyView(db: Queryable, recallNumber: string): Pro
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
-    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null; images: { url: string; caption: string }[] }
+    RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; family_passed_on: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null; images: { url: string; caption: string }[] }
   >(
-    `select n.kind, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result, (n.check_open or ${staleNoSql("n.", "r.raw_sha256")}) as check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
+    `select n.kind, n.family_stopped, n.family_passed_on, ${currentCheckResultSql("n", "r")} as check_result, (n.check_open or ${staleNoSql("n.", "r.raw_sha256")}) as check_open, n.written_question, n.family_link_expires_at <= now() as expired, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies, r.images
      from notices n join shops s on s.id = n.shop_id
      join recall_matches m on m.id = n.match_id join recalls r on r.recall_id = m.recall_id
@@ -407,6 +417,7 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     remedies: n.remedies,
     question: n.kind === "CHECK_REQUEST" ? askedOf(n) : null,
     stopped: n.family_stopped,
+    passedOn: n.family_passed_on,
     result: n.check_result,
     expired: n.expired,
     answerOpen: n.check_result === null || n.check_open,

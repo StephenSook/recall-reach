@@ -118,11 +118,13 @@ describe("loadQueue", () => {
   it("shows the notice's state and the family's report", async () => {
     const { matchId } = await row("27072");
     const { noticeId } = await prepareNotice(db, { shopId, matchId });
-    expect((await row("27072")).notice).toMatchObject({ id: noticeId, kind: "SAFETY_NOTICE", state: "PREPARED", stopped: false });
+    expect((await row("27072")).notice).toMatchObject({ id: noticeId, kind: "SAFETY_NOTICE", state: "PREPARED", stopped: false, passedOn: false });
     await markOpened(db, { shopId, noticeId });
     expect((await row("27072")).notice?.state).toBe("OPENED_IN_MAIL");
     await recordFamilyStopped(db, noticeId);
-    expect((await row("27072")).notice).toMatchObject({ state: "FAMILY_RESPONDED", stopped: true });
+    expect((await row("27072")).notice).toMatchObject({ state: "FAMILY_RESPONDED", stopped: true, passedOn: false });
+    await db.query("update notices set family_passed_on = true where id = $1", [noticeId]);
+    expect((await row("27072")).notice).toMatchObject({ passedOn: true });
   });
 
   it("shows a pending approval only to the session that made it", async () => {
@@ -355,13 +357,13 @@ describe("toCards", () => {
     const order = (rows: QueueRow[]) => toCards(rows).cards.map((c) => c.lead.recallNumber);
     const newer = row("27072", { recordId: "line-1", matchId: "m1" });
     const older = row("27027", { recordId: "line-2", matchId: "m2" });
-    const notice = { id: "n", kind: "SAFETY_NOTICE", state: "PREPARED" as const, stopped: false, result: null };
+    const notice = { id: "n", kind: "SAFETY_NOTICE", state: "PREPARED" as const, stopped: false, passedOn: false, result: null };
     expect(order([newer, older])).toEqual(["27072", "27027"]);
     expect(order([newer, { ...older, notice }])).toEqual(["27072", "27027"]);
   });
 
   it("keeps a row already acted on in front, so what was sent never drops out of sight", () => {
-    const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, result: null };
+    const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, passedOn: false, result: null };
     const { cards } = toCards([row("27040", { strength: "BRAND" }), row("25206", { notice })]);
     expect(cards[0].lead.recallNumber).toBe("25206");
   });
