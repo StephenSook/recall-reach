@@ -108,7 +108,28 @@ export function isVariantOf(token: string, listed: string[]): boolean {
   });
 }
 
-/** Opens with a listed model's letters, or holds most of one in a row, whatever else it carries: PAPA03001AX-REFURB. */
+/** The most characters in a row that two codes share. */
+function longestRun(a: string, b: string): number {
+  let best = 0;
+  let previous = new Array<number>(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    const row = new Array<number>(b.length + 1).fill(0);
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        row[j] = previous[j - 1] + 1;
+        best = Math.max(best, row[j]);
+      }
+    }
+    previous = row;
+  }
+  return best;
+}
+
+/**
+ * Opens with a listed model's letters, is mostly a run of a model's characters, or holds most of a long one, whatever else
+ * it carries: PAPA03001AX-REFURB, LV78X for HLV78. A shop's own number that shares a few digits isn't either: N0001 beside
+ * SKU00001 is still N0001.
+ */
 function resemblesModel(token: string, listed: string[]): boolean {
   const letters = (t: string) => /^[A-Z]*/.exec(t)?.[0] ?? "";
   const plain = normalizeModel(token);
@@ -117,10 +138,8 @@ function resemblesModel(token: string, listed: string[]): boolean {
     const opening = letters(normalizeModel(m));
     if (opening.length >= 2 && letters(plain) === opening) return true;
     const n = unconfuse(normalizeModel(m));
-    // Long enough that a shop's own number sharing a few digits doesn't count: N0001 beside SKU00001 is still N0001.
-    const run = Math.max(6, Math.ceil(n.length * 0.6));
-    for (let i = 0; i + run <= n.length; i++) if (t.includes(n.slice(i, i + run))) return true;
-    return false;
+    const run = longestRun(t, n);
+    return run >= 4 && (run / t.length >= 0.6 || (n.length >= 8 && run / n.length >= 0.6));
   });
 }
 
@@ -131,9 +150,9 @@ function spacedNearMisses(upper: string, listed: ReadonlySet<string>, recallMode
   const found = new Set<string>();
   for (let i = 0; i + 1 < parts.length; i++) {
     const joined = parts[i] + parts[i + 1];
-    // After a listed model, the next word is just the next word: PAPA03001AI X is that model.
-    if (listed.has(parts[i]) || listed.has(joined) || !MODEL_TOKEN.test(joined)) continue;
-    if (isSiblingModel(joined, recallModels)) found.add(joined);
+    // Beside a listed model, the other word is just a word: PAPA03001AI X and SLEEPER PAPA03001AI are that model.
+    if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined)) continue;
+    if (isSiblingModel(joined, recallModels) || resemblesModel(joined, recallModels)) found.add(joined);
   }
   return [...found];
 }

@@ -203,6 +203,23 @@ describe("verdictFor", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI PAPA 03001AX" }).verdict).toBe("SCOPE_GAP");
       });
 
+      it("a spaced near-miss with an extra letter in front is a near-miss too", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars moon XPAPA 03001AX" }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("a word in front of the exact model isn't a near-miss", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper SLEEPER PAPA03001AI" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
+      it("the back half of a model with one letter changed can't confirm it", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars moon 03001AX" }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("a code that's mostly a short model can't confirm by look", () => {
+        const short = { ...PAPABLIC, title: "Fisher-Price Recalls Snuga Puppy Swings", description: "This recall involves Snuga Puppy activity swings in white and red, model HLV78.", products: [{ name: "Fisher-Price Snuga Puppy Swings", model: "", type: null, units: null }] };
+        expect(verdictFor(short, { title: "Fisher-Price Snuga Puppy swing white red LV78X" }).strength).not.toBe("CONFIRMED");
+      });
+
       it("a shop's own number sharing a few digits doesn't stop a short exact model", () => {
         const short = { ...PAPABLIC, title: "Valco Recalls Strollers", description: "This recall involves Valco strollers, model N0001.", products: [{ name: "Valco Strollers", model: "", type: null, units: null }] };
         expect(verdictFor(short, { title: "Valco strollers N0001 SKU00001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
