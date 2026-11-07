@@ -15,8 +15,9 @@
 //
 // Loaded on first use, because it adds about 95 MB (measured), and with require, so that the toolkit and the
 // axios whose timeout is set here are the same copy. An ESM import would load a different one.
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { PayPalMCPToolkit as Toolkit } from "@paypal/agent-toolkit/mcp";
 
@@ -87,6 +88,40 @@ export async function createRefundThroughToolkit(call: CreateRefundCall, opts: {
   const service = refundToolkit(call).getPaypalAPIService();
   if (opts.baseUrl) service.paypalClient.getBaseUrl = () => opts.baseUrl as string;
   return JSON.parse(await service.run("create_refund", { capture_id: call.captureId, amount: call.amount }));
+}
+
+export interface ToolkitInUse {
+  version: string | null;
+  /** Whether this server has loaded it yet. Start-up does, about 15 seconds in. */
+  loaded: boolean;
+  tools: string[] | null;
+  baseUrl: string | null;
+  runs: string;
+}
+
+const HOW_IT_RUNS = "In this server's own process, only after a person approves the exact amount. No model is handed the tool.";
+let toolsInUse: { tools: string[]; baseUrl: string } | undefined;
+
+/**
+ * For /api/health, read from the installed package and not from a copy of its details here. It never loads the package to
+ * answer, since that costs about 95 MB, so until start-up has loaded it the tools read as null. It can't fail a health check.
+ */
+export function toolkitInUse(): ToolkitInUse {
+  const none = { version: null, loaded: false, tools: null, baseUrl: null, runs: HOW_IT_RUNS };
+  try {
+    const fromProject = createRequire(join(process.cwd(), "package.json"));
+    const entry = fromProject.resolve(ENTRY);
+    const { version } = JSON.parse(readFileSync(join(dirname(dirname(entry)), "package.json"), "utf8")) as { version: string };
+    if (!fromProject.cache[entry]) return { ...none, version };
+    if (!toolsInUse) {
+      const toolkit = refundToolkit({ captureId: "none", amount: { currency_code: "USD", value: "0.00" }, requestId: "none", accessToken: "none" });
+      toolsInUse = { tools: toolkit.getTools().map((t) => t.method), baseUrl: toolkit.getPaypalAPIService().paypalClient.getBaseUrl() };
+    }
+    return { ...none, version, loaded: true, ...toolsInUse };
+  } catch (err) {
+    console.error("health check: toolkit read failed:", err instanceof Error ? err.name : "unknown error");
+    return none;
+  }
 }
 
 /** What the contract test checks about the real package. */

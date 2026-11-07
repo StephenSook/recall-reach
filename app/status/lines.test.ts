@@ -16,7 +16,7 @@ const healthy: Health = {
   claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true, mainModelOkAt: "2026-11-07T08:00:00.000Z", mainModelFresh: true },
   warnings: { count: 381, lastOkAt: "2026-11-07T08:00:00.000Z", fresh: true },
   degraded: null,
-  paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
+  paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z", toolkit: { version: "1.11.0", loaded: true, tools: ["a_tool"], baseUrl: "https://sandbox.example", runs: "r" } },
 };
 const line = (h: Health, name: string, claude = true) => statusLines(h, { claudeKeySet: claude }).find((l) => l.service === name);
 

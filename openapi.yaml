@@ -351,6 +351,24 @@ components:
             since: { type: string, format: date-time, nullable: true }
             lastGoodAt: { type: string, format: date-time, nullable: true }
         checkedAt: { type: string, format: date-time }
+        paypal:
+          type: object
+          description: PayPal's sandbox, and the Agent Toolkit that sends each refund.
+          required: [environment, webhookConfigured, lastVerifiedWebhookAt, toolkit]
+          properties:
+            environment: { type: string, enum: [sandbox] }
+            webhookConfigured: { type: boolean }
+            lastVerifiedWebhookAt: { type: string, format: date-time, nullable: true }
+            toolkit:
+              type: object
+              description: Read from the installed package. The tools read as null until this server has loaded it, about 15 seconds after it starts.
+              required: [version, loaded, tools, baseUrl, runs]
+              properties:
+                version: { type: string, nullable: true }
+                loaded: { type: boolean }
+                tools: { type: array, nullable: true, items: { type: string } }
+                baseUrl: { type: string, nullable: true }
+                runs: { type: string }
         market:
           type: object
           description: The search of the wider market. Not part of ok. Fresh means a search worked in the last 8 days.

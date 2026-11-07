@@ -3,6 +3,7 @@ import { lastWarningRead, warningCount } from "./warnings/warnings";
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
 import type { RecallPollStatus } from "./jobs/appJobs";
+import { toolkitInUse, type ToolkitInUse } from "./paypal/toolkitRefund";
 import { createRecordKey } from "./privacy/recordKey";
 import { PAYPAL_RETENTION_HOURS, PAYPAL_SOURCED } from "./privacy/retention";
 
@@ -69,6 +70,8 @@ export interface Health {
     environment: "sandbox";
     webhookConfigured: boolean;
     lastVerifiedWebhookAt: string | null;
+    /** The refund's way out, read from the installed package, so the claim can be checked from outside. */
+    toolkit: ToolkitInUse;
   };
 }
 
@@ -125,7 +128,7 @@ export async function getHealth(
   const webhookOk = Boolean(env.PAYPAL_WEBHOOK_ID) && recordKeyWorks(env.RECORD_HMAC_SECRET);
   const pollOk = poll.lastPollOk !== false;
   const loggingOk = !env.DEBUG && !env.NODE_DEBUG;
-  const paypalBase = { environment: "sandbox" as const, webhookConfigured: webhookOk };
+  const paypalBase = { environment: "sandbox" as const, webhookConfigured: webhookOk, toolkit: toolkitInUse() };
   try {
     const byYear = await recallCountsByYear(db);
     const pulls = await db.query<Record<string, unknown>>(

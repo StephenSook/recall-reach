@@ -38,7 +38,7 @@ describe("getHealth", () => {
       checks: { database: true, webhook: false, lastPull: false, purge: true, poll: true, replay: false },
       database: { ok: true },
       cpsc: { recalls: 0, byYear: {}, lastPull: null },
-      paypal: { environment: "sandbox", webhookConfigured: false, lastVerifiedWebhookAt: null },
+      paypal: { environment: "sandbox", webhookConfigured: false, lastVerifiedWebhookAt: null, toolkit: expect.objectContaining({ version: expect.stringMatching(/^\d+\.\d+\.\d+/), loaded: false, tools: null }) },
     });
   });
 

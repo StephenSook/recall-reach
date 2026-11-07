@@ -7,10 +7,10 @@ import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPayPalClient, PayPalApiError } from "./client";
-import { createRefundThroughToolkit, refundsThroughToolkit, toolkitSetup, warmToolkit, type CreateRefundCall } from "./toolkitRefund";
+import { createRefundThroughToolkit, refundsThroughToolkit, toolkitInUse, toolkitSetup, warmToolkit, type CreateRefundCall } from "./toolkitRefund";
 
 type Mode = number | "ok" | "drop" | "hang" | "trickle";
 
@@ -237,6 +237,9 @@ describe("create_refund through the toolkit", () => {
     });
 
     it("uses only the sandbox, and only the one tool", async () => {
+      warmToolkit();
+      const installed = JSON.parse(readFileSync(join(dirname(dirname(createRequire(join(process.cwd(), "package.json")).resolve("@paypal/agent-toolkit/mcp"))), "package.json"), "utf8")) as { version: string };
+      expect(toolkitInUse()).toMatchObject({ version: installed.version, loaded: true, tools: ["create_refund"], baseUrl: "https://api.sandbox.paypal.com" });
       const { sandboxBase, tools, requestIdHeader } = await toolkitSetup(call());
       expect(sandboxBase).toBe("https://api.sandbox.paypal.com");
       expect(tools).toEqual(["create_refund"]);
