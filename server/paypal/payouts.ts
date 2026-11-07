@@ -71,9 +71,9 @@ export async function reviewPayout(
   return { id: rows[0].id, amountCents: cents };
 }
 
-/** Answers only move forward. "Still waiting" can't undo a final answer, and PayPal's events don't arrive in order. A reversal can still follow paid. */
-const STATUS_RANK = "case status when 'sending' then 0 when 'unconfirmed' then 1 when 'unclaimed' then 2 else 3 end";
-const rankOf = (status: PayoutStatus) => (status === "unconfirmed" ? 1 : status === "unclaimed" ? 2 : 3);
+/** Answers only move forward, since PayPal's events don't arrive in order. "Still waiting" can't undo paid, and a stale paid can't undo a reversal. */
+const STATUS_RANK = "case status when 'sending' then 0 when 'unconfirmed' then 1 when 'unclaimed' then 2 when 'paid' then 3 when 'failed' then 4 else 5 end";
+const rankOf = (status: PayoutStatus) => (status === "unconfirmed" ? 1 : status === "unclaimed" ? 2 : status === "paid" ? 3 : status === "failed" ? 4 : 5);
 
 async function moveStatus(db: Queryable, status: PayoutStatus, paypalStatus: string | null, where: string, args: unknown[]): Promise<void> {
   await db.query(`update payouts set status = $1, paypal_status = $2, updated_at = now() where ${where} and ${STATUS_RANK} <= $3`, [status, paypalStatus, rankOf(status), ...args]);
@@ -176,11 +176,12 @@ export async function recordPayoutItemEvent(
   const batchHash = recordKey("paypal-resource", resource.payout_batch_id);
   const carried = resource.payout_item?.sender_item_id;
   const approval = typeof carried === "string" && UUID.test(carried) ? carried : null;
-  const { rows } = await db.query<{ id: string }>("select id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
+  const { rows } = await db.query<{ id: string; request_id: string }>("select id, request_id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
   if (!rows[0]) return false;
-  const first = await db.query("update payouts set batch_ref_hmac = $2 where id = $1 and batch_ref_hmac is null returning id", [rows[0].id, batchHash]);
+  // Each step is for the approval found above: the owner may review a new payment while this runs.
+  const first = await db.query("update payouts set batch_ref_hmac = $2 where id = $1 and request_id = $3::uuid and batch_ref_hmac is null returning id", [rows[0].id, batchHash, rows[0].request_id]);
   if (first.rows.length > 0) await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do nothing", [rows[0].id, resource.payout_batch_id]);
-  await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4", [rows[0].id]);
+  await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return true;
 }
 

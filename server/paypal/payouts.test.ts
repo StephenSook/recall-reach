@@ -298,6 +298,34 @@ describe("a payment past the refund window", () => {
       expect(await statusOf(id)).toBe("unconfirmed");
     });
 
+    it("a stale SUCCESS can't undo a reversal", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      await hook("REVERSED");
+      await hook("SUCCESS");
+      expect(await statusOf(id)).toBe("failed");
+    });
+
+    it("an event that began before a new review can't touch the new approval", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      await hook("RETURNED");
+      let reviewedDuringEvent = false;
+      const racing = {
+        query: async (sql: string, params?: unknown[]) => {
+          const answer = await db.query(sql, params as never);
+          if (!reviewedDuringEvent && sql.startsWith("select id")) {
+            reviewedDuringEvent = true;
+            await review({ amount: "6.00" });
+          }
+          return answer;
+        },
+      };
+      await recordPayoutItemEvent(racing as never, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS" });
+      expect(await statusOf(id)).toBe("reviewed");
+      expect((await db.query<{ batch_ref_hmac: string | null }>("select batch_ref_hmac from payouts where id = $1", [id])).rows[0].batch_ref_hmac).toBeNull();
+    });
+
     it("a read finishing after a final answer can't undo it", async () => {
       const { id } = await review();
       await send(id, fakePayPal().client);
