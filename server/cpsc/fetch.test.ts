@@ -91,6 +91,16 @@ describe("fetchRecalls", () => {
       expect(calls).toBeGreaterThan(1);
     });
 
+    it("treats a connection that drops mid-answer as CPSC failing, and tries again", async () => {
+      let calls = 0;
+      const fetchImpl = (async () => {
+        calls++;
+        return { status: 200, ok: true, text: () => Promise.reject(new TypeError("terminated")) } as unknown as Response;
+      }) as typeof fetch;
+      await expect(fetchRecalls(range, { fetchImpl, sleep: async () => {} })).rejects.toThrow(/^CPSC request failed: .*terminated/);
+      expect(calls).toBeGreaterThan(1);
+    });
+
     it("recovers if the next try answers", async () => {
       const answers = [[errorRow], []];
       const fetchImpl = (async () => new Response(JSON.stringify(answers.shift()), { status: 200 })) as typeof fetch;

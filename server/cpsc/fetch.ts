@@ -63,7 +63,12 @@ async function attemptOnce(url: string, fetchImpl: typeof fetch, timeoutMs: numb
   if (res.status === 429 || res.status >= 500) throw new RetryableError(`HTTP ${res.status}`);
   if (!res.ok) throw new Error(`CPSC returned HTTP ${res.status}`);
 
-  const body = await res.text();
+  let body: string;
+  try {
+    body = await res.text();
+  } catch (err) {
+    throw new RetryableError(`connection dropped mid-answer: ${err instanceof Error ? err.message : String(err)}`);
+  }
   let payload: unknown;
   try {
     payload = JSON.parse(body);
