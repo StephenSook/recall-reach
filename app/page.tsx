@@ -30,7 +30,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
         <p className="door-no-login">No login.</p>
         <p className="door-other">
           <Link className="btn btn-outline big" href="/check">
-            Check your own order file
+            Check an item or your order file
           </Link>
         </p>
         <footer>

@@ -105,6 +105,16 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Check one item",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/check/page.tsx", call: "checkText" },
+      { file: "app/check/page.tsx", call: "publicCheckAllowed" },
+      { file: "app/check/itemAnswer.ts", find: "That doesn't mean it's safe." },
+    ],
+  },
+  {
     name: "Shopping agent",
     status: "claimed",
     feature: true,

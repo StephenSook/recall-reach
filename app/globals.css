@@ -594,6 +594,51 @@ pre {
   padding: 10px;
   font-size: 16px;
 }
+/* One item, typed at the counter */
+.item-answer {
+  max-width: 640px;
+  margin-block: 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-hard);
+  overflow-wrap: anywhere;
+}
+.item-says {
+  font-size: var(--text-lead);
+  font-weight: 600;
+}
+.item-also {
+  margin-top: 12px;
+  font-weight: 600;
+}
+.recall-links {
+  margin-block: 8px;
+}
+.recall-links li {
+  border-top: 2px dashed var(--color-rule);
+  padding-block: 10px;
+}
+.recall-links a {
+  display: block;
+}
+.recall-links small {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+}
+.check-details {
+  margin-block: 8px;
+  max-width: 640px;
+  font-size: 14px;
+}
+.check-details summary {
+  min-height: 44px;
+  padding-block: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
 .delete-data {
   margin-top: 32px;
   font-size: 14px;

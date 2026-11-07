@@ -12,6 +12,26 @@ function useChecking() {
   return [checking, setChecking] as const;
 }
 
+/** One item, typed at the counter. A plain form: on a slow phone it works before the page's scripts have loaded. */
+export function ItemForm({ title, model, maxTitle, maxModel }: { title: string; model: string; maxTitle: number; maxModel: number }) {
+  const [checking, setChecking] = useChecking();
+  return (
+    <form className="window upload" action="/check" method="get" data-testid="item-form" onSubmit={() => setChecking(true)}>
+      <label className="field">
+        What&apos;s on the label
+        <input name="title" defaultValue={title} maxLength={maxTitle} autoComplete="off" enterKeyHint="search" />
+      </label>
+      <label className="field">
+        Model number, if you can see it
+        <input name="model" defaultValue={model} maxLength={maxModel} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
+      </label>
+      <button type="submit" className="btn big" disabled={checking}>
+        {checking ? "Checking" : "Check it"}
+      </button>
+    </form>
+  );
+}
+
 /** A full-size file takes a couple of minutes, so the button says so, and a second press can't start another. */
 export function CheckForm() {
   const [checking, setChecking] = useChecking();

@@ -71,6 +71,10 @@ export default function JudgeDoor() {
           <strong>Ask the shopping agent.</strong> <Link href="/shopper">Press a chip</Link> and wait about ten seconds. It uses real Claude and real listings, on a small daily limit.
           <span className="quiet">Look for a listing it wouldn&apos;t offer, with the recall named, and open What the agent did. Listings change, so a run may come back different, and it may not stop any.</span>
         </li>
+        <li>
+          <strong>Type a product you know.</strong> <Link href="/check">Check one item</Link> takes what&apos;s on a label and a model number, or <Link href="/check?title=Baby+Brezza+sterilizer&amp;model=BRZ0083">see one name a recall</Link>.
+          <span className="quiet">Look for the recall to read, and what it says when nothing names your product.</span>
+        </li>
       </ol>
       <h2 className="section-title">From a terminal</h2>
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
@@ -86,7 +90,7 @@ curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%2
       {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
       <img src="/android-apk-qr.svg" alt="QR code for the Android build's download" width={160} height={160} />
       <p className="note">
-        <Link href="/r/sample">What a family sees</Link>, as a sample that stays up. <Link href="/check">Check your own order file</Link>, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/status">Status</Link>. <Link href="/privacy">Privacy</Link>.
+        <Link href="/r/sample">What a family sees</Link>, as a sample that stays up. <Link href="/check">Check one item</Link>, your own order file, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/status">Status</Link>. <Link href="/privacy">Privacy</Link>.
       </p>
     </main>
   );

@@ -6,8 +6,8 @@ test.use({ viewport: { width: 390, height: 844 } });
 
 test("a shop checks its own file, sees real matches with refunds off, and deletes it all", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Check your own order file" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Check your own order file");
+  await page.getByRole("link", { name: "Check an item or your order file" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Check your own order file" })).toBeVisible();
 
   const sample = await page.request.get("/sample-order-file.csv");
   expect(sample.ok()).toBe(true);

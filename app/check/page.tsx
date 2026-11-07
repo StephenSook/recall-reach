@@ -1,6 +1,13 @@
+import { headers } from "next/headers";
 import Link from "next/link";
+import { getDb } from "@/server/db/pg";
 import { MAX_FILE_BYTES, MAX_LINES, OWN_FILE_DAYS } from "@/server/import/ownFile";
-import { CheckForm, StoreForm } from "./CheckForm";
+import { checkText, MAX_MODEL, MAX_TITLE, readTextCheck } from "@/server/match/textCheck";
+import { businessDay } from "@/server/time/businessDay";
+import { publicCheckAllowed } from "@/server/web/publicCheck";
+import { CheckForm, ItemForm, StoreForm } from "./CheckForm";
+import { type ItemAnswer, readItemAnswer } from "./itemAnswer";
+import { ItemAnswerView } from "./ItemAnswerView";
 
 // The route sends a visitor here with a code, and only these sentences are shown.
 const ERRORS: Record<string, string> = {
@@ -19,33 +26,66 @@ const ERRORS: Record<string, string> = {
   FAILED: "The check could not run. Please try again.",
 };
 
-export default async function CheckPage({ searchParams }: { searchParams: Promise<{ error?: string | string[] }> }) {
-  const { error } = await searchParams;
+const NOTHING_TYPED = "Type what's on the label, or a model number.";
+
+const typed = (value: string | string[] | undefined) => (typeof value === "string" ? value : undefined);
+
+/** The same rules and limit as /api/check. This code keeps and logs nothing typed, and no model runs. */
+async function checkItem(title: string, model: string): Promise<{ answer: ItemAnswer; checked: string } | { refused: string }> {
+  const input = readTextCheck(title, model);
+  if ("error" in input) return { refused: NOTHING_TYPED };
+  if (!publicCheckAllowed(await headers())) return { refused: ERRORS.BUSY };
+  try {
+    return { answer: readItemAnswer(await checkText(getDb(), input, businessDay())), checked: `${input.title} ${input.model}`.trim() };
+  } catch (err) {
+    // The name only: a database error can quote the text it was given.
+    console.error("one item check failed:", err instanceof Error ? err.name : "unknown error");
+    return { refused: ERRORS.FAILED };
+  }
+}
+
+export default async function CheckPage({ searchParams }: { searchParams: Promise<{ error?: string | string[]; title?: string | string[]; model?: string | string[] }> }) {
+  const params = await searchParams;
+  const { error } = params;
   const message = typeof error === "string" && Object.hasOwn(ERRORS, error) ? ERRORS[error] : null;
+  const title = typed(params.title);
+  const model = typed(params.model);
+  const item = title !== undefined || model !== undefined ? await checkItem(title ?? "", model ?? "") : null;
   return (
     <main className="page">
       <header className="page-head">
-        <h1>Check your own order file</h1>
+        <h1>Check one item</h1>
       </header>
-      <p>See which past sales match a real CPSC recall. Nothing goes to a family without you.</p>
       {message ? (
         <p role="alert" className="alert">
           {message}
         </p>
       ) : null}
-      <CheckForm />
-      <p className="note">
-        It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on. <a href="/sample-order-file.csv">Try a sample file</a>.
-      </p>
+      <p>Before you take something in or put it out.</p>
+      <ItemForm title={title ?? ""} model={model ?? ""} maxTitle={MAX_TITLE} maxModel={MAX_MODEL} />
+      {item && "refused" in item ? (
+        <p role="alert" className="alert">
+          {item.refused}
+        </p>
+      ) : null}
+      {item && "answer" in item ? <ItemAnswerView answer={item.answer} checked={item.checked} /> : null}
       <p className="note">
         This checks CPSC recalls. Car seats are recalled through NHTSA, so check <a href="https://www.nhtsa.gov/recalls">nhtsa.gov/recalls</a>.
       </p>
+      <h2 className="section-title">Check your own order file</h2>
+      <p>See which past sales match a real CPSC recall. Nothing goes to a family without you.</p>
+      <CheckForm />
       <p className="note">
-        We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.
+        <a href="/sample-order-file.csv">Try a sample file</a>.
       </p>
-      <p className="note">
-        We keep only those columns, and buyer emails are encrypted. No PayPal account is connected, so this can&apos;t refund anything. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
-      </p>
+      <details className="check-details">
+        <summary>What this keeps and checks</summary>
+        <p className="note">It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on.</p>
+        <p className="note">We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.</p>
+        <p className="note">
+          We keep only those columns, and buyer emails are encrypted. No PayPal account is connected, so this can&apos;t refund anything. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
+        </p>
+      </details>
       <h2 className="section-title">No file with you?</h2>
       <p>A Shopify store&apos;s public listings can be checked right now. This checks what&apos;s listed today. Only your order file checks past sales.</p>
       <StoreForm />
