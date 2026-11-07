@@ -171,6 +171,11 @@ describe("keeping them", () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(0);
     });
 
+    it.each(["Zzyxo crib bumpers ZZ1001", "Zzyxo ZZ1001"])("finds %s, where the maker and a model CPSC names settle it", async (title) => {
+      await storeWarnings(db, [{ ...WARNING, number: "26-2", product: "Zzyxo Crib Bumpers", description: "These crib bumpers are model ZZ1001. Check the website to determine whether your model is affected." }]);
+      expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(1);
+    });
+
     it("reads a long title only as far as a title can be", async () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [`${"x ".repeat(300)}Mbabyjon crib bumpers`])).toBe(0);
       expect(await checkTitlesAgainstWarnings(db, shopId, [`Mbabyjon crib bumpers ${"x ".repeat(300)}`])).toBe(1);

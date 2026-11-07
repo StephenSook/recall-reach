@@ -153,7 +153,7 @@ export function nearWarning(w: Pick<Warning, "product" | "description">, title: 
   const { verdict, strength, matched } = verdictFor({ title: `${maker} Recalls ${w.product}`, description: w.description, products: [{ name: w.product, model: "", type: null, units: null }], retailers: [] }, { title });
   if (verdict === "CLEARED") return false;
   // The maker alone isn't enough: the same maker's other product isn't what CPSC warned about.
-  return strength === "CONFIRMED" || (strength === "BRAND" && matched.some((m) => m.startsWith("product:")));
+  return strength === "CONFIRMED" || (strength === "BRAND" && matched.some((m) => m.startsWith("product:") || m.startsWith("model:")));
 }
 
 /** Adds what these titles came near, and says how many it added. Only ever adds, and touches no recall row. */
