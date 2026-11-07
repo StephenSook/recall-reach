@@ -51,6 +51,12 @@ describe("what a family sees", () => {
       expect(page).toContain("https://www.cpsc.gov/Recalls/2027/x");
     });
 
+    it("calls CPSC's page CPSC's", () => {
+      const page = html(null);
+      expect(page).toContain('<a href="https://www.cpsc.gov/Recalls/2027/x">Open CPSC&#x27;s recall page</a>');
+      expect(page).not.toMatch(/maker/i);
+    });
+
     it("names no shop", () => {
       expect(html(null)).toContain("A real notice names the shop that sent it.");
       expect(html(null)).not.toContain("This page was sent by");

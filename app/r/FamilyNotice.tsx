@@ -98,7 +98,7 @@ export function FamilyNotice({ view, action }: { view: FamilyView; action: strin
           <p key={r}>{r}</p>
         ))}
         <p>
-          <a href={view.recallUrl}>Open the maker&apos;s recall page</a>
+          <a href={view.recallUrl}>Open CPSC&apos;s recall page</a>
         </p>
 
         {view.stopped ? (

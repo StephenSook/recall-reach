@@ -106,8 +106,10 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
 
   await asFamily(browser, familyUrl(body), async (family) => {
     await expect(family.getByRole("heading", { level: 1 })).toHaveText("This product was recalled");
+    const cpscLink = family.getByRole("link", { name: "Open CPSC's recall page" });
+    await expect(cpscLink).toHaveCount(1);
+    expect(new URL((await cpscLink.getAttribute("href")) ?? "").hostname).toMatch(/(^|\.)cpsc\.gov$/);
     await expect(family.getByText("The recalled sterilizer dryers can overheat")).toBeVisible();
-    await expect(family.getByRole("link", { name: "Open the maker's recall page" })).toBeVisible();
     await family.getByRole("button", { name: "I've stopped using it" }).click();
     await expect(family.getByTestId("stopped")).toContainText("This does not finish the recall steps.");
     await expect(family.getByTestId("stopped")).toBeInViewport({ ratio: 1 });
