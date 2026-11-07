@@ -211,7 +211,15 @@ describe("loadQueue", () => {
         reason: "The title does not say.",
         trace: [{ tool: "read_recall", ok: true }, { tool: "record_finding", ok: true }],
         model: "claude-sonnet-5-5",
+        checkedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        fellBack: false,
       });
+    });
+
+    it("says when another model answered, not the main one", async () => {
+      await addRun();
+      await db.query("update agent_runs set model = 'claude-haiku-5-5'");
+      expect((await row("27040")).agent).toMatchObject({ model: "claude-haiku-5-5", fellBack: true });
     });
 
     it("shows that it found nothing, when it did not", async () => {

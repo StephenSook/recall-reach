@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, sitsApart, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentChecked, agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, sitsApart, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -388,5 +388,17 @@ describe("a store read from its listings", () => {
     const c = { recallsChecked: 1855, searchedFrom: null, searchedTo: "2026-11-06", recallsFrom: "2022-01-03", recallsTo: "2026-11-05", recallYearsMissing: [], unidentifiedPayments: 0, paypalSearched: false, candidatesNotChecked: 3, searchWindows: 0, failedWindows: 0 };
     expect(listingCoverageLine(c, { total: 1000, forSale: 950 })).toBe("Read 1,000 listings, 950 for sale now. No sales or PayPal history were read. Checked 1,855 recalls, 2022-01-03 to 2026-11-05. 3 candidates were not checked.");
     expect(listingCoverageLine(c, { total: 1, forSale: 1 })).toContain("Read 1 listing,");
+  });
+});
+
+describe("when Claude read it, and which model", () => {
+  const at = "2026-11-06T20:30:00.000Z";
+
+  it("says when, so a stored answer doesn't pass for a new one", () => {
+    expect(agentChecked({ model: "claude-sonnet-5-5", checkedAt: at, fellBack: false })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-sonnet-5-5");
+  });
+
+  it("says so when the fallback model answered", () => {
+    expect(agentChecked({ model: "claude-haiku-5-5", checkedAt: at, fellBack: true })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-haiku-5-5, the fallback model");
   });
 });

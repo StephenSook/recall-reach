@@ -9,7 +9,7 @@ import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
 import { BuyButtons } from "./BuyButtons";
-import { agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
+import { agentChecked, agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -169,7 +169,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
               ))}
             </ol>
             <p>
-              <small>{row.agent.model}. This is Claude reading the text. It changes nothing above and says nothing about safety.</small>
+              <small>{agentChecked(row.agent)}. This is Claude reading the text. It changes nothing above and says nothing about safety.</small>
             </p>
           </details>
         ) : null}

@@ -1,4 +1,5 @@
 // The exact words on the seller's screen.
+import { ranAt } from "@/app/replay/labels";
 import type { QueueData, QueueRow } from "@/server/queue/queue";
 
 export const VERDICT_CHIP = { MATCH: "Needs review", SCOPE_GAP: "Can't tell yet", CLEARED: "Cleared" } as const;
@@ -113,6 +114,10 @@ const AGENT_HEADLINE: Record<string, string> = {
 export function agentHeadline(run: { outcome: string; finding: string | null }): string {
   return AGENT_HEADLINE[run.finding ?? run.outcome] ?? AGENT_HEADLINE.NO_FINDING;
 }
+
+/** A stored answer can be days old, and the main model can hand over to the fallback, so the card says both. */
+export const agentChecked = (run: { model: string; checkedAt: string; fellBack: boolean }) =>
+  `Checked ${ranAt(run.checkedAt)} by ${run.model}${run.fellBack ? ", the fallback model" : ""}`;
 
 /** One step of how it checked. */
 export function traceLine(step: { tool: string; ok: boolean; item?: string; query?: string; found?: number; note?: string }): string {

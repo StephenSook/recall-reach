@@ -3,6 +3,7 @@ import { QUESTION_VERSION, type WrittenQuestion } from "../agent/questionStore";
 import type { TraceEntry } from "../agent/recallAgent";
 import { readItem } from "../agent/sources";
 import type { Recall } from "../cpsc/schema";
+import { MODEL } from "../agent/claude";
 import type { Queryable } from "../db/types";
 import { checkQuestion, type CheckQuestion } from "../notice/compose";
 import { currentCheckResultSql, noticeState, type NoticeState } from "../notice/store";
@@ -20,6 +21,9 @@ export interface AgentFinding {
   reason: string | null;
   trace: TraceEntry[];
   model: string;
+  checkedAt: string;
+  /** Another model answered, not the main one. */
+  fellBack: boolean;
 }
 
 export interface QueueRow {
@@ -142,7 +146,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
             q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
-            ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model,
+            ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result,
@@ -241,6 +245,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
         reason: (r.run_reason as string | null) ?? null,
         trace: r.run_trace as TraceEntry[],
         model: String(r.run_model),
+        checkedAt: new Date(r.run_created_at as string).toISOString(),
+        fellBack: r.run_model !== MODEL,
       };
     }),
   );
