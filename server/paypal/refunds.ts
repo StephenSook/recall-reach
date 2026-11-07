@@ -152,7 +152,7 @@ export async function approveRefund(
   input: { shopId: string; sessionId: string; matchId: string; now?: Date },
 ): Promise<Approval> {
   const now = input.now ?? new Date();
-  if (!UUID.test(input.matchId)) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop.");
+  if (!UUID.test(input.matchId)) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop. Go back to your queue.");
   const { rows } = await db.query<
     LineFacts & {
       verdict: string;
@@ -174,13 +174,13 @@ export async function approveRefund(
     [input.matchId, input.shopId],
   );
   const m = rows[0];
-  if (!m || !m.order_line_id) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop.");
-  if (m.verdict !== "MATCH" || m.strength !== "CONFIRMED") throw new RefundRefused("NOT_A_CONFIRMED_MATCH", "A refund needs a confirmed match.");
+  if (!m || !m.order_line_id) throw new RefundRefused("NO_SUCH_MATCH", "No such match for this shop. Go back to your queue.");
+  if (m.verdict !== "MATCH" || m.strength !== "CONFIRMED") throw new RefundRefused("NOT_A_CONFIRMED_MATCH", "A refund needs a confirmed match. You can still send the check request.");
   if (m.sale_path !== "REFUND_ELIGIBLE") {
-    throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
+    throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here. You can still send the notice.");
   }
   if (m.join_state !== "IDENTIFIED") {
-    throw new RefundRefused("JOIN_NOT_IDENTIFIED", "This order line is not linked to exactly one PayPal payment.");
+    throw new RefundRefused("JOIN_NOT_IDENTIFIED", "This order line is not linked to exactly one PayPal payment. Check the sale in PayPal.");
   }
   if (m.order_incomplete) {
     throw new RefundRefused("ORDER_INCOMPLETE", "A row of this order could not be read, so this amount cannot be trusted. Fix the file and import it again.");
@@ -188,14 +188,14 @@ export async function approveRefund(
   const captureId = await identifiedCapture(db, input.shopId, m.order_line_id, m.paypal_payment_id, businessDay(now));
   const open = await db.query("select 1 from refunds where order_line_id = $1 and status <> 'failed'", [m.order_line_id]);
   if (open.rows.length > 0) {
-    throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
+    throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists. Open it from the card.");
   }
   const amountCents = refundAmountCents({
     unitPriceCents: m.unit_price_cents,
     quantity: m.quantity,
     discountCents: m.discount_cents,
   });
-  if (amountCents <= 0) throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "This line has nothing to refund.");
+  if (amountCents <= 0) throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "This line has nothing to refund. You can still send the notice.");
 
   // The exact amount a person sees has to be one PayPal can still honor.
   const { rows: recalls } = await db.query<{ recall_date: string }>("select recall_date from recalls where recall_id = $1", [m.recall_id]);
@@ -233,7 +233,7 @@ export async function executeRefund(
 ): Promise<RefundOutcome> {
   const now = input.now ?? new Date();
   const startedAt = performance.now();
-  const invalid = () => new RefundRefused("APPROVAL_NOT_VALID", "This approval is missing, expired, already used, or from another session.");
+  const invalid = () => new RefundRefused("APPROVAL_NOT_VALID", "This approval is missing, expired, already used, or from another session. Press Review refund again.");
   if (!UUID.test(input.approvalId)) throw invalid();
 
   // Every check runs before the approval is spent, so a refused or failed attempt uses up nothing.
@@ -255,7 +255,7 @@ export async function executeRefund(
 
   const { recallDate, orderedOn } = await approvedFactsHold(db, approval);
   if (orderedOn <= recallDate) {
-    throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here.");
+    throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here. You can still send the notice.");
   }
 
   const today = businessDay(now);
@@ -294,7 +294,7 @@ export async function executeRefund(
       [input.approvalId, input.shopId, approval.order_line_id, approval.amount_cents, approval.currency, leaseEnd(startedAt, now)],
     );
     const reserved = inserted.rows[0];
-    if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists.");
+    if (!reserved) throw new RefundRefused("REFUND_ALREADY_IN_PROGRESS", "A refund for this order line already exists. Open it from the card.");
     await tx.query("insert into paypal_refund_refs (refund_row_id, capture_id) values ($1, $2)", [reserved.id, captureId]);
     return reserved;
   });
@@ -409,10 +409,10 @@ async function refusePayPalFacts(
   facts: { amountCents: number; currency: string; recallDate: string; now: Date },
 ): Promise<{ capture: CaptureFacts; refundedByPayPal: number }> {
   const capture = await readCapture(client, captureId);
-  if (capture.currency !== facts.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
-  if (capture.status === "REFUNDED") throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "PayPal says this payment is already fully refunded.");
+  if (capture.currency !== facts.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one. Check the payment in PayPal.");
+  if (capture.status === "REFUNDED") throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "PayPal says this payment is already fully refunded. You can still send the notice.");
   if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
+    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
   }
   refusePaymentDates(capture, facts.recallDate, facts.now);
   // A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back.
@@ -436,13 +436,13 @@ async function readCapture(client: PayPalClient, captureId: string): Promise<Cap
 /** Within 180 days of the payment, and paid after the recall date, whatever the order date says. */
 function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date): void {
   const paidAt = Date.parse(capture.createTime ?? "");
-  if (Number.isNaN(paidAt)) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no readable date for this payment.");
+  if (Number.isNaN(paidAt)) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal gave no readable date for this payment. Check the payment in PayPal.");
   if (now.getTime() - paidAt > REFUND_WINDOW_DAYS * 86_400_000) {
     throw new RefundRefused("REFUND_WINDOW_CLOSED", "PayPal refund window closed. Check the recall page for the next steps.");
   }
   const paidOn = businessDay(new Date(paidAt));
   if (paidOn <= recallDate) {
-    throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date.");
+    throw new RefundRefused("PAYMENT_NOT_AFTER_RECALL", "PayPal's payment date is not after the recall date. You can still send the notice.");
   }
 }
 
@@ -514,7 +514,7 @@ export async function askPayPalAgain(
 ): Promise<RefundOutcome> {
   const now = input.now ?? new Date();
   const startedAt = performance.now();
-  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
+  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop. Go back to your queue.");
   if (!UUID.test(input.refundId)) throw notFound();
   const { rows } = await db.query<{
     status: string;
@@ -557,9 +557,9 @@ export async function askPayPalAgain(
     throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
   }
   const capture = await readCapture(client, row.capture_id);
-  if (capture.currency !== row.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one.");
+  if (capture.currency !== row.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one. Check the payment in PayPal.");
   if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED" && capture.status !== "REFUNDED") {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund.");
+    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
   }
   refusePaymentDates(capture, recallDate, now);
 
@@ -595,11 +595,11 @@ export async function askPayPalAgain(
 /** Records that the seller was sent to look in PayPal. It changes nothing else: the line stays blocked. */
 export async function sendSellerToPayPal(db: Queryable, input: { shopId: string; refundId: string; now?: Date }): Promise<void> {
   const now = input.now ?? new Date();
-  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
+  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop. Go back to your queue.");
   if (!UUID.test(input.refundId)) throw notFound();
   const { rows } = await db.query<{ status: string }>("select status from refunds where id = $1 and shop_id = $2", [input.refundId, input.shopId]);
   if (!rows[0]) throw notFound();
-  if (rows[0].status !== "unconfirmed") throw new RefundRefused("NOTHING_TO_ASK", "This refund already has a clear answer.");
+  if (rows[0].status !== "unconfirmed") throw new RefundRefused("NOTHING_TO_ASK", "This refund already has a clear answer. Check it against PayPal.");
   const sent = await db.query(
     `update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz)
      where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $2::timestamptz)
@@ -649,7 +649,7 @@ export const reconcileRefund = (db: Queryable, client: PayPalClient, input: Reco
 
 async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileInput, write: boolean): Promise<Reconciliation> {
   const now = input.now ?? new Date();
-  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop.");
+  const notFound = () => new RefundRefused("NO_SUCH_REFUND", "No such refund for this shop. Go back to your queue.");
   if (!UUID.test(input.refundId)) throw notFound();
   const { rows } = await db.query<{
     status: RefundOutcome["status"];

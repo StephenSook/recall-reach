@@ -1799,3 +1799,24 @@ describe("refunds", () => {
     });
   });
 });
+
+describe("every refusal says what the owner can do next", () => {
+  const source = readFileSync(new URL("./refunds.ts", import.meta.url), "utf8");
+  const refusals = [...source.matchAll(/new RefundRefused\(\s*"([A-Z_]+)",\s*(`[^`]*`|"[^"]*")/g)].map((m) => ({ code: m[1], message: m[2].slice(1, -1) }));
+  const NEXT_STEP = /\b(review it again|read it from paypal|go back to your queue|send the (notice|check request)|check (it against |it in paypal|the |this |paypal|the sale)|to refund|press review refund|try again|fix the file|open it from|recall page)/i;
+
+  it("finds them all", () => {
+    const declared = /export type RefusalCode =([^;]+);/.exec(source)?.[1].match(/"([A-Z_]+)"/g)?.map((c) => c.slice(1, -1)) ?? [];
+    expect(declared.length).toBeGreaterThan(15);
+    expect(refusals.length).toBeGreaterThan(25);
+    for (const code of new Set(refusals.map((r) => r.code))) expect(declared).toContain(code);
+  });
+
+  it("has a next step in each", () => {
+    expect(refusals.filter((r) => !NEXT_STEP.test(r.message))).toEqual([]);
+  });
+
+  it("would catch one without", () => {
+    expect(NEXT_STEP.test("PayPal's payment date is not after the recall date.")).toBe(false);
+  });
+});
