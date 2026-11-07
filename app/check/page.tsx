@@ -8,6 +8,7 @@ import { publicCheckAllowed } from "@/server/web/publicCheck";
 import { CheckForm, ItemForm, StoreForm } from "./CheckForm";
 import { type ItemAnswer, readItemAnswer } from "./itemAnswer";
 import { ItemAnswerView } from "./ItemAnswerView";
+import { NARTS_PAGE, nartsLine } from "./nartsList";
 
 // The route sends a visitor here with a code, and only these sentences are shown.
 const ERRORS: Record<string, string> = {
@@ -27,7 +28,6 @@ const ERRORS: Record<string, string> = {
 };
 
 const NOTHING_TYPED = "Type what's on the label, or a model number.";
-const CAR_SEAT = /\bcar[\s-]*seats?\b/i;
 /** Enough to open the whole list of a product kind. The public API's own list stays shorter. */
 const MAX_SHOWN = 60;
 
@@ -55,6 +55,7 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
   const title = typed(params.title);
   const model = typed(params.model);
   const item = title !== undefined || model !== undefined ? await checkItem(title ?? "", model ?? "") : null;
+  const narts = nartsLine(`${title ?? ""} ${model ?? ""}`);
   return (
     <main className="page">
       <header className="page-head">
@@ -75,10 +76,10 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
       {item && "answer" in item ? <ItemAnswerView answer={item.answer} checked={item.checked} /> : null}
       <p className="note">
         This checks CPSC recalls. Car seats are recalled through NHTSA, so check <a href="https://www.nhtsa.gov/recalls">nhtsa.gov/recalls</a>.
-        {CAR_SEAT.test(`${title ?? ""} ${model ?? ""}`) ? (
+        {narts ? (
           <>
             {" "}
-            The resale trade group <a href="https://www.narts.org/product-safety-in-resale">NARTS</a> says car seats should never be resold.
+            The resale trade group <a href={NARTS_PAGE}>NARTS</a> {narts}
           </>
         ) : null}
       </p>
