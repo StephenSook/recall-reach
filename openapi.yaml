@@ -21,7 +21,8 @@ paths:
       operationId: checkRecall
       summary: Check a product title or model against CPSC recalls
       description: >-
-        Runs the rules a shop's sales get on the text you send. Nothing you send is stored or logged. At least one of
+        Runs the rules a shop's sales get on the text you send. Our code doesn't store or log it. It travels in the page
+        address, so the web host's request logs may include it. At least one of
         title and model is needed. Limited to 60 checks an hour per visitor.
       parameters:
         - name: title

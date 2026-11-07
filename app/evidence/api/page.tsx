@@ -40,7 +40,7 @@ export default async function ApiEvidence() {
         </p>
       ) : null}
       <p className="note">
-        Nothing you send is stored or logged, and it never goes to PayPal or Claude. <Link href="/judge">Back</Link>
+        Our code doesn&apos;t store or log what you send, and it never goes to PayPal or Claude. A check through the API puts it in the page address, so the web host&apos;s request logs may include it. <Link href="/judge">Back</Link>
       </p>
       <div className="provenance">
         <span className="chip chip-real">Real CPSC</span>

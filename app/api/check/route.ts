@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 const HEADERS = { "cache-control": "no-store", "access-control-allow-origin": "*" };
 
-// Anyone's text against CPSC's public recalls. No key, no cookie, and nothing it is given is stored or logged.
+// Anyone's text against CPSC's public recalls. No key, no cookie, and this code neither stores nor logs what it's given. The text
+// is in the address, so the web host's request logs may include it.
 export async function GET(request: Request): Promise<Response> {
   if (!publicCheckAllowed(request.headers)) {
     return Response.json({ error: "too many checks: try again in an hour" }, { status: 429, headers: { ...HEADERS, "retry-after": "3600" } });
