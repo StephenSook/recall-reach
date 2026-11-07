@@ -492,6 +492,11 @@ describe("notices", () => {
 
     it("carries the recall-specific question on a check request", async () => {
       const m = await matchFor("27040", line({ orderNumber: "#G1", title: "Costway high chair" }));
+      await db.query(
+        `insert into recall_questions (recall_sha256, agent_version, recall_id, outcome, question, evidence, every_recalled_unit, model, input_tokens, output_tokens, cost_micros)
+         select raw_sha256, $1, recall_id, 'QUESTION', 'Does your high chair convert into a table and chair set?', 'convert into a table and chair set', true, 'm', 0, 0, 0 from recalls where recall_number = '27040'`,
+        [QUESTION_VERSION],
+      );
       const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
       expect((await compose(noticeId)).body).toContain("Can you check one thing? Does your high chair convert into a table and chair set?");
     });
@@ -660,18 +665,18 @@ describe("notices", () => {
 
     it("a yes matches, a no does not, and not sure cannot tell", () => {
       const full = { description: "A full record." };
-      const q = { question: "Q", kind: "yes_no" as const };
+      const q = { question: "Q", kind: "written" as const, evidence: "e", noRulesOut: true };
       expect(checkResult(full, q, "yes")).toBe("MATCHES");
       expect(checkResult(full, q, "no")).toBe("DOESNT_MATCH");
       expect(checkResult(full, q, "not_sure")).toBe("CANT_TELL");
     });
 
     it("never says doesn't match when CPSC's full list is elsewhere", () => {
-      expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind: "yes_no" }, "no")).toBe("CANT_TELL");
+      expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind: "general" }, "no")).toBe("CANT_TELL");
     });
 
-    it.each(["yes_no", "general"] as const)("can't tell from a yes either on a %s question when CPSC's list is elsewhere", (kind) => {
-      expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind }, "yes")).toBe("CANT_TELL");
+    it("can't tell from a yes either on a general question when CPSC's list is elsewhere", () => {
+      expect(checkResult({ description: "Models are listed below." }, { question: "Q", kind: "general" }, "yes")).toBe("CANT_TELL");
     });
 
     it("still matches a model the record itself lists, wherever the rest of the list is", () => {

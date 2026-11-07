@@ -64,7 +64,7 @@ export function composeCheckRequest(c: NoticeContext & { question: string }): Co
 }
 
 export type CheckQuestion =
-  | { question: string; kind: "yes_no" | "model" | "general" }
+  | { question: string; kind: "model" | "general" }
   | {
       question: string;
       kind: "written";
@@ -74,15 +74,9 @@ export type CheckQuestion =
       noRulesOut: boolean;
     };
 
-// Hand-written questions for recalls whose record offers no identifier. Each is used only while the
-// phrase it rests on is in the stored CPSC description, so a question can never outlive its source.
-const CURATED: Record<string, { question: string; evidence: string }> = {
-  "27040": { question: "Does your high chair convert into a table and chair set?", evidence: "convert into a table and chair set" },
-};
-
 /**
  * The one thing to ask this family, specific to what this recall can be told apart by: the question Claude wrote
- * while the words it rests on are in the record, then a hand-written one, CPSC's model numbers, and the plain one.
+ * while the words it rests on are in the record, then CPSC's model numbers, then the plain one.
  */
 export function checkQuestion(
   recall: Pick<Recall, "recallNumber" | "title" | "description"> & Partial<Pick<Recall, "products" | "hazards" | "remedies">>,
@@ -93,8 +87,6 @@ export function checkQuestion(
   if (full && written && quoted(recallWords(recall), written.evidence)) {
     return { question: written.question, kind: "written", evidence: written.evidence, noRulesOut: written.everyRecalledUnit && written.accepted };
   }
-  const curated = CURATED[recall.recallNumber];
-  if (full && curated && recall.description.includes(curated.evidence)) return { question: curated.question, kind: "yes_no" };
   // A partial list would read as "yours isn't on it", so it says all CPSC names when it says any.
   const text = `${recall.title} ${recall.description}`;
   if (modelTokens(text).length > 0) {

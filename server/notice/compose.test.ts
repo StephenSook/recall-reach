@@ -84,11 +84,6 @@ describe("checkQuestion", () => {
       expect(checkQuestion(elsewhere("27040"), stored)).toEqual(PLAIN);
     });
 
-    it("nor a hand-written one", () => {
-      expect(checkQuestion(recall("27040")).kind).toBe("yes_no");
-      expect(checkQuestion(elsewhere("27040"))).toEqual(PLAIN);
-    });
-
     it("asks for the model number without reading as the whole list", () => {
       const q = checkQuestion({ recallNumber: "1", title: "Acme Recalls Swings", description: `Model 4M-005. ${LIST_CUT_OFF}` });
       expect(q).toEqual({ question: "What model number is on the label? This record names 4M-005. CPSC's notice has the full list.", kind: "model" });
@@ -101,11 +96,9 @@ describe("checkQuestion", () => {
     for (const m of ["4M-005", "4M-012", "1026", "1037"]) expect(q.question).toContain(m);
   });
 
-  it("asks about the physical feature when CPSC gives no identifier", () => {
-    expect(checkQuestion(recall("27040"))).toEqual({
-      question: "Does your high chair convert into a table and chair set?",
-      kind: "yes_no",
-    });
+  it("has no question written by hand for any one recall: with none from Claude and no identifier, it's the plain one", () => {
+    expect(checkQuestion(recall("27040"))).toEqual({ question: "Does yours look like the product on CPSC's recall page?", kind: "general" });
+    expect(readFileSync(new URL("./compose.ts", import.meta.url), "utf8")).not.toMatch(/"\d{5}":\s*\{/);
   });
 
   it("refuses a curated question whose wording is not backed by the stored record", () => {

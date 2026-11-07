@@ -268,8 +268,7 @@ export function checkResult(
   if (!fullScope) return "CANT_TELL";
   if (said === "yes") return "MATCHES";
   if (said !== "no") return "CANT_TELL";
-  const noSettlesIt = question.kind === "yes_no" || (question.kind === "written" && question.noRulesOut);
-  return noSettlesIt ? "DOESNT_MATCH" : "CANT_TELL";
+  return question.kind === "written" && question.noRulesOut ? "DOESNT_MATCH" : "CANT_TELL";
 }
 
 const linkExpired = () => new NoticeRefused("LINK_EXPIRED", "This link has expired.");

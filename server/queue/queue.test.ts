@@ -155,7 +155,7 @@ describe("loadQueue", () => {
       );
 
     it("shows the plain question until Claude has written one", async () => {
-      expect((await row("27040")).question).toMatchObject({ question: "Does your high chair convert into a table and chair set?", kind: "yes_no" });
+      expect((await row("27040")).question).toMatchObject({ question: "Does yours look like the product on CPSC's recall page?", kind: "general" });
     });
 
     it("shows the one Claude wrote, with the CPSC words it rests on", async () => {
@@ -180,7 +180,7 @@ describe("loadQueue", () => {
       const { matchId } = await row("27040");
       await prepareNotice(db, { shopId, matchId });
       await write();
-      expect((await row("27040")).question).toMatchObject({ kind: "yes_no" });
+      expect((await row("27040")).question).toMatchObject({ kind: "general" });
     });
   });
 
