@@ -22,7 +22,7 @@ export default async function ShopperPage({ searchParams }: { searchParams: Prom
       <header className="page-head">
         <h1>Ask an agent to find it, with the recall check first</h1>
       </header>
-      <p>An agent searches public store listings and checks one against CPSC recalls before it may offer it. If a listing names a recall, it can&apos;t offer that one and looks for another.</p>
+      <p>An agent searches public store listings and checks one against CPSC recalls before it may offer it. If a listing&apos;s words match a recall, it can&apos;t offer that one and looks for another.</p>
       {message ? (
         <p role="alert" className="alert">
           {message}

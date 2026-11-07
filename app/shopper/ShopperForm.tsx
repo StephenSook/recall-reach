@@ -20,7 +20,7 @@ const SAID: Record<Exclude<ShopperView["outcome"], "PICKED">, string> = {
   BUSY: "Too many tries from here. Try again in an hour.",
 };
 
-const CHECK_WORDS = { NAMES_A_RECALL: "a recall names it", NO_MATCH_FOUND: "no recall match found", COULD_NOT_FINISH: "the check couldn't finish" } as const;
+const CHECK_WORDS = { NAMES_A_RECALL: "its words match a recall", NO_MATCH_FOUND: "no recall match found", COULD_NOT_FINISH: "the check couldn't finish" } as const;
 
 function Steps({ steps }: { steps: ShopperView["steps"] }) {
   if (steps.length === 0) return null;
@@ -121,7 +121,7 @@ export function ShopperForm() {
         ? view.blocked.map((b) => (
             <article key={b.title} className="window" data-testid="shopper-blocked">
               <h2 className="section-title">Not offered: {b.title}</h2>
-              <p>{money(b.priceCents)}. A recall names this maker and product line, or this model, so the agent can&apos;t offer it. A person should read the recall.</p>
+              <p>{money(b.priceCents)}. This listing&apos;s words match a recall: its model, or its maker and product line. That doesn&apos;t say this item is recalled or that a store did anything wrong. The agent can&apos;t offer it, so a person should read the recall.</p>
               <ul>
                 {b.recalls.map((r) => (
                   <li key={r.number}>
