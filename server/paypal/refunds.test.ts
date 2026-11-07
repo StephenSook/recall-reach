@@ -1602,6 +1602,7 @@ describe("refunds", () => {
       const read = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(read.ledger.status).toBe("pending");
       expect(read.newerAnswer).toBe("refunded");
+      expect(read.exceptions).toContain("PayPal's answer is newer than our ledger. Update it below.");
       expect(await stored(r.refundId)).toEqual(before);
     });
 
@@ -1697,7 +1698,7 @@ describe("refunds", () => {
       const r = await execute(a.approvalId, pp.client);
       pp.settle("COMPLETED");
       const rec = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
-      expect(rec.exceptions).toEqual(["PayPal's webhook has not arrived yet."]);
+      expect(rec.exceptions).toEqual(["PayPal's answer is newer than our ledger. Update it below.", "PayPal's webhook has not arrived yet."]);
     });
 
     it("marks a pending refund unconfirmed after 10 minutes with no webhook and no answer from PayPal", async () => {

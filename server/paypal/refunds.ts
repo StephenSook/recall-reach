@@ -711,6 +711,8 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     else if (answer !== status) newerAnswer = answer;
   }
 
+  // The records can't agree while one of them is out of date, however they read.
+  if (newerAnswer) exceptions.push("PayPal's answer is newer than our ledger. Update it below.");
   if (!row.capture_id) exceptions.push("PayPal's record of this refund has aged out here. Check PayPal directly.");
   // One way forward at a time. Telling a seller to refund by hand while a send may be running, or while a
   // repeat is still on offer, could end in two refunds of one sale.
