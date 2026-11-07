@@ -66,7 +66,8 @@ export interface ClaudeAsk {
   system: string;
   messages: { role: "user" | "assistant"; content: Block[] }[];
   tools: { name: string; description: string; input_schema: Record<string, unknown> }[];
-  toolChoice: { type: "auto" } | { type: "any" } | { type: "tool"; name: string } | { type: "none" };
+  /** Never a forced choice: the main model refuses one. */
+  toolChoice: { type: "auto" } | { type: "none" };
 }
 
 const asObject = (json: string): unknown => {
@@ -116,15 +117,27 @@ export function toClaude(turn: Turn): ClaudeAsk {
   // that answered in words to call complete_task.
   if (messages.at(-1)?.role === "assistant") messages.push({ role: "user", content: [{ type: "text", text: "Go on." }] });
 
+  // The main model refuses a forced tool_choice ("type tool and any are not supported for this model", seen Nov 7, 2026),
+  // so what AG Studio forces is asked for in words, and a named tool is the only one offered.
+  const ask = (words: string) => messages[messages.length - 1].content.push({ type: "text", text: words });
+  const done = (tools: ClaudeAsk["tools"], toolChoice: ClaudeAsk["toolChoice"]): ClaudeAsk => ({ system: system.filter(Boolean).join("\n\n"), messages, tools, toolChoice });
   if (turn.responseFormat.type === "json") {
     const { name, description, schema } = turn.responseFormat;
-    return { system: system.filter(Boolean).join("\n\n"), messages, tools: [{ name, description: description ?? "Give the answer.", input_schema: schema }], toolChoice: { type: "tool", name } };
+    ask(`Give your answer by calling ${name}.`);
+    return done([{ name, description: description ?? "Give the answer.", input_schema: schema }], { type: "auto" });
   }
   const tools = (turn.tools ?? []).filter((t) => !MONEY.test(JSON.stringify(t))).map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const choice = turn.toolChoice ?? "auto";
-  const toolChoice: ClaudeAsk["toolChoice"] =
-    tools.length === 0 || choice === "none" ? { type: "none" } : choice === "auto" ? { type: "auto" } : choice === "required" ? { type: "any" } : { type: "tool", name: choice.name };
-  return { system: system.filter(Boolean).join("\n\n"), messages, tools, toolChoice };
+  if (tools.length === 0 || choice === "none") return done(tools, { type: "none" });
+  if (choice === "auto") return done(tools, { type: "auto" });
+  if (choice === "required") {
+    ask("Answer by calling one of your tools.");
+    return done(tools, { type: "auto" });
+  }
+  const named = tools.filter((t) => t.name === choice.name);
+  if (named.length === 0) return done([], { type: "none" });
+  ask(`Call ${choice.name} now.`);
+  return done(named, { type: "auto" });
 }
 
 export interface ClaudeAnswer {

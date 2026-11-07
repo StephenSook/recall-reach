@@ -55,7 +55,25 @@ describe("one AG Studio turn, to Claude and back", () => {
       const ask = toClaude(turn);
       expect(ask.messages.at(-2)).toEqual({ role: "assistant", content: [{ type: "text", text: "Filter added." }] });
       expect(ask.messages.at(-1)?.role).toBe("user");
-      expect(ask.toolChoice).toEqual({ type: "tool", name: "complete_task" });
+    });
+
+    // The main model refuses a forced tool_choice ("type tool and any are not supported for this model", seen Nov 7, 2026).
+    it("never forces a tool: a named tool becomes the only tool, with a line asking for it", () => {
+      const turn = readTurn({ input: [user("Filter it")], tools: [tool, { ...tool, name: "complete_task" }], toolChoice: { name: "complete_task" }, responseFormat: { type: "text" } });
+      if ("error" in turn) throw new Error(turn.error);
+      const ask = toClaude(turn);
+      expect(ask.toolChoice).toEqual({ type: "auto" });
+      expect(ask.tools.map((t) => t.name)).toEqual(["complete_task"]);
+      expect(ask.messages.at(-1)).toMatchObject({ role: "user", content: expect.arrayContaining([{ type: "text", text: "Call complete_task now." }]) });
+    });
+
+    it("asks for a tool in words when the page requires one, and keeps every tool", () => {
+      const turn = readTurn({ input: [user("Filter it")], tools: [tool], toolChoice: "required", responseFormat: { type: "text" } });
+      if ("error" in turn) throw new Error(turn.error);
+      const ask = toClaude(turn);
+      expect(ask.toolChoice).toEqual({ type: "auto" });
+      expect(ask.tools.map((t) => t.name)).toEqual(["add_widget"]);
+      expect(ask.messages.at(-1)?.content.at(-1)).toEqual({ type: "text", text: "Answer by calling one of your tools." });
     });
 
     it("takes AG Studio's own tools, whose descriptions run past 4,000 characters", () => {
@@ -63,12 +81,13 @@ describe("one AG Studio turn, to Claude and back", () => {
       expect("error" in turn).toBe(false);
     });
 
-    it("asks for a JSON answer through one tool it must call", () => {
+    it("asks for a JSON answer through the one tool it's given, in words", () => {
       const turn = readTurn({ input: [user("Plan it")], responseFormat: { type: "json", name: "plan", schema: { type: "object", properties: { steps: { type: "array" } } } } });
       if ("error" in turn) throw new Error(turn.error);
       const ask = toClaude(turn);
       expect(ask.tools.map((t) => t.name)).toEqual(["plan"]);
-      expect(ask.toolChoice).toEqual({ type: "tool", name: "plan" });
+      expect(ask.toolChoice).toEqual({ type: "auto" });
+      expect(ask.messages.at(-1)?.content.at(-1)).toEqual({ type: "text", text: "Give your answer by calling plan." });
     });
 
     it("keeps the page's instructions after this app's own", () => {
