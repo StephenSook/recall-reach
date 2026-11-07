@@ -181,6 +181,31 @@ describe("verdictFor", () => {
       expect(verdictFor(BREZZA, { title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }).strength).toBe("CONFIRMED");
     });
 
+    describe("with a code in the title that isn't CPSC's exact model", () => {
+      it.each(["PAPA03001AX", "PAPA04001AI", "PAPA03001A1", "PAPA03001"])("%s can't confirm it, whatever the look says", (code) => {
+        const v = verdictFor(PAPABLIC, { title: `Papablic bedside sleeper, gray stars and moon ${code}` });
+        expect(v.strength).not.toBe("CONFIRMED");
+        expect(v.verdict).toBe("SCOPE_GAP");
+      });
+
+      it("an unrelated code stops it too: only CPSC's model can settle a title that names one", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon SKU44A1" }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("CPSC's exact model still confirms it, written any way", () => {
+        for (const code of ["PAPA03001AI", "PAPA-03001AI", "papa03001ai"]) expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper ${code}` })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
+      it("the demo's title has no code, so it stays a match", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon, like new" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
+      it("one edit from the model never reaches the model's own confirmation", () => {
+        expect(verdictFor(BREZZA, { title: "Baby Brezza sterilizer BRZ0084" }).strength).not.toBe("CONFIRMED");
+      });
+    });
+
     it("a printed look on a one-model recall is confirmed", () => {
       expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon" }).strength).toBe("CONFIRMED");
     });

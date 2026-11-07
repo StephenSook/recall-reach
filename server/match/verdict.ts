@@ -289,7 +289,10 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope) {
+  // A title carrying any code that isn't CPSC's exact model can't be pinned by its words: one edit off could be another unit.
+  const listed = new Set(recallModels.map(normalizeModel));
+  const codeNotListed = itemCodes.some((t) => !listed.has(normalizeModel(t)));
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && !codeNotListed) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",
