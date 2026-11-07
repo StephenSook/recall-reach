@@ -137,11 +137,11 @@ pnpm test:golden                                         # the golden path on th
 
 ## Deploy
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/StephenSook/recall-reach)
+
 `render.yaml` defines the service. Migrations run during the build, a deploy waits for CI on its commit, and Render's health check uses `/api/live`. Past recall years load on the first tick after a deploy and retry hourly.
 
-### Maintainer checklist
-
-- [ ] **At the hackathon deadline, 2026-11-12T20:00Z:** turn auto-deploy OFF for `recall-reach-web-e022` in the Render dashboard (and pause the Blueprint's auto-sync), and leave both off until winners are announced.
+Render asks for `DATABASE_URL` (Postgres) and your sandbox app's `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYPAL_WEBHOOK_ID`, with the webhook pointed at `/api/paypal/webhook`. `ANTHROPIC_API_KEY` is optional: without it the queue says the Claude check is unavailable. `DEMO_BUYER_EMAIL` is an optional test inbox for the demo notice. Render generates the other secrets.
 
 ## Credits
 
