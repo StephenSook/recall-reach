@@ -184,8 +184,11 @@ export async function checkShopAgainstWarnings(db: Queryable, shopId: string): P
 export async function checkStoredShopsAgainstWarnings(db: Queryable): Promise<void> {
   const { rows } = await db.query<{ id: string }>("select id from shops where kind = 'REAL'");
   const started = Date.now();
-  for (const { id } of rows) {
-    if (Date.now() - started > STORED_SHOPS_BUDGET_MS) return;
+  for (const [i, { id }] of rows.entries()) {
+    if (Date.now() - started > STORED_SHOPS_BUDGET_MS) {
+      console.error(`warning check stopped for time: ${rows.length - i} of ${rows.length} shops wait for the next read`);
+      return;
+    }
     await checkShopAgainstWarnings(db, id);
   }
 }
