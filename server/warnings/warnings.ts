@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
 import type { Queryable } from "../db/types";
-import { verdictFor } from "../match/verdict";
+import { verdictFor, whatItIs } from "../match/verdict";
 
 export const WARNINGS_URL = "https://www.cpsc.gov/s3fs-public/recall-data/product_safety_warning_listing.csv";
 /** The file has no page per warning, so a card links to CPSC's list and names the warning's number. */
@@ -150,10 +150,11 @@ export function descriptiveWords(products: string[]): Set<string> {
  */
 export function nearWarning(w: Pick<Warning, "product" | "description">, title: string, maker: string): boolean {
   if (!wordsOf(title).includes(maker)) return false;
-  const { verdict, strength, matched } = verdictFor({ title: `${maker} Recalls ${w.product}`, description: w.description, products: [{ name: w.product, model: "", type: null, units: null }], retailers: [] }, { title });
+  const { verdict } = verdictFor({ title: `${maker} Recalls ${w.product}`, description: w.description, products: [{ name: w.product, model: "", type: null, units: null }], retailers: [] }, { title });
   if (verdict === "CLEARED") return false;
-  // The maker alone isn't enough: the same maker's other product isn't what CPSC warned about.
-  return strength === "CONFIRMED" || (strength === "BRAND" && matched.some((m) => m.startsWith("product:") || m.startsWith("model:")));
+  // The maker alone isn't enough, and nor is a code: CPSC's text can name a standard. The product has to be what CPSC warned about.
+  const inTitle = new Set(whatItIs(title));
+  return whatItIs(w.product).some((word) => word !== maker && inTitle.has(word));
 }
 
 /** Adds what these titles came near, and says how many it added. Only ever adds, and touches no recall row. */

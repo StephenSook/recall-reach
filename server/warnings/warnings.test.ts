@@ -171,9 +171,18 @@ describe("keeping them", () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(0);
     });
 
-    it.each(["Zzyxo crib bumpers ZZ1001", "Zzyxo ZZ1001"])("finds %s, where the maker and a model CPSC names settle it", async (title) => {
+    it("finds a title with the maker, the product and a model CPSC says to check", async () => {
       await storeWarnings(db, [{ ...WARNING, number: "26-2", product: "Zzyxo Crib Bumpers", description: "These crib bumpers are model ZZ1001. Check the website to determine whether your model is affected." }]);
-      expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(1);
+      expect(await checkTitlesAgainstWarnings(db, shopId, ["Zzyxo crib bumpers ZZ1001"])).toBe(1);
+    });
+
+    it.each([
+      ["The loungers violate ASTM F963. Only units manufactured in January 2024 are affected.", "Acme toy car ASTM F963"],
+      ["The loungers violate ASTM F963.", "Acme toy car ASTM F963"],
+      ["The loungers are unsafe.", "Acme baby toy"],
+    ])("a code or an age word isn't the product: %s", async (description, title) => {
+      await storeWarnings(db, [{ ...WARNING, number: "26-3", product: "Acme Baby Loungers", description }]);
+      expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(0);
     });
 
     it("reads a long title only as far as a title can be", async () => {
