@@ -286,9 +286,14 @@ export const CLAIMS: Claim[] = [
   },
   { name: "Postgres (Neon)", status: "claimed", evidence: [{ file: "server/db/pg.ts", call: "Pool" }] },
   { name: "Next.js", status: "claimed", evidence: [{ file: "package.json", find: '"next":' }] },
+  // Seen on the deployed site Nov 7, 2026, with the trial key: no watermark shown and no licence line in the console, read
+  // right after load, twice. Its agent then changed the view in one run (/evidence/ag-grid).
+  {
+    name: "AG Studio",
+    status: "claimed",
+    evidence: [{ file: "package.json", find: '"ag-studio":' }, { file: "app/studio/StudioDashboard.tsx", call: "createAiHarness" }, { file: "app/studio/StudioDashboard.tsx", call: "AgStudio" }],
+  },
 
-  // Being built on /studio. Claimed only once the deployed page shows it licensed and its agent changing the view.
-  { name: "AG Studio", status: "cut", why: "Built, but not yet seen licensed and working on the deployed site.", mentions: ["ag studio", "ag-studio"], allowedIn: ["app/studio/", "server/studio/", "app/api/studio/"] },
   { name: "Trained scorer", status: "cut", why: "The matcher is rules. No model was trained.", mentions: ["trained scorer", "train_scorer"] },
   { name: "Hybrid search", status: "cut", why: "Trigrams and model numbers. No embeddings.", mentions: ["hybrid search", "embedding"] },
   { name: "Mobile app", status: "cut", why: "Skipped. The family page and /check work at phone width.", mentions: ["testflight", "mobile app"] },
