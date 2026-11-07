@@ -29,6 +29,7 @@ export function BuyButtons({ shopItemId, waiting }: { shopItemId: string; waitin
           {pressed === "paypal" ? "Opening PayPal" : "Buy with a PayPal sandbox login"}
         </button>
       </form>
+      <p className="note">Buy this as a family pays with a sandbox test card, so no login. The other button opens PayPal&apos;s own page.</p>
       {waiting ? (
         <p className="note" data-testid="sale-on-its-way">
           That sale is on its way. PayPal can take a minute or two to tell us.
