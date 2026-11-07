@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Jost } from "next/font/google";
 import "./globals.css";
+import { SiteHeader } from "./SiteHeader";
 
 const jost = Jost({
   variable: "--font-jost",
@@ -32,7 +33,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SiteHeader />
+        {children}
+      </body>
     </html>
   );
 }
