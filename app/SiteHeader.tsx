@@ -13,12 +13,12 @@ const PAGES = [
 const isHere = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
 /**
- * On every page but a family's: a family holds a link to one notice, and gets no way into the seller's side.
+ * On every page but a family's: a family holds a link to one notice or one recall, and gets no way into the seller's side.
  * Plain links on purpose: a full page load keeps one page's stylesheet (the timeline, the grid) off the next.
  */
 export function SiteHeader() {
   const path = usePathname();
-  if (path.startsWith("/r/")) return null;
+  if (path.startsWith("/r/") || path.startsWith("/recall/")) return null;
   /* eslint-disable @next/next/no-html-link-for-pages */
   return (
     <header className="site-header">
