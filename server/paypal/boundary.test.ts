@@ -38,7 +38,7 @@ describe("where PayPal can be reached from", () => {
   it("names no live PayPal host, in code or in what configures it", () => {
     const everything = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8" })
       .split("\n")
-      .filter((f) => f && !/\.test\.tsx?$/.test(f) && /\.(ts|tsx|mjs|js|json|ya?ml|sh|toml|example)$/.test(f) && !/(^|\/)pnpm-lock\.yaml$/.test(f) && !f.startsWith("eval/") && !f.startsWith("test/") && !f.startsWith("docs/"));
+      .filter((f) => f && !/\.test\.tsx?$/.test(f) && (/\.(ts|tsx|mts|cts|mjs|cjs|js|json|ya?ml|sh|toml|example)$/.test(f) || /(^|\/)(Dockerfile|\.env[^/]*)$/.test(f)) && !/(^|\/)pnpm-lock\.yaml$/.test(f) && !f.startsWith("eval/") && !f.startsWith("test/") && !f.startsWith("docs/"));
     expect(everything.length).toBeGreaterThan(100);
     expect(everything.filter((f) => existsSync(f) && LIVE_HOST.test(read(f)))).toEqual([]);
   });
