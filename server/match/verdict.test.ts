@@ -248,6 +248,13 @@ describe("verdictFor", () => {
         expect(nearMissCodes("This recall involves air conditioners, model 1PACU12000.", `Other heater ${size}`)).toEqual([]);
       });
 
+      it("a size-shaped code stays a near-miss when CPSC's models are shaped that way too", () => {
+        const text = "This recall involves floor lamps, models 7927-OZ and 7927-OZ1.";
+        const recall = { title: "Designs Direct Recalls Floor Lamps", description: text, products: [{ name: "Floor Lamps", model: "", type: null, units: null }], retailers: [] } as never;
+        expect(verdictFor(recall, { title: "Designs Direct floor lamp 7927-OZ1 7928-OZ" })).toMatchObject({ verdict: "SCOPE_GAP" });
+        expect(nearMissCodes(text, "Three-Light Floor Lamp 7928-OZ")).toEqual(["7928-OZ"]);
+      });
+
       it("a recall's own model shaped like a size is still read as a model", () => {
         const recall = { title: "Acme Recalls Mixers", description: "This recall involves mixers, model 2279-L.", products: [{ name: "Mixers", model: "", type: null, units: null }], retailers: [] } as never;
         expect(verdictFor(recall, { title: "Acme mixer 2279-L" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });

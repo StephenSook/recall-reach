@@ -70,7 +70,7 @@ export const normalizeModel = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/
 /** Letters a typed model is easily mistaken for: BRZOO83 is probably BRZ0083. */
 export const unconfuse = (t: string) => t.replace(/O/g, "0").replace(/[IL]/g, "1");
 
-function editDistance(a: string, b: string): number {
+export function editDistance(a: string, b: string): number {
   let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
     const row = [i];
@@ -154,6 +154,18 @@ function opensLikeModel(token: string, listed: string[]): boolean {
   return opening.length >= 2 && listed.some((m) => letters(normalizeModel(m)) === opening);
 }
 
+/** A size, with or without a hyphen: 12000-BTU. It leaves out sizes of one letter, because CPSC's own models end that way: 2279-L, 148012-A. */
+const SIZE_CODE = /^\d+(?:\.\d+)?[-_]?(BTUS?|KW|MAH|OZ|FT|IN|MM|CM|ML|GB|TB|HZ|LBS?|PCS?|PK|QT|CC|HP)$/;
+const isSizeCode = (token: string) => SIZE_CODE.test(token);
+
+/** A recall's own models can be shaped like a size: 7927-OZ. Then 7928-OZ beside it is a near-miss, not a size. */
+function sizeShapedModel(code: string, listed: string[]): boolean {
+  const unit = SIZE_CODE.exec(code)?.[1];
+  if (!unit) return false;
+  const shape = new RegExp(`^\\d+${unit}\\d*$`);
+  return listed.some((m) => shape.test(normalizeModel(m)));
+}
+
 /** Two neighbouring words that read as one code close to a listed model: PAPA 03001AX. */
 function spacedCodes(upper: string, listed: ReadonlySet<string>, close: (code: string) => boolean): string[] {
   // Split on spaces only: the hyphens in SWGR5-V2-SLV join one code, and its pieces aren't another.
@@ -162,8 +174,8 @@ function spacedCodes(upper: string, listed: ReadonlySet<string>, close: (code: s
   for (let i = 0; i + 1 < parts.length; i++) {
     const joined = parts[i] + parts[i + 1];
     // Beside a listed model, the other word is just a word: PAPA03001AI X and SLEEPER PAPA03001AI are that model.
-    // Two words that read as a size aren't a code: 12000 BTU.
-    if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined) || UNIT_TOKEN.test(joined)) continue;
+    // Two words that read as a size aren't a code, unless this recall's models read that way: 12000 BTU, but not 7928 OZ beside 7927-OZ.
+    if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined) || (UNIT_TOKEN.test(joined) && !sizeShapedModel(joined, [...listed]))) continue;
     if (close(joined)) found.add(joined);
   }
   return [...found];
@@ -194,16 +206,14 @@ function codesBeside(recallText: string, itemText: string, close: (code: string,
     .map((t) => t.slice(0, MAX_TOKEN));
 }
 
-/**
- * A code about the product and not which unit it is: 2-IN-1, 0-6MONTHS, 12M, 12000-BTU. Short on purpose, so a model like 1200M
- * isn't one, and it leaves out sizes of one letter, because CPSC's own models end that way: 2279-L, 148012-A.
- */
-const FEATURE_CODE = /^(?:\d{1,2}-IN-\d{1,2}|\d{1,2}(?:-\d{1,2})?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?)|\d+(?:\.\d+)?[-_](?:BTUS?|KW|MAH|OZ|FT|IN|MM|CM|ML|GB|TB|HZ|LBS?|PCS?|PK|QT|CC|HP))$/;
+/** A code about the product and not which unit it is: 2-IN-1, 0-6MONTHS, 12M. Short on purpose, so a model like 1200M isn't one. */
+const FEATURE_CODE = /^(?:\d{1,2}-IN-\d{1,2}|\d{1,2}(?:-\d{1,2})?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?))$/;
 const SHOP_NUMBER = /^SKU[._/-]?(.*)$/;
 
 /** A feature, or a number the shop labels as its own, unless what follows the label holds a listed model or nearly all of one. */
 function saysNothingAboutModel(token: string, listed: string[]): boolean {
   if (FEATURE_CODE.test(token)) return true;
+  if (isSizeCode(token)) return !sizeShapedModel(token, listed);
   const number = SHOP_NUMBER.exec(token)?.[1];
   if (number === undefined) return false;
   const rest = unconfuse(normalizeModel(number));
