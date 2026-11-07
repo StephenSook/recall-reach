@@ -104,13 +104,11 @@ export function toClaude(turn: Turn): ClaudeAsk {
       if (open.delete(item.callId)) push("user", { type: "tool_result", tool_use_id: item.callId, content: item.output });
       continue;
     }
-    if (item.role === "system") {
-      system.push(item.content.map((c) => c.text ?? "").join("\n"));
-      continue;
-    }
-    if (item.role === "user") closeOpenCalls();
+    // The page is the visitor's to change, so a system-role message from it is read as theirs, never as this app's rules.
+    const role = item.role === "assistant" ? "assistant" : "user";
+    if (role === "user") closeOpenCalls();
     const words = item.content.map((c) => c.text ?? ("refusal" in c ? c.refusal : "") ?? "").join("\n").trim();
-    if (words) push(item.role, { type: "text", text: words });
+    if (words) push(role, { type: "text", text: words });
   }
   closeOpenCalls();
   if (messages[0]?.role !== "user") messages.unshift({ role: "user", content: [{ type: "text", text: "Go on." }] });
