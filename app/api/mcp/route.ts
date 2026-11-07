@@ -18,10 +18,48 @@ const CORS = {
 };
 
 const refusal = (text: string) => ({ isError: true, content: [{ type: "text" as const, text }] });
+/** The same answer twice: as text for a client that only reads text, and in the shape the tool publishes. */
+const answered = <T extends object>(answer: T) => ({ content: [{ type: "text" as const, text: JSON.stringify(answer) }], structuredContent: answer as T & Record<string, unknown> });
+
+const INSTRUCTIONS =
+  "These tools read public U.S. CPSC recalls. Never tell a user an item is safe or isn't recalled because a search found nothing: an empty result means nothing came near. A result names a recall to read, not a finding about the item. Only CPSC's notice and the item itself can settle it. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls for those.";
+
+const CHECK_OUTPUT = {
+  results: z.array(
+    z.object({
+      recallNumber: z.string(),
+      title: z.string(),
+      recallDate: z.string(),
+      url: z.string().nullable(),
+      verdict: z.enum(["MATCH", "SCOPE_GAP"]).describe("MATCH: the text shows what the recall names. SCOPE_GAP: it comes close, but the text can't show this item is covered."),
+      strength: z.string(),
+      reason: z.string(),
+      missing: z.array(z.string()),
+    }),
+  ).describe("Recalls to read. Empty means nothing came near, not that the item is safe."),
+  more: z.number().describe("Found, past what's listed."),
+  cleared: z.number().describe("Came near and were ruled out."),
+  notJudged: z.number().describe("Came near but weren't judged. Above zero, an empty list doesn't mean nothing was found."),
+  checked: z.object({ recalls: z.number(), from: z.string().nullable(), to: z.string().nullable(), yearsMissing: z.array(z.number()) }),
+  note: z.string(),
+};
+
+const READ_OUTPUT = {
+  found: z.boolean(),
+  note: z.string().optional(),
+  recallNumber: z.string().optional(),
+  title: z.string().optional(),
+  recallDate: z.string().optional(),
+  url: z.string().optional(),
+  description: z.string().optional(),
+  products: z.array(z.object({ name: z.string(), model: z.string(), type: z.string().nullable(), units: z.string().nullable() })).optional(),
+  hazards: z.array(z.string()).optional(),
+  remedies: z.array(z.string()).optional(),
+};
 
 /** Two tools. They read public recalls, one with the same rules as /api/check, and can't change anything or reach a shop. */
 function recallServer(headers: Headers): McpServer {
-  const server = new McpServer({ name: "recall-reach", version: "1.0.0" });
+  const server = new McpServer({ name: "recall-reach", version: "1.0.0" }, { instructions: INSTRUCTIONS });
   server.registerTool(
     "check_recall",
     {
@@ -32,6 +70,7 @@ function recallServer(headers: Headers): McpServer {
         title: z.string().max(MAX_TITLE).optional().describe("The product's title, as a listing or a label would say it."),
         model: z.string().max(MAX_MODEL).optional().describe("The model number, if there is one."),
       },
+      outputSchema: CHECK_OUTPUT,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ title, model }) => {
@@ -43,7 +82,7 @@ function recallServer(headers: Headers): McpServer {
         const day = businessDay();
         const answer = await checkText(db, input, day);
         await countPublicCall(db, "mcp", day);
-        return { content: [{ type: "text" as const, text: JSON.stringify(answer) }] };
+        return answered(answer);
       } catch (err) {
         // The name only: a database error can quote the text it was given.
         console.error("mcp recall check failed:", err instanceof Error ? err.name : "unknown error");
@@ -57,6 +96,7 @@ function recallServer(headers: Headers): McpServer {
       title: "Read one CPSC recall",
       description: "CPSC's public record for one recall number: its title, date, products, hazards, remedies and its page. check_recall names a recall, and this reads it.",
       inputSchema: { recallNumber: z.string().max(40).describe("The recall number, as check_recall gives it, such as 27072.") },
+      outputSchema: READ_OUTPUT,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ recallNumber }) => {
@@ -66,7 +106,7 @@ function recallServer(headers: Headers): McpServer {
         const db = getDb();
         const answer = await readPublicRecall(db, recallNumber);
         await countPublicCall(db, "mcp", businessDay());
-        return { content: [{ type: "text" as const, text: JSON.stringify(answer) }] };
+        return answered(answer);
       } catch (err) {
         console.error("mcp recall read failed:", err instanceof Error ? err.name : "unknown error");
         return refusal("the recall could not be read just now");

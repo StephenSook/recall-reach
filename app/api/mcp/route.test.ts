@@ -109,6 +109,32 @@ describe("the MCP tool", () => {
     expect(tools[0].description).toContain("not that the item is safe");
   });
 
+  it("tells a client never to call an item safe because nothing was found", async () => {
+    const instructions = (await connect()).getInstructions() ?? "";
+    expect(instructions).toContain("Never tell a user an item is safe or isn't recalled because a search found nothing");
+  });
+
+  it("publishes each tool's answer shape, and answers in it as well as in text", async () => {
+    const client = await connect();
+    const { tools } = await client.listTools();
+    for (const tool of tools) expect(Object.keys(tool.outputSchema?.properties ?? {}).length).toBeGreaterThan(0);
+    const checked = await client.callTool({ name: "check_recall", arguments: { title: "Baby Brezza sterilizer", model: "BRZ0083" } });
+    expect(checked.structuredContent).toEqual(answerOf(checked));
+    expect(checked.structuredContent).toMatchObject({ results: [expect.objectContaining({ recallNumber: "27072", verdict: "MATCH" })] });
+    const read = await client.callTool({ name: "get_recall", arguments: { recallNumber: "27072" } });
+    expect(read.structuredContent).toEqual(answerOf(read));
+    expect(read.structuredContent).toMatchObject({ found: true, recallNumber: "27072" });
+    const missing = await client.callTool({ name: "get_recall", arguments: { recallNumber: "99999" } });
+    expect(missing.isError).toBeFalsy();
+    expect(missing.structuredContent).toMatchObject({ found: false });
+  });
+
+  it("a refusal has no structured answer to read as a result", async () => {
+    const refused = await (await connect()).callTool({ name: "check_recall", arguments: {} });
+    expect(refused.isError).toBe(true);
+    expect(refused.structuredContent).toBeUndefined();
+  });
+
   it("gives the same answer as /api/check, with the shop's rules", async () => {
     const result = await (await connect()).callTool({ name: "check_recall", arguments: { title: "Baby Brezza sterilizer", model: "BRZ0083" } });
     expect(result.isError).toBeFalsy();
