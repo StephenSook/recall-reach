@@ -38,7 +38,7 @@ const COMPANY_WORDS = new Set(["enterprises", "enterprise", "inc", "llc", "ltd",
 const STOP_WORDS = new Set(
   "a an and are as at be been by can for from has have in into is it its of on or that the their these they this to was were which with both each other only recall recalled recalls involves product products unit units model models number numbers printed label located sold".split(" "),
 );
-const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:V|W|MAH|OZ|FT|IN|MM|CM|ML|L|GB|TB|HZ|LB|LBS|PCS|PC|PK|X|D|K|AH|A|QT|CC|HP|G)$/;
+const UNIT_TOKEN = /^\d+(?:\.\d+)?(?:V|W|KW|BTU|BTUS|MAH|OZ|FT|IN|MM|CM|ML|L|GB|TB|HZ|LB|LBS|PCS|PC|PK|X|D|K|AH|A|QT|CC|HP|G)$/;
 // From the EDA's identifier rule: an upper-case token with a digit and a letter, 4 or more characters.
 // Tested token by token, on bounded text, so a long shop title cannot make the match slow.
 const MODEL_TOKEN = /^(?=[A-Z0-9_./-]*\d)(?=[A-Z0-9_./-]*[A-Z])[A-Z0-9][A-Z0-9_./-]{2,}[A-Z0-9]$/;
@@ -108,16 +108,16 @@ export function isVariantOf(token: string, listed: string[]): boolean {
   });
 }
 
-/** The most characters in a row that two codes share. */
-function longestRun(a: string, b: string): number {
-  let best = 0;
+/** The longest stretch of characters in a row that two codes share. */
+function longestRun(a: string, b: string): string {
+  let best = "";
   let previous = new Array<number>(b.length + 1).fill(0);
   for (let i = 1; i <= a.length; i++) {
     const row = new Array<number>(b.length + 1).fill(0);
     for (let j = 1; j <= b.length; j++) {
       if (a[i - 1] === b[j - 1]) {
         row[j] = previous[j - 1] + 1;
-        best = Math.max(best, row[j]);
+        if (row[j] > best.length) best = a.slice(i - row[j], i);
       }
     }
     previous = row;
@@ -138,8 +138,9 @@ function resemblesModel(token: string, listed: string[]): boolean {
     const opening = letters(normalizeModel(m));
     if (opening.length >= 2 && letters(plain) === opening) return true;
     const n = unconfuse(normalizeModel(m));
+    // Digits alone aren't a shared code: 12000BTU isn't 1PACU12000, it's a size that happens to read the same.
     const run = longestRun(t, n);
-    return run >= 4 && (run / t.length >= 0.6 || (n.length >= 8 && run / n.length >= 0.6));
+    return run.length >= 4 && /[A-Z]/.test(run) && (run.length / t.length >= 0.6 || (n.length >= 8 && run.length / n.length >= 0.6));
   });
 }
 
@@ -201,7 +202,7 @@ function saysNothingAboutModel(token: string, listed: string[]): boolean {
   const rest = unconfuse(normalizeModel(number));
   return !listed.some((m) => {
     const n = unconfuse(normalizeModel(m));
-    return rest.includes(n) || (n.length >= 6 && longestRun(rest, n) / n.length >= 0.8);
+    return rest.includes(n) || (n.length >= 6 && longestRun(rest, n).length / n.length >= 0.8);
   });
 }
 

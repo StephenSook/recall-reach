@@ -235,6 +235,12 @@ describe("verdictFor", () => {
         expect(verdictFor(heater, { title: "2 in 1 VQQQ Natural Gas Patio Heaters VQQQ-001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
 
+      it("a size or rating sharing the model's digits doesn't stop the exact model", () => {
+        const ac = { ...PAPABLIC, title: "Midea Recalls Window Air Conditioners", description: "This recall involves Midea window air conditioners, models 1PACU12000 and 1PACU8000.", products: [{ name: "Midea Window Air Conditioners", model: "", type: null, units: null }] };
+        expect(verdictFor(ac, { title: "Midea Window Air Conditioners 1PACU12000 12000BTU" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        expect(nearMissCodes(`${ac.title} ${ac.description}`, "Acme window air conditioner 12000BTU")).toEqual([]);
+      });
+
       it("a word in front of the exact model isn't a near-miss", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper SLEEPER PAPA03001AI" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
