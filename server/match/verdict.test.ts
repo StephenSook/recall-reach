@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseRecalls, type Recall } from "../cpsc/schema";
-import { brandOf, fullScopeInRecord, limitedWithinModel, modelTokens, salePath, verdictFor } from "./verdict";
+import { brandOf, fullScopeInRecord, limitedWithinModel, modelTokens, nearMissCodes, salePath, verdictFor } from "./verdict";
 
 // Real CPSC records (saved 2026-11-05). The matcher is tested on what CPSC actually wrote.
 const { valid } = parseRecalls(
@@ -213,6 +213,17 @@ describe("verdictFor", () => {
 
       it("a title naming the recalled model as what it replaces can't confirm it", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper model 03001AX (replaces PAPA03001AI)" }).verdict).toBe("SCOPE_GAP");
+      });
+
+      it("a number labelled SKU that holds the recalled model isn't exempt", () => {
+        expect(verdictFor(BREZZA, { title: "Baby Brezza sterilizer dryer SKU-BRZ0083" }).strength).not.toBe("CONFIRMED");
+        expect(nearMissCodes(`${BREZZA.title} ${BREZZA.description}`, "Acme sterilizer dryer SKU-BRZ0083")).toEqual(["SKU-BRZ0083"]);
+        expect(nearMissCodes(`${BREZZA.title} ${BREZZA.description}`, "Acme sterilizer dryer SKU-BRZ0084")).toEqual(["SKU-BRZ0084"]);
+      });
+
+      it("a four-digit model ending in M isn't an age", () => {
+        expect(nearMissCodes("This recall involves heaters, model 1201M.", "Acme heater 1200M")).toEqual(["1200M"]);
+        expect(nearMissCodes("This recall involves heaters, model 1201M.", "Acme heater 12M")).toEqual([]);
       });
 
       it("a shop's own number sharing part of the model doesn't stop the exact model", () => {

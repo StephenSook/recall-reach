@@ -189,8 +189,24 @@ function codesBeside(recallText: string, itemText: string, close: (code: string,
     .map((t) => t.slice(0, MAX_TOKEN));
 }
 
+/** A code about the product and not which unit it is: 2-IN-1, 0-6MONTHS, 12M. Short on purpose, so a model like 1200M isn't one. */
+const FEATURE_CODE = /^(?:\d{1,2}-IN-\d{1,2}|\d{1,2}(?:-\d{1,2})?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?))$/;
+const SHOP_NUMBER = /^SKU[._/-]?(.*)$/;
+
+/** A feature, or a number the shop labels as its own, unless what follows the label holds a listed model or nearly all of one. */
+function saysNothingAboutModel(token: string, listed: string[]): boolean {
+  if (FEATURE_CODE.test(token)) return true;
+  const number = SHOP_NUMBER.exec(token)?.[1];
+  if (number === undefined) return false;
+  const rest = unconfuse(normalizeModel(number));
+  return !listed.some((m) => {
+    const n = unconfuse(normalizeModel(m));
+    return rest.includes(n) || (n.length >= 6 && longestRun(rest, n) / n.length >= 0.8);
+  });
+}
+
 /** Beside an exact model, what could make it another unit: anything like it, unless it says nothing about the model. */
-const closeBesideExact = (t: string, models: string[]) => !SAYS_NOTHING_ABOUT_THE_MODEL.test(t) && (isSiblingModel(t, models) || isVariantOf(t, models) || opensLikeModel(t, models) || resemblesModel(t, models));
+const closeBesideExact = (t: string, models: string[]) => !saysNothingAboutModel(t, models) && (isSiblingModel(t, models) || isVariantOf(t, models) || opensLikeModel(t, models) || resemblesModel(t, models));
 
 /**
  * For a check on a store listing, which has no second chance to be read: any code that could be this recall's model written
@@ -198,9 +214,6 @@ const closeBesideExact = (t: string, models: string[]) => !SAYS_NOTHING_ABOUT_TH
  */
 export const nearMissCodes = (recallText: string, itemText: string): string[] =>
   codesBeside(recallText, itemText, closeBesideExact, (t, models) => isSiblingModel(t, models) || resemblesModel(t, models));
-
-/** Codes that are about the product and not which unit it is, and a shop's own number labelled as one. */
-const SAYS_NOTHING_ABOUT_THE_MODEL = /^(?:\d+-IN-\d+|\d+(?:-\d+)?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?)|SKU.*)$/;
 
 /** Whether the words matched say what this product is: a model, or a product word other than who it's for. */
 export function namesProductLine(matched: string[]): boolean {
@@ -408,7 +421,7 @@ export function verdictFor(
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
   // Any code at all stops this. A look can't tell which unit a title's code means, however unlike the model it reads.
-  const carriesCode = modelTokens(upper, MAX_TEXT).some((t) => !SAYS_NOTHING_ABOUT_THE_MODEL.test(t));
+  const carriesCode = modelTokens(upper, MAX_TEXT).some((t) => !saysNothingAboutModel(t, recallModels));
   if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && nearMissCode.length === 0 && !carriesCode) {
     return {
       verdict: "MATCH",
