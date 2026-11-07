@@ -3,7 +3,7 @@ import { getDb } from "@/server/db/pg";
 import { getHealth, type Health } from "@/server/health";
 import { recallPollStatus } from "@/server/jobs/appJobs";
 import { ranAt } from "@/app/replay/labels";
-import { statusLines, type LineState } from "./lines";
+import { statusLines, WHAT_HAPPENS, type LineState } from "./lines";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +46,17 @@ export default async function StatusPage() {
           The status could not be read just now.
         </p>
       )}
+      <section data-testid="what-happens">
+        <h2>What happens when something fails</h2>
+        <ul className="window cleared-list">
+          {WHAT_HAPPENS.map((w) => (
+            <li key={w.when}>
+              <strong>{w.when}</strong>: {w.does}
+              <span className="quiet">{w.seen}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }

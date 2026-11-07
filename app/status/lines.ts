@@ -12,6 +12,30 @@ export interface StatusLine {
   measures: string;
 }
 
+/** What the app does when an outside service fails, and how we know: seen for real, or only tested. */
+export const WHAT_HAPPENS: { when: string; does: string; seen: string }[] = [
+  {
+    when: "CPSC's API fails",
+    does: "The recalls held here keep working, and the CPSC line above says since when. A failed read marks no dates as read, so they're read again when CPSC answers.",
+    seen: "Seen on the deployed site from Nov 7, 2026.",
+  },
+  {
+    when: "Claude's daily limit runs out",
+    does: "The Claude check says it has reached today's limit. Matching doesn't use Claude, and a notice falls back to a hand-written question, CPSC's model numbers or a plain one.",
+    seen: "Tested with a stand-in. Not seen on the deployed site as of Nov 6, 2026.",
+  },
+  {
+    when: "PayPal answers a refund with PENDING",
+    does: "The refund page says PayPal hasn't finished it, and the sale doesn't count as refunded.",
+    seen: "Seen on the sandbox from Nov 6, 2026. We don't know why it started. See /evidence/defects.",
+  },
+  {
+    when: "PayPal gives no clear answer to a refund",
+    does: "The refund stays open and the page says to check PayPal. Asking again repeats the same request id, so PayPal returns the first refund and doesn't make a second.",
+    seen: "Tested with a stand-in PayPal. The repeated request id was measured on the sandbox Nov 5, 2026.",
+  },
+];
+
 const NOT_READ = "Can't tell: this is stored in the database, which did not answer.";
 
 export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLine[] {

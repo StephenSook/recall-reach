@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Health } from "@/server/health";
-import { statusLines } from "./lines";
+import { statusLines, WHAT_HAPPENS } from "./lines";
 
 const NOW = "2026-11-07T12:00:00.000Z";
 const healthy: Health = {
@@ -19,6 +19,25 @@ const healthy: Health = {
   paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
 };
 const line = (h: Health, name: string, claude = true) => statusLines(h, { claudeKeySet: claude }).find((l) => l.service === name);
+
+describe("what happens when something outside fails", () => {
+  it("covers CPSC, Claude's limit, and PayPal not finishing or not answering", () => {
+    expect(WHAT_HAPPENS.map((w) => w.when)).toEqual(["CPSC's API fails", "Claude's daily limit runs out", "PayPal answers a refund with PENDING", "PayPal gives no clear answer to a refund"]);
+  });
+
+  it("says for each one how we know, with a date, and never calls a test a sighting", () => {
+    for (const w of WHAT_HAPPENS) expect(w.seen).toMatch(/Nov \d+, 2026/);
+    const seen = (when: string) => WHAT_HAPPENS.find((w) => w.when === when)?.seen;
+    expect(seen("Claude's daily limit runs out")).toMatch(/^Tested with a stand-in\./);
+    expect(seen("PayPal gives no clear answer to a refund")).toMatch(/^Tested with a stand-in PayPal\./);
+    expect(seen("CPSC's API fails")).toMatch(/^Seen on the deployed site/);
+    expect(seen("PayPal answers a refund with PENDING")).toMatch(/^Seen on the sandbox/);
+  });
+
+  it("uses the words the app shows when Claude's limit runs out", () => {
+    expect(WHAT_HAPPENS.find((w) => w.when === "Claude's daily limit runs out")?.does).toContain("reached today's limit");
+  });
+});
 
 describe("the status page's lines", () => {
   it("has one line for each outside service, in a fixed order", () => {
