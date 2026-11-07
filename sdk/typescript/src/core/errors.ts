@@ -38,7 +38,7 @@ export abstract class CoreErrorBase extends Error {
    * an `apiKeyQuery` credential. With `method` it opens `message`.
    *
    * One failure names an unresolved URI: a path parameter rejected by its schema arrives as an
-   * `EncodeError` whose URI still shows the unfilled `{braces}` — an `undefined` one included,
+   * `EncodeError` whose URI still shows the unfilled `{braces}`, an `undefined` one included,
    * since a path parameter is always required, so its schema rejects it first. A `baseUrl` that
    * is not a URL is a bug, and leaves as a raw `TypeError` naming no call.
    */
@@ -120,8 +120,8 @@ export class EncodeError extends CoreErrorBase {
 }
 
 /**
- * `fetch` rejected before a response line arrived — the request never reached the server, or the
- * server never answered — or an event stream's connection failed while you read it.
+ * `fetch` rejected before a response line arrived, the request never reached the server, or the
+ * server never answered, or an event stream's connection failed while you read it.
  *
  * @remarks
  * Once a response line has arrived this is no longer the kind: a body that then dies mid-read is a

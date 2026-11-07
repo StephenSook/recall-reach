@@ -16,7 +16,7 @@ import type { BinaryResponseDecoder } from "./response-decoder.js";
  *
  * If the request is aborted or times out mid-upload the SDK stops reading within one chunk and
  * hands the lock back, so the source is yours again to cancel or dispose from the `catch`. It is
- * never cancelled on your behalf — the SDK closes only what it opened. A stream that was fully
+ * never cancelled on your behalf, the SDK closes only what it opened. A stream that was fully
  * sent stays locked, which is the platform's own guard against sending a spent body twice.
  *
  * The async-iterable arm is what a Node stream satisfies, so `createReadStream(path)` can be
@@ -32,7 +32,7 @@ export type BinaryData =
   | AsyncIterable<Uint8Array<ArrayBuffer>>;
 
 /**
- * Bytes plus the name and media type to declare for them — what turns {@link BinaryData} into a
+ * Bytes plus the name and media type to declare for them, what turns {@link BinaryData} into a
  * file, as the platform's own `File` does to a `Blob`.
  *
  * @remarks
@@ -81,7 +81,7 @@ export type BinaryErrorContent = {
 };
 
 /**
- * A binary response body you own — a handle over the still-open connection, not bytes.
+ * A binary response body you own, a handle over the still-open connection, not bytes.
  *
  * @remarks
  * The body arrives as an unread `ReadableStream` and is handled the way any web stream is: buffer
@@ -94,7 +94,7 @@ export type BinaryErrorContent = {
  */
 export type BinaryContent = {
   /**
-   * The body, unread — a web `ReadableStream` whose lifetime is yours.
+   * The body, unread, a web `ReadableStream` whose lifetime is yours.
    */
   readonly stream: ReadableStream<Uint8Array<ArrayBuffer>>;
 
@@ -349,7 +349,7 @@ function isAsyncIterable(data: unknown): data is AsyncIterable<Uint8Array<ArrayB
 function unusableBinaryData(data: unknown): TypeError {
   return new TypeError(
     `A file body must be a Blob, Uint8Array, ArrayBuffer, ReadableStream or an async iterable of ` +
-      `bytes, or a { data } wrapper around one — received ${receivedType(data)}. A filesystem path is ` +
+      `bytes, or a { data } wrapper around one, received ${receivedType(data)}. A filesystem path is ` +
       `not a file body: open it with createReadStream(path), or read it with await openAsBlob(path).`,
   );
 }

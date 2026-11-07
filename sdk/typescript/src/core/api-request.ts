@@ -23,7 +23,7 @@ export type RequestOptions = {
    *
    * @remarks
    * Three fields of `RetryOptions`, the ones {@link RequestRetryOptions} names, merged field by
-   * field over what the client resolved: a field left out — or passed as `undefined` — keeps the
+   * field over what the client resolved: a field left out, or passed as `undefined`, keeps the
    * client's value, and `0` and an empty list are values rather than misses. `timeout` bounds one
    * attempt here exactly as it does there, so `{ retry: { timeout: 5000 } }` is a per-attempt
    * budget and not a budget for the call.

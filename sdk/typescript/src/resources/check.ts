@@ -31,7 +31,7 @@ export class Check {
    * @returns The recalls this text comes near, closest first. An empty list means nothing came
    * near.
    *
-   * @throws {@link Check.CheckRecallError} when the API answers with an error status — narrow on
+   * @throws {@link Check.CheckRecallError} when the API answers with an error status, narrow on
    * `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection
@@ -73,7 +73,7 @@ export class Check {
    *
    * @returns A JSON-RPC response.
    *
-   * @throws {@link Check.McpError} when the API answers with an error status — narrow on
+   * @throws {@link Check.McpError} when the API answers with an error status, narrow on
    * `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection
@@ -108,7 +108,7 @@ export class Check {
    * @remarks
    * The server is stateless and opens no event stream, so a GET is refused with 405.
    *
-   * @throws {@link Check.McpNoStreamError} when the API answers with an error status — narrow on
+   * @throws {@link Check.McpNoStreamError} when the API answers with an error status, narrow on
    * `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection

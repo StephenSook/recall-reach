@@ -26,7 +26,7 @@ export class Status {
    * @returns Every check passed, or only CPSC is failing. Then ok is false and degraded names it,
    * since this site still works from the recalls it holds.
    *
-   * @throws {@link Status.HealthError} when the API answers with an error status — narrow on
+   * @throws {@link Status.HealthError} when the API answers with an error status, narrow on
    * `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection

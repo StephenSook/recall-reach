@@ -11,8 +11,8 @@ import { toApiResult, type ApiResult, type RequestOutcome } from "../api-promise
  * complete `catch` needs both; a caller abort throws the signal's own `reason`. For the form
  * that turns an error status into a value, call
  * {@link Pageable.asApiResult}. Each new loop starts again from the first page. The request's
- * top-level fields are captured when the operation is called; a nested value — an array, a map or
- * a model inside a field — is read again when each page is requested.
+ * top-level fields are captured when the operation is called; a nested value, an array, a map or
+ * a model inside a field, is read again when each page is requested.
  */
 export class Pageable<TPage, TItem, E extends ApiError> implements AsyncIterable<TItem> {
   readonly #fetchPages: () => AsyncIterable<RequestOutcome<TPage, E>>;
@@ -85,7 +85,7 @@ export class PageableApiResult<TPage, TItem, E extends ApiError> implements Asyn
 
   /**
    * One {@link ApiResult} per page, in order: the decoded body with its status and headers, or,
-   * for an error status, the error's members as a value — after which the walk ends.
+   * for an error status, the error's members as a value, after which the walk ends.
    */
   async *pages(): AsyncIterable<ApiResult<TPage, E>> {
     for await (const outcome of this.#fetchPages()) {

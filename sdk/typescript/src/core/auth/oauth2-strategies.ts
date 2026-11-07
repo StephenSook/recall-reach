@@ -29,7 +29,7 @@ export type OAuthToken = {
   tokenType: string;
 
   /**
-   * Lifetime in seconds. RECOMMENDED, not required (RFC 6749 section 5.1) — a token with no
+   * Lifetime in seconds. RECOMMENDED, not required (RFC 6749 section 5.1), a token with no
    * `expiresIn` is treated as never expiring.
    */
   expiresIn?: number;
@@ -54,7 +54,7 @@ export const oauthTokenSchema: Schema<OAuthToken> = s.object<OAuthToken>({
  * An OAuth 2.0 token response that may carry a refresh token.
  *
  * @remarks
- * Only the authorization-code grant issues one — RFC 6749 forbids it for the implicit grant and
+ * Only the authorization-code grant issues one, RFC 6749 forbids it for the implicit grant and
  * says client-credentials SHOULD NOT issue one.
  */
 export type OAuthTokenRefreshable = OAuthToken & {

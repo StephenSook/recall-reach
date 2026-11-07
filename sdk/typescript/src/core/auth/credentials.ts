@@ -63,8 +63,8 @@ export type AuthorizationCodePrompt = (authorizationUrl: string, signal: AbortSi
  * Credentials for the OAuth 2.0 authorization-code grant (RFC 6749 section 4.1) with PKCE.
  *
  * @remarks
- * The only grant that needs a human — supply {@link AuthorizationCodePrompt} as
- * `promptForAuthorizationCode` — and the only one whose token response may carry a refresh token.
+ * The only grant that needs a human, supply {@link AuthorizationCodePrompt} as
+ * `promptForAuthorizationCode`, and the only one whose token response may carry a refresh token.
  * PKCE is on by default (`pkce` defaults to `S256`); setting it to `null` disables it and then a
  * `clientSecret` is required.
  */

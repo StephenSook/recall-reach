@@ -24,7 +24,7 @@ export type CoreClientOptions = {
    * How a request is timed and how a failed one is retried.
    *
    * @remarks
-   * Any subset of {@link RetryOptions}. Retries are **on** by default — that type says what is
+   * Any subset of {@link RetryOptions}. Retries are **on** by default, that type says what is
    * retried, what is not, and which value each field falls back to. Its `timeout` is the budget
    * for one attempt, so it applies whether or not a request is ever re-sent.
    */

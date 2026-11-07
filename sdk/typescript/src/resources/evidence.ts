@@ -30,7 +30,7 @@ export class Evidence {
    *
    * @returns That day's recalls and what each one found.
    *
-   * @throws {@link Evidence.NewestRecallDayError} when the API answers with an error status —
+   * @throws {@link Evidence.NewestRecallDayError} when the API answers with an error status -
    * narrow on `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection
@@ -68,7 +68,7 @@ export class Evidence {
    *
    * @returns The run.
    *
-   * @throws {@link Evidence.ReadReplayError} when the API answers with an error status — narrow on
+   * @throws {@link Evidence.ReadReplayError} when the API answers with an error status, narrow on
    * `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection
@@ -107,7 +107,7 @@ export class Evidence {
    * @returns The stored numbers, the recount, and whether CPSC's records are still the ones it
    * read.
    *
-   * @throws {@link Evidence.RecountReplayError} when the API answers with an error status — narrow
+   * @throws {@link Evidence.RecountReplayError} when the API answers with an error status, narrow
    * on `err.payload.kind`
    *
    * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection

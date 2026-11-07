@@ -88,7 +88,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;CheckAnswer, Check.CheckRecallError&gt;</code>, with `result.value` of type <code>[CheckAnswer](src/models/check-answer.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -180,7 +180,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;Record&lt;string, unknown&gt;, Check.McpError&gt;</code>, with `result.value` of type <code>Record&lt;string, unknown&gt;</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -255,7 +255,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;undefined, Check.McpNoStreamError&gt;</code>, with `result.value` of type <code>undefined</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -347,7 +347,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;RecallDay, Evidence.NewestRecallDayError&gt;</code>, with `result.value` of type <code>[RecallDay](src/models/recall-day.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -437,7 +437,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;ReplayRun, Evidence.ReadReplayError&gt;</code>, with `result.value` of type <code>[ReplayRun](src/models/replay-run.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -527,7 +527,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;Proof, Evidence.RecountReplayError&gt;</code>, with `result.value` of type <code>[Proof](src/models/proof.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -607,7 +607,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;Health, Status.HealthError&gt;</code>, with `result.value` of type <code>[Health](src/models/health.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>
@@ -682,7 +682,7 @@ if (result.ok) {
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;undefined, ApiError&gt;</code>, with `result.value` of type <code>undefined</code>
 - **OnError**: `result.payload` always the <code>[Undeclared](src/core/api-error.ts)</code> arm, with `result.message`
 
-**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
 
 </dd>
 </dl>

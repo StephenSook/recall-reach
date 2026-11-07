@@ -6,8 +6,8 @@ import { decodeWith, encodeWith } from "./schema-error.js";
  * What a value looks like on the wire.
  *
  * @remarks
- * Only `Date` and `Uint8Array` change shape — a `Date` becomes its serialized form and a
- * `Uint8Array` a string in the RFC 4648 alphabet its field declares — recursing through arrays and
+ * Only `Date` and `Uint8Array` change shape, a `Date` becomes its serialized form and a
+ * `Uint8Array` a string in the RFC 4648 alphabet its field declares, recursing through arrays and
  * objects. Everything else is unchanged, because the schema layer stops at *values*: how a number
  * is written into a query string versus a JSON body is the engine's decision, not the schema's.
  */
@@ -33,7 +33,7 @@ export type Shape<T> = { [K in keyof T]-?: Entry<T[K]> } & { readonly _keysMap?:
  * The codec exported beside every model: `decode` from the wire, `encode` back to it.
  *
  * @remarks
- * Both directions are complete on their own — one call each, never a pair. `decode` accepts the
+ * Both directions are complete on their own, one call each, never a pair. `decode` accepts the
  * wire form only and `encode` the SDK form only, so passing one direction's value to the other is
  * rejected rather than waved through. A failure throws `SchemaError`; through an operation the
  * same failure reaches you one level down, on the `cause` of a `DecodeError` or an
@@ -52,7 +52,7 @@ export type Schema<T, W = Encoded<T>> = {
  * The codec of an open enum, which also exposes the known members at run time.
  *
  * @remarks
- * `values` is the set the spec declared. It is **not** enforced — an open enum validates the base
+ * `values` is the set the spec declared. It is **not** enforced, an open enum validates the base
  * type only, so an unrecognized server value round-trips instead of throwing. Test membership
  * yourself against `values` when you need to.
  */

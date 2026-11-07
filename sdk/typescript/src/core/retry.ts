@@ -33,15 +33,15 @@ const DEFAULT_RETRY_OPTIONS: ResolvedRetryOptions = {
  * {@link RequestRetryOptions}, three of these fields.
  *
  * A field a call leaves out keeps the client's value. A field given a value the engine cannot
- * honour falls back to what stands behind it — the default at the client, the client's value on a
- * call — and takes none of the fields beside it with it. The per-field blocks say which values
+ * honour falls back to what stands behind it, the default at the client, the client's value on a
+ * call, and takes none of the fields beside it with it. The per-field blocks say which values
  * those are. `0`, `false` and an empty list are values, never misses.
  *
  * `timeout` is the one field that is not about retrying: it bounds every attempt, the only one
  * under `maxRetries: 0` included, so this type is what a single request may do as well as what a
  * retried one may.
  *
- * Two things are retried: a response **status**, and a **transport fault** — a connection failure
+ * Two things are retried: a response **status**, and a **transport fault**, a connection failure
  * or a per-attempt timeout. An abort is never retried, nor is a fault the SDK itself caused, nor a
  * request whose body is a stream, because a stream cannot be replayed.
  *
@@ -56,12 +56,12 @@ export type RetryOptions = {
    * Milliseconds a single attempt may take, from sending the request to its response headers.
    *
    * @remarks
-   * A value `setTimeout` cannot honour — negative, fractional, `NaN`, `Infinity`, or above
-   * `2_147_483_647` — silently falls back to the default, or on a call to the client's value.
+   * A value `setTimeout` cannot honour, negative, fractional, `NaN`, `Infinity`, or above
+   * `2_147_483_647`, silently falls back to the default, or on a call to the client's value.
    * `0` is passed through literally, a zero-length deadline rather than "no timeout".
    *
    * Every attempt gets its own deadline, so this is the budget for one attempt and not for the
-   * call. `maxRetries: 0` does not lift it — the single attempt is timed like any other.
+   * call. `maxRetries: 0` does not lift it, the single attempt is timed like any other.
    *
    * The timer starts once the credential is in hand and stops when the response headers arrive, so
    * it covers neither obtaining the credential nor reading any response body. The call's `signal`
@@ -77,13 +77,13 @@ export type RetryOptions = {
    * @remarks
    * There is no family rule: a status is retried if and only if it appears here. So `[429, 503]`
    * stops retrying 500 and 502. An empty list retries no status at all, while a list carrying
-   * anything that is not a status code between 100 and 599 — and any value that is not a list of
-   * them at all — falls back to the default.
+   * anything that is not a status code between 100 and 599, and any value that is not a list of
+   * them at all, falls back to the default.
    *
-   * The default is the C# SDK's own set, each with a transient story — a timeout, a rate limit, an
+   * The default is the C# SDK's own set, each with a transient story, a timeout, a rate limit, an
    * overloaded or misbehaving origin. The rest of the 5xx family is deliberately not in it: 501
    * and 505 will not succeed on a second attempt, and 510 and 511 both mean the caller must change
-   * something first. 409 is absent for its own reason — two of the three `ConflictReason` values
+   * something first. 409 is absent for its own reason, two of the three `ConflictReason` values
    * this API declares are permanent, and the engine cancels the body before it could tell which
    * one arrived.
    *
@@ -99,7 +99,7 @@ export type RetryOptions = {
    * PATCH or a DELETE twice. Every non-GET operation mints its own `Idempotency-Key`, which is
    * what makes widening it safe: name all seven methods and a write is retried like anything
    * else. An empty list disables retries entirely, while a list carrying an entry that is not one
-   * of the seven methods — a lower-cased `"get"` among them — is rejected whole and falls back to
+   * of the seven methods, a lower-cased `"get"` among them, is rejected whole and falls back to
    * the default, exactly as a bad status list does.
    *
    * @default ["GET", "HEAD", "PUT", "OPTIONS"]
@@ -121,14 +121,14 @@ export type RetryOptions = {
    * Milliseconds to wait before the first retry, and the base the backoff curve grows from.
    *
    * @remarks
-   * A value `setTimeout` cannot honour — negative, fractional, `NaN`, `Infinity`, or above
-   * `2_147_483_647` — falls back to the default. `0` retries immediately.
+   * A value `setTimeout` cannot honour, negative, fractional, `NaN`, `Infinity`, or above
+   * `2_147_483_647`, falls back to the default. `0` retries immediately.
    *
    * No computed wait exceeds **60 seconds**, whatever this and `backoffFactor` compute between
    * them. That ceiling is the engine's own rather than an option, and it bounds a `Retry-After`
    * by the same number, so a value above it is accepted here and then never reached. Jitter sits
    * on top of that ceiling rather than inside it, so the longest single wait is
-   * `60_000 × (1 + maxJitter)` — 75 seconds at the default.
+   * `60_000 × (1 + maxJitter)`, 75 seconds at the default.
    *
    * @default 1000
    */
@@ -158,7 +158,7 @@ export type RetryOptions = {
    * @remarks
    * A fraction between 0 and 1, and it is **additive**: a wait is never shorter than the delay it
    * spreads. `0.25` spreads a 1000ms delay off the curve over 1000-1250ms, and a 30s `Retry-After`
-   * over 30-37.5s — a client that woke before the time the server named would be answering a
+   * over 30-37.5s, a client that woke before the time the server named would be answering a
    * request to back off by backing off less.
    *
    * It is not a number of milliseconds: a value outside 0 to 1 falls back to the default, which
@@ -174,15 +174,15 @@ export type RetryOptions = {
    * Called before each retry sleep, with the attempt about to be made.
    *
    * @remarks
-   * Runs after the failed attempt's release has begun — its response body's cancel started, its
-   * timer already cleared — so a callback that throws cannot leak a connection or orphan a timer,
+   * Runs after the failed attempt's release has begun, its response body's cancel started, its
+   * timer already cleared, so a callback that throws cannot leak a connection or orphan a timer,
    * but it does end the call, surfacing as the error it threw. Keep it to logging and metrics.
    *
    * Called for a retried transport fault as well as a retried status; narrow on
    * {@link RetryAttempt.reason} before reading either.
    *
    * Anything other than a function falls back to no callback at all, which is what leaving it
-   * out means too — the absence of a callback is this field's value rather than a missing one.
+   * out means too, the absence of a callback is this field's value rather than a missing one.
    *
    * @default undefined
    */
@@ -209,7 +209,7 @@ export type RequestRetryOptions = Pick<RetryOptions, "maxRetries" | "timeout" | 
  * writes.
  *
  * @remarks
- * `RetryOptions` is itself the partial — every field optional, so any subset is accepted — and this
+ * `RetryOptions` is itself the partial, every field optional, so any subset is accepted, and this
  * is its resolved twin, built once when the client is built and again, over that one, on every
  * call. The engine therefore reads a policy rather than re-deciding what an absent field meant, and
  * no read site needs a `!`.
@@ -269,7 +269,7 @@ export type RetryAttempt = {
 };
 
 /**
- * Why an attempt is being retried — a response the engine rejected, or no response at all.
+ * Why an attempt is being retried, a response the engine rejected, or no response at all.
  *
  * @remarks
  * Narrow on `kind` before reading the rest: a fault carries no status and no headers, because
