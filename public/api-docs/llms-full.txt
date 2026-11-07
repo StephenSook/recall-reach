@@ -1,0 +1,91 @@
+# SDKs (/api-docs/sdks)
+
+- [TypeScript](/api-docs/sdks/typescript): [Download SDK](/api-docs/__downloads/sdk/typescript.zip)
+
+# TypeScript SDK (/api-docs/sdks/typescript)
+
+[Download SDK](/api-docs/__downloads/sdk/typescript.zip)
+
+## Intro [#intro]
+
+The Recall Reach public API SDK provides access to the Recall Reach public API REST APIs.
+
+Check text against real CPSC recalls, and recount what the site reports. No key and no cookie. Nothing here reads or returns PayPal data or a shop's data. A result names a recall to read, not a finding about an item.
+
+## Installation [#installation]
+
+The SDK compiles to `dist/` before it can be referenced — run its `build` script once in the SDK folder, then add it to your project by path:
+
+```bash
+npm install <path-to-sdk>
+```
+
+## Quick Start [#quick-start]
+
+Create one client and reuse it. Configure its behaviour through `ClientOptions`.
+
+```ts
+import { RecallReachPublicApiClient } from "recall-reach-public-api";
+
+const client = new RecallReachPublicApiClient({});
+```
+
+Nothing in `ClientOptions` is required — `new RecallReachPublicApiClient()` compiles — and each option left out falls back to its default. This API declares one environment, so there is no environment to select and no host to state at the construction site.
+
+### From CommonJS [#from-commonjs]
+
+The package ships both dialects from a single entry, so `require` works with full types. In a TypeScript CommonJS file use the `import ... = require(...)` form — a plain destructuring `require` runs fine but gives you `any`.
+
+```ts
+import sdk = require("recall-reach-public-api");
+
+const client = new sdk.RecallReachPublicApiClient({});
+```
+
+# Check a product title or model against CPSC recalls (/api-docs/api/openapi/check/checkRecall)
+
+`GET /api/check`
+
+Runs the rules a shop's sales get on the text you send. Our code doesn't store or log it. It travels in the page address, so the web host's request logs may include it. At least one of title and model is needed. Limited to 60 checks an hour per visitor.
+
+# Not offered. Every answer comes back on its own POST. (/api-docs/api/openapi/check/mcpNoStream)
+
+`GET /api/mcp`
+
+The server is stateless and opens no event stream, so a GET is refused with 405.
+
+# The same check as an MCP tool over Streamable HTTP (/api-docs/api/openapi/check/mcp)
+
+`POST /api/mcp`
+
+Two read-only tools: check_recall(title, model), and get_recall(recallNumber), which gives one recall's CPSC text. Stateless: each request stands alone. Send JSON-RPC 2.0, with Accept application/json, text/event-stream. It shares the limit of /api/check.
+
+# The newest day of recalls in the latest Recall Replay, against the demo shop (/api-docs/api/openapi/evidence/newestRecallDay)
+
+`GET /api/recalls/today/matches`
+
+Read from the latest stored Recall Replay run, so it costs no new check. Only the demo shop is public.
+
+# One Recall Replay run with all its rows (/api-docs/api/openapi/evidence/readReplay)
+
+`GET /api/replay/{runId}`
+
+The rows /replay/{runId} shows. CPSC's public text and the demo shop's item titles, nothing about a buyer.
+
+# Recount a Recall Replay's headline numbers from its own rows (/api-docs/api/openapi/evidence/recountReplay)
+
+`GET /api/proof/{runId}`
+
+Works the counts out again from the run's stored rows and compares them with the numbers it reported.
+
+# Whether the site is working, check by check (/api-docs/api/openapi/status/health)
+
+`GET /api/health`
+
+Each check and the reading behind it. Never includes a secret or a database error's text.
+
+# Whether the server answers. Touches no database. (/api-docs/api/openapi/status/live)
+
+`GET /api/live`
+
+For the host's health check. It says only that the server is up.

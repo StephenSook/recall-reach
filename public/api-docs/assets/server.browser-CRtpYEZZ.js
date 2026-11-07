@@ -1,0 +1,1 @@
+function e(){return!1}function t(e){return e??{}}async function n(){throw Error("`renderToMarkdown` is only available on the server.")}export{t as n,n as r,e as t};

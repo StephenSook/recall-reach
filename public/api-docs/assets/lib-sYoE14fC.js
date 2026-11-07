@@ -1,0 +1,1 @@
+var e=/[ \t\n\f\r]/g;function t(e){return typeof e==`object`?e.type===`text`&&n(e.value):n(e)}function n(t){return t.replace(e,``)===``}export{t};

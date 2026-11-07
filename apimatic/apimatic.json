@@ -1,0 +1,11 @@
+{
+  "$schema": "https://cdn.jsdelivr.net/npm/@apimatic/cli@2/apimatic.schema.json",
+  "schemaVersion": 1,
+  "portal": {
+    "site": { "name": "Recall Reach public API", "url": "https://recall-reach-web-e022.onrender.com/api-docs" },
+    "brand": { "colorMode": "light" },
+    "navigation": { "links": [{ "label": "Recall Reach", "url": "https://recall-reach-web-e022.onrender.com" }] },
+    "ai": { "pageActions": false }
+  },
+  "languages": { "typescript": {} }
+}

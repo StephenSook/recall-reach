@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
       { source: PAYPAL_RETURN, headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },
+  // The API docs portal APIMatic generated is static files in public/api-docs. A folder's address serves its index.html.
+  async rewrites() {
+    return {
+      beforeFiles: [],
+      afterFiles: [
+        { source: "/api-docs", destination: "/api-docs/index.html" },
+        { source: "/api-docs/:path*", destination: "/api-docs/:path*/index.html" },
+      ],
+      fallback: [],
+    };
+  },
   logging: { incomingRequests: { ignore: [new RegExp(PAYPAL_RETURN)] } },
   turbopack: {
     rules: {

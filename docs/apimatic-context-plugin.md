@@ -2,7 +2,11 @@
 
 The [PayPal Server SDK context plugin](https://github.com/paypaldev/server-sdk-context-plugin-preview) teaches a coding agent the APIMatic-generated `@paypal/paypal-server-sdk`. It was used for one thing: moving the refund read in `server/paypal/sdkRefundRead.ts` onto that SDK. Sending a refund stays on the PayPal Agent Toolkit.
 
-Its eight TypeScript skills were copied into this project only. Its files are Markdown, so nothing had to run to use them. No SDK was generated from our own API, and there is no docs portal, because those need an APIMatic account.
+Its eight TypeScript skills were copied into this project only. Its files are Markdown, so nothing had to run to use them.
+
+Separately, APIMatic's CLI generated a TypeScript SDK and a docs portal from our own [`openapi.yaml`](../openapi.yaml), on Nov 7, 2026: the SDK is in [`sdk/typescript`](../sdk/typescript), and the portal is static files in `public/api-docs`, served at [`/api-docs`](https://recall-reach-web-e022.onrender.com/api-docs) by this site, so it doesn't depend on an APIMatic account staying open. Its settings are in [`apimatic/apimatic.json`](../apimatic/apimatic.json). `scripts/sdk.test.ts` checks the SDK's models read what the real routes answer, and `scripts/sdk-live.ts` calls the deployed site through it. Validating the spec first found six errors, all missing descriptions and a YAML quoting slip, which were fixed in the spec itself.
+
+To generate them again, with an APIMatic login: put `openapi.yaml` in `src/spec/` and `apimatic.json` in `src/` of an empty folder, then run `apimatic api validate --file src/spec/openapi.yaml`, `apimatic sdk generate -l typescript -i .` and `apimatic portal generate -i .` there.
 
 ## What it changed
 

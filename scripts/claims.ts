@@ -105,6 +105,18 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "APIMatic SDK and API docs",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "sdk/typescript/src/resources/check.ts", find: "checkRecall\\(" },
+      { file: "scripts/sdk.test.ts", find: "checkAnswerSchema.decode" },
+      { file: "scripts/sdk-live.ts", find: "client.check.checkRecall" },
+      { file: "public/api-docs/index.html", find: "/api-docs/assets/" },
+      { file: "next.config.ts", find: "/api-docs/:path\\*/index\\.html" },
+    ],
+  },
+  {
     name: "Postman collection",
     status: "claimed",
     feature: true,

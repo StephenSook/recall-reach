@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import nextConfig from "./next.config";
 
+describe("the API docs at /api-docs", () => {
+  it("serves each page's own index.html for a folder address, after any real file", async () => {
+    const rewrites = await nextConfig.rewrites!();
+    const after = Array.isArray(rewrites) ? rewrites : rewrites.afterFiles;
+    expect(after).toEqual(expect.arrayContaining([{ source: "/api-docs", destination: "/api-docs/index.html" }, { source: "/api-docs/:path*", destination: "/api-docs/:path*/index.html" }]));
+  });
+});
+
 describe("response headers", () => {
   it("sends no referrer from a family page: its address is the only key to that page", async () => {
     const rules = await nextConfig.headers!();

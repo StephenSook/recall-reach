@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/sdks</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/sdks/typescript</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/checkRecall</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/mcpNoStream</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/mcp</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/evidence/newestRecallDay</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/evidence/readReplay</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/evidence/recountReplay</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/status/health</loc>
+  </url>
+  <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/status/live</loc>
+  </url>
+</urlset>
