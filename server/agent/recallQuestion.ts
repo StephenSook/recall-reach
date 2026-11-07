@@ -165,12 +165,13 @@ async function runLoop(
   recall: Snapshot & { number: string; title: string; productNames: string[] },
   now: Date,
   spent: Spent,
+  capMicros?: number,
 ): Promise<{ outcome: Outcome; answer: Answer | null; model: string }> {
   const messages: BetaMessageParam[] = [{ role: "user", content: `CPSC recall ${recall.number}, in CPSC's words:\n${toolResult(recall.text)}` }];
   let served = model;
   let nudged = false;
   for (let step = 0; step < MAX_STEPS; step++) {
-    const response = await askClaude(db, client, { model, system: SYSTEM, tools: QUESTION_TOOLS, messages, now }, spent);
+    const response = await askClaude(db, client, { model, system: SYSTEM, tools: QUESTION_TOOLS, messages, now, capMicros }, spent);
     served = response.model || model;
     if (response.stop_reason === "refusal") return { outcome: "REFUSED", answer: null, model: served };
     if (response.stop_reason === "max_tokens") return { outcome: "NO_QUESTION", answer: null, model: served };
@@ -199,7 +200,7 @@ async function runLoop(
 export type QuestionStatus = "WROTE" | "ABSTAINED" | "NO_QUESTION" | "REFUSED" | "REUSED" | "RULES_CAN_ASK" | "SCOPE_ELSEWHERE" | "UNAVAILABLE" | "OVER_BUDGET" | "NO_SUCH_RECALL";
 
 /** Whatever goes wrong with Claude, the app still has the plain question to ask. */
-export async function writeRecallQuestion(db: Queryable, client: Anthropic, input: { recallId: number; now: Date }): Promise<QuestionStatus> {
+export async function writeRecallQuestion(db: Queryable, client: Anthropic, input: { recallId: number; now: Date; capMicros?: number }): Promise<QuestionStatus> {
   const recall = await readRecall(db, input.recallId);
   if (!recall) return "NO_SUCH_RECALL";
   if (modelTokens(`${recall.title} ${recall.description}`).length > 0) return "RULES_CAN_ASK";
@@ -210,7 +211,7 @@ export async function writeRecallQuestion(db: Queryable, client: Anthropic, inpu
   const spent = nothingSpent();
   let run;
   try {
-    run = await withFallback((model) => runLoop(db, client, model, recall, input.now, spent));
+    run = await withFallback((model) => runLoop(db, client, model, recall, input.now, spent, input.capMicros));
   } catch (err) {
     if (err instanceof OverBudget) return "OVER_BUDGET";
     if (err instanceof Anthropic.APIError) return "UNAVAILABLE";

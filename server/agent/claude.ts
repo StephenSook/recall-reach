@@ -48,10 +48,10 @@ function costOf(message: BetaMessage): number {
 export async function askClaude(
   db: Queryable,
   client: Anthropic,
-  ask: { model: string; system: string; tools: BetaToolUnion[]; messages: BetaMessageParam[]; now: Date },
+  ask: { model: string; system: string; tools: BetaToolUnion[]; messages: BetaMessageParam[]; now: Date; capMicros?: number },
   spent: Spent,
 ): Promise<BetaMessage> {
-  if ((await spentToday(db, ask.now)) >= DAILY_CAP_MICROS) throw new OverBudget();
+  if ((await spentToday(db, ask.now)) >= (ask.capMicros ?? DAILY_CAP_MICROS)) throw new OverBudget();
   const response = await client.beta.messages.create({
     model: ask.model,
     max_tokens: 8000,

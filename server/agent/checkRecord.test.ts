@@ -130,9 +130,17 @@ describe("checking a sale with Claude", () => {
       expect(requests).toEqual([]);
     });
 
-    it("lets a shop's own file spend up to its share", async () => {
+    it("stops a check partway through once it reaches the share, not only at the start", async () => {
       await realShop();
       await spend(OWN_SHOP_CAP_MICROS - 1);
+      const { client, requests } = fakeClaude();
+      expect(await check(client)).toMatchObject({ overBudget: true });
+      expect(requests).toHaveLength(1);
+    });
+
+    it("lets a shop's own file spend up to its share", async () => {
+      await realShop();
+      await spend(OWN_SHOP_CAP_MICROS - 1_000_000);
       const { client, requests } = fakeClaude();
       expect(await check(client)).toMatchObject({ overBudget: false });
       expect(requests.length).toBeGreaterThan(0);

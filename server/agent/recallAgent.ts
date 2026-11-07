@@ -115,6 +115,7 @@ interface Pair {
   recall: Snapshot & { number: string };
   item: Snapshot & { title: string };
   now: Date;
+  capMicros?: number;
 }
 
 async function runLoop(db: Queryable, client: Anthropic, model: string, pair: Pair, steps: { used: number }, spent: Spent): Promise<RunResult> {
@@ -172,7 +173,7 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, pair: Pa
 
   while (steps.used < MAX_STEPS) {
     steps.used++;
-    const response = await askClaude(db, client, { model, system: SYSTEM, tools: AGENT_TOOLS, messages, now: pair.now }, spent);
+    const response = await askClaude(db, client, { model, system: SYSTEM, tools: AGENT_TOOLS, messages, now: pair.now, capMicros: pair.capMicros }, spent);
 
     const served = response.model || model;
     if (response.stop_reason === "refusal") return { outcome: "REFUSED", finding: null, trace, model: served };
@@ -233,7 +234,7 @@ export async function openRecallsFor(db: Queryable, shopId: string, recordId: st
 }
 
 /** Checks the strongest open recalls for one shop record. Whatever goes wrong with Claude leaves the queue as it was. */
-export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date }): Promise<AgentSummary> {
+export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date; capMicros?: number }): Promise<AgentSummary> {
   const summary: AgentSummary = { checked: 0, reused: 0, unavailable: 0, failedStatuses: [], overBudget: 0, notChecked: 0 };
   const matches = await openRecallsFor(db, input.shopId, input.recordId);
   summary.notChecked = Math.max(0, matches.length - MAX_RECALLS_PER_RECORD);
@@ -254,7 +255,7 @@ export async function runAgentOnRecord(db: Queryable, client: Anthropic, input: 
       } else {
         let run;
         try {
-          run = await checkPair(db, client, { shopId: input.shopId, recordId: record, recall, item, now: input.now });
+          run = await checkPair(db, client, { shopId: input.shopId, recordId: record, recall, item, now: input.now, capMicros: input.capMicros });
         } catch (err) {
           if (err instanceof OverBudget) summary.overBudget++;
           else if (err instanceof Anthropic.APIError) {

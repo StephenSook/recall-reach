@@ -14,13 +14,13 @@ export interface RecordCheck {
   failedStatuses: number[];
 }
 
-/** The cap is read before a check starts, so what's running can pass it. A few at once keeps that well inside the demo path's share. */
+/** Every call reads the cap, so a check can only pass it by what's already on its way. A few at once keeps that well inside the demo path's share. */
 const MAX_OWN_SHOP_AT_ONCE = 3;
 let ownShopChecks = 0;
 
-async function runCheck(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date }): Promise<RecordCheck> {
+async function runCheck(db: Queryable, client: Anthropic, input: { shopId: string; recordId: string; now: Date; capMicros?: number }): Promise<RecordCheck> {
   const recalls = (await openRecallsFor(db, input.shopId, input.recordId)).slice(0, MAX_RECALLS_PER_RECORD);
-  const written = await Promise.all(recalls.map((r) => writeRecallQuestion(db, client, { recallId: r.recall_id, now: input.now })));
+  const written = await Promise.all(recalls.map((r) => writeRecallQuestion(db, client, { recallId: r.recall_id, now: input.now, capMicros: input.capMicros })));
   const checked = await runAgentOnRecord(db, client, input);
   return {
     unavailable: written.includes("UNAVAILABLE") || checked.unavailable > 0,
@@ -37,7 +37,7 @@ export async function checkRecordWithClaude(db: Queryable, client: Anthropic, in
   if (ownShopChecks >= MAX_OWN_SHOP_AT_ONCE) return { unavailable: false, overBudget: false, busy: true, failedStatuses: [] };
   ownShopChecks++;
   try {
-    return await runCheck(db, client, input);
+    return await runCheck(db, client, { ...input, capMicros: OWN_SHOP_CAP_MICROS });
   } finally {
     ownShopChecks--;
   }
