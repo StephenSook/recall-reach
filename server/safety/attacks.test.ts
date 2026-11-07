@@ -109,6 +109,13 @@ describe("the safety checks", () => {
     expect(rows[0].total ?? 0).toBe(0);
   });
 
+  it("still runs every check once the day's Claude limit is used up, since its model is a stand-in that spends nothing", async () => {
+    await db.query("insert into agent_spend (day, cost_micros) values ($1::date, 10000000)", [NOW.toISOString().slice(0, 10)]);
+    const results = await run();
+    expect(results.find((r) => r.id === "injected-title")?.outcome).toBe("REFUSED");
+    expect(results.every((r) => r.outcome === "REFUSED")).toBe(true);
+  });
+
   it("says a check could not run, rather than calling it refused", async () => {
     await db.query("delete from recalls where recall_number = '27027'");
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -118,8 +125,9 @@ describe("the safety checks", () => {
     expect(errors).toHaveBeenCalled();
   });
 
-  it("says the Claude check didn't run when the day's limit stops it, rather than calling it refused", async () => {
-    await db.query("insert into agent_spend (day, cost_micros) values ('2026-11-06', 999999999)");
+  it("says the Claude check didn't run when its agent is never reached, rather than calling it refused", async () => {
+    await db.query("delete from recalls where recall_number = '27072'");
+    vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await outcomeOf("injected-title"))?.outcome).toBe("NOT_RUN");
   });
 
