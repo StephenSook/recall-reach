@@ -4,7 +4,7 @@ import type { Recall, RecallProduct } from "../cpsc/schema";
 import { missingRecallYears } from "../cpsc/load";
 import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
-import { modelTokens, normalizeModel, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
+import { codeForms, modelsShown, modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 import type { SearchCoverage } from "../paypal/transactions";
 
@@ -47,7 +47,6 @@ interface Candidate {
   ordered_on: string | null;
   similarity: number;
   model_hit: boolean;
-  model_exact: boolean;
 }
 
 /**
@@ -85,26 +84,30 @@ const CANDIDATES_SQL = `
       ) as model_hit
     from recall_text r cross join items i
   )
-  select s.recall_id, s.kind, s.id, s.title, s.description, s.ordered_on, s.similarity, s.model_hit,
-    -- A whole code ranks first. A part of one is still looked at, on its similarity, so it can't crowd out a real match.
-    s.model_hit and exists (
-      select 1 from jsonb_array_elements_text(coalesce($3::jsonb -> s.id::text, '[]'::jsonb)) as t(token), recall_text r
-      where r.recall_id = s.recall_id and r.doc ~ ('(^|[^A-Z0-9])' || t.token || '($|[^A-Z0-9])')
-    ) as model_exact
+  select s.recall_id, s.kind, s.id, s.title, s.description, s.ordered_on, s.similarity, s.model_hit
   from scored s where s.model_hit or s.similarity >= $2`;
 
 /**
- * Per recall, the top distinct titles, with a model hit first, then the closest. It ranks titles, not records: every sale
- * of a popular item is one family to reach. Done here because the candidates arrive in several statements.
+ * Per recall, the top distinct titles: one naming a recalled model first, read the way the verdict reads it, then the
+ * closest. A part of a model is still looked at on its similarity, so it can't crowd out a real match. It ranks titles, not
+ * records: every sale of a popular item is one family to reach. Done here because the candidates arrive in several statements.
  */
-function withinCap(candidates: Candidate[]): Candidate[] {
-  const rankKey = (c: Candidate) => `${c.model_exact}|${c.similarity}|${c.title.toLowerCase()}`;
+async function withinCap(db: Queryable, candidates: Candidate[]): Promise<Candidate[]> {
   const byRecall = new Map<number, Candidate[]>();
   for (const c of candidates) byRecall.set(c.recall_id, [...(byRecall.get(c.recall_id) ?? []), c]);
+  // Only a recall with more titles than the cap needs ranking, so only those are read.
+  const crowded = [...byRecall].filter(([, group]) => new Set(group.map((c) => c.title.toLowerCase())).size > TOP_CANDIDATES).map(([id]) => id);
+  const { rows } = crowded.length > 0 ? await db.query<{ recall_id: number; text: string }>("select recall_id, title || ' ' || description as text from recalls where recall_id = any($1::int[])", [crowded]) : { rows: [] };
+  const recallText = new Map(rows.map((r) => [r.recall_id, r.text]));
+  const namesModel = (c: Candidate) => {
+    const text = recallText.get(c.recall_id);
+    return text !== undefined && modelsShown(text, `${c.title} ${c.description ?? ""}`).length > 0;
+  };
+  const rankKey = (c: Candidate) => `${namesModel(c)}|${c.similarity}|${c.title.toLowerCase()}`;
   const kept: Candidate[] = [];
   for (const group of byRecall.values()) {
     const order = [...group].sort(
-      (a, b) => Number(b.model_exact) - Number(a.model_exact) || b.similarity - a.similarity || (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0),
+      (a, b) => Number(namesModel(b)) - Number(namesModel(a)) || b.similarity - a.similarity || (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0),
     );
     const top = new Set<string>();
     for (const c of order) {
@@ -178,7 +181,7 @@ export async function runShopCheck(
     [shopId],
   );
   // Compared with the punctuation out of both sides, as the rules and the public check do: MY-002 is MY002.
-  const tokens = Object.fromEntries(shopText.map((r) => [r.id, [...new Set(modelTokens(r.text.toUpperCase()).map(normalizeModel))].filter((t) => t.length >= 3)]));
+  const tokens = Object.fromEntries(shopText.map((r) => [r.id, [...new Set(modelTokens(r.text.toUpperCase()).flatMap(codeForms))].filter((t) => t.length >= 3)]));
   const allCandidates: Candidate[] = [];
   for (let at = 0; at < shopText.length; at += ITEMS_PER_STATEMENT) {
     const part = shopText.slice(at, at + ITEMS_PER_STATEMENT);
@@ -192,7 +195,7 @@ export async function runShopCheck(
     ]);
     allCandidates.push(...rows);
   }
-  const candidates = withinCap(allCandidates).filter((c) => !opts.onlyRecordId || c.id === opts.onlyRecordId);
+  const candidates = (await withinCap(db, allCandidates)).filter((c) => !opts.onlyRecordId || c.id === opts.onlyRecordId);
   const candidatesNotChecked = allCandidates.length - candidates.length;
 
   const { joined, lines } = await joinShop(db, shopId, { today: opts.today, failedMonths: opts.failedMonths });

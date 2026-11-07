@@ -153,6 +153,22 @@ describe("runShopCheck", () => {
       expect(rows.map((r) => r.title)).toContain("Unrelated words QX-7702");
     });
 
+    it("a model written with a space ranks first too, as the verdict reads it", async () => {
+      await seededRecall("This recall involves lamps, model QX-7702Z.");
+      const near = Array.from({ length: 20 }, (_, i) => line(`#N${i}`, `Zzyx Recalls Lamps number ${i}`, "2026-10-20"));
+      await storeOrderLines(db, shopId, [...near, line("#R3", "Unrelated words QX 7702Z", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      const { rows } = await db.query<{ title: string }>("select l.title from recall_matches m join order_lines l on l.id = m.order_line_id where m.shop_id = $1 and m.recall_id = 999001", [shopId]);
+      expect(rows.map((r) => r.title)).toContain("Unrelated words QX 7702Z");
+    });
+
+    it("finds a title listing two models with a slash", async () => {
+      await seededRecall("This recall involves lamps, models QX-7702A and QX-7703B.");
+      await storeOrderLines(db, shopId, [line("#R4", "Unrelated words QX7702A/QX7703B", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      expect((await db.query<{ verdict: string }>("select verdict from recall_matches where shop_id = $1 and recall_id = 999001", [shopId])).rows).toEqual([{ verdict: "MATCH" }]);
+    });
+
     it("doesn't join the end of one sentence to the next and call that a model", async () => {
       await seededRecall("This recall involves lamps, model QX7702. These lamps were sold online.");
       await storeOrderLines(db, shopId, [line("#M2", "Unrelated words 702-T", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
