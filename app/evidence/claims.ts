@@ -18,7 +18,7 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Puts a sale in the queue when a verified capture webhook arrives", file: "server/demo/liveCatch.ts", find: "catchLiveSale" },
   { what: "A buyer can log in and pay on PayPal's own page, and the order is read back from PayPal before the sale is written", file: "server/demo/liveCatch.ts", find: "finishPayPalBuy" },
   { what: "Is built to follow the 48-hour deletion rule, and purges hourly at 46 hours", file: "server/privacy/retention.ts", find: "PAYPAL_PURGE_CUTOFF_HOURS = 46" },
-  { what: "Stores a reference to a PayPal id only as a keyed hash (HMAC), never the id or a plain hash of it", file: "server/privacy/recordKey.ts", find: "createRecordKey" },
+  { what: "The lasting ledger holds a PayPal id only as a keyed hash (HMAC). Raw ids sit only in tables purged at 46 hours", file: "server/privacy/recordKey.ts", find: "createRecordKey" },
   { what: "Sandbox only: webhook certificates are accepted from PayPal's sandbox hosts, and the API base is the sandbox", file: "server/paypal/client.ts", find: "PAYPAL_SANDBOX_BASE" },
 ];
 
