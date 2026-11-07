@@ -207,6 +207,19 @@ describe("verdictFor", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars moon XPAPA 03001AX" }).strength).not.toBe("CONFIRMED");
       });
 
+      it.each(["PAP0A3001AI", "HVL78", "ZQ-9"])("%s is a code, so the look can't confirm it, however unlike the model it reads", (code) => {
+        expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper gray stars moon ${code}` }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("a shop's own number sharing part of the model doesn't stop the exact model", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI SKU03001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
+      it("a word and a number in the title don't make up a second code", () => {
+        const heater = { ...PAPABLIC, title: "VQQQ Recalls Patio Heaters", description: "This recall involves natural gas patio heaters, model VQQQ-001.", products: [{ name: "VQQQ Natural Gas Patio Heaters", model: "", type: null, units: null }] };
+        expect(verdictFor(heater, { title: "2 in 1 VQQQ Natural Gas Patio Heaters VQQQ-001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
       it("a word in front of the exact model isn't a near-miss", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper SLEEPER PAPA03001AI" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });

@@ -143,8 +143,15 @@ function resemblesModel(token: string, listed: string[]): boolean {
   });
 }
 
+/** Opens with the letters of a listed model, whatever follows: PAPA03001AX-REFURB, PAPA-2024-SALE. */
+function opensLikeModel(token: string, listed: string[]): boolean {
+  const letters = (t: string) => /^[A-Z]*/.exec(t)?.[0] ?? "";
+  const opening = letters(normalizeModel(token));
+  return opening.length >= 2 && listed.some((m) => letters(normalizeModel(m)) === opening);
+}
+
 /** Two neighbouring words that read as one code close to a listed model: PAPA 03001AX. */
-function spacedNearMisses(upper: string, listed: ReadonlySet<string>, recallModels: string[]): string[] {
+function spacedCodes(upper: string, listed: ReadonlySet<string>, close: (code: string) => boolean): string[] {
   // Split on spaces only: the hyphens in SWGR5-V2-SLV join one code, and its pieces aren't another.
   const parts = upper.slice(0, MAX_TEXT).split(/\s+/).map(normalizeModel).filter(Boolean);
   const found = new Set<string>();
@@ -152,7 +159,7 @@ function spacedNearMisses(upper: string, listed: ReadonlySet<string>, recallMode
     const joined = parts[i] + parts[i + 1];
     // Beside a listed model, the other word is just a word: PAPA03001AI X and SLEEPER PAPA03001AI are that model.
     if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined)) continue;
-    if (isSiblingModel(joined, recallModels) || resemblesModel(joined, recallModels)) found.add(joined);
+    if (close(joined)) found.add(joined);
   }
   return [...found];
 }
@@ -167,6 +174,37 @@ export function modelsShown(recallText: string, itemText: string): string[] {
   const listed = new Set(recallModels.map(normalizeModel));
   const shownCodes = new Set(modelTokens(upper).flatMap((t) => (slashList(t, listed) ? codeForms(t) : [normalizeModel(t)])));
   return recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
+}
+
+/** Codes in a shop's text that pass this closeness test and aren't a listed model or part of one spelled out. */
+function codesBeside(recallText: string, itemText: string, close: (code: string, models: string[]) => boolean, closeSpaced: (code: string, models: string[]) => boolean): string[] {
+  const upper = itemText.slice(0, MAX_TEXT).toUpperCase();
+  const recallModels = modelTokens(recallText);
+  const listed = new Set(recallModels.map(normalizeModel));
+  // "PAPA 03001AI" is the model, so its back half isn't a second code.
+  const spelledOut = new Set(modelsShown(recallText, itemText).flatMap((m) => [...upper.matchAll(new RegExp(writtenApart(m).source, "g"))].flatMap((hit) => modelTokens(hit[0]))));
+  return modelTokens(upper, MAX_TEXT)
+    .filter((t) => !listed.has(normalizeModel(t)) && !slashList(t, listed) && !spelledOut.has(t) && close(t, recallModels))
+    .concat(spacedCodes(upper, listed, (code) => closeSpaced(code, recallModels)))
+    .map((t) => t.slice(0, MAX_TOKEN));
+}
+
+/** Beside an exact model, what could make it another unit: one slip from it, built on it, or opening with its letters. */
+const closeBesideExact = (t: string, models: string[]) => isSiblingModel(t, models) || isVariantOf(t, models) || opensLikeModel(t, models);
+
+/**
+ * For a check on a store listing, which has no second chance to be read: any code that could be this recall's model written
+ * another way, including most of its characters in a row.
+ */
+export const nearMissCodes = (recallText: string, itemText: string): string[] =>
+  codesBeside(recallText, itemText, (t, models) => closeBesideExact(t, models) || resemblesModel(t, models), (t, models) => isSiblingModel(t, models) || resemblesModel(t, models));
+
+/** Codes that are about the product and not which unit it is, and a shop's own number labelled as one. */
+const SAYS_NOTHING_ABOUT_THE_MODEL = /^(?:\d+-IN-\d+|\d+(?:-\d+)?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?)|SKU.*)$/;
+
+/** Whether the words matched say what this product is: a model, or a product word other than who it's for. */
+export function namesProductLine(matched: string[]): boolean {
+  return matched.some((m) => m.startsWith("model:") || (m.startsWith("product:") && m.slice("product:".length).split(",").some((w) => !WHO_ITS_FOR.has(w.trim()))));
 }
 
 /** Two or more codes joined by slashes, every one of them listed. A slash to anything else makes it another code. */
@@ -306,16 +344,7 @@ export function verdictFor(
   const upper = itemText.toUpperCase();
   const itemCodes = modelTokens(upper);
   const shown = modelsShown(`${recall.title} ${recall.description}`, itemText);
-  // A code that looks like CPSC's model and isn't exactly it could be another unit. One that looks nothing like it, such as
-  // 2-IN-1 or a shop's own SKU, says nothing about the model. A code too long to be read as a model can still be a near miss.
-  const listed = new Set(recallModels.map(normalizeModel));
-  // "PAPA 03001AI" is the model, so its back half isn't a second code.
-  const spelledOut = new Set(shown.flatMap((m) => [...upper.matchAll(new RegExp(writtenApart(m).source, "g"))].flatMap((hit) => modelTokens(hit[0]))));
-  const nearMissCode = modelTokens(upper, MAX_TEXT)
-    .filter((t) => !listed.has(normalizeModel(t)) && !slashList(t, listed) && !spelledOut.has(t))
-    .filter((t) => isSiblingModel(t, recallModels) || isVariantOf(t, recallModels) || resemblesModel(t, recallModels))
-    .concat(spacedNearMisses(upper, listed, recallModels))
-    .map((t) => t.slice(0, MAX_TOKEN));
+  const nearMissCode = codesBeside(`${recall.title} ${recall.description}`, itemText, closeBesideExact, isSiblingModel);
   const limited = limitedWithinModel(recall.description);
   if (shown.length > 0 && limited) {
     return {
@@ -378,7 +407,9 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && nearMissCode.length === 0) {
+  // Any code at all stops this. A look can't tell which unit a title's code means, however unlike the model it reads.
+  const carriesCode = modelTokens(upper, MAX_TEXT).some((t) => !SAYS_NOTHING_ABOUT_THE_MODEL.test(t));
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && nearMissCode.length === 0 && !carriesCode) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",
