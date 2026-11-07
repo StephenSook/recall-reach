@@ -162,6 +162,20 @@ describe("runShopCheck", () => {
       expect(rows.map((r) => r.title)).toContain("Unrelated words QX 7702Z");
     });
 
+    it("one title takes one place under the cap, whatever its records say", async () => {
+      await seededRecall("This recall involves lamps, model QX-7702Z.");
+      const near = Array.from({ length: 20 }, (_, i) => line(`#N${i}`, `Zzyx Recalls Lamps number ${i}`, "2026-10-20"));
+      await storeOrderLines(db, shopId, [...near, line("#A1", "Zzyx Recalls Lamps alpha", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await db.query("insert into shop_items (shop_id, title, description, listed, source) values ($1, 'Zzyx Recalls Lamps alpha', 'Model QX 7702Z', true, 'test')", [shopId]);
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      const { rows } = await db.query<{ title: string }>(
+        `select distinct lower(coalesce(l.title, i.title)) as title from recall_matches m left join order_lines l on l.id = m.order_line_id left join shop_items i on i.id = m.shop_item_id where m.shop_id = $1 and m.recall_id = 999001`,
+        [shopId],
+      );
+      expect(rows).toHaveLength(20);
+      expect(rows.map((r) => r.title)).toContain("zzyx recalls lamps alpha");
+    });
+
     it("finds a title listing two models with a slash", async () => {
       await seededRecall("This recall involves lamps, models QX-7702A and QX-7703B.");
       await storeOrderLines(db, shopId, [line("#R4", "Unrelated words QX7702A/QX7703B", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");

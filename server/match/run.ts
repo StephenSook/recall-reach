@@ -108,7 +108,7 @@ async function withinCap(db: Queryable, candidates: Candidate[]): Promise<Candid
     named.set(c, answer);
     return answer;
   };
-  const rankKey = (c: Candidate) => `${namesModel(c)}|${c.similarity}|${c.title.toLowerCase()}`;
+  const rankKey = (c: Candidate) => c.title.toLowerCase();
   const kept: Candidate[] = [];
   for (const group of byRecall.values()) {
     const order = [...group].sort(
