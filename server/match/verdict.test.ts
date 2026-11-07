@@ -188,8 +188,8 @@ describe("verdictFor", () => {
         expect(v.verdict).toBe("SCOPE_GAP");
       });
 
-      it("an unrelated code stops it too: only CPSC's model can settle a title that names one", () => {
-        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper, gray stars and moon SKU44A1" }).strength).not.toBe("CONFIRMED");
+      it.each(["2-IN-1", "0-6MONTHS", "SKU44A1"])("%s says nothing about the model, so it doesn't stop the look", (code) => {
+        expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper, gray stars and moon ${code}` })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
 
       it("CPSC's exact model still confirms it, written any way", () => {

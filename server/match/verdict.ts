@@ -289,10 +289,11 @@ export function verdictFor(
   const look = [...words(recall.description)]
     .filter((w) => !brandWords.has(w) && !lineWords.has(w) && !modelParts.has(w) && itemWords.has(w))
     .sort();
-  // A title carrying any code that isn't CPSC's exact model can't be pinned by its words: one edit off could be another unit.
+  // A code that looks like CPSC's model and isn't exactly it could be another unit, so the title's words can't pin it.
+  // One that looks nothing like it, such as 2-IN-1 or a shop's own SKU, says nothing about the model.
   const listed = new Set(recallModels.map(normalizeModel));
-  const codeNotListed = itemCodes.some((t) => !listed.has(normalizeModel(t)));
-  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && !codeNotListed) {
+  const nearMissCode = itemCodes.some((t) => !listed.has(normalizeModel(t)) && (isSiblingModel(t, recallModels) || isVariantOf(t, recallModels)));
+  if (hasBrand && recallModels.length === 1 && look.length >= 2 && !limited && fullScope && !nearMissCode) {
     return {
       verdict: "MATCH",
       strength: "CONFIRMED",
