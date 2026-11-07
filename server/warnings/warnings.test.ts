@@ -136,6 +136,11 @@ describe("keeping them", () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(0);
     });
 
+    it("reads a long title only as far as a title can be", async () => {
+      expect(await checkTitlesAgainstWarnings(db, shopId, [`${"x ".repeat(300)}Mbabyjon crib bumpers`])).toBe(0);
+      expect(await checkTitlesAgainstWarnings(db, shopId, [`Mbabyjon crib bumpers ${"x ".repeat(300)}`])).toBe(1);
+    });
+
     it("adds each title once, however often it's checked", async () => {
       await checkTitlesAgainstWarnings(db, shopId, ["Mbabyjon crib bumpers"]);
       await checkTitlesAgainstWarnings(db, shopId, ["Mbabyjon crib bumpers"]);

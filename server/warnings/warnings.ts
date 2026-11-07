@@ -12,6 +12,8 @@ export const WARNINGS_PAGE = "https://www.cpsc.gov/Warnings";
 /** 382 rows when first measured, 2026-11-06. A file much shorter than that isn't the list. */
 const MIN_ROWS = 100;
 const READ_EVERY_MS = 20 * 3_600_000;
+const MAX_TITLE = 200;
+const STORED_SHOPS_BUDGET_MS = 30_000;
 const TIMEOUT_MS = 60_000;
 
 export class WarningsUnreadable extends Error {}
@@ -142,19 +144,24 @@ export async function checkTitlesAgainstWarnings(db: Queryable, shopId: string, 
   if (titles.length === 0) return 0;
   const { rows } = await db.query<{ warning_number: string; product: string; description: string }>("select warning_number, product, description from safety_warnings");
   const describing = descriptiveWords(rows.map((r) => r.product));
-  const named = rows.flatMap((w) => {
+  const byMaker = new Map<string, ((typeof rows)[number] & { maker: string })[]>();
+  for (const w of rows) {
     const maker = makerOf(w.product, describing);
-    return maker ? [{ ...w, maker }] : [];
-  });
+    if (maker) byMaker.set(maker, [...(byMaker.get(maker) ?? []), { ...w, maker }]);
+  }
   let added = 0;
-  for (const title of new Set(titles)) {
-    for (const w of named) {
-      if (!nearWarning(w, title, w.maker)) continue;
-      const saved = await db.query(
-        "insert into safety_warning_matches (shop_id, warning_number, item_title) values ($1, $2, $3) on conflict do nothing returning 1",
-        [shopId, w.warning_number, title],
-      );
-      added += saved.rows.length;
+  for (const whole of new Set(titles)) {
+    const title = whole.slice(0, MAX_TITLE);
+    // Each title is read once, and only a warning whose maker it names gets looked at.
+    for (const word of new Set(wordsOf(title))) {
+      for (const w of byMaker.get(word) ?? []) {
+        if (!nearWarning(w, title, w.maker)) continue;
+        const saved = await db.query(
+          "insert into safety_warning_matches (shop_id, warning_number, item_title) values ($1, $2, $3) on conflict do nothing returning 1",
+          [shopId, w.warning_number, title],
+        );
+        added += saved.rows.length;
+      }
     }
   }
   return added;
@@ -176,7 +183,11 @@ export async function checkShopAgainstWarnings(db: Queryable, shopId: string): P
 /** New warnings reach shops that already had their check. Demo shops have only their labelled sample. */
 export async function checkStoredShopsAgainstWarnings(db: Queryable): Promise<void> {
   const { rows } = await db.query<{ id: string }>("select id from shops where kind = 'REAL'");
-  for (const { id } of rows) await checkShopAgainstWarnings(db, id);
+  const started = Date.now();
+  for (const { id } of rows) {
+    if (Date.now() - started > STORED_SHOPS_BUDGET_MS) return;
+    await checkShopAgainstWarnings(db, id);
+  }
 }
 
 export type ShopWarning = Warning & { itemTitle: string };
