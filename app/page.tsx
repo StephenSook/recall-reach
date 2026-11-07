@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { heldRecalls, latestReadLine } from "@/server/cpsc/latestRead";
+import { getDb } from "@/server/db/pg";
+import { recallPollStatus } from "@/server/jobs/appJobs";
 import { StartDemoButton } from "./StartDemoButton";
 
 // The route sends a visitor here with a code, and only these sentences are shown.
@@ -12,6 +15,7 @@ const DEMO_MESSAGES: Record<string, string> = {
 export default async function Home({ searchParams }: { searchParams: Promise<{ demo?: string | string[] }> }) {
   const { demo } = await searchParams;
   const message = typeof demo === "string" && Object.hasOwn(DEMO_MESSAGES, demo) ? DEMO_MESSAGES[demo] : null;
+  const latestRead = await latestReadLine(recallPollStatus(), async () => heldRecalls(getDb()));
   return (
     <main className="door">
       <div className="door-card">
@@ -30,6 +34,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
           </Link>
         </p>
         <footer>
+          {latestRead ? <p data-testid="latest-read">{latestRead}</p> : null}
           <p>Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.</p>
           <p>
             <Link href="/judge">Judging this? Start here</Link>
