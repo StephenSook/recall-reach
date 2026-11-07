@@ -50,7 +50,7 @@ describe("POST /api/studio/turn", () => {
     await real.query("update agent_spend set cost_micros = 10000000");
     const res = await post(turn);
     expect(res.status).toBe(429);
-    expect((await res.json()).error).toContain("today's limit");
+    expect((await res.json()).error).toBe("Today's AI limit for this demo is used up. The dashboard still works by hand, and /evidence/ag-grid shows a real run of this agent from Nov 7, 2026.");
   });
 
   it("lets only two turns wait on Claude at once, so a burst can't pass the day's limit together", async () => {

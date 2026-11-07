@@ -63,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
     );
     return Response.json(fromClaude(turn, answer as unknown as ClaudeAnswer));
   } catch (err) {
-    if (err instanceof OverBudget) return Response.json({ error: "The dashboard's agent has reached today's limit. Everything else still works." }, { status: 429 });
+    if (err instanceof OverBudget) return Response.json({ error: "Today's AI limit for this demo is used up. The dashboard still works by hand, and /evidence/ag-grid shows a real run of this agent from Nov 7, 2026." }, { status: 429 });
     console.error("studio turn failed:", err instanceof Error ? err.name : "unknown error");
     return Response.json({ error: "Claude didn't answer just now. Please try again." }, { status: 502 });
   } finally {
