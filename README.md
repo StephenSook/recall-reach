@@ -62,6 +62,23 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 | `GET /v2/payments/refunds/{id}` (Server SDK `getRefund`) | Reads the refund back so the records can be compared | `server/paypal/sdkRefundRead.ts` |
 | `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is verified | `server/paypal/webhookHandler.ts` |
 
+## Who can move money
+
+| Who | What they can do |
+|---|---|
+| The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
+| Claude | Nothing. It reads recall text and the shop's own titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| A family | Answer on their phone page. That changes the seller's card, and moves no money |
+
+## What's live and what's demo
+
+| Live | Demo, and labelled so on screen |
+|---|---|
+| CPSC recalls, read from CPSC's API | The demo shop, its titles and its sale dates |
+| PayPal's sandbox API, with real calls | All money: sandbox only, nothing real moves |
+| Claude's check and written questions | |
+| Channel3's market search | |
+
 ## What stays where
 
 - **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text and the shop's own item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.

@@ -105,6 +105,12 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Claude has no money fields",
+    status: "claimed",
+    feature: true,
+    evidence: [{ file: "server/agent/moneyFields.test.ts", find: "amount\\|currency\\|capture\\|refund\\|payee" }],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,
