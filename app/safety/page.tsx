@@ -2,6 +2,7 @@ import { ranAt } from "@/app/replay/labels";
 import { RunAgainButton } from "@/app/replay/RunAgainButton";
 import { getDb } from "@/server/db/pg";
 import { latestSafetyRun, type AttackOutcome } from "@/server/safety/attacks";
+import { TESTED_BY } from "./testedBy";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,11 @@ export default async function SafetyPage({ searchParams }: { searchParams: Promi
               <div className="window-body">
                 <p>{r.tried}</p>
                 <p className="quiet">{r.detail}</p>
+                {TESTED_BY[r.id] ? (
+                  <p className="quiet" data-testid="tested-by">
+                    Test: <code>{TESTED_BY[r.id].file}</code>, &quot;{TESTED_BY[r.id].test}&quot;
+                  </p>
+                ) : null}
               </div>
             </article>
           ))}
