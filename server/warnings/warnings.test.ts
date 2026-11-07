@@ -185,6 +185,11 @@ describe("keeping them", () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [title])).toBe(0);
     });
 
+    it("the first word of a product name can't be both the maker and the product", async () => {
+      await storeWarnings(db, [{ ...WARNING, number: "23-261", product: "Dehumidifiers manufactured by Gree Electric Appliances", description: "The dehumidifiers can overheat." }]);
+      expect(await checkTitlesAgainstWarnings(db, shopId, ["dehumidifiers"])).toBe(0);
+    });
+
     it("reads a long title only as far as a title can be", async () => {
       expect(await checkTitlesAgainstWarnings(db, shopId, [`${"x ".repeat(300)}Mbabyjon crib bumpers`])).toBe(0);
       expect(await checkTitlesAgainstWarnings(db, shopId, [`Mbabyjon crib bumpers ${"x ".repeat(300)}`])).toBe(1);

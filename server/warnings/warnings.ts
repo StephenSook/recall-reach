@@ -154,7 +154,8 @@ export function nearWarning(w: Pick<Warning, "product" | "description">, title: 
   if (verdict === "CLEARED") return false;
   // The maker alone isn't enough, and nor is a code: CPSC's text can name a standard. The product has to be what CPSC warned about.
   const inTitle = new Set(whatItIs(title));
-  return whatItIs(w.product).some((word) => word !== maker && inTitle.has(word));
+  const makerWords = new Set(whatItIs(maker));
+  return whatItIs(w.product).some((word) => !makerWords.has(word) && inTitle.has(word));
 }
 
 /** Adds what these titles came near, and says how many it added. Only ever adds, and touches no recall row. */
