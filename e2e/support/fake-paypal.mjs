@@ -38,6 +38,9 @@ function fakePayPal(url, init) {
   const method = init?.method ?? "GET";
   const path = url.pathname;
   if (path === "/v1/oauth2/token") return json({ access_token: "fake-token", expires_in: 32400 });
+  // A clear empty answer, as the sandbox gives: no disputes, and no payments listed yet.
+  if (path === "/v1/customer/disputes") return json({ items: [] });
+  if (path === "/v1/reporting/transactions") return json({ transaction_details: [], total_items: 0, total_pages: 0, page: 1 });
 
   const body = init?.body ? JSON.parse(String(init.body)) : undefined;
   const requestId = new Headers(init?.headers).get("PayPal-Request-Id");
