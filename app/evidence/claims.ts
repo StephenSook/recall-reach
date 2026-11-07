@@ -22,6 +22,17 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Sandbox only: webhook certificates are accepted from PayPal's sandbox hosts, and the API base is the sandbox", file: "server/paypal/client.ts", find: "PAYPAL_SANDBOX_BASE" },
 ];
 
+/** Each PayPal call, and where a visitor sees what it did. `what` is the call, as the queue's call log prints it. */
+export const PAYPAL_SCREENS: (Claim & { where: string })[] = [
+  { what: "GET /v1/reporting/transactions", where: "The queue's line that says what was searched, when a demo shop starts", file: "server/paypal/transactions.ts", find: "/v1/reporting/transactions" },
+  { what: "POST /v2/checkout/orders", where: "Buy this as a family, Buy with a PayPal sandbox login, and the shopping agent's Approve on PayPal", file: "server/paypal/orders.ts", find: "/v2/checkout/orders" },
+  { what: "GET /v2/payments/captures/:id", where: "Review refund, on a sale after the recall", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
+  { what: "GET /v1/customer/disputes", where: "Review refund, which won't go on while the buyer has a dispute open", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
+  { what: "POST /v2/payments/captures/:id/refund", where: "The refund button, through PayPal Agent Toolkit", file: "server/paypal/toolkitRefund.ts", find: "REFUND_PATH" },
+  { what: "GET /v2/payments/refunds/:id", where: "Check it against PayPal, through PayPal's Server SDK", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
+  { what: "Webhook: PAYMENT.CAPTURE.COMPLETED", where: "A new card in the queue, with nothing pressed", file: "server/paypal/webhookHandler.ts", find: "PAYMENT.CAPTURE.COMPLETED" },
+];
+
 export const API_CLAIMS: Claim[] = [
   { what: "Runs the rules a shop's sales get, on the text you send", file: "server/match/textCheck.ts", find: "verdictFor(" },
   { what: "An MCP server over HTTP, with two read-only tools", file: "app/api/mcp/route.ts", find: "readOnlyHint: true" },
