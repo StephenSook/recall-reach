@@ -1358,6 +1358,15 @@ describe("refunds", () => {
       expect(await refusal(again(r.refundId, fakePayPal().client, LATER))).toBe("PAYMENT_DISPUTED");
     });
 
+    it("while another send holds the lease it refuses first, and reads nothing from PayPal", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      await db.query("update refunds set send_lease_until = $2::timestamptz where id = $1", [r.refundId, new Date(LATER.getTime() + 60_000).toISOString()]);
+      const pp = fakePayPal({ disputes: [{ status: "OPEN" }] });
+      expect(await refusal(again(r.refundId, pp.client, LATER))).toBe("REFUND_BEING_SENT");
+      expect(pp.calls).toEqual([]);
+      expect((await db.query<{ dispute_seen_at: Date | null }>("select dispute_seen_at from refunds where id = $1", [r.refundId])).rows[0].dispute_seen_at).toBeNull();
+    });
+
     it("sends nothing if another request saw a dispute while this one was still checking", async () => {
       const { r } = await noClearAnswer(["lost", "lost", "lost"]);
       const pp = fakePayPal();

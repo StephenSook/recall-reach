@@ -536,8 +536,9 @@ export async function askPayPalAgain(
     repeat_refused_at: Date | null;
     seller_sent_to_paypal_at: Date | null;
     dispute_seen_at: Date | null;
+    send_lease_until: Date | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, r.repeat_refused_at, r.seller_sent_to_paypal_at, r.dispute_seen_at, p.capture_id, p.refund_id as paypal_refund_id,
+    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, r.repeat_refused_at, r.seller_sent_to_paypal_at, r.dispute_seen_at, r.send_lease_until, p.capture_id, p.refund_id as paypal_refund_id,
             a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256, a.paypal_payment_id
      from refunds r join approvals a on a.id = r.approval_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
@@ -549,6 +550,8 @@ export async function askPayPalAgain(
   if (row.status !== "unconfirmed" || row.paypal_refund_id) {
     throw new RefundRefused("NOTHING_TO_ASK", "PayPal already has a record of this refund. Check it against PayPal.");
   }
+  // Another send may be on its way to PayPal, so wait for it. Reading PayPal now would act on an answer it could overtake.
+  if (row.send_lease_until && row.send_lease_until.getTime() > now.getTime()) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
   const checkInPayPal = () => new RefundRefused("CHECK_IN_PAYPAL", "This one is with PayPal now. Check the payment there.");
   const disputedAgain = () => new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
   if (row.dispute_seen_at) throw disputedAgain();
