@@ -56,11 +56,11 @@ export function brandOf(title: string): string | null {
   return words.length > 0 ? words.join(" ") : null;
 }
 
-export function modelTokens(text: string): string[] {
+export function modelTokens(text: string, maxToken = MAX_TOKEN): string[] {
   const found = new Set<string>();
   for (const raw of text.slice(0, MAX_TEXT).split(/[^A-Za-z0-9_./-]+/)) {
     const token = raw.replace(/[._/-]+$/, "");
-    if (token.length <= MAX_TOKEN && MODEL_TOKEN.test(token) && !UNIT_TOKEN.test(token)) found.add(token);
+    if (token.length <= maxToken && MODEL_TOKEN.test(token) && !UNIT_TOKEN.test(token)) found.add(token);
   }
   return [...found].sort();
 }
@@ -104,8 +104,41 @@ export function isVariantOf(token: string, listed: string[]): boolean {
   const t = unconfuse(normalizeModel(token));
   return listed.some((m) => {
     const n = unconfuse(normalizeModel(m));
-    return t.includes(n) || n.includes(t) || editDistance(t, n) <= 1;
+    return t.includes(n) || n.includes(t) || (Math.abs(t.length - n.length) <= 1 && editDistance(t, n) <= 1);
   });
+}
+
+/** Opens with a listed model's letters, or holds most of one in a row, whatever else it carries: PAPA03001AX-REFURB. */
+function resemblesModel(token: string, listed: string[]): boolean {
+  const letters = (t: string) => /^[A-Z]*/.exec(t)?.[0] ?? "";
+  const plain = normalizeModel(token);
+  const t = unconfuse(plain);
+  return listed.some((m) => {
+    const opening = letters(normalizeModel(m));
+    if (opening.length >= 2 && letters(plain) === opening) return true;
+    const n = unconfuse(normalizeModel(m));
+    const run = Math.max(4, Math.ceil(n.length * 0.6));
+    for (let i = 0; i + run <= n.length; i++) if (t.includes(n.slice(i, i + run))) return true;
+    return false;
+  });
+}
+
+/** The ways a shop's code can name a listed model: whole, or as a slash between models, BRZ0083/BRZ0154. */
+export const codeForms = (token: string): string[] => [...new Set([normalizeModel(token), ...token.split("/").map(normalizeModel)])];
+
+/** The recalled models a shop's text names: the same test the verdict uses, so ranking and verdict can't disagree. */
+export function modelsShown(recallText: string, itemText: string): string[] {
+  const upper = itemText.toUpperCase();
+  const recallModels = modelTokens(recallText);
+  const listed = new Set(recallModels.map(normalizeModel));
+  const shownCodes = new Set(modelTokens(upper).flatMap((t) => (slashList(t, listed) ? codeForms(t) : [normalizeModel(t)])));
+  return recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
+}
+
+/** Two or more codes joined by slashes, every one of them listed. A slash to anything else makes it another code. */
+function slashList(token: string, listed: ReadonlySet<string>): boolean {
+  const parts = token.split("/").map(normalizeModel);
+  return parts.length > 1 && parts.every((p) => listed.has(p));
 }
 
 /**
@@ -235,12 +268,16 @@ export function verdictFor(
   const recallModels = modelTokens(`${recall.title} ${recall.description}`);
   const upper = itemText.toUpperCase();
   const itemCodes = modelTokens(upper);
-  const shownCodes = new Set(itemCodes.map(normalizeModel));
-  const shown = recallModels.filter((m) => shownCodes.has(normalizeModel(m)) || writtenApart(m).test(upper));
+  const shown = modelsShown(`${recall.title} ${recall.description}`, itemText);
   // A code that looks like CPSC's model and isn't exactly it could be another unit. One that looks nothing like it, such as
-  // 2-IN-1 or a shop's own SKU, says nothing about the model.
+  // 2-IN-1 or a shop's own SKU, says nothing about the model. A code too long to be read as a model can still be a near miss.
   const listed = new Set(recallModels.map(normalizeModel));
-  const nearMissCode = itemCodes.filter((t) => !listed.has(normalizeModel(t)) && (isSiblingModel(t, recallModels) || isVariantOf(t, recallModels)));
+  // "PAPA 03001AI" is the model, so its back half isn't a second code.
+  const spelledOut = new Set(shown.flatMap((m) => [...upper.matchAll(new RegExp(writtenApart(m).source, "g"))].flatMap((hit) => modelTokens(hit[0]))));
+  const nearMissCode = modelTokens(upper, MAX_TEXT)
+    .filter((t) => !listed.has(normalizeModel(t)) && !slashList(t, listed) && !spelledOut.has(t))
+    .filter((t) => isSiblingModel(t, recallModels) || isVariantOf(t, recallModels) || resemblesModel(t, recallModels))
+    .map((t) => t.slice(0, MAX_TOKEN));
   const limited = limitedWithinModel(recall.description);
   if (shown.length > 0 && limited) {
     return {

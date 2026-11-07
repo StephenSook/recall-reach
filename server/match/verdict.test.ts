@@ -188,6 +188,36 @@ describe("verdictFor", () => {
         expect(v.verdict).toBe("SCOPE_GAP");
       });
 
+      it.each(["PAPA03001AX-REFURB", "PAPA03001AX-WAREHOUSE-REFURBISHED-1234567890", "XPAPA03001AX", "PAPA-2024-SALE"])("%s is too like the model for the look to confirm it", (code) => {
+        expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper gray stars moon ${code}` }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("a near-miss too long to read as a model still stops an exact model beside it", () => {
+        const v = verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI PAPA03001AX-WAREHOUSE-REFURBISHED-1234567890" });
+        expect(v.verdict).toBe("SCOPE_GAP");
+        expect(v.reason.length).toBeLessThan(200);
+      });
+
+      it("a model written with a space is the model, not a second code", () => {
+        for (const title of ["Papablic bedside sleeper PAPA 03001AI", "Papablic bedside sleeper PAPA03001AI PAPA 03001AI"]) {
+          expect(verdictFor(PAPABLIC, { title })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        }
+      });
+
+      it("the back half of a model alone isn't the model", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper gray stars moon 03001AI" }).strength).not.toBe("CONFIRMED");
+      });
+
+      it("a slash between listed models names them both", () => {
+        const v = verdictFor(BREZZA, { title: "Baby Brezza Sterilizer BRZ0083/BRZ0154" });
+        expect(v).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        expect(v.matched).toContain("model: BRZ0083, BRZ0154");
+      });
+
+      it.each(["BRZ0083/BRZ9999", "BRZ0083/X"])("%s isn't a list of recalled models", (code) => {
+        expect(verdictFor(BREZZA, { title: `Baby Brezza Sterilizer ${code}` }).verdict).not.toBe("MATCH");
+      });
+
       it.each(["2-IN-1", "0-6MONTHS", "SKU44A1"])("%s says nothing about the model, so it doesn't stop the look", (code) => {
         expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper, gray stars and moon ${code}` })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
