@@ -134,6 +134,13 @@ describe("runShopCheck", () => {
     };
     const found = async () => (await db.query("select verdict from recall_matches where shop_id = $1 and recall_id = 999001", [shopId])).rows;
 
+    it("doesn't join the end of one sentence to the next and call that a model", async () => {
+      await seededRecall("This recall involves lamps, model QX7702. These lamps were sold online.");
+      await storeOrderLines(db, shopId, [line("#M2", "Unrelated words 702-T", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      expect(await found()).toEqual([]);
+    });
+
     it.each([
       ["a hyphen in the shop's title", "This recall involves lamps, model QX7702.", "Unrelated words QX-7702"],
       ["a hyphen in CPSC's text", "This recall involves lamps, model QX-7702.", "Unrelated words QX7702"],

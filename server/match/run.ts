@@ -70,7 +70,8 @@ const CANDIDATES_SQL = `
   recall_text as materialized (
     select recall_id,
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
-      regexp_replace(upper(title || ' ' || description), '[^A-Z0-9]', '', 'g') as doc
+      -- Punctuation inside a code goes, so QX-7702 is QX7702. A space stays, or the end of one sentence joins the next word.
+      regexp_replace(upper(title || ' ' || description), '(?<=[A-Z0-9])[^A-Z0-9[:space:]]+(?=[A-Z0-9])', '', 'g') as doc
     from recalls
     where recall_date >= $6::date and ($5::int[] is null or recall_id = any($5::int[]))
   ),
