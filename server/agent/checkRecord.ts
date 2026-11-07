@@ -14,7 +14,7 @@ export interface RecordCheck {
   failedStatuses: number[];
 }
 
-/** Every call reads the cap, so a check can only pass it by what's already on its way. A few at once keeps that well inside the demo path's share. */
+/** Every call reads the cap, so a check can only pass it by what's already on its way. A few at once keeps that small. The demo path's stored answers cost nothing either way. */
 const MAX_OWN_SHOP_AT_ONCE = 3;
 let ownShopChecks = 0;
 
