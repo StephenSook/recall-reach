@@ -11,7 +11,7 @@ import { familyTokenFor } from "./token";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER" | "EVIDENCE_CHANGED" | "QUESTION_CHANGED";
+export type NoticeRefusalCode = "NO_SUCH_MATCH" | "NO_SUCH_NOTICE" | "NOTHING_TO_SEND" | "TWO_POSSIBLE_ORDERS" | "PRODUCT_WORDS_ONLY" | "ALREADY_ASKED" | "NOT_A_QUESTION" | "LINK_EXPIRED" | "NO_ANSWER" | "EVIDENCE_CHANGED" | "QUESTION_CHANGED" | "NOT_DUE";
 
 export class NoticeRefused extends Error {
   constructor(readonly code: NoticeRefusalCode, message: string) {
@@ -162,6 +162,7 @@ export async function composeForSeller(
       kind: string;
       sent_at: unknown;
       responded_at: unknown;
+      second_prepared_at: unknown;
       written_question: WrittenQuestion | null;
       join_state: string | null;
       verdict: string;
@@ -175,7 +176,7 @@ export async function composeForSeller(
       current_sha: string;
     }
   >(
-    `select m.recall_sha256 as checked_sha, r.raw_sha256 as current_sha, n.kind, n.sent_at, n.responded_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select m.recall_sha256 as checked_sha, r.raw_sha256 as current_sha, n.kind, n.sent_at, n.responded_at, n.second_prepared_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
@@ -221,7 +222,23 @@ export async function composeForSeller(
     message = composeSafetyNotice({ ...context, confirmedRefund: r ? refundedAmount(r.amount_cents, r.currency) : undefined });
   }
   const to = n.buyer_email_enc ? input.cipher.open(n.buyer_email_enc) : null;
-  return { to, toSource: to ? "Shop record" : "You add the address", ...message };
+  return { to, toSource: to ? "Shop record" : "You add the address", ...message, subject: n.second_prepared_at ? `Second notice: ${message.subject}` : message.subject };
+}
+
+/** After this long with no answer, the owner can ask for a second notice. A demo shop is deleted long before, and has no shorter clock. */
+export const SECOND_NOTICE_AFTER_DAYS = 3;
+
+/** A person's request. It sends nothing: the same message opens in their mail, under a subject that says it's the second. */
+export async function prepareSecondNotice(db: Queryable, input: { shopId: string; noticeId: string }): Promise<void> {
+  const notDue = () => new NoticeRefused("NOT_DUE", "A second notice isn't due for this one.");
+  if (!UUID.test(input.noticeId)) throw notDue();
+  const { rows } = await db.query(
+    `update notices n set second_prepared_at = coalesce(n.second_prepared_at, now()) from shops s
+     where n.id = $1 and n.shop_id = $2 and s.id = n.shop_id and s.kind = 'REAL' and n.responded_at is null
+       and n.sent_at <= now() - make_interval(days => $3) returning n.id`,
+    [input.noticeId, input.shopId, SECOND_NOTICE_AFTER_DAYS],
+  );
+  if (rows.length === 0) throw notDue();
 }
 
 /** What this notice asks: the question frozen when the seller approved it, while CPSC's text still supports it. */

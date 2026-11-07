@@ -95,6 +95,16 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Notices prepared for one recall, and a second notice",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/api/queue/standing/route.ts", call: "turnOnStanding" },
+      { file: "server/demo/liveCatch.ts", call: "prepareStandingNotices" },
+      { file: "app/api/queue/notices/[id]/second/route.ts", call: "prepareSecondNotice" },
+    ],
+  },
+  {
     name: "Shopping agent",
     status: "claimed",
     feature: true,

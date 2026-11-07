@@ -239,6 +239,30 @@ describe("a sale as it happens", () => {
       expect(JSON.stringify(await queueRow(lineId))).not.toContain("14:59:48");
     });
 
+    it("gets a notice ready for a new sale when the shop turned that on for its recall, and sends nothing", async () => {
+      const on = await db.query("insert into standing_notices (shop_id, recall_id) select $1, m.recall_id from recall_matches m where m.shop_id = $1 and m.shop_item_id = $2 and m.verdict <> 'CLEARED' returning recall_id", [shopId, shelfItem]);
+      expect(on.rows.length).toBeGreaterThan(0);
+      await buy();
+      await catchIt();
+      const { rows } = await db.query<{ verdict: string; notices: string; sent: string }>(
+        `select m.verdict, (select count(*)::text from notices n where n.match_id = m.id) as notices, (select count(*)::text from notices n where n.match_id = m.id and n.sent_at is not null) as sent
+         from recall_matches m where m.order_line_id = $1`,
+        [(await line()).id],
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) {
+        expect(r.notices).toBe(r.verdict === "MATCH" ? "1" : "0");
+        expect(r.sent).toBe("0");
+      }
+    });
+
+    it("gets no notice ready for a new sale otherwise", async () => {
+      await buy();
+      await catchIt();
+      const { rows } = await db.query("select 1 from notices n join recall_matches m on m.id = n.match_id where m.order_line_id = $1", [(await line()).id]);
+      expect(rows).toEqual([]);
+    });
+
     it("keeps only the seconds in the measurement: no shop, sale or PayPal id", async () => {
       await buy();
       await catchIt();

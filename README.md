@@ -114,6 +114,7 @@ All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-hai
 - The store address on `/check` reads Shopify's public `/products.json` only, so it sees what's listed today and no sales. Its results say "need a check". A listing can't confirm a recall.
 - This checks CPSC recalls. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls.
 - Tested on demo data and public listings. No real shop has run it yet.
+- A second notice, offered 3 days after a sent notice gets no answer, is tested but never seen live: a demo shop is deleted at 48 hours, and it has no shorter clock.
 - `/shopper` reads a listing's words. A match is about those words, not a finding that the item is recalled, and no match doesn't mean it's safe. Listings change, so a run isn't a fixed result. The listings seen so far are new goods, not secondhand.
 
 ## What the real sandbox did

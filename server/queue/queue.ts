@@ -1,4 +1,5 @@
 // What the seller's queue shows. No raw PayPal id leaves this function: the page never needs one.
+import { SECOND_NOTICE_AFTER_DAYS } from "../notice/store";
 import { QUESTION_VERSION, type WrittenQuestion } from "../agent/questionStore";
 import type { TraceEntry } from "../agent/recallAgent";
 import { readItem } from "../agent/sources";
@@ -49,7 +50,7 @@ export interface QueueRow {
   isListing: boolean;
   stillListed: boolean;
   /** The newest message for this row. */
-  notice: { id: string; kind: string; state: NoticeState; stopped: boolean; passedOn: boolean; result: string | null } | null;
+  notice: { id: string; kind: string; state: NoticeState; stopped: boolean; passedOn: boolean; result: string | null; daysSinceSent: number | null; secondDue: boolean; secondPrepared: boolean } | null;
   /** What the family said to a question, when a safety notice has since followed it. */
   earlierQuestionResult: string | null;
   /** What the family is or would be asked. Only on a scope gap about a sale. */
@@ -151,7 +152,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
-            n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.family_passed_on, ${currentCheckResultSql("n", "r")} as check_result,
+            n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.family_passed_on, n.second_prepared_at, floor(extract(epoch from now() - n.sent_at) / 86400)::int as days_since_sent, ${currentCheckResultSql("n", "r")} as check_result,
             (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
             a.id as approval_id, a.amount_cents as approval_amount, a.currency as approval_currency, a.expires_at as approval_expires,
             rf.id as refund_id, rf.status as refund_status, rf.amount_cents as refund_amount, rf.currency as refund_currency, rf.failure as refund_failure
@@ -208,6 +209,9 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             stopped: Boolean(r.family_stopped),
             passedOn: Boolean(r.family_passed_on),
             result: (r.check_result as string | null) ?? null,
+            daysSinceSent: (r.days_since_sent as number | null) ?? null,
+            secondDue: shop.rows[0]?.kind === "REAL" && !r.responded_at && !r.second_prepared_at && r.days_since_sent !== null && Number(r.days_since_sent) >= SECOND_NOTICE_AFTER_DAYS,
+            secondPrepared: Boolean(r.second_prepared_at),
           }
         : null,
       earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,

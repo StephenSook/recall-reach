@@ -357,13 +357,13 @@ describe("toCards", () => {
     const order = (rows: QueueRow[]) => toCards(rows).cards.map((c) => c.lead.recallNumber);
     const newer = row("27072", { recordId: "line-1", matchId: "m1" });
     const older = row("27027", { recordId: "line-2", matchId: "m2" });
-    const notice = { id: "n", kind: "SAFETY_NOTICE", state: "PREPARED" as const, stopped: false, passedOn: false, result: null };
+    const notice = { id: "n", kind: "SAFETY_NOTICE", state: "PREPARED" as const, stopped: false, passedOn: false, daysSinceSent: null, secondDue: false, secondPrepared: false, result: null };
     expect(order([newer, older])).toEqual(["27072", "27027"]);
     expect(order([newer, { ...older, notice }])).toEqual(["27072", "27027"]);
   });
 
   it("keeps a row already acted on in front, so what was sent never drops out of sight", () => {
-    const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, passedOn: false, result: null };
+    const notice = { id: "n", kind: "CHECK_REQUEST", state: "PREPARED" as const, stopped: false, passedOn: false, daysSinceSent: null, secondDue: false, secondPrepared: false, result: null };
     const { cards } = toCards([row("27040", { strength: "BRAND" }), row("25206", { notice })]);
     expect(cards[0].lead.recallNumber).toBe("25206");
   });

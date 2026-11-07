@@ -18,7 +18,9 @@ import { readCalls } from "@/server/paypal/callLog";
 import { PAST_WINDOW_SAMPLE, shopPayout } from "@/server/paypal/payouts";
 import { createContactCipher } from "@/server/privacy/contactCipher";
 import { PastWindowPayout } from "./PastWindowPayout";
+import { standingRecalls } from "@/server/notice/standing";
 import { readWarningsFor } from "@/server/warnings/warnings";
+import { StandingNotices } from "./StandingNotices";
 import { WarningCards } from "./WarningCards";
 import { CheckWithClaude } from "./CheckWithClaude";
 import { PayPalCalls } from "./PayPalCalls";
@@ -30,7 +32,7 @@ import { WatchForSale } from "./WatchForSale";
 export const dynamic = "force-dynamic";
 
 /** One sale that needs a person. Cleared recalls are a plain list on the page: there is nothing to do on them. */
-function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean; saleOnItsWay: boolean; answered: unknown }) {
+function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, standing }: { card: QueueCard; shopName: string; shopKind: string; agentReady: boolean; saleOnItsWay: boolean; answered: unknown; standing: string[] }) {
   const row = card.lead;
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const notifiable = canNotify(row);
@@ -103,6 +105,15 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
             {row.notice.result ? <p data-testid="check-result">{CHECK_RESULT[row.notice.result]}</p> : null}
             {row.earlierQuestionResult ? <p data-testid="earlier-result">Earlier question: {CHECK_RESULT[row.earlierQuestionResult]}</p> : null}
             {notifiable && !needsApproval(row) ? <NoticeActions noticeId={row.notice.id} /> : null}
+            {row.notice.secondDue ? (
+              <form className="actions" action={`/api/queue/notices/${row.notice.id}/second${here}`} method="post" data-testid="second-due">
+                <p>No answer in {row.notice.daysSinceSent} days.</p>
+                <button type="submit" className="btn btn-outline">
+                  Prepare a second notice
+                </button>
+              </form>
+            ) : null}
+            {row.notice.secondPrepared ? <p data-testid="second-prepared">Second notice prepared. It opens in your mail above, and you send it.</p> : null}
             {row.notice.state === "OPENED_IN_MAIL" ? (
               <form className="actions" action={`/api/queue/notices/${row.notice.id}/sent${here}`} method="post">
                 <button type="submit" className="btn btn-outline">
@@ -194,6 +205,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
               ) : null}
             </p>
             <SellerAnswerForm matchId={row.matchId} answer={row.sellerAnswer} demo={shopKind === "DEMO"} />
+            {notifiable && row.verdict === "MATCH" ? <StandingNotices recallNumber={row.recallNumber} on={standing.includes(row.recallNumber)} here={here} /> : null}
           </details>
         ) : null}
 
@@ -249,6 +261,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const calls = await readCalls(getDb(), session.shopId).catch(() => []);
   const warnings = await readWarningsFor(getDb(), session.shopId).catch(() => []);
+  const standing = await standingRecalls(getDb(), session.shopId).catch(() => []);
   const pastWindow = shop.kind === "DEMO" ? await pastWindowFor(session.shopId) : null;
   const shopName = shop.name;
   const shopKind = shop.kind;
@@ -355,7 +368,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {cards.map((card, i) => (
           <Fragment key={card.lead.matchId}>
             {real && sitsApart(card) && (i === 0 || !sitsApart(cards[i - 1])) ? <h2 className="section-title narrow-only">Share a word only</h2> : null}
-            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} saleOnItsWay={pendingLiveSales > 0} answered={params.answered} />
+            <Card card={card} shopName={shopName} shopKind={shopKind} agentReady={agentReady} saleOnItsWay={pendingLiveSales > 0} standing={standing} answered={params.answered} />
           </Fragment>
         ))}
       </section>

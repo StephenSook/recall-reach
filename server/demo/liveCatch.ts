@@ -5,6 +5,7 @@ import type { Db } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
+import { prepareStandingNotices } from "../notice/standing";
 import type { PayPalClient } from "../paypal/client";
 import { callsBelongTo } from "../paypal/callLog";
 import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
@@ -216,6 +217,10 @@ export async function catchLiveSale(db: Db, client: PayPalClient, input: { captu
     ],
   );
   await runShopCheck(db, line.shop_id, { today: businessDay(input.now), onlyRecordId: line.id });
+  // After the check is saved, so a problem here can't undo it. The owner's card still shows anything not prepared.
+  await prepareStandingNotices(db, line.shop_id).catch((err: unknown) => {
+    console.error("standing notices failed:", err instanceof Error ? err.name : "unknown error");
+  });
 
   const caught = await db.query<{ id: string }>(
     "update recall_matches set caught_at = $2 where order_line_id = $1 and verdict <> 'CLEARED' and caught_at is null returning id",
