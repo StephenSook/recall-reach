@@ -17,8 +17,10 @@ async function counted(page: Page): Promise<number> {
 const brezza = (page: Page) => page.locator('article[data-recall="27072"]').first();
 
 async function answer(page: Page, button: string, said: string) {
-  await brezza(page).getByText("Why this came up").click();
-  await brezza(page).getByRole("button", { name: button }).click();
+  // It stays open after an answer, so a second answer doesn't need it opened.
+  const press = brezza(page).getByRole("button", { name: button });
+  if (!(await press.isVisible())) await brezza(page).getByText("Why this came up").click();
+  await press.click();
   await expect(page).toHaveURL(/answered=/);
   // The card comes back with its answer showing, so the seller can see it took.
   await expect(brezza(page).getByTestId("seller-answer")).toBeVisible();
