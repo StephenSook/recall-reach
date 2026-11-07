@@ -53,7 +53,20 @@ One read each unless it says otherwise, so they show what happened, not what alw
 
 ## Outside sources
 
-To be filled in with each one's publisher, date and link before the repository goes public.
+Each one says only what's quoted or stated here.
+
+| What we say | Source | Dated |
+|---|---|---|
+| Danny Keysar was 16 months old when he died in a portable crib. It had been recalled five years earlier. The person who bought it never heard. | [Philadelphia Inquirer](https://www.inquirer.com/philly/business/20100711_Consumer_10_0__A_toddler_s_legacy__Grief_and_a_movement_for_better_crib_safety.html), [CPSC's recall page](https://www.cpsc.gov/Recalls/1993/playskool-travel-lite-portable-cribs-recalled-by-kolcraft-suffocation-risk-cited) | Jul 11, 2010; Mar 10, 1993 |
+| A federal law requires registration cards on new baby gear | [16 CFR part 1130](https://www.ecfr.gov/current/title-16/chapter-II/subchapter-B/part-1130) | Read Nov 2026 |
+| "A recall depends on reaching the original purchaser. Once a product moves into the secondhand market, that connection is lost." The head of the Baby Safety Alliance | [Consumer Reports](https://www.consumerreports.org/babies-kids/child-safety/recalled-inclined-infant-sleepers-still-causing-infant-death-a6165343859) | Apr 2026 |
+| "I would be devastated if I sold something and it hurt someone." A kids' resale owner | [Philadelphia Inquirer](https://www.inquirer.com/philly/business/personal_finance/092409_after_market_recalls.html) | 2009 |
+| "once you walk out of a store with a purchase you are on your own to follow up and find out if an item has been later recalled." A nonprofit thrift operator | [Community Closet](https://www.communitycloset.org/single-post/2019/01/09/unsafe-and-in-our-town) | Jan 9, 2019 |
+| 424 recalls in 2025, and 506 in 2026 through October. The three-person office small businesses could call has been eliminated | [Consumer Reports](https://www.consumerreports.org/product-safety/dangerous-products-cpsc-cuts-a1128194170/) | Nov 5, 2026 |
+| "It is illegal to sell any recalled product" | [CPSC's Resellers Guide, Publication 254](https://www.cpsc.gov/s3fs-public/254_ResellersGuide_2-5-25.pdf) | Feb 2025 |
+| "In resale, the rule is simple. Car seats should never be resold. Period." NARTS | [NARTS, Product Safety & Recalls](https://www.narts.org/product-safety-in-resale) | Read Nov 7, 2026 |
+| 18,640 used merchandise stores in 2021, and NARTS's more than 25,000 resale, consignment and nonprofit resale shops. Neither counts only kids' shops | [Census Bureau](https://www.census.gov/newsroom/stories/thrift-store-day.html) | Aug 17, 2023 |
+| About 37% of cribs and 27% of strollers are handed down or bought secondhand, a 2010 estimate. Recalls of 32 cribs and strollers reached a 15% correction rate, 20% adjusted | [CPSC staff report to Congress](https://www.cpsc.gov/s3fs-public/pdfs/blk_pdf_ReporttoCongressPursuantSection104%28e%29RecallNotificationEffectiveness.pdf) | Mar 30, 2012 |
 
 ## The film
 
