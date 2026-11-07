@@ -41,7 +41,7 @@ export async function register(): Promise<void> {
       pingClaude: claude ? (at) => pingClaude(getDb(), claude, at) : undefined,
       refreshWarnings: async (at) => {
         const read = await refreshWarnings(getDb(), { now: at });
-        if (read === "READ") await checkStoredShopsAgainstWarnings(getDb());
+        await checkStoredShopsAgainstWarnings(getDb());
         return read;
       },
     }),

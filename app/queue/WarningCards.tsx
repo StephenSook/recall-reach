@@ -1,7 +1,7 @@
 import { WARNINGS_PAGE, type ShopWarning } from "@/server/warnings/warnings";
 
 export function warningMailto(w: ShopWarning): string {
-  const body = [`The U.S. Consumer Product Safety Commission has warned about ${w.product} (warning ${w.number}).`, "", "The hazard, in CPSC's words:", w.hazard, "", "What to do, in CPSC's words:", w.consumerAction, "", `CPSC's warnings: ${WARNINGS_PAGE}`].join("\n");
+  const body = [`The U.S. Consumer Product Safety Commission has warned about ${w.product} (warning ${w.number}).`, "", "The hazard, from CPSC:", w.hazard, "", "What to do, from CPSC:", w.consumerAction, "", `CPSC's warnings: ${WARNINGS_PAGE}`].join("\n");
   return `mailto:?subject=${encodeURIComponent("A CPSC safety warning about something you bought from us")}&body=${encodeURIComponent(body)}`;
 }
 
@@ -11,7 +11,7 @@ export function WarningCards({ warnings, demo }: { warnings: ShopWarning[]; demo
   return (
     <details data-testid="cpsc-warnings" className="window" style={{ marginTop: 16 }}>
       <summary>CPSC warnings ({warnings.length})</summary>
-      <p className="note">CPSC often warns instead of recalling when a company hasn&apos;t agreed to a recall or hasn&apos;t responded. No refund is offered here. These aren&apos;t in any recall count.</p>
+      <p className="note">CPSC often warns instead of recalling when a company hasn&apos;t agreed to a recall or hasn&apos;t responded. No refund is offered here. These aren&apos;t in any recall count. The text comes from CPSC&apos;s file with markup removed.</p>
       {warnings.map((w) => (
         <section key={`${w.number}:${w.itemTitle}`} data-testid="cpsc-warning">
           <p>
@@ -22,10 +22,10 @@ export function WarningCards({ warnings, demo }: { warnings: ShopWarning[]; demo
             {demo ? "A labelled sample title, not a sale" : "Your title"}: {w.itemTitle}
           </p>
           <p>
-            <strong>The hazard, in CPSC&apos;s words:</strong> {w.hazard}
+            <strong>The hazard, from CPSC:</strong> {w.hazard}
           </p>
           <p>
-            <strong>What to do, in CPSC&apos;s words:</strong> {w.consumerAction}
+            <strong>What to do, from CPSC:</strong> {w.consumerAction}
           </p>
           <p>
             <a href={warningMailto(w)}>Open a notice in your mail</a>. You add the address and send it. <a href={WARNINGS_PAGE}>CPSC&apos;s warnings</a>.

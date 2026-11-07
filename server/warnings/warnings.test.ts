@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
-import { checkTitlesAgainstWarnings, checkShopAgainstWarnings, cleanCpscText, descriptiveWords, makerOf, parseWarningsCsv, readWarningsFor, refreshWarnings, storeWarnings, type Warning, warningCount, WarningsUnreadable } from "./warnings";
+import { checkStoredShopsAgainstWarnings, checkTitlesAgainstWarnings, checkShopAgainstWarnings, cleanCpscText, descriptiveWords, makerOf, parseWarningsCsv, readWarningsFor, refreshWarnings, storeWarnings, type Warning, warningCount, WarningsUnreadable } from "./warnings";
 
 const HEADER =
   '﻿"Product Safety Warning Number","Product Safety Warning Date","Product Safety Warning Title","Name of product","Description","Hazard Description","Consumer Action","Original Product Safety Warning Announcement","Units","Incidents","Sold At Label","Sold At","Importers","Manufacturers","Distributors","Manufactured In","Custom Label","Custom Field"';
@@ -64,6 +64,11 @@ describe("reading CPSC's warnings file", () => {
 
   it("takes out a cut-off link standing alone, which is the export's leftover and not CPSC's words", () => {
     expect(cleanCpscText("as required by the https://www.cpsc.gov/Business--Manufacturing/Busines\u2026 Act, posing a risk")).toBe("as required by the Act, posing a risk");
+  });
+
+  it("leaves a comparison alone: only real markup comes out", () => {
+    expect(cleanCpscText("Lead levels <100 ppm and cadmium >75 ppm are hazardous.")).toBe("Lead levels <100 ppm and cadmium >75 ppm are hazardous.");
+    expect(cleanCpscText("A <b>bold</b> word and a <a href='x'>link</a>.")).toBe("A bold word and a link.");
   });
 
   it("leaves a plain web address alone", () => {
@@ -181,9 +186,20 @@ describe("keeping them", () => {
       expect((await readWarningsFor(db, shopId)).map((w) => w.number)).toEqual(["27-002"]);
     });
 
+    it("takes up where it left off: a shop not yet checked since the last read goes first", async () => {
+      const second = await createShop(db, { name: "Second", kind: "REAL" });
+      await db.query("insert into shop_items (shop_id, title, source) values ($1, 'Mbabyjon crib bumpers', 'test'), ($2, 'Mbabyjon crib bumpers', 'test')", [shopId, second]);
+      await db.query("insert into safety_warning_reads (ok_at) values ('2026-11-07T00:00:00Z')");
+      expect(await checkStoredShopsAgainstWarnings(db, { budgetMs: -1 })).toEqual({ checked: 0, waiting: 2 });
+      expect(await checkStoredShopsAgainstWarnings(db, { budgetMs: 60_000, maxShops: 1 })).toEqual({ checked: 1, waiting: 1 });
+      expect(await checkStoredShopsAgainstWarnings(db, { budgetMs: 60_000 })).toEqual({ checked: 1, waiting: 0 });
+      expect((await readWarningsFor(db, shopId)).length + (await readWarningsFor(db, second)).length).toBe(2);
+      expect(await checkStoredShopsAgainstWarnings(db, { budgetMs: 60_000 })).toEqual({ checked: 0, waiting: 0 });
+    });
+
     it("never fails the shop's check", async () => {
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
-      await expect(checkShopAgainstWarnings({ query: async () => Promise.reject(new Error("down")) } as unknown as typeof db, shopId)).resolves.toBeUndefined();
+      await expect(checkShopAgainstWarnings({ query: async () => Promise.reject(new Error("down")) } as unknown as typeof db, shopId)).resolves.toBe(false);
       error.mockRestore();
     });
 

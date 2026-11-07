@@ -35,7 +35,7 @@ export function cleanCpscText(text: string): string {
   return text
     .replace(/https?:\/\/\S*\s+lang="[^"]*">/g, "")
     .replace(/https?:\/\/\S*\u2026\s*/g, "")
-    .replace(/<[^>]*>/g, "")
+    .replace(/<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?\/?>/gi, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/[ \t]+/g, " ")
@@ -180,29 +180,39 @@ export async function checkTitlesAgainstWarnings(db: Queryable, shopId: string, 
 }
 
 /** Everything this shop has called an item, against what's held. A failure here is never the shop's check failing. */
-export async function checkShopAgainstWarnings(db: Queryable, shopId: string): Promise<void> {
+export async function checkShopAgainstWarnings(db: Queryable, shopId: string): Promise<boolean> {
   try {
     const { rows } = await db.query<{ title: string }>(
       "select title from order_lines where shop_id = $1 union select title from shop_items where shop_id = $1",
       [shopId],
     );
     await checkTitlesAgainstWarnings(db, shopId, rows.map((r) => r.title));
+    await db.query("update shops set warnings_checked_at = now() where id = $1", [shopId]);
+    return true;
   } catch (err) {
     console.error("warning check skipped:", err instanceof Error ? err.name : "unknown error");
+    return false;
   }
 }
 
-/** New warnings reach shops that already had their check. Demo shops have only their labelled sample. */
-export async function checkStoredShopsAgainstWarnings(db: Queryable): Promise<void> {
-  const { rows } = await db.query<{ id: string }>("select id from shops where kind = 'REAL'");
+/**
+ * New warnings reach shops that already had their check. Demo shops have only their labelled sample. Run on each hourly tick
+ * and longest-waiting first, so a pass that runs out of time picks up where it stopped.
+ */
+export async function checkStoredShopsAgainstWarnings(db: Queryable, opts: { budgetMs?: number; maxShops?: number } = {}): Promise<{ checked: number; waiting: number }> {
+  const { rows } = await db.query<{ id: string }>(
+    `select id from shops
+     where kind = 'REAL' and (warnings_checked_at is null or warnings_checked_at < (select ok_at from safety_warning_reads))
+     order by warnings_checked_at nulls first, id`,
+  );
   const started = Date.now();
-  for (const [i, { id }] of rows.entries()) {
-    if (Date.now() - started > STORED_SHOPS_BUDGET_MS) {
-      console.error(`warning check stopped for time: ${rows.length - i} of ${rows.length} shops wait for the next read`);
-      return;
-    }
-    await checkShopAgainstWarnings(db, id);
+  const budget = opts.budgetMs ?? STORED_SHOPS_BUDGET_MS;
+  let checked = 0;
+  for (const { id } of rows) {
+    if (Date.now() - started >= budget || checked >= (opts.maxShops ?? Infinity)) break;
+    if (await checkShopAgainstWarnings(db, id)) checked++;
   }
+  return { checked, waiting: rows.length - checked };
 }
 
 export type ShopWarning = Warning & { itemTitle: string };

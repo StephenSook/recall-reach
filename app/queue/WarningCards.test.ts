@@ -20,10 +20,11 @@ describe("a shop's CPSC warnings", () => {
     expect(page).toContain("CPSC WARNING");
   });
 
-  it("gives CPSC's words as they are", () => {
+  it("gives CPSC's text, and says its markup was removed", () => {
     const page = html([warning]);
     expect(page).toContain("A hazard, word for word.");
     expect(page).toContain("An action, word for word.");
+    expect(page).toContain("The text comes from CPSC&#x27;s file with markup removed.");
   });
 
   it("offers no refund, and says why", () => {
