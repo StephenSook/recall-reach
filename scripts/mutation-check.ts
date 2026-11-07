@@ -18,6 +18,8 @@ const VERDICT = "server/match/verdict.test.ts";
 const SHOPPER = "server/agent/shopper.test.ts";
 const ORDER = "server/paypal/shopperOrder.test.ts";
 const PAYOUTS = "server/paypal/payouts.test.ts";
+const CHECK_ROUTE = "app/api/check/route.test.ts";
+const ITEM_ANSWER = "app/check/itemAnswer.test.ts";
 
 export const PLANTS: Plant[] = [
   { about: "a recorded dispute no longer stops a repeat", file: "server/paypal/refunds.ts", find: "if (row.dispute_seen_at) throw disputedAgain();", put: "", test: REFUNDS },
@@ -28,6 +30,11 @@ export const PLANTS: Plant[] = [
   { about: "a SKU holding the model is exempt again", file: "server/match/verdict.ts", find: "return rest.includes(n) || (n.length >= 6 && longestRun(rest, n).length / n.length >= 0.8);", put: "return false;", test: VERDICT },
   { about: "a limited recall can be confirmed by its model", file: "server/match/verdict.ts", find: "if (shown.length > 0 && limited) {", put: "if (false) {", test: VERDICT },
   { about: "digits after a label count as a shared code", file: "server/match/verdict.ts", find: "return run.length >= 4 && sharesACode &&", put: "return run.length >= 4 &&", test: VERDICT },
+  { about: "a size written with a hyphen stops an exact model", file: "server/match/verdict.ts", find: "|\\d+(?:\\.\\d+)?[-_](?:BTUS?|KW|MAH|OZ|FT|IN|MM|CM|ML|GB|TB|HZ|LBS?|PCS?|PK|QT|CC|HP))$/", put: ")$/", test: VERDICT },
+  { about: "a typed name with no long word reads as nothing", file: "server/match/textCheck.ts", find: "where position(' ' || $3 || ' ' in h.text) > 0", put: "where false", test: CHECK_ROUTE },
+  { about: "a word few recalls have no longer counts", file: "server/match/textCheck.ts", find: "or exists (select 1 from rarity x where x.recalls <=", put: "or exists (select 1 from rarity x where false and x.recalls <=", test: CHECK_ROUTE },
+  { about: "a missing year can still say no recall names it", file: "app/check/itemAnswer.ts", find: "const couldBe = gap ? kindOnly :", put: "const couldBe = false ? kindOnly :", test: ITEM_ANSWER },
+  { about: "the sentence reads as nothing while a recall has the words", file: "app/check/itemAnswer.ts", find: "if (shared.length > 0) {", put: "if (false) {", test: ITEM_ANSWER },
   { about: "a prepared notice can be a question nobody approved", file: "server/notice/store.ts", find: 'if (input.onlyIfMatch && kind !== "SAFETY_NOTICE") throw', put: "if (false) throw", test: "server/notice/standing.test.ts" },
   { about: "an answered second notice stays ready", file: "server/notice/store.ts", find: "subject: n.second_prepared_at && !n.responded_at ?", put: "subject: n.second_prepared_at ?", test: "server/notice/standing.test.ts" },
   { about: "the model can see a listing over budget", file: "server/agent/shopper.ts", find: "found.filter((l) => l.priceCents <= input.budgetCents)", put: "found", test: SHOPPER },
