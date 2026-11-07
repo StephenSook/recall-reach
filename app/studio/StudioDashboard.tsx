@@ -18,6 +18,7 @@ import type {
 import type { CustomCellRendererProps } from 'ag-grid-react';
 import type { StudioRow } from '@/server/studio/dataset';
 import { createStudioAdapter } from './adapter';
+import { toStudioRows } from './rows';
 
 export interface StudioDashboardProps {
   rows: ReadonlyArray<StudioRow>;
@@ -135,9 +136,11 @@ function OutcomeChip(props: CustomCellRendererProps) {
     <span
       style={{
         display: 'inline-block',
-        padding: '0 10px',
+        // Small enough that "Nothing near" fits the grid's default column width.
+        padding: '0 7px',
         borderRadius: 999,
-        lineHeight: '22px',
+        lineHeight: '20px',
+        fontSize: 12,
         fontWeight: 600,
         // Black text clears 4.5:1 on all four backgrounds (lowest: 5.87:1 on #e8590c).
         color: '#000000',
@@ -169,7 +172,7 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
           id: SOURCE_ID,
           name: 'Recalls',
           description: 'Recall number, title, date and year from CPSC, the check outcome, and the matching shop item if any.',
-          data: [...rows],
+          data: toStudioRows(rows),
           fields: RECALL_FIELDS,
         },
       ],
