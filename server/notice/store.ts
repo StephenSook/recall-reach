@@ -3,7 +3,7 @@
 import { writtenQuestion, type WrittenQuestion } from "../agent/questionStore";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
-import { fullScopeInRecord, isVariantOf, limitedWithinModel, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
+import { fullScopeInRecord, salePath, verdictFor, isVariantOf, limitedWithinModel, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
 import { refundedAmount } from "../paypal/refunds";
 import type { ContactCipher } from "../privacy/contactCipher";
 import { checkQuestion, composeCheckRequest, composeSafetyNotice, type CheckQuestion } from "./compose";
@@ -42,11 +42,30 @@ export function noticeState(n: { opened_at: unknown; sent_at: unknown; responded
   return n.opened_at ? "OPENED_IN_MAIL" : "PREPARED";
 }
 
+/** An approval reads CPSC's words as they are now, so a recall that changed after the check can't stop a shop for good. */
+async function recheckIfRecallChanged(db: Queryable, input: { shopId: string; matchId: string }): Promise<void> {
+  const { rows } = await db.query<Pick<Recall, "title" | "description" | "products" | "retailers"> & { raw_sha256: string; recall_date: string; item_title: string; ordered_on: string | null }>(
+    `select r.raw_sha256, r.title, r.description, r.products, r.retailers, r.recall_date::text as recall_date, l.title as item_title, l.ordered_on::text as ordered_on
+     from recall_matches m join recalls r on r.recall_id = m.recall_id join order_lines l on l.id = m.order_line_id
+     where m.id = $1 and m.shop_id = $2 and m.recall_sha256 is distinct from r.raw_sha256`,
+    [input.matchId, input.shopId],
+  );
+  const r = rows[0];
+  if (!r) return;
+  const v = verdictFor(r, { title: r.item_title, orderedOn: r.ordered_on ?? undefined });
+  await db.query(
+    `update recall_matches set recall_sha256 = $3, verdict = $4, strength = $5, matched = $6::jsonb, missing = $7::jsonb, reason = $8, sale_path = $9, checked_at = now()
+     where id = $1 and shop_id = $2`,
+    [input.matchId, input.shopId, r.raw_sha256, v.verdict, v.strength, JSON.stringify(v.matched), JSON.stringify(v.missing), v.reason, r.ordered_on ? salePath(r.ordered_on, r.recall_date) : null],
+  );
+}
+
 export async function prepareNotice(
   db: Queryable,
   input: { shopId: string; matchId: string },
 ): Promise<{ noticeId: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }> {
   if (!UUID.test(input.matchId)) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
+  await recheckIfRecallChanged(db, input);
   const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null; recall_sha256: string }>(
     "select verdict, strength, join_state, order_line_id, recall_sha256 from recall_matches where id = $1 and shop_id = $2",
     [input.matchId, input.shopId],
@@ -149,9 +168,11 @@ export async function composeForSeller(
       buyer_email_enc: string | null;
       shop_name: string;
       order_line_id: string;
+      checked_sha: string;
+      current_sha: string;
     }
   >(
-    `select n.kind, n.sent_at, n.responded_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select m.recall_sha256 as checked_sha, r.raw_sha256 as current_sha, n.kind, n.sent_at, n.responded_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
@@ -165,6 +186,10 @@ export async function composeForSeller(
   if (!n) throw noNotice();
   if (n.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
   refuseWeakEvidence(n); // the line may have been corrected since the notice was prepared
+  // An old confirmation doesn't speak for CPSC's new words. What already went out stays on record as it was.
+  if (n.checked_sha !== n.current_sha && !n.sent_at && !n.responded_at) {
+    throw new NoticeRefused("EVIDENCE_CHANGED", "CPSC changed this recall since it was checked. Approve it again to read it against CPSC's new words.");
+  }
   // A safety notice always needs a confirmed match. A question on a confirmed sale is stale until it has gone out.
   const confirmed = n.verdict === "MATCH";
   const staleQuestion = n.kind === "CHECK_REQUEST" && confirmed && !n.sent_at && !n.responded_at;

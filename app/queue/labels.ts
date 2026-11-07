@@ -155,9 +155,11 @@ export const canNotify = (row: Pick<QueueRow, "verdict" | "isListing" | "joinSta
   row.verdict !== "CLEARED" && !row.isListing && row.joinState !== "AMBIGUOUS_JOIN" && row.strength !== "PRODUCT_WORDS" && row.strength !== "NO_SHARED_WORDS";
 
 /** Whether a message for this row is waiting on the seller's approval. */
-export function needsApproval(row: Pick<QueueRow, "verdict" | "notice">): boolean {
+export function needsApproval(row: Pick<QueueRow, "verdict" | "notice"> & Partial<Pick<QueueRow, "recallChanged">>): boolean {
   const n = row.notice;
   if (!n) return true;
+  // CPSC changed the recall after the check, and this hasn't gone out: it's read again on approval.
+  if (row.recallChanged && (n.state === "PREPARED" || n.state === "OPENED_IN_MAIL")) return true;
   const safety = n.kind === "SAFETY_NOTICE";
   const confirmed = row.verdict === "MATCH";
   // The evidence changed before it went out, so it needs approving again as the right message.

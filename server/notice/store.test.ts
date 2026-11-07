@@ -153,6 +153,48 @@ describe("notices", () => {
       expect((await prepareNotice(db, { shopId, matchId: confirmed })).kind).toBe("SAFETY_NOTICE");
     });
 
+    describe("when CPSC changes the recall after the check", () => {
+      const brezzaLine = () => line({ orderNumber: "#C1", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" });
+      const cpscChanges = (description?: string) =>
+        db.query("update recalls set raw_sha256 = 'changed', description = coalesce($1, description) where recall_number = '27072'", [description ?? null]);
+
+      it("won't compose an old confirmation against CPSC's new words", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await cpscChanges();
+        expect(await refusal(compose(noticeId))).toBe("EVIDENCE_CHANGED");
+      });
+
+      it("isn't stuck: approving again reads it against the new words, and it composes", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await cpscChanges();
+        expect((await prepareNotice(db, { shopId, matchId: m })).noticeId).toBe(noticeId);
+        await expect(compose(noticeId)).resolves.toBeTruthy();
+        const { rows } = await db.query<{ recall_sha256: string }>("select recall_sha256 from recall_matches where id = $1", [m]);
+        expect(rows[0].recall_sha256).toBe("changed");
+      });
+
+      it("follows the new words: a model CPSC no longer lists doesn't stay confirmed", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await cpscChanges("This recall involves sterilizer dryers, model ZZ9999.");
+        const again = await prepareNotice(db, { shopId, matchId: m }).catch((err: Error) => err);
+        const { rows } = await db.query<{ verdict: string; strength: string }>("select verdict, strength from recall_matches where id = $1", [m]);
+        expect(rows[0].strength).not.toBe("CONFIRMED");
+        if (!(again instanceof Error)) expect(again.kind).toBe("CHECK_REQUEST");
+        expect(noticeId).toBeTruthy();
+      });
+
+      it("leaves a notice already sent as it was", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await markSent(db, { shopId, noticeId });
+        await cpscChanges();
+        await expect(compose(noticeId)).resolves.toBeTruthy();
+      });
+    });
+
     it("will not compose a safety notice for a match that is no longer confirmed", async () => {
       const m = await matchFor("27072", line({ orderNumber: "#L6", title: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083" }));
       const { noticeId, kind } = await prepareNotice(db, { shopId, matchId: m });

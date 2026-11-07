@@ -391,6 +391,19 @@ describe("a store read from its listings", () => {
   });
 });
 
+describe("a notice on a recall CPSC has changed", () => {
+  const notice = (state: "PREPARED" | "OPENED_IN_MAIL" | "MARKED_SENT") => ({ id: "n", kind: "SAFETY_NOTICE", state, stopped: false, result: null });
+
+  it.each(["PREPARED", "OPENED_IN_MAIL"] as const)("needs approving again while it's %s", (state) => {
+    expect(needsApproval({ verdict: "MATCH", notice: notice(state), recallChanged: true })).toBe(true);
+    expect(needsApproval({ verdict: "MATCH", notice: notice(state), recallChanged: false })).toBe(false);
+  });
+
+  it("leaves one that's gone out as it was", () => {
+    expect(needsApproval({ verdict: "MATCH", notice: notice("MARKED_SENT"), recallChanged: true })).toBe(false);
+  });
+});
+
 describe("when Claude read it, and which model", () => {
   const at = "2026-11-06T20:30:00.000Z";
 

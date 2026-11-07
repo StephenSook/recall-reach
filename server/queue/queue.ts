@@ -56,6 +56,8 @@ export interface QueueRow {
   question: CheckQuestion | null;
   /** Null until Claude has checked exactly this text. */
   agent: AgentFinding | null;
+  /** CPSC changed the recall since this row was checked. */
+  recallChanged: boolean;
   /** What the seller said when asked if this is the recalled product. It changes nothing else on the card. */
   sellerAnswer: SellerAnswer | null;
   /** Seconds from PayPal's capture to this queue, while the payment is held. PayPal's time itself never reaches the page. */
@@ -147,7 +149,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
-            coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer,
+            coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, ${currentCheckResultSql("n", "r")} as check_result,
             (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
@@ -211,6 +213,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       question: askedFor(r),
       agent: null,
       sellerAnswer: (r.seller_answer as SellerAnswer | null) ?? null,
+      recallChanged: r.checked_sha !== r.raw_sha256,
       caughtSeconds: r.caught_seconds === null || r.caught_seconds === undefined ? null : Math.max(0, Math.round(Number(r.caught_seconds))),
       approval: r.approval_id
         ? {
