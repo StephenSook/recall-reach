@@ -189,15 +189,15 @@ function codesBeside(recallText: string, itemText: string, close: (code: string,
     .map((t) => t.slice(0, MAX_TOKEN));
 }
 
-/** Beside an exact model, what could make it another unit: one slip from it, built on it, or opening with its letters. */
-const closeBesideExact = (t: string, models: string[]) => isSiblingModel(t, models) || isVariantOf(t, models) || opensLikeModel(t, models);
+/** Beside an exact model, what could make it another unit: anything like it, unless it says nothing about the model. */
+const closeBesideExact = (t: string, models: string[]) => !SAYS_NOTHING_ABOUT_THE_MODEL.test(t) && (isSiblingModel(t, models) || isVariantOf(t, models) || opensLikeModel(t, models) || resemblesModel(t, models));
 
 /**
  * For a check on a store listing, which has no second chance to be read: any code that could be this recall's model written
  * another way, including most of its characters in a row.
  */
 export const nearMissCodes = (recallText: string, itemText: string): string[] =>
-  codesBeside(recallText, itemText, (t, models) => closeBesideExact(t, models) || resemblesModel(t, models), (t, models) => isSiblingModel(t, models) || resemblesModel(t, models));
+  codesBeside(recallText, itemText, closeBesideExact, (t, models) => isSiblingModel(t, models) || resemblesModel(t, models));
 
 /** Codes that are about the product and not which unit it is, and a shop's own number labelled as one. */
 const SAYS_NOTHING_ABOUT_THE_MODEL = /^(?:\d+-IN-\d+|\d+(?:-\d+)?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?)|SKU.*)$/;

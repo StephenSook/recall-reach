@@ -211,6 +211,10 @@ describe("verdictFor", () => {
         expect(verdictFor(PAPABLIC, { title: `Papablic bedside sleeper gray stars moon ${code}` }).strength).not.toBe("CONFIRMED");
       });
 
+      it("a title naming the recalled model as what it replaces can't confirm it", () => {
+        expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper model 03001AX (replaces PAPA03001AI)" }).verdict).toBe("SCOPE_GAP");
+      });
+
       it("a shop's own number sharing part of the model doesn't stop the exact model", () => {
         expect(verdictFor(PAPABLIC, { title: "Papablic bedside sleeper PAPA03001AI SKU03001" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
