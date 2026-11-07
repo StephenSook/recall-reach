@@ -179,10 +179,10 @@ pnpm dev                       # http://localhost:3000
 ```bash
 pnpm lint && pnpm typecheck && pnpm test && pnpm build   # what CI runs, with a gitleaks scan of the full history
 pnpm eval                                                # recomputes eval/results.json
-pnpm test:golden                                         # the golden path on the deployed site. It makes real sandbox payments and one real sandbox refund
+EXPECT_BUILD=<short commit> pnpm test:golden            # the golden path on the deployed site. It makes real sandbox payments and one real sandbox refund
 ```
 
-`e2e/measure/` holds specs run on purpose on a deployment: the Claude check, a sale reaching the queue, a shop's own file, and a stored shop getting a new recall.
+`e2e/measure/` holds specs run on purpose on a deployment: the Claude check, a sale reaching the queue, a shop's own file, and a stored shop getting a new recall. Against a deployed site, both wait for `/api/health` to name `EXPECT_BUILD` first, and refuse to run without it, so a check made just after a push can't pass on the build before it.
 
 ## Deploy
 
