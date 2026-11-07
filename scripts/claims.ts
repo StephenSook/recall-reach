@@ -105,6 +105,15 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Published defects",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/evidence/defects/page.tsx", find: "What went wrong" },
+      { file: "README.md", find: "evidence/defects" },
+    ],
+  },
+  {
     name: "APIMatic Context Plugin",
     status: "claimed",
     evidence: [{ file: "docs/apimatic-context-plugin.md", find: "server-sdk-context-plugin-preview" }],
