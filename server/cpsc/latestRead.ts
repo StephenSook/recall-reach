@@ -21,7 +21,7 @@ export async function latestReadLine(poll: { lastPollAt: string | null; lastPoll
   if (!poll.lastPollOk || !poll.lastPollAt || now.getTime() - Date.parse(poll.lastPollAt) > MAX_READ_AGE_MS) return null;
   try {
     const recalls = await count();
-    return recalls > 0 ? `Latest CPSC read ${ranAt(poll.lastPollAt)}. ${recalls.toLocaleString("en-US")} recalls on file.` : null;
+    return recalls > 0 ? `Latest CPSC read ${ranAt(poll.lastPollAt)}. ${recalls.toLocaleString("en-US")} recalls since ${CHECK_FROM.slice(0, 4)}.` : null;
   } catch {
     return null;
   }

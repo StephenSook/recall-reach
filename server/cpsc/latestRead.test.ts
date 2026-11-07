@@ -8,7 +8,7 @@ const poll = (over: Partial<{ lastPollAt: string | null; lastPollOk: boolean | n
 describe("the line on the home page about CPSC", () => {
   it("gives the latest read and how many recalls are held", async () => {
     const count = vi.fn(async () => 1855);
-    expect(await latestReadLine(poll(), count, NOW)).toBe("Latest CPSC read Nov 7, 2026, 9:50 AM ET. 1,855 recalls on file.");
+    expect(await latestReadLine(poll(), count, NOW)).toBe("Latest CPSC read Nov 7, 2026, 9:50 AM ET. 1,855 recalls since 2022.");
   });
 
   it.each([
