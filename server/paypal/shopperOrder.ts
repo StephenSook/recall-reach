@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAYPAL_ID = /^[A-Za-z0-9-]+$/;
 const BRAND_NAME = "RECALL REACH SANDBOX TEST";
 
-export type SlipRefusal = "NO_SLIP" | "EXPIRED" | "CHANGED" | "GONE" | "NOW_FLAGGED" | "NOT_PAID";
+export type SlipRefusal = "NO_SLIP" | "EXPIRED" | "CHANGED" | "GONE" | "NOW_FLAGGED" | "NOT_PAID" | "HELD";
 
 export class SlipRefused extends Error {
   constructor(
@@ -106,7 +106,9 @@ export async function finishShopperOrder(db: Queryable, client: PayPalClient, in
   if (before.status === "APPROVED") await captureOrder(client, input.orderId, `capture-${input.orderId}`);
   else if (before.status !== "COMPLETED") throw notPaid();
   const after = await getOrder(client, input.orderId);
-  if (!matches(after) || after.status !== "COMPLETED" || after.capture?.status !== "COMPLETED") throw notPaid();
+  if (!matches(after) || after.status !== "COMPLETED") throw notPaid();
+  if (after.capture?.status === "PENDING") throw new SlipRefused("HELD", "PayPal is still holding this order.");
+  if (after.capture?.status !== "COMPLETED") throw notPaid();
   await db.query("update shopping_slips set finished_at = coalesce(finished_at, $2) where id = $1", [slip.id, input.now.toISOString()]);
 }
 

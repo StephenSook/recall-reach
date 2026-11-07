@@ -195,6 +195,20 @@ describe("an offer from the shopping agent", () => {
       expect(pp.posts()).toHaveLength(1);
     });
 
+    it("says PayPal is holding it when the capture is pending, so nobody starts a second order, and finishes when read again", async () => {
+      let held = true;
+      const pp = fakePayPal({
+        order: (invoice) => (held ? { status: "COMPLETED", purchase_units: [{ invoice_id: invoice, amount: { currency_code: "USD", value: "24.99" }, payments: { captures: [{ id: "C1", status: "PENDING", amount: { currency_code: "USD", value: "24.99" }, create_time: NOW.toISOString() }] } }] } : {}),
+      });
+      const { id } = await started(pp);
+      expect(await code(finish(id, pp.client))).toBe("HELD");
+      expect(await readFinishedSlip(db, id)).toBeNull();
+      expect(pp.posts()).toHaveLength(1);
+      held = false;
+      await finish(id, pp.client);
+      expect(await readFinishedSlip(db, id)).not.toBeNull();
+    });
+
     it("isn't done if the capture doesn't read back complete", async () => {
       const pp = fakePayPal({ order: (invoice) => ({ status: "APPROVED", purchase_units: [{ invoice_id: invoice, amount: { currency_code: "USD", value: "24.99" } }] }) });
       const { id } = await started(pp);

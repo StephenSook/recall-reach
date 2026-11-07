@@ -22,6 +22,8 @@ export async function GET(request: Request): Promise<Response> {
     await finishShopperOrder(getDb(), payPalClientFromEnv(), { slipId: slip, orderId: params.get("token") ?? "", recordKey, now: new Date() });
     return seeOther(request, `/shopper/done?slip=${encodeURIComponent(slip)}`);
   } catch (err) {
+    // Money may be held, so this keeps the way back to this order. A new one would be a second payment.
+    if (err instanceof SlipRefused && err.code === "HELD") return seeOther(request, `/shopper/done?slip=${encodeURIComponent(slip)}&token=${encodeURIComponent(params.get("token") ?? "")}&held=1`);
     if (err instanceof SlipRefused) return seeOther(request, `/shopper?error=${err.code}`);
     console.error("shopper capture failed:", err instanceof Error ? err.name : "unknown error");
     return seeOther(request, "/shopper?error=FAILED");

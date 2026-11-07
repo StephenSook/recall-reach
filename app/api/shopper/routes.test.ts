@@ -17,6 +17,7 @@ vi.mock("@/server/paypal/shopperOrder", async (original) => ({
 }));
 
 import { SlipRefused } from "@/server/paypal/shopperOrder";
+import ShopperDonePage from "@/app/shopper/done/page";
 import ShopperPage from "@/app/shopper/page";
 import { POST as buy } from "./buy/route";
 import { GET as back } from "./return/route";
@@ -147,6 +148,13 @@ describe("the shopping agent's routes", () => {
   describe("back from PayPal", () => {
     const returning = (query: string, ip = "1.2.3.4") => new Request(`${ORIGIN}/api/shopper/return?${query}`, { headers: { "true-client-ip": ip } });
 
+    it("keeps the way back to an order PayPal is holding, and sends nobody to start another", async () => {
+      paths.finish.mockRejectedValue(new SlipRefused("HELD", "x"));
+      const to = new URL((await back(returning("slip=s1&token=T", nextIp()))).headers.get("location") ?? "");
+      expect(to.pathname).toBe("/shopper/done");
+      expect(Object.fromEntries(to.searchParams)).toEqual({ slip: "s1", token: "T", held: "1" });
+    });
+
     it("limits how often one visitor can come back", async () => {
       paths.finish.mockResolvedValue(undefined);
       const ip = nextIp();
@@ -163,6 +171,24 @@ describe("the shopping agent's routes", () => {
       paths.finish.mockRejectedValue(new SlipRefused("NOT_PAID", "x"));
       const refused = new URL((await back(returning("slip=s1&token=T"))).headers.get("location") ?? "");
       expect(refused.pathname + refused.search).toBe("/shopper?error=NOT_PAID");
+    });
+  });
+
+  describe("the page for a finished order", () => {
+    const done = async (params: Record<string, string>) => renderToStaticMarkup(createElement("div", null, await ShopperDonePage({ searchParams: Promise.resolve(params) })));
+
+    it("while PayPal holds it, says not to start another and links back to read it again", async () => {
+      paths.found.mockResolvedValue(null);
+      const html = await done({ slip: "s1", token: "T", held: "1" });
+      expect(html).toContain("PayPal is still holding this order");
+      expect(html).toContain("Don&#x27;t start another one");
+      expect(html).toContain('href="/api/shopper/return?slip=s1&amp;token=T"');
+    });
+
+    it("says complete only for a slip that finished", async () => {
+      paths.found.mockResolvedValue({ title: "Folding Tub", priceCents: 2499, currency: "USD" });
+      expect(await done({ slip: "s1" })).toContain("PayPal says this sandbox order is complete");
+      expect(await done({ slip: "s1", token: "T", held: "1" })).toContain("PayPal says this sandbox order is complete");
     });
   });
 
