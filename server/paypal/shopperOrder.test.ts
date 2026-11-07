@@ -10,7 +10,7 @@ import { cartHash, createSlip, finishShopperOrder, readFinishedSlip, SlipRefused
 const NOW = new Date("2026-11-07T15:00:00Z");
 const LISTING: BuyableListing = { id: "raw-tub", title: "Folding Tub", brand: "Acme", priceCents: 2499, currency: "USD" };
 const key = createRecordKey("test-record-key-secret-0123456789abcdef");
-const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
+const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, sameMaker: [], checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
 
 function fakePayPal(over: { failCreate?: boolean; order?: (invoice: string) => Record<string, unknown> } = {}) {
   const calls: { method: string; path: string; body?: unknown }[] = [];

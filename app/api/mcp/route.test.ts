@@ -53,7 +53,7 @@ describe("the MCP tool", () => {
       expect(answer).toMatchObject({ found: true, recallNumber: "27072" });
       expect(answer.title).toContain("Baby Brezza");
       expect(answer.url).toMatch(/^https:\/\/www\.cpsc\.gov\//);
-      expect(Object.keys(answer).sort()).toEqual(["description", "found", "hazards", "products", "recallDate", "recallNumber", "remedies", "title", "url"]);
+      expect(Object.keys(answer).sort()).toEqual(["description", "found", "hazards", "image", "products", "recallDate", "recallNumber", "remedies", "title", "url"]);
     });
 
     it("says it doesn't hold a number, and that this doesn't make a product safe", async () => {

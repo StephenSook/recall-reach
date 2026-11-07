@@ -1,6 +1,7 @@
 // A title and model anyone supplies, checked against real CPSC recalls with the same rules a shop's sales get. Nothing is
 // stored, and PayPal isn't involved: the text comes from the caller and the recalls are public.
 import { missingRecallYears } from "../cpsc/load";
+import { cpscPhoto } from "../cpsc/photo";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
 import { modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor } from "./verdict";
@@ -38,6 +39,8 @@ export interface TextCheckAnswer {
   cleared: number;
   /** Came near but weren't judged, because too many did. Above zero, an empty list doesn't mean nothing was found. */
   notJudged: number;
+  /** Ruled out, but from the same maker. A maker typed alone ends up here, and that isn't the same as nothing coming near. */
+  sameMaker: { recallNumber: string; title: string }[];
   checked: { recalls: number; from: string | null; to: string | null; yearsMissing: number[] };
   note: string;
 }
@@ -91,10 +94,12 @@ export async function checkText(
   );
   const judged = rows.map((recall) => {
     const verdict = verdictFor(recall, { title: text, description: "" });
+    const tied = verdict.verdict === "MATCH" || verdict.strength === "CONFIRMED" || (verdict.strength === "BRAND" && namesProductLine(verdict.matched)) || (verdict.verdict !== "CLEARED" && nearMissCodes(`${recall.title} ${recall.description}`, text).length > 0);
     const digitsOnly = /^\d+$/.test(typedModel) && typedModel.length >= MIN_DIGITS_MODEL;
     if (verdict.verdict === "CLEARED" && digitsOnly && standaloneNumbers(`${recall.title} ${recall.description}`).has(typedModel)) {
       return {
         recall,
+        tied: true,
         verdict: {
           ...verdict,
           verdict: "SCOPE_GAP" as const,
@@ -103,27 +108,33 @@ export async function checkText(
         },
       };
     }
-    return { recall, verdict };
+    return { recall, tied, verdict };
   });
+  // A cut-off list has to keep the recalls that name this text, ahead of ones that only share a kind of product.
+  const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied ? 1 : 2);
   const found = judged
     .filter((j) => j.verdict.verdict !== "CLEARED")
-    .sort((a, b) => Number(b.verdict.verdict === "MATCH") - Number(a.verdict.verdict === "MATCH"));
+    .sort((a, b) => rank(a) - rank(b));
   const limit = opts.maxResults ?? MAX_RESULTS;
   return {
-    results: found.slice(0, limit).map(({ recall, verdict }) => ({
+    results: found.slice(0, limit).map(({ recall, tied, verdict }) => ({
       recallNumber: recall.recall_number,
       title: recall.title,
       recallDate: recall.recall_date,
       url: recall.url,
       verdict: verdict.verdict as TextCheckResult["verdict"],
       strength: verdict.strength,
-      tiedToRecall: verdict.verdict === "MATCH" || verdict.strength === "CONFIRMED" || (verdict.strength === "BRAND" && namesProductLine(verdict.matched)) || nearMissCodes(`${recall.title} ${recall.description}`, text).length > 0,
+      tiedToRecall: tied,
       reason: verdict.reason,
       missing: verdict.missing,
     })),
     more: Math.max(0, found.length - limit),
     cleared: judged.filter((j) => j.verdict.verdict === "CLEARED").length,
     notJudged: Math.max(0, Number(rows[0]?.near ?? 0) - rows.length),
+    sameMaker: judged
+      .filter((j) => j.verdict.verdict === "CLEARED" && j.verdict.strength === "BRAND")
+      .slice(0, limit)
+      .map(({ recall }) => ({ recallNumber: recall.recall_number, title: recall.title })),
     checked: { recalls: Number(counted[0].n), from: counted[0].first, to: counted[0].last, yearsMissing },
     note: NOTE,
   };
@@ -152,11 +163,11 @@ export const isRecallNumber = (text: string) => RECALL_NUMBER.test(text);
 
 /** CPSC's public record for one recall number. Holds nothing about a shop, a sale or a buyer. */
 export async function readPublicRecall(db: Queryable, recallNumber: string) {
-  const { rows } = await db.query<{ recall_number: string; title: string; recall_date: string; url: string; description: string; products: { name: string; model: string; type: string | null; units: string | null }[]; hazards: string[]; remedies: string[] }>(
-    "select recall_number, title, recall_date::text as recall_date, url, description, products, hazards, remedies from recalls where recall_number = $1 order by recall_date desc limit 1",
+  const { rows } = await db.query<{ recall_number: string; title: string; recall_date: string; url: string; description: string; products: { name: string; model: string; type: string | null; units: string | null }[]; hazards: string[]; remedies: string[]; images: { url: string; caption: string }[] }>(
+    "select recall_number, title, recall_date::text as recall_date, url, description, products, hazards, remedies, images from recalls where recall_number = $1 order by recall_date desc limit 1",
     [recallNumber],
   );
   const r = rows[0];
   if (!r) return { found: false as const, note: "No such recall is held here. That says nothing about a product: it does not mean a recall doesn't exist, and not that a product is safe." };
-  return { found: true as const, recallNumber: r.recall_number, title: r.title, recallDate: r.recall_date, url: r.url, description: r.description, products: r.products, hazards: r.hazards, remedies: r.remedies };
+  return { found: true as const, recallNumber: r.recall_number, title: r.title, recallDate: r.recall_date, url: r.url, description: r.description, products: r.products, hazards: r.hazards, remedies: r.remedies, image: cpscPhoto(r.images) };
 }

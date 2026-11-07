@@ -41,6 +41,7 @@ const CHECK_OUTPUT = {
   more: z.number().describe("Found, past what's listed."),
   cleared: z.number().describe("Came near and were ruled out."),
   notJudged: z.number().describe("Came near but weren't judged. Above zero, an empty list doesn't mean nothing was found."),
+  sameMaker: z.array(z.object({ recallNumber: z.string(), title: z.string() })).describe("Ruled out, but from the same maker. A maker given alone ends up here, so don't read an empty results list as nothing near."),
   checked: z.object({ recalls: z.number(), from: z.string().nullable(), to: z.string().nullable(), yearsMissing: z.array(z.number()) }),
   note: z.string(),
 };
@@ -56,6 +57,7 @@ const READ_OUTPUT = {
   products: z.array(z.object({ name: z.string(), model: z.string(), type: z.string().nullable(), units: z.string().nullable() })).optional(),
   hazards: z.array(z.string()).optional(),
   remedies: z.array(z.string()).optional(),
+  image: z.object({ url: z.string(), caption: z.string() }).nullable().optional().describe("CPSC's own photo and its caption, if it has one."),
 };
 
 /** Two tools. They read public recalls, one with the same rules as /api/check, and can't change anything or reach a shop. */
@@ -95,7 +97,7 @@ function recallServer(headers: Headers): McpServer {
     "get_recall",
     {
       title: "Read one CPSC recall",
-      description: "CPSC's public record for one recall number: its title, date, products, hazards, remedies and its page. check_recall names a recall, and this reads it.",
+      description: "CPSC's public record for one recall number: its title, date, products, hazards, remedies, photo and its page. check_recall names a recall, and this reads it.",
       inputSchema: { recallNumber: z.string().max(40).describe("The recall number, as check_recall gives it, such as 27072.") },
       outputSchema: READ_OUTPUT,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

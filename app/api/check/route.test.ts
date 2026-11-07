@@ -50,6 +50,20 @@ describe("GET /api/check", () => {
     expect(body.results.map((r: { verdict: string }) => r.verdict)).not.toContain("MATCH");
   });
 
+  it("names a recall that's only from the same maker, so a maker typed alone can't read as nothing", async () => {
+    const body = await results("title=Baby+Brezza");
+    expect(body.results).toEqual([]);
+    expect(body.sameMaker).toEqual([expect.objectContaining({ recallNumber: "27072" })]);
+    expect((await results("title=zzqx+vvbn+plmk")).sameMaker).toEqual([]);
+  });
+
+  it("lists a recall tied to the text before ones that only share a kind of product", async () => {
+    const body = await results(`title=${encodeURIComponent("Costway high chair")}`);
+    const tied = body.results.map((r: { tiedToRecall: boolean }) => r.tiedToRecall);
+    expect(tied.indexOf(false) === -1 || tied.lastIndexOf(true) < tied.indexOf(false)).toBe(true);
+    expect(tied).toContain(true);
+  });
+
   it("says plainly when nothing comes near, and what it checked against", async () => {
     const body = await results("title=zzqx+vvbn+plmk");
     expect(body.results).toEqual([]);
@@ -102,7 +116,7 @@ describe("GET /api/check", () => {
 
   it("finds a model that is only digits, as something to read, not a match", async () => {
     const body = await results("model=406198");
-    expect(body.results[0]).toMatchObject({ recallNumber: "27012", verdict: "SCOPE_GAP" });
+    expect(body.results[0]).toMatchObject({ recallNumber: "27012", verdict: "SCOPE_GAP", tiedToRecall: true });
     expect(body.results[0].reason).toContain("406198");
     expect(body.results[0].missing.length).toBeGreaterThan(0);
   });

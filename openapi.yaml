@@ -243,7 +243,7 @@ components:
           items: { type: string }
     CheckAnswer:
       type: object
-      required: [results, more, cleared, notJudged, checked, note]
+      required: [results, more, cleared, notJudged, sameMaker, checked, note]
       properties:
         results:
           type: array
@@ -257,6 +257,15 @@ components:
         notJudged:
           type: integer
           description: Recalls that came near but weren't judged, because too many did. Above zero, an empty list doesn't mean nothing was found.
+        sameMaker:
+          type: array
+          description: Recalls ruled out but from the same maker. A maker given alone ends up here, so an empty results list isn't the same as nothing near.
+          items:
+            type: object
+            required: [recallNumber, title]
+            properties:
+              recallNumber: { type: string }
+              title: { type: string }
         checked:
           type: object
           required: [recalls, yearsMissing]

@@ -64,7 +64,7 @@ describe("checking a store listing before it can be offered", () => {
   });
 
   it("isn't clear while a year of recalls is missing or a near recall went unjudged", () => {
-    const clear = { results: [], more: 0, cleared: 0, notJudged: 0, checked: { recalls: 1, from: null, to: null, yearsMissing: [] }, note: "" };
+    const clear = { results: [], more: 0, cleared: 0, notJudged: 0, sameMaker: [], checked: { recalls: 1, from: null, to: null, yearsMissing: [] }, note: "" };
     expect(readListingCheck(clear, { brand: "Acme" })).toBe("NO_MATCH_FOUND");
     expect(readListingCheck({ ...clear, notJudged: 1 }, { brand: "Acme" })).toBe("COULD_NOT_FINISH");
     expect(readListingCheck({ ...clear, checked: { ...clear.checked, yearsMissing: [2025] } }, { brand: "Acme" })).toBe("COULD_NOT_FINISH");

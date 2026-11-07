@@ -1,6 +1,7 @@
 // A notice is a message a person approved. The app never sends it: it opens in the seller's own mail.
 // The buyer's address comes only from the shop's own record. A PayPal payer email is never read.
 import { writtenQuestion, type WrittenQuestion } from "../agent/questionStore";
+import { cpscPhoto } from "../cpsc/photo";
 import type { Recall } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
 import { fullScopeInRecord, salePath, verdictFor, isVariantOf, limitedWithinModel, modelsNamedInText, modelTokens, normalizeModel, unconfuse, writtenApart } from "../match/verdict";
@@ -374,16 +375,6 @@ export interface FamilyView {
   answerOpen: boolean;
 }
 
-const fromCpsc = (image: { url: string } | undefined) => {
-  if (!image) return false;
-  try {
-    const { protocol, hostname } = new URL(image.url);
-    return protocol === "https:" && (hostname === "cpsc.gov" || hostname.endsWith(".cpsc.gov"));
-  } catch {
-    return false;
-  }
-};
-
 /** The public sample: CPSC's record for one recall and nothing else. It touches no shop, sale, buyer or notice. */
 export async function sampleFamilyView(db: Queryable, recallNumber: string): Promise<FamilyView | null> {
   const { rows } = await db.query<RecallRow & { recall_number: string; images: { url: string; caption: string }[] }>(
@@ -397,7 +388,7 @@ export async function sampleFamilyView(db: Queryable, recallNumber: string): Pro
     shopName: "",
     recallNumber: r.recall_number,
     product: r.products[0]?.name ?? r.title,
-    image: fromCpsc(r.images[0]) ? r.images[0] : null,
+    image: cpscPhoto(r.images),
     recallUrl: r.url,
     hazards: r.hazards,
     remedies: r.remedies,
@@ -430,7 +421,7 @@ export async function familyView(db: Queryable, noticeId: string): Promise<Famil
     shopName: n.shop_name,
     recallNumber: n.recall_number,
     product: n.products[0]?.name ?? n.title,
-    image: fromCpsc(n.images[0]) ? n.images[0] : null,
+    image: cpscPhoto(n.images),
     recallUrl: n.url,
     hazards: n.hazards,
     remedies: n.remedies,
