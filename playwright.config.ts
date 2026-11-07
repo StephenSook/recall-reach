@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 //   BASE_URL=http://localhost:3000 pnpm test:golden
 export default defineConfig({
   testDir: "e2e",
-  testIgnore: ["local/**", "measure/**"], // local fakes PayPal (playwright.local.config.ts); measure is run on purpose
+  testIgnore: ["local/**", "measure/**", "support/**"], // local fakes PayPal (playwright.local.config.ts); measure is run on purpose; support holds helpers and their vitest tests
   timeout: 8 * 60_000,
   retries: 0,
   workers: 1,
