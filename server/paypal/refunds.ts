@@ -535,8 +535,9 @@ export async function askPayPalAgain(
     paypal_payment_id: string | null;
     repeat_refused_at: Date | null;
     seller_sent_to_paypal_at: Date | null;
+    dispute_seen_at: Date | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, r.repeat_refused_at, r.seller_sent_to_paypal_at, p.capture_id, p.refund_id as paypal_refund_id,
+    `select r.status, r.amount_cents, r.currency, r.request_id, r.created_at, r.repeat_refused_at, r.seller_sent_to_paypal_at, r.dispute_seen_at, p.capture_id, p.refund_id as paypal_refund_id,
             a.recall_id, a.recall_sha256, a.order_line_id, a.line_sha256, a.paypal_payment_id
      from refunds r join approvals a on a.id = r.approval_id left join paypal_refund_refs p on p.refund_row_id = r.id
      where r.id = $1 and r.shop_id = $2`,
@@ -549,6 +550,8 @@ export async function askPayPalAgain(
     throw new RefundRefused("NOTHING_TO_ASK", "PayPal already has a record of this refund. Check it against PayPal.");
   }
   const checkInPayPal = () => new RefundRefused("CHECK_IN_PAYPAL", "This one is with PayPal now. Check the payment there.");
+  const disputedAgain = () => new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+  if (row.dispute_seen_at) throw disputedAgain();
   // A person may have refunded it by hand from here on, and a repeat could then make a second refund.
   if (row.seller_sent_to_paypal_at || row.repeat_refused_at) throw checkInPayPal();
   if (!row.capture_id) throw new RefundRefused("PAYPAL_FACTS_AGED_OUT", "PayPal's record of this sale is no longer held here. Check PayPal directly.");
@@ -571,8 +574,8 @@ export async function askPayPalAgain(
   const dispute = await disputeOnCapture(client, row.capture_id);
   if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so this wasn't sent again. Please try again.");
   if (dispute === "DISPUTED") {
-    await db.query("update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz) where id = $1 and status = 'unconfirmed'", [input.refundId, now.toISOString()]);
-    throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+    await db.query("update refunds set dispute_seen_at = coalesce(dispute_seen_at, $2::timestamptz) where id = $1 and status = 'unconfirmed'", [input.refundId, now.toISOString()]);
+    throw disputedAgain();
   }
 
   // Those checks can take minutes, so the limit and the lease are read on the clock as it stands now.
@@ -635,7 +638,8 @@ export interface Reconciliation {
   /** No clear answer, and it is still safe to repeat the stored request. */
   canAskAgain: boolean;
   /** No clear answer and no PayPal refund id. Only PayPal itself can say what happened. */
-  stuck: { orderNumber: string; sentToPayPal: boolean } | null;
+  /** With a dispute on the payment, the owner must not be told to refund by hand: PayPal may already have paid the buyer. */
+  stuck: { orderNumber: string; sentToPayPal: boolean; disputed: boolean } | null;
   /** What PayPal's answer says this row should now be, while a read has not changed it. */
   newerAnswer: RefundOutcome["status"] | null;
   ledger: { status: string; amountCents: number; currency: string };
@@ -673,12 +677,13 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     failure: string | null;
     repeat_refused_at: Date | null;
     seller_sent_to_paypal_at: Date | null;
+    dispute_seen_at: Date | null;
     order_number: string;
     capture_id: string | null;
     paypal_refund_id: string | null;
     match_id: string | null;
   }>(
-    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, r.failure, r.repeat_refused_at, r.seller_sent_to_paypal_at,
+    `select r.status, r.amount_cents, r.currency, r.refund_ref_hmac, r.created_at, r.send_lease_until, r.failure, r.repeat_refused_at, r.dispute_seen_at, r.seller_sent_to_paypal_at,
             l.order_number, p.capture_id, p.refund_id as paypal_refund_id,
             (select m.id from approvals a join recall_matches m on m.shop_id = a.shop_id and m.recall_id = a.recall_id and m.order_line_id = a.order_line_id where a.id = r.approval_id limit 1) as match_id
      from refunds r join order_lines l on l.id = r.order_line_id left join paypal_refund_refs p on p.refund_row_id = r.id
@@ -727,8 +732,9 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   const refusedRepeat = row.repeat_refused_at !== null;
   const sentToPayPal = row.seller_sent_to_paypal_at !== null;
   const tooOld = tooOldToRepeat(row.created_at, now.getTime());
-  const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld;
-  const stuck = noAnswer && !sendMayBeRunning && !canAskAgain ? { orderNumber: row.order_number, sentToPayPal } : null;
+  const disputed = row.dispute_seen_at !== null;
+  const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld && !disputed;
+  const stuck = noAnswer && !sendMayBeRunning && !canAskAgain ? { orderNumber: row.order_number, sentToPayPal, disputed } : null;
   if (noAnswer && row.capture_id !== null && tooOld) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");

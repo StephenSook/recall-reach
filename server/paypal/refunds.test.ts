@@ -1348,13 +1348,14 @@ describe("refunds", () => {
       expect((refused as RefundRefused).message).toMatch(/wasn't sent again/);
     });
 
-    it("sends the owner to PayPal once a dispute shows, and offers no more repeats", async () => {
+    it("once a dispute shows it offers no more repeats, and never tells the owner to refund by hand", async () => {
       const { r } = await noClearAnswer(["lost", "lost", "lost"]);
       const disputed = fakePayPal({ disputes: [{ status: "OPEN" }] });
       expect(await refusal(again(r.refundId, disputed.client, LATER))).toBe("PAYMENT_DISPUTED");
       const after = await readRefund(db, disputed.client, { shopId, refundId: r.refundId, recordKey: key, now: LATER });
       expect(after.canAskAgain).toBe(false);
-      expect(after.stuck).not.toBeNull();
+      expect(after.stuck).toMatchObject({ disputed: true });
+      expect(await refusal(again(r.refundId, fakePayPal().client, LATER))).toBe("PAYMENT_DISPUTED");
     });
 
     it("finds a refund that landed when every answer was lost, and makes no second refund", async () => {

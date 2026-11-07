@@ -66,9 +66,13 @@ function Records({ rec, id }: { rec: Reconciliation; id: string }) {
       ) : null}
       {rec.stuck ? (
         <section data-testid="stuck">
-          <p>
-            Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. If no refund shows, refund it there.
-          </p>
+          {rec.stuck.disputed ? (
+            <p>Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. It has a dispute, and PayPal may already have paid the buyer, so settle the dispute there and don&apos;t refund it by hand.</p>
+          ) : (
+            <p>
+              Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. If no refund shows, refund it there.
+            </p>
+          )}
           <form action="/api/queue/refunds/open-paypal" method="post">
             <input type="hidden" name="refundId" value={id} />
             <button type="submit" className="btn">Open PayPal</button>

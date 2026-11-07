@@ -96,6 +96,15 @@ describe("the refund page", () => {
     expect(await render()).not.toContain('data-testid="looking-again"');
   });
 
+  it("with a dispute on the payment, never tells the owner to refund it by hand", async () => {
+    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: true } }));
+    const page = (await render()).replace(/<!-- -->/g, "");
+    expect(page).toContain("settle the dispute there and don&#x27;t refund it by hand");
+    expect(page).not.toContain("refund it there");
+    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: false } }));
+    expect((await render()).replace(/<!-- -->/g, "")).toContain("If no refund shows, refund it there.");
+  });
+
   it("says what the page does", async () => {
     readRefund.mockResolvedValue(record());
     expect(await render()).toContain("<h1>Refund, checked against PayPal</h1>");
