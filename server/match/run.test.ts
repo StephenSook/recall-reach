@@ -134,6 +134,25 @@ describe("runShopCheck", () => {
     };
     const found = async () => (await db.query("select verdict from recall_matches where shop_id = $1 and recall_id = 999001", [shopId])).rows;
 
+    it("a part of a model can't crowd out a real match: only a whole code ranks first", async () => {
+      await seededRecall("This recall involves round blue lamps, model QX-7702.");
+      await db.query("update recalls set products = '[{\"name\":\"Zzyx Round Blue Lamps\",\"model\":\"\",\"type\":null,\"units\":null}]' where recall_id = 999001");
+      const decoys = Array.from({ length: 20 }, (_, i) => line(`#D${i}`, `Other thing ${i} QX770`, "2026-10-20"));
+      await storeOrderLines(db, shopId, [...decoys, line("#R1", "Zzyx round blue lamps", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      const { rows } = await db.query<{ title: string }>("select l.title from recall_matches m join order_lines l on l.id = m.order_line_id where m.shop_id = $1 and m.recall_id = 999001", [shopId]);
+      expect(rows.map((r) => r.title)).toContain("Zzyx round blue lamps");
+    });
+
+    it("a whole code still ranks first over similar words", async () => {
+      await seededRecall("This recall involves lamps, model QX-7702.");
+      const near = Array.from({ length: 20 }, (_, i) => line(`#N${i}`, `Zzyx Recalls Lamps number ${i}`, "2026-10-20"));
+      await storeOrderLines(db, shopId, [...near, line("#R2", "Unrelated words QX-7702", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      const { rows } = await db.query<{ title: string }>("select l.title from recall_matches m join order_lines l on l.id = m.order_line_id where m.shop_id = $1 and m.recall_id = 999001", [shopId]);
+      expect(rows.map((r) => r.title)).toContain("Unrelated words QX-7702");
+    });
+
     it("doesn't join the end of one sentence to the next and call that a model", async () => {
       await seededRecall("This recall involves lamps, model QX7702. These lamps were sold online.");
       await storeOrderLines(db, shopId, [line("#M2", "Unrelated words 702-T", "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");

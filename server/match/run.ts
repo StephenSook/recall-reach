@@ -47,6 +47,7 @@ interface Candidate {
   ordered_on: string | null;
   similarity: number;
   model_hit: boolean;
+  model_exact: boolean;
 }
 
 /**
@@ -84,20 +85,26 @@ const CANDIDATES_SQL = `
       ) as model_hit
     from recall_text r cross join items i
   )
-  select recall_id, kind, id, title, description, ordered_on, similarity, model_hit from scored where model_hit or similarity >= $2`;
+  select s.recall_id, s.kind, s.id, s.title, s.description, s.ordered_on, s.similarity, s.model_hit,
+    -- A whole code ranks first. A part of one is still looked at, on its similarity, so it can't crowd out a real match.
+    s.model_hit and exists (
+      select 1 from jsonb_array_elements_text(coalesce($3::jsonb -> s.id::text, '[]'::jsonb)) as t(token), recall_text r
+      where r.recall_id = s.recall_id and r.doc ~ ('(^|[^A-Z0-9])' || t.token || '($|[^A-Z0-9])')
+    ) as model_exact
+  from scored s where s.model_hit or s.similarity >= $2`;
 
 /**
  * Per recall, the top distinct titles, with a model hit first, then the closest. It ranks titles, not records: every sale
  * of a popular item is one family to reach. Done here because the candidates arrive in several statements.
  */
 function withinCap(candidates: Candidate[]): Candidate[] {
-  const rankKey = (c: Candidate) => `${c.model_hit}|${c.similarity}|${c.title.toLowerCase()}`;
+  const rankKey = (c: Candidate) => `${c.model_exact}|${c.similarity}|${c.title.toLowerCase()}`;
   const byRecall = new Map<number, Candidate[]>();
   for (const c of candidates) byRecall.set(c.recall_id, [...(byRecall.get(c.recall_id) ?? []), c]);
   const kept: Candidate[] = [];
   for (const group of byRecall.values()) {
     const order = [...group].sort(
-      (a, b) => Number(b.model_hit) - Number(a.model_hit) || b.similarity - a.similarity || (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0),
+      (a, b) => Number(b.model_exact) - Number(a.model_exact) || b.similarity - a.similarity || (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0),
     );
     const top = new Set<string>();
     for (const c of order) {
