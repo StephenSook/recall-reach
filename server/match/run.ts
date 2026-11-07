@@ -4,7 +4,7 @@ import type { Recall, RecallProduct } from "../cpsc/schema";
 import { missingRecallYears } from "../cpsc/load";
 import type { Db, Queryable } from "../db/types";
 import { joinOrderLines, type JoinPayment, type JoinResult } from "./join";
-import { modelTokens, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
+import { modelTokens, normalizeModel, salePath, verdictFor, type SalePath, type Verdict } from "./verdict";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 import type { SearchCoverage } from "../paypal/transactions";
 
@@ -70,7 +70,7 @@ const CANDIDATES_SQL = `
   recall_text as materialized (
     select recall_id,
       lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), '')) as name_text,
-      upper(title || ' ' || description) as doc
+      regexp_replace(upper(title || ' ' || description), '[^A-Z0-9]', '', 'g') as doc
     from recalls
     where recall_date >= $6::date and ($5::int[] is null or recall_id = any($5::int[]))
   ),
@@ -169,7 +169,8 @@ export async function runShopCheck(
      union all select id, title || ' ' || description from shop_items where shop_id = $1`,
     [shopId],
   );
-  const tokens = Object.fromEntries(shopText.map((r) => [r.id, modelTokens(r.text.toUpperCase())]));
+  // Compared with the punctuation out of both sides, as the rules and the public check do: MY-002 is MY002.
+  const tokens = Object.fromEntries(shopText.map((r) => [r.id, [...new Set(modelTokens(r.text.toUpperCase()).map(normalizeModel))].filter((t) => t.length >= 3)]));
   const allCandidates: Candidate[] = [];
   for (let at = 0; at < shopText.length; at += ITEMS_PER_STATEMENT) {
     const part = shopText.slice(at, at + ITEMS_PER_STATEMENT);

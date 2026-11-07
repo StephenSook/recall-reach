@@ -124,6 +124,28 @@ describe("runShopCheck", () => {
     expect(row.recall_sha256).toBe(row.raw_sha256);
   });
 
+  describe("finding a model number written with punctuation", () => {
+    const seededRecall = async (description: string) => {
+      await db.query(
+        `insert into recalls (recall_id, recall_number, recall_date, last_publish_date, title, description, url, products, hazards, remedies, remedy_options, retailers, images, raw, raw_sha256)
+         values (999001, '99001', '2026-10-15', '2026-10-15', 'Zzyx Recalls Lamps', $1, 'https://www.cpsc.gov/x', '[]', '[]', '[]', '[]', '[]', '[]', '{}', 'sha')`,
+        [description],
+      );
+    };
+    const found = async () => (await db.query("select verdict from recall_matches where shop_id = $1 and recall_id = 999001", [shopId])).rows;
+
+    it.each([
+      ["a hyphen in the shop's title", "This recall involves lamps, model QX7702.", "Unrelated words QX-7702"],
+      ["a hyphen in CPSC's text", "This recall involves lamps, model QX-7702.", "Unrelated words QX7702"],
+      ["dots in the shop's title", "This recall involves lamps, model QX7702.", "Unrelated words QX.7702"],
+    ])("with %s, a sale finds the recall", async (_name, description, title) => {
+      await seededRecall(description);
+      await storeOrderLines(db, shopId, [line("#M1", title, "2026-10-20")], createContactCipher("k".repeat(32), shopId), "test");
+      await runShopCheck(db, shopId, { today: "2026-11-06", paypalSearched: true });
+      expect(await found()).toHaveLength(1);
+    });
+  });
+
   it("stores a near miss as CLEARED, with the reason", async () => {
     await store([line("#C1", "Baby Brezza Formula Pro Advanced", "2026-09-15")]);
     await runShopCheck(db, shopId, { today: TODAY });
