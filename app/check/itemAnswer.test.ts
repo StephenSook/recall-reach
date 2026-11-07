@@ -28,7 +28,7 @@ const answer = (over: Partial<TextCheckAnswer> = {}): TextCheckAnswer => ({
   ...over,
 });
 
-const said = (given: TextCheckAnswer) => readItemAnswer(given, "Graco high chair");
+const said = (given: TextCheckAnswer) => readItemAnswer(given);
 
 describe("what one typed item's check says", () => {
   describe("when a recall names it", () => {
@@ -102,7 +102,7 @@ describe("what one typed item's check says", () => {
     it("leads with what it does know, and folds the recalls away", () => {
       const answered = said(answer({ results: sameKind(16) }));
       expect(answered.kind).toBe("NOT_NAMED");
-      expect(answered.says).toBe('We didn\'t find a recall naming "Graco high chair" in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
+      expect(answered.says).toBe('We didn\'t find a recall naming this in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
       expect(answered.sameKind).toBe("16 recalls of the same kind don't name it. If your label says one of their makers, read that recall.");
       expect(answered.toRead).toEqual([]);
       expect(answered.folded).toHaveLength(16);
@@ -150,7 +150,7 @@ describe("what one typed item's check says", () => {
     it("says how many it read, from what year, and that this doesn't mean it's safe", () => {
       const answered = said(answer());
       expect(answered.kind).toBe("NOTHING");
-      expect(answered.says).toBe('We didn\'t find a recall naming "Graco high chair" in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
+      expect(answered.says).toBe('We didn\'t find a recall naming this in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
       expect(answered.sameKind).toBeNull();
     });
 

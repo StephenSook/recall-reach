@@ -35,7 +35,7 @@ const further = (count: number) => (count > 0 ? `${count} more came up. Add the 
 const yearList = (years: number[]) => (years.length > 1 ? `${years.slice(0, -1).join(", ")} and ${years.at(-1)}` : String(years[0]));
 const readThese = (count: number) => `Read ${count === 1 ? "this recall" : "these recalls"} and compare what you have.`;
 
-export function readItemAnswer(answer: TextCheckAnswer, typed: string): ItemAnswer {
+export function readItemAnswer(answer: TextCheckAnswer): ItemAnswer {
   const matches = answer.results.filter((r) => r.verdict === "MATCH");
   const tied = answer.results.filter((r) => r.verdict !== "MATCH" && r.tiedToRecall);
   const kindOnly = answer.results.filter((r) => r.verdict !== "MATCH" && !r.tiedToRecall);
@@ -62,7 +62,8 @@ export function readItemAnswer(answer: TextCheckAnswer, typed: string): ItemAnsw
     return { kind: "CANT_TELL", says, sameKind: null, matches: [], toRead: shown, folded: [], further: further(count - shown.length), gap };
   }
   // A search reports what it found. A miss here is a search that didn't find something, and the sentence says that, no more.
-  const notFound = `We didn't find a recall naming "${typed}" in ${recalls.toLocaleString("en-US")} CPSC recalls since ${(from ?? "").slice(0, 4)}. That doesn't mean it's safe.`;
+  // Nothing typed goes in it: a link can carry any text, and it mustn't be able to write the answer.
+  const notFound = `We didn't find a recall naming this in ${recalls.toLocaleString("en-US")} CPSC recalls since ${(from ?? "").slice(0, 4)}. That doesn't mean it's safe.`;
   if (sameKindRows.length > 0) {
     const count = sameKindRows.length + answer.more;
     const line = count === 1 ? "1 recall of the same kind doesn't name it. If your label says its maker, read that recall." : `${count} recalls of the same kind don't name it. If your label says one of their makers, read that recall.`;

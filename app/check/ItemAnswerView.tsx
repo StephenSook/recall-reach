@@ -21,6 +21,7 @@ function RecallLinks({ recalls }: { recalls: RecallToRead[] }) {
 export function ItemAnswerView({ answer, checked }: { answer: ItemAnswer; checked: string }) {
   return (
     <section className="item-answer" data-testid="item-answer" data-kind={answer.kind}>
+      <p className="note">Checked: {checked}</p>
       <p className="item-says" role="status">
         {answer.says}
       </p>
@@ -30,7 +31,6 @@ export function ItemAnswerView({ answer, checked }: { answer: ItemAnswer; checke
           Check the model on the label at <a href="https://www.cpsc.gov/Recalls">cpsc.gov/Recalls</a>.
         </p>
       ) : null}
-      <p className="note">Checked: {checked}</p>
       {answer.kind === "UNFINISHED" ? (
         <p className="note">
           CPSC&apos;s own list is at <a href="https://www.cpsc.gov/Recalls">cpsc.gov/Recalls</a>.

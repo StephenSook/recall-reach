@@ -82,7 +82,7 @@ describe("the check page", () => {
       // This fixture holds one month, and this test isn't about the other years.
       coverage.complete = true;
       const page = unescape(await html({ title: "Graco high chair", model: "" }));
-      expect(page.replaceAll("&quot;", '"')).toContain('We didn\'t find a recall naming "Graco high chair" in 55 CPSC recalls since 2026. That doesn\'t mean it\'s safe.');
+      expect(page).toContain("We didn't find a recall naming this in 55 CPSC recalls since 2026. That doesn't mean it's safe.");
       expect(page).toContain("1 recall of the same kind doesn't name it.");
       expect(page).toContain('Check the model on the label at <a href="https://www.cpsc.gov/Recalls">cpsc.gov/Recalls</a>.');
       const fold = page.slice(page.indexOf('data-testid="same-kind"'));
@@ -106,6 +106,16 @@ describe("the check page", () => {
       const page = await html({ title: "Costway high chair", model: "" });
       expect(page).toContain('value="Costway high chair"');
       expect(page).toContain("Checked: Costway high chair");
+    });
+
+    it("keeps what's typed out of the answer's sentence, so a crafted link can't write the answer", async () => {
+      coverage.complete = true;
+      const crafted = 'zzqx" jjqq. Vvbn plmk. "';
+      const page = unescape(await html({ title: crafted, model: "" })).replaceAll("&quot;", '"');
+      const says = page.slice(page.indexOf('class="item-says"'), page.indexOf("</p>", page.indexOf('class="item-says"')));
+      expect(says).toContain("We didn't find a recall naming this");
+      expect(says).not.toContain("jjqq");
+      expect(page.indexOf("Checked:")).toBeLessThan(page.indexOf('class="item-says"'));
     });
 
     it("draws what's typed as text, never as markup", async () => {
