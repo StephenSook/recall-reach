@@ -15,11 +15,12 @@ describe("the defects we publish", () => {
     }
   });
 
-  it("doesn't claim to know why the sandbox holds refunds, and says it's still open", () => {
+  it("closes the held refunds only on a measured cause and a refund that completed on the deployed site", () => {
     const pending = DEFECTS.find((d) => /PENDING/.test(d.title));
-    expect(pending?.found).toContain("We don't know why.");
-    expect(pending?.open).toBe(true);
-    expect(pending?.checked).toContain("Still open.");
+    expect(pending?.found).toContain("We didn't know why then.");
+    expect(pending?.changed).toContain("funded");
+    expect(pending?.checked).toContain("its $18 refund read COMPLETED");
+    expect(pending?.open).toBe(false);
   });
 
   it("links each commit, and writes no em dashes", () => {

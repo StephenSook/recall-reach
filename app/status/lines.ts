@@ -28,7 +28,7 @@ export const WHAT_HAPPENS: { when: string; does: string; seen: string }[] = [
   {
     when: "PayPal answers a refund with PENDING",
     does: "The refund page says PayPal hasn't finished it, and the sale doesn't count as refunded.",
-    seen: "Seen on the sandbox from Nov 6, 2026. We don't know why it started. See /evidence/defects.",
+    seen: "Seen on the sandbox from Nov 6, 2026, on an account whose real balance was empty. Since Nov 7 the site runs on a funded one. See /evidence/defects.",
   },
   {
     when: "PayPal gives no clear answer to a refund",
