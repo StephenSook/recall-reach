@@ -12,5 +12,6 @@ export function callDocs(template: string): string | null {
   if (template.startsWith("/v2/payments/")) return `${DOCS}/payments/v2/`;
   if (template.startsWith("/v1/reporting/transactions")) return `${DOCS}/transaction-search/v1/`;
   if (template.startsWith("/v1/customer/disputes")) return `${DOCS}/customer-disputes/v1/`;
+  if (template.startsWith("/v1/payments/payouts")) return `${DOCS}/payments.payouts-batch/v1/`;
   return null;
 }

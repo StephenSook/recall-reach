@@ -7,6 +7,8 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { seedDemoShop } from "../demo/seed";
 import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
+import { verdictFor } from "../match/verdict";
+import { PAST_WINDOW_SAMPLE } from "../paypal/payouts";
 import { loadQueue, toCards } from "../queue/queue";
 import { loadReplay, runReplay } from "./replay";
 
@@ -76,6 +78,17 @@ describe("the published numbers, on CPSC's saved records", () => {
       "27072 MATCH CONFIRMED",
     ]);
   }, 300_000);
+
+  it("the past-window sample is what it says: a real recall, a confirmed title, sold after the recall and past 180 days", async () => {
+    const { rows } = await db.query<{ recall_date: string; title: string; description: string; products: { name: string; model: string; type: string | null; units: string | null }[]; retailers: string[] }>(
+      "select recall_date::text as recall_date, title, description, products, retailers from recalls where recall_number = $1",
+      [PAST_WINDOW_SAMPLE.recallNumber],
+    );
+    expect(rows).toHaveLength(1);
+    expect(verdictFor(rows[0], { title: PAST_WINDOW_SAMPLE.title, orderedOn: PAST_WINDOW_SAMPLE.soldOn })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+    expect(PAST_WINDOW_SAMPLE.soldOn > rows[0].recall_date).toBe(true);
+    expect(Date.parse(TODAY) - Date.parse(PAST_WINDOW_SAMPLE.soldOn)).toBeGreaterThan(180 * 86_400_000);
+  });
 
   it("Replay's split", async () => {
     const { runId } = await runReplay(db, client, { today: TODAY, now: NOW, secret: SECRET });

@@ -13,7 +13,11 @@ import { agentChecked, agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsF
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
+import { readPublicRecall } from "@/server/match/textCheck";
 import { readCalls } from "@/server/paypal/callLog";
+import { PAST_WINDOW_SAMPLE, shopPayout } from "@/server/paypal/payouts";
+import { createContactCipher } from "@/server/privacy/contactCipher";
+import { PastWindowPayout } from "./PastWindowPayout";
 import { readWarningsFor } from "@/server/warnings/warnings";
 import { WarningCards } from "./WarningCards";
 import { CheckWithClaude } from "./CheckWithClaude";
@@ -221,6 +225,19 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
   );
 }
 
+/** Shown only if CPSC's record for the sample's recall is held. A failed read leaves the rest of the queue alone. */
+async function pastWindowFor(shopId: string) {
+  const receiver = process.env.DEMO_PAYOUT_RECEIVER?.trim();
+  if (!receiver) return null;
+  try {
+    const recall = await readPublicRecall(getDb(), PAST_WINDOW_SAMPLE.recallNumber);
+    if (!recall.found) return null;
+    return { product: recall.products[0]?.name ?? recall.title, recalledOn: recall.recallDate, receiver, payout: await shopPayout(getDb(), shopId, createContactCipher(secret("SHOP_DATA_KEY"), shopId)) };
+  } catch {
+    return null;
+  }
+}
+
 export default async function QueuePage({ searchParams }: { searchParams: Promise<{ message?: string | string[]; sig?: string | string[]; answered?: string | string[] }> }) {
   const session = await currentSession();
   if (!session) redirect("/?demo=noqueue");
@@ -231,6 +248,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const calls = await readCalls(getDb(), session.shopId).catch(() => []);
   const warnings = await readWarningsFor(getDb(), session.shopId).catch(() => []);
+  const pastWindow = shop.kind === "DEMO" ? await pastWindowFor(session.shopId) : null;
   const shopName = shop.name;
   const shopKind = shop.kind;
   const { cards: found, cleared, unrelated } = toCards(rows);
@@ -398,6 +416,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </details>
       ) : null}
       <WarningCards warnings={warnings} demo={shop.kind === "DEMO"} />
+      {pastWindow ? <PastWindowPayout product={pastWindow.product} recalledOn={pastWindow.recalledOn} payout={pastWindow.payout} receiver={pastWindow.receiver} /> : null}
       <PayPalCalls calls={calls} />
     </main>
   );

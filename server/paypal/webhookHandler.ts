@@ -1,3 +1,4 @@
+import { recordPayoutItemEvent } from "./payouts";
 import { createHash } from "node:crypto";
 import type { Queryable } from "../db/types";
 import type { RecordKey } from "../privacy/recordKey";
@@ -143,5 +144,6 @@ export async function handleWebhookDelivery(input: {
       `transmission_age_s=${age} duplicate=${duplicate}`,
   );
   if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId) await input.onCaptureCompleted?.(resourceId);
+  if (event.event_type?.startsWith("PAYMENT.PAYOUTS-ITEM.") && event.resource) await recordPayoutItemEvent(input.db, key, event.resource as { payout_batch_id?: unknown; transaction_status?: unknown });
   return { status: 200, body: { received: true, duplicate } };
 }

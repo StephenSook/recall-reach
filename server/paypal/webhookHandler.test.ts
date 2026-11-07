@@ -33,6 +33,31 @@ describe("handleWebhookDelivery", () => {
   const rows = async () =>
     (await db.query<Record<string, unknown>>("select * from paypal_webhook_events order by event_id_hmac")).rows;
 
+  describe("a payment past the refund window", () => {
+    const item = (status: string) => Buffer.from(JSON.stringify({ id: `WH-P-${status}`, event_type: `PAYMENT.PAYOUTS-ITEM.${status}`, resource_type: "payouts_item", create_time: "2026-11-07T12:00:00.000Z", resource: { payout_batch_id: "BATCH-1", transaction_status: status } }));
+    const statusNow = async () => (await db.query<{ status: string }>("select status from payouts")).rows[0].status;
+    beforeEach(async () => {
+      const { rows: shop } = await db.query<{ id: string }>("insert into shops (name, kind) values ('DEMO', 'DEMO') returning id");
+      await db.query(
+        `insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, batch_ref_hmac, expires_at)
+         values ($1, 's', 'k', 'x', 100, 'USD', 'unconfirmed', $2, now())`,
+        [shop[0].id, key("paypal-resource", "BATCH-1")],
+      );
+    });
+
+    it("reads PayPal's item status once the signature is verified", async () => {
+      const raw = item("SUCCESS");
+      await deliver(raw, paypalHeaders(raw, WEBHOOK_ID));
+      expect(await statusNow()).toBe("paid");
+    });
+
+    it("ignores one whose signature fails", async () => {
+      const res = await deliver(item("SUCCESS"), paypalHeaders(item("FAILED"), WEBHOOK_ID));
+      expect(res.status).toBe(401);
+      expect(await statusNow()).toBe("unconfirmed");
+    });
+  });
+
   describe("a completed capture", () => {
     const event = (type: string, id = "WH-CAPTURE-1") => new TextEncoder().encode(JSON.stringify({ id, event_type: type, resource_type: "capture", create_time: "2026-11-06T14:59:50Z", resource: { id: "CAPTURE-1" } }));
     const send = (raw: Uint8Array, onCaptureCompleted: (id: string) => Promise<unknown>, transmission = "t-1") =>

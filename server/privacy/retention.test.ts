@@ -56,7 +56,7 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
        values ('old', 'T', 'self', $1), ('past-cutoff', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
       [hoursAgo(49), hoursAgo(46.1), hoursAgo(45.9)],
     );
-    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_calls: 0, paypal_refund_refs: 0, live_catch_runs: 0 });
+    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_calls: 0, paypal_payout_refs: 0, paypal_refund_refs: 0, live_catch_runs: 0 });
     const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
     expect(kept.rows.map((r) => r.event_id_hmac)).toEqual(["new"]);
   });

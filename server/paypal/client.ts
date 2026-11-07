@@ -9,7 +9,7 @@ import { createTokenProvider, PAYPAL_SANDBOX_BASE, type TokenProvider } from "./
 import { refundReadsThroughServerSdk } from "./sdkRefundRead";
 import { refundsThroughToolkit } from "./toolkitRefund";
 
-const ID_FOLLOWS = new Set(["captures", "refunds", "orders", "authorizations"]);
+const ID_FOLLOWS = new Set(["captures", "refunds", "orders", "authorizations", "payouts"]);
 
 /** A path safe to log: the segment after a resource name is an id, whatever it is made of. Any segment with a digit is too. */
 function pathTemplate(path: string): string {
