@@ -54,7 +54,16 @@ describe("the refresh task's line", () => {
 
   it("says when the task has never run, or is still running", () => {
     expect(task(null)).toMatchObject({ state: "unknown", reading: "No run on record." });
-    expect(task({ taskRunId: null, startedAt: "2026-11-07T09:00:00.000Z", finishedAt: null, outcome: null })).toMatchObject({ state: "unknown", reading: expect.stringMatching(/^Started .+, not finished\.$/) });
+    expect(task({ taskRunId: null, startedAt: "2026-11-07T11:50:00.000Z", finishedAt: null, outcome: null })).toMatchObject({ state: "unknown", reading: expect.stringMatching(/^Started .+, not finished\.$/) });
+  });
+
+  it("calls a run that never finished within the task's 30 minutes a problem, not still running", () => {
+    expect(task({ taskRunId: "trn-x", startedAt: "2026-11-07T11:20:00.000Z", finishedAt: null, outcome: null })).toMatchObject({ state: "problem", reading: expect.stringMatching(/^Started .+, and didn't finish within 30 minutes\.$/) });
+  });
+
+  it("stops calling a finished run ok once it's over 2 days old", () => {
+    const old = { taskRunId: "trn-old", startedAt: "2026-11-05T09:00:00.000Z", finishedAt: "2026-11-05T09:00:02.000Z", outcome: "FRESH" as const };
+    expect(task(old)).toMatchObject({ state: "unknown", reading: expect.stringMatching(/over 2 days ago\./) });
   });
 
   it("says what stands in when its daily start is skipped", () => {

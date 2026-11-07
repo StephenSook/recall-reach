@@ -2,6 +2,7 @@
 // "last read" never passes for "working right now". Only Postgres is asked anything when the page loads.
 import { ranAt } from "@/app/replay/labels";
 import type { Health } from "@/server/health";
+import type { TaskRun } from "@/server/replay/taskRuns";
 
 export type LineState = "ok" | "problem" | "unknown";
 
@@ -40,12 +41,30 @@ const NOT_READ = "Can't tell: this is stored in the database, which did not answ
 
 /** What each outcome of the refresh task means, in the task's own words for it. */
 const TASK_DID = { FRESH: "the numbers were fresh, so it changed nothing", RAN: "it ran Replay again", DISCARDED: "it ran Replay but kept the last run", FAILED: "it failed" } as const;
+/** The task's own 30-minute limit, and a little for the host to start it. */
+const TASK_LIMIT_MS = 35 * 60_000;
+/** The task is started daily and a start can be skipped, so a run older than this says nothing about now. */
+const TASK_STALE_MS = 2 * 24 * 3_600_000;
+
+function taskReading(task: TaskRun | null, checkedAt: string): { state: LineState; reading: string } {
+  if (!task) return { state: "unknown", reading: "No run on record." };
+  const age = Date.parse(checkedAt) - Date.parse(task.startedAt);
+  if (!task.finishedAt) {
+    return age > TASK_LIMIT_MS
+      ? { state: "problem", reading: `Started ${ranAt(task.startedAt)}, and didn't finish within 30 minutes.` }
+      : { state: "unknown", reading: `Started ${ranAt(task.startedAt)}, not finished.` };
+  }
+  const did = `Last run finished ${ranAt(task.finishedAt)}: ${TASK_DID[task.outcome ?? "FAILED"]}.${task.taskRunId ? ` Run ${task.taskRunId}.` : ""}`;
+  if (task.outcome === "FAILED") return { state: "problem", reading: did };
+  if (age > TASK_STALE_MS) return { state: "unknown", reading: `${did} That was over 2 days ago.` };
+  return { state: "ok", reading: did };
+}
 
 export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLine[] {
   const db = h.database.ok;
   const pull = h.cpsc?.lastPull;
   const verified = h.paypal.lastVerifiedWebhookAt;
-  const task = h.replay.lastTaskRun;
+  const task = taskReading(h.replay.lastTaskRun, h.checkedAt);
   const paypalReading = !h.paypal.webhookConfigured ? "Webhook isn't set up, so a delivery can't be verified." : verified ? `Last verified delivery ${ranAt(verified)}.` : "Webhook ID set. No delivery on record.";
   return [
     {
@@ -90,14 +109,8 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
     },
     {
       service: "Replay's daily task",
-      state: !db || !task || !task.finishedAt ? "unknown" : task.outcome === "FAILED" ? "problem" : "ok",
-      reading: !db
-        ? NOT_READ
-        : !task
-          ? "No run on record."
-          : !task.finishedAt
-            ? `Started ${ranAt(task.startedAt)}, not finished.`
-            : `Last run finished ${ranAt(task.finishedAt)}: ${TASK_DID[task.outcome ?? "FAILED"]}.${task.taskRunId ? ` Run ${task.taskRunId}.` : ""}`,
+      state: !db ? "unknown" : task.state,
+      reading: !db ? NOT_READ : task.reading,
       measures:
         "The row the refresh task writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass 28 hours.",
     },
