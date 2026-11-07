@@ -8,7 +8,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { checkRecordWithClaude } from "./checkRecord";
-import { DAILY_CAP_MICROS } from "./claude";
+import { DAILY_CAP_MICROS, OWN_SHOP_CAP_MICROS } from "./claude";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-06T15:00:00Z");
@@ -114,6 +114,51 @@ describe("checking a sale with Claude", () => {
     const { client, requests } = fakeClaude();
     expect(await check(client)).toMatchObject({ overBudget: true });
     expect(requests).toEqual([]);
+  });
+
+  describe("keeping a share of the day back for the demo path", () => {
+    const spend = (micros: number) => db.query("insert into agent_spend (day, cost_micros) values ('2026-11-06', $1)", [micros]);
+    const realShop = async () => {
+      await db.query("update shops set kind = 'REAL' where id = $1", [shopId]);
+    };
+
+    it("stops a shop's own file at its share, with no call made", async () => {
+      await realShop();
+      await spend(OWN_SHOP_CAP_MICROS);
+      const { client, requests } = fakeClaude();
+      expect(await check(client)).toMatchObject({ overBudget: true, unavailable: false });
+      expect(requests).toEqual([]);
+    });
+
+    it("lets a shop's own file spend up to its share", async () => {
+      await realShop();
+      await spend(OWN_SHOP_CAP_MICROS - 1);
+      const { client, requests } = fakeClaude();
+      expect(await check(client)).toMatchObject({ overBudget: false });
+      expect(requests.length).toBeGreaterThan(0);
+    });
+
+    it("still lets the demo shop run past that share", async () => {
+      await spend(OWN_SHOP_CAP_MICROS);
+      const { client, requests } = fakeClaude();
+      expect(await check(client)).toMatchObject({ overBudget: false });
+      expect(requests.length).toBeGreaterThan(0);
+    });
+
+    it("keeps less for shops than the day's cap, so there's something to keep", () => {
+      expect(OWN_SHOP_CAP_MICROS).toBeLessThan(DAILY_CAP_MICROS);
+    });
+
+    it("gives a stored answer even when the whole day is spent, because it costs nothing", async () => {
+      await check(fakeClaude().client);
+      await db.query("update recall_matches set agent_run_id = null");
+      await db.query("update agent_spend set cost_micros = $1", [DAILY_CAP_MICROS]);
+      const again = fakeClaude();
+      expect(await check(again.client)).toMatchObject({ overBudget: false, unavailable: false });
+      expect(again.requests).toEqual([]);
+      const { rows } = await db.query<{ agent_run_id: string | null }>("select agent_run_id from recall_matches where shop_id = $1", [shopId]);
+      expect(rows[0].agent_run_id).not.toBeNull();
+    });
   });
 
   it("does nothing for another shop's sale", async () => {

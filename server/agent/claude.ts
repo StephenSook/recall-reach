@@ -7,6 +7,11 @@ import { businessDay } from "../time/businessDay";
 export const MODEL = "claude-sonnet-5-5";
 export const FALLBACK_MODEL = "claude-haiku-5-5";
 export const DAILY_CAP_MICROS = 5_000_000;
+/**
+ * A shop's own file or store address stops here. Any title can be uploaded, so that path can spend without end, while the
+ * demo shop's cards are fixed and each answer is stored for good. The rest of the day stays for the demo path.
+ */
+export const OWN_SHOP_CAP_MICROS = 4_000_000;
 
 /** Dollars per million tokens is micro-dollars per token. */
 const PRICE: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
