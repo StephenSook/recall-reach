@@ -10,11 +10,15 @@ export type ShopOwnedText = Branded<"shop-owned">;
 /** Words this app wrote in its source. */
 export type OurText = Branded<"ours">;
 
-export type AllowedText = PublicText | ShopOwnedText | OurText;
+/** Words a public store listing carries, from Channel3's search. Never a price: prices stay on the server. */
+export type ListingText = Branded<"listing">;
+
+export type AllowedText = PublicText | ShopOwnedText | OurText | ListingText;
 export type AllowedValue = AllowedText | null | readonly AllowedValue[] | { readonly [key: string]: AllowedValue };
 
 export const publicText = (text: string) => text as PublicText;
 export const shopOwnedText = (text: string) => text as ShopOwnedText;
+export const listingText = (text: string) => text as ListingText;
 
 /** Takes only text fixed in the source. A string read at run time does not compile. */
 export function ourText<T extends string>(text: T & (string extends T ? never : unknown)): OurText {

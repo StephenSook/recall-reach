@@ -126,6 +126,12 @@ export async function checkText(
   };
 }
 
+/**
+ * The results that tie this text to one recall: its model, or its maker and product line. The rest only share a kind of
+ * product with it, which any high chair does with every recalled high chair, so those say nothing about this one.
+ */
+export const namingResults = (answer: Pick<TextCheckAnswer, "results">) => answer.results.filter((r) => r.verdict === "MATCH" || r.strength === "CONFIRMED" || r.strength === "BRAND");
+
 const RECALL_NUMBER = /^[A-Za-z0-9-]{1,16}$/;
 
 export const isRecallNumber = (text: string) => RECALL_NUMBER.test(text);

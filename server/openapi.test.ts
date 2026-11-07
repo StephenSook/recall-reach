@@ -67,9 +67,9 @@ describe("openapi.yaml", () => {
   it("leaves no public GET undocumented", () => {
     const routes = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "app/api"], { encoding: "utf8" })
       .split("\n")
-      // A route under /api/queue answers only a signed-in shop, so it isn't part of the public API. Nor is PayPal's way back
-      // to a demo shop: with no session it sends the visitor home.
-      .filter((f) => f.endsWith("/route.ts") && !f.startsWith("app/api/queue/") && f !== "app/api/demo/buy/paypal/return/route.ts" && /export (async )?function GET\b/.test(readFileSync(f, "utf8")));
+      // A route under /api/queue answers only a signed-in shop, so it isn't part of the public API. Nor are PayPal's ways back
+      // to a demo shop or a sandbox order: they're where PayPal's page sends a person, and nothing a client calls.
+      .filter((f) => f.endsWith("/route.ts") && !f.startsWith("app/api/queue/") && f !== "app/api/demo/buy/paypal/return/route.ts" && f !== "app/api/shopper/return/route.ts" && /export (async )?function GET\b/.test(readFileSync(f, "utf8")));
     expect(routes.length).toBeGreaterThanOrEqual(5);
     expect(routes.sort()).toEqual(Object.keys(spec.paths).filter((p) => spec.paths[p].get).map(routeFile).sort());
   });

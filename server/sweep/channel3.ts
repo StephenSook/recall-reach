@@ -56,26 +56,65 @@ function bounded(fetchImpl: typeof fetch, signal: AbortSignal): typeof fetch {
   return async (url, init) => sizeLimited(await fetchImpl(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }));
 }
 
+/** One call to Channel3, start to finish, on one clock. */
+async function callChannel3<T>(fetchImpl: typeof fetch, timeoutMs: number, name: string, args: Record<string, unknown>, read: (answer: unknown) => T): Promise<T> {
+  const stop = new AbortController();
+  const client = new Client({ name: "recall-reach", version: "1.0.0" });
+  const exchange = async () => {
+    await client.connect(new StreamableHTTPClientTransport(new URL(CHANNEL3_MCP_URL), { fetch: bounded(fetchImpl, stop.signal) }));
+    return read(await client.callTool({ name, arguments: args }));
+  };
+  // A race, not only the abort: this has to end on time even if something ignores the abort.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`gave up on Channel3 after ${timeoutMs} ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([exchange(), late]);
+  } finally {
+    clearTimeout(timer);
+    stop.abort();
+    void client.close().catch(() => {});
+  }
+}
+
 export function channel3Search(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number } = {}): SearchMarket {
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
-  return async (query) => {
-    const stop = new AbortController();
-    const client = new Client({ name: "recall-reach", version: "1.0.0" });
-    const exchange = async () => {
-      await client.connect(new StreamableHTTPClientTransport(new URL(CHANNEL3_MCP_URL), { fetch: bounded(fetchImpl, stop.signal) }));
-      return readAnswer(await client.callTool({ name: "search_products", arguments: { query } }));
-    };
-    // A race, not only the abort: this has to end on time even if something ignores the abort.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`gave up on Channel3 after ${timeoutMs} ms`)), timeoutMs);
-    });
-    try {
-      return await Promise.race([exchange(), late]);
-    } finally {
-      clearTimeout(timer);
-      stop.abort();
-      void client.close().catch(() => {});
-    }
+  return (query) => callChannel3(fetchImpl, timeoutMs, "search_products", { query }, readAnswer);
+}
+
+/** A listing a buyer could choose, with what the shopping agent's server needs and the model never sees: its price. */
+export interface BuyableListing extends MarketListing {
+  priceCents: number;
+  currency: "USD";
+}
+
+/** The lowest in-stock price in dollars. A listing with none can't be offered. The retailers stop here too. */
+function buyable(p: { id?: unknown; title?: unknown; brands?: unknown; offers?: unknown }): BuyableListing | null {
+  if (typeof p?.id !== "string" || !p.id || p.id.length > MAX_ID || typeof p.title !== "string" || !p.title.trim()) return null;
+  const offers = Array.isArray(p.offers) ? (p.offers as { availability?: unknown; price?: { price?: unknown; currency?: unknown } }[]) : [];
+  const prices = offers.flatMap((o) => (o?.availability === "InStock" && o.price?.currency === "USD" && typeof o.price.price === "number" && o.price.price > 0 ? [Math.round(o.price.price * 100)] : []));
+  if (prices.length === 0) return null;
+  const brand = Array.isArray(p.brands) ? (p.brands as { name?: unknown }[]).find((b) => typeof b?.name === "string")?.name : null;
+  return { id: p.id, title: p.title.trim().slice(0, 300), brand: typeof brand === "string" ? brand.slice(0, 120) : null, priceCents: Math.min(...prices), currency: "USD" };
+}
+
+function readBuyable(answer: unknown): BuyableListing[] {
+  const content = (answer as { structuredContent?: { products?: unknown } }).structuredContent;
+  if (!content || !Array.isArray(content.products)) throw new Error("Channel3 answered without a product list");
+  return content.products.flatMap((p: Parameters<typeof buyable>[0]) => buyable(p) ?? []).slice(0, MAX_LISTINGS);
+}
+
+export interface ListingSource {
+  search: (query: string) => Promise<BuyableListing[]>;
+  /** Today's listing, read again. Null if it's gone or can't be bought. */
+  read: (id: string) => Promise<BuyableListing | null>;
+}
+
+export function channel3Listings(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number } = {}): ListingSource {
+  const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
+  return {
+    search: (query) => callChannel3(fetchImpl, timeoutMs, "search_products", { query }, readBuyable),
+    read: (id) => callChannel3(fetchImpl, timeoutMs, "get_products", { product_ids: [id] }, (answer) => readBuyable(answer).find((l) => l.id === id) ?? null),
   };
 }

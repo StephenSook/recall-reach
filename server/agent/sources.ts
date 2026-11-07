@@ -3,7 +3,8 @@
 import { createHash } from "node:crypto";
 import type { RecallProduct } from "../cpsc/schema";
 import type { Queryable } from "../db/types";
-import { publicText, shopOwnedText, type AllowedValue } from "./boundary";
+import type { BuyableListing } from "../sweep/channel3";
+import { listingText, publicText, shopOwnedText, type AllowedValue, type OurText } from "./boundary";
 import { recallWords } from "./quote";
 
 export interface Snapshot {
@@ -110,3 +111,16 @@ export async function searchItems(db: Queryable, shopId: string, query: string):
   );
   return rows.map((r) => ({ record: { kind: r.kind, id: r.id }, text: { title: shopOwnedText(r.title), sku: own(r.sku) } }));
 }
+
+/** What the shopping agent reads about a listing: its words, and never its price. */
+export const listingForClaude = (id: string, listing: Pick<BuyableListing, "title" | "brand">): AllowedValue => ({
+  id: listingText(id),
+  title: listingText(listing.title),
+  brand: listing.brand ? listingText(listing.brand) : null,
+});
+
+/** What the shopping agent reads about a check: the result, and the recalls CPSC published that name the listing. */
+export const checkForClaude = (result: OurText, recalls: { recallNumber: string; title: string }[]): AllowedValue => ({
+  result,
+  recalls: recalls.map((r) => ({ number: publicText(r.recallNumber), title: publicText(r.title) })),
+});

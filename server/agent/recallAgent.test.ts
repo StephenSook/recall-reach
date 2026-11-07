@@ -316,7 +316,7 @@ describe("the recall agent", () => {
       expect(source).not.toMatch(/paypal_|refunds|buyer_email|payment_reference|order_number|unit_price|ordered_on/);
       const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8" }).split("\n").filter((f) => /\.tsx?$/.test(f));
       expect(files.length).toBeGreaterThan(100);
-      const minting = files.filter((f) => !f.endsWith(".test.ts") && f !== "server/agent/boundary.ts" && /\b(publicText|shopOwnedText)\(/.test(readFileSync(f, "utf8")));
+      const minting = files.filter((f) => !f.endsWith(".test.ts") && f !== "server/agent/boundary.ts" && /\b(publicText|shopOwnedText|listingText)\(/.test(readFileSync(f, "utf8")));
       expect(minting).toEqual(["server/agent/sources.ts"]);
     });
 
