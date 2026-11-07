@@ -242,6 +242,17 @@ describe("verdictFor", () => {
         expect(verdictFor(ac, { title: "Midea Window Air Conditioners 1PACU12000 LOT12000" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
       });
 
+      it.each(["12000-BTU", "12000 BTU", "16-OZ", "6-QT", "48-IN"])("a size like %s beside the exact model doesn't stop a confirm, and alone isn't a near-miss", (size) => {
+        const recall = { title: "Acme Recalls Air Conditioners", description: "This recall involves air conditioners, model 1PACU12000.", products: [{ name: "Air Conditioners", model: "", type: null, units: null }], retailers: [] } as never;
+        expect(verdictFor(recall, { title: `Acme air conditioner 1PACU12000 ${size}` })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+        expect(nearMissCodes("This recall involves air conditioners, model 1PACU12000.", `Other heater ${size}`)).toEqual([]);
+      });
+
+      it("a recall's own model shaped like a size is still read as a model", () => {
+        const recall = { title: "Acme Recalls Mixers", description: "This recall involves mixers, model 2279-L.", products: [{ name: "Mixers", model: "", type: null, units: null }], retailers: [] } as never;
+        expect(verdictFor(recall, { title: "Acme mixer 2279-L" })).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED" });
+      });
+
       it("a code opening with a model's digits is a near-miss, and a labelled number isn't", () => {
         expect(nearMissCodes("This recall involves dryers, model BRZ0083.", "Acme dryer 0083XB")).toEqual(["0083XB"]);
         expect(nearMissCodes("This recall involves swings, model A12345.", "Acme swing 12345B")).toEqual(["12345B"]);

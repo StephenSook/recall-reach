@@ -162,7 +162,8 @@ function spacedCodes(upper: string, listed: ReadonlySet<string>, close: (code: s
   for (let i = 0; i + 1 < parts.length; i++) {
     const joined = parts[i] + parts[i + 1];
     // Beside a listed model, the other word is just a word: PAPA03001AI X and SLEEPER PAPA03001AI are that model.
-    if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined)) continue;
+    // Two words that read as a size aren't a code: 12000 BTU.
+    if (listed.has(parts[i]) || listed.has(parts[i + 1]) || listed.has(joined) || !MODEL_TOKEN.test(joined) || UNIT_TOKEN.test(joined)) continue;
     if (close(joined)) found.add(joined);
   }
   return [...found];
@@ -193,8 +194,11 @@ function codesBeside(recallText: string, itemText: string, close: (code: string,
     .map((t) => t.slice(0, MAX_TOKEN));
 }
 
-/** A code about the product and not which unit it is: 2-IN-1, 0-6MONTHS, 12M. Short on purpose, so a model like 1200M isn't one. */
-const FEATURE_CODE = /^(?:\d{1,2}-IN-\d{1,2}|\d{1,2}(?:-\d{1,2})?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?))$/;
+/**
+ * A code about the product and not which unit it is: 2-IN-1, 0-6MONTHS, 12M, 12000-BTU. Short on purpose, so a model like 1200M
+ * isn't one, and it leaves out sizes of one letter, because CPSC's own models end that way: 2279-L, 148012-A.
+ */
+const FEATURE_CODE = /^(?:\d{1,2}-IN-\d{1,2}|\d{1,2}(?:-\d{1,2})?(?:M|MO|MOS|MONTHS?|Y|YR|YRS|YEARS?)|\d+(?:\.\d+)?[-_](?:BTUS?|KW|MAH|OZ|FT|IN|MM|CM|ML|GB|TB|HZ|LBS?|PCS?|PK|QT|CC|HP))$/;
 const SHOP_NUMBER = /^SKU[._/-]?(.*)$/;
 
 /** A feature, or a number the shop labels as its own, unless what follows the label holds a listed model or nearly all of one. */
@@ -252,7 +256,7 @@ const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "k
 /** The words that say what a product is, leaving out who it's for. */
 export const whatItIs = (text: string): string[] => [...words(text)].filter((w) => !WHO_ITS_FOR.has(w));
 
-function words(text: string): Set<string> {
+export function words(text: string): Set<string> {
   const out = new Set<string>();
   for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
     if (raw.length < 2 || STOP_WORDS.has(raw)) continue;
