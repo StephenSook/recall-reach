@@ -65,7 +65,7 @@ async function recheckIfRecallChanged(db: Queryable, input: { shopId: string; ma
 
 export async function prepareNotice(
   db: Queryable,
-  input: { shopId: string; matchId: string },
+  input: { shopId: string; matchId: string; onlyIfMatch?: boolean },
 ): Promise<{ noticeId: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }> {
   if (!UUID.test(input.matchId)) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
   await recheckIfRecallChanged(db, input);
@@ -79,6 +79,8 @@ export async function prepareNotice(
   if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
   refuseWeakEvidence(m);
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
+  // With no person approving this one, a sale that no longer reads as a match goes back to asking the owner.
+  if (input.onlyIfMatch && kind !== "SAFETY_NOTICE") throw new NoticeRefused("NOTHING_TO_SEND", "This sale no longer reads as a match, so it needs you to approve it.");
   const existing = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST"; sent_at: unknown; responded_at: unknown }>(
     "select id, kind, sent_at, responded_at from notices where match_id = $1",
     [input.matchId],
@@ -222,7 +224,7 @@ export async function composeForSeller(
     message = composeSafetyNotice({ ...context, confirmedRefund: r ? refundedAmount(r.amount_cents, r.currency) : undefined });
   }
   const to = n.buyer_email_enc ? input.cipher.open(n.buyer_email_enc) : null;
-  return { to, toSource: to ? "Shop record" : "You add the address", ...message, subject: n.second_prepared_at ? `Second notice: ${message.subject}` : message.subject };
+  return { to, toSource: to ? "Shop record" : "You add the address", ...message, subject: n.second_prepared_at && !n.responded_at ? `Second notice: ${message.subject}` : message.subject };
 }
 
 /** After this long with no answer, the owner can ask for a second notice. A demo shop is deleted long before, and has no shorter clock. */

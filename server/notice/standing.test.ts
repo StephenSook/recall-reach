@@ -87,6 +87,15 @@ describe("what a shop can turn on for one recall, and the second notice", () => 
       expect(notices[0].kind).toBe("SAFETY_NOTICE");
     });
 
+    it("prepares no question when CPSC's change has made a stored match a can't-tell: that one still asks the owner", async () => {
+      await addSales(line({}));
+      await db.query("update recalls set description = description || ' Only units manufactured in January 2026 are included.', raw_sha256 = 'changed' where recall_number = '27072'");
+      await turnOnStanding(db, { shopId, recallNumber: "27072", typed: "27072" });
+      expect(await noticesFor("27072")).toEqual([]);
+      const row = (await loadQueue(db, shopId, "s")).rows.find((r) => r.recallNumber === "27072");
+      expect(row?.notice).toBeNull();
+    });
+
     it("refuses a recall with no sale read as a match, since it would do nothing", async () => {
       await addSales(line({ title: "Baby Brezza SuperFast Sterilizer Dryer" }));
       expect(await code(turnOnStanding(db, { shopId, recallNumber: "27072", typed: "27072" }))).toBe("NOTHING_TO_PREPARE");
@@ -156,6 +165,17 @@ describe("what a shop can turn on for one recall, and the second notice", () => 
       expect(second.subject).toBe(`Second notice: ${first.subject}`);
       expect(second.body).toBe(first.body);
       expect(await noticeRow()).toMatchObject({ secondDue: false, secondPrepared: true, state: "MARKED_SENT" });
+    });
+
+    it("once the family answers, it isn't ready to send any more", async () => {
+      await addSales(line({}));
+      const id = await sentNotice();
+      const first = await compose(id);
+      await age(id, 4);
+      await prepareSecondNotice(db, { shopId, noticeId: id });
+      await db.query("update notices set responded_at = now() where id = $1", [id]);
+      expect(await noticeRow()).toMatchObject({ secondDue: false, secondPrepared: false, state: "FAMILY_RESPONDED" });
+      expect((await compose(id)).subject).toBe(first.subject);
     });
 
     it("isn't offered once the family has answered", async () => {

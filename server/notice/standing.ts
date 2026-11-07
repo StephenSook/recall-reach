@@ -24,7 +24,7 @@ async function prepareFor(db: Queryable, shopId: string, recallId: number): Prom
   const { rows } = await db.query<{ id: string }>(`${MATCHES} and not exists (select 1 from notices n where n.match_id = m.id)`, [shopId, recallId]);
   for (const { id } of rows) {
     try {
-      await prepareNotice(db, { shopId, matchId: id });
+      await prepareNotice(db, { shopId, matchId: id, onlyIfMatch: true });
     } catch (err) {
       if (!(err instanceof NoticeRefused)) throw err;
     }

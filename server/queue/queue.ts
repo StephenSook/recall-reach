@@ -211,7 +211,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             result: (r.check_result as string | null) ?? null,
             daysSinceSent: (r.days_since_sent as number | null) ?? null,
             secondDue: shop.rows[0]?.kind === "REAL" && !r.responded_at && !r.second_prepared_at && r.days_since_sent !== null && Number(r.days_since_sent) >= SECOND_NOTICE_AFTER_DAYS,
-            secondPrepared: Boolean(r.second_prepared_at),
+            secondPrepared: Boolean(r.second_prepared_at) && !r.responded_at,
           }
         : null,
       earlierQuestionResult: (r.earlier_question_result as string | null) ?? null,
