@@ -115,9 +115,21 @@ export function agentHeadline(run: { outcome: string; finding: string | null }):
   return AGENT_HEADLINE[run.finding ?? run.outcome] ?? AGENT_HEADLINE.NO_FINDING;
 }
 
+/** The card's own line. A demo shop's answers are shared, so one made before this shop existed says it's a saved one. */
+export const agentSummary = (run: { outcome: string; finding: string | null; checkedAt: string; saved: boolean }) =>
+  `${agentHeadline(run)}${run.saved ? `. Saved answer from ${ranAt(run.checkedAt)}` : ""}`;
+
 /** A stored answer can be days old, and the main model can hand over to the fallback, so the card says both. */
-export const agentChecked = (run: { model: string; checkedAt: string; fellBack: boolean }) =>
-  `Checked ${ranAt(run.checkedAt)} by ${run.model}${run.fellBack ? ", the fallback model" : ""}`;
+export const agentChecked = (run: { model: string; checkedAt: string; fellBack: boolean; saved: boolean }) =>
+  run.saved
+    ? `Claude's answer from ${ranAt(run.checkedAt)} by ${run.model}${run.fellBack ? ", the fallback model" : ""}, saved and reused: it was made before this shop existed, for the same recall and item text`
+    : `Checked ${ranAt(run.checkedAt)} by ${run.model}${run.fellBack ? ", the fallback model" : ""}`;
+
+/** Claude writes a recall's question once, for its exact text, and every shop's notice for that recall asks it. */
+export const questionSource = (q: { evidence: string; writtenAt?: string | null }) =>
+  q.writtenAt
+    ? `Claude wrote it on ${ranAt(q.writtenAt)}, once for this recall's text, and every shop's notice for this recall asks the same. It rests on CPSC's words: "${q.evidence}"`
+    : `Claude wrote it from CPSC's words, once for this recall's text: "${q.evidence}"`;
 
 /** One step of how it checked. */
 export function traceLine(step: { tool: string; ok: boolean; item?: string; query?: string; found?: number; note?: string }): string {

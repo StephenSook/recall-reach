@@ -9,7 +9,7 @@ import { currentSession, secret } from "@/server/web/http";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
 import { BuyButtons } from "./BuyButtons";
-import { agentChecked, agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
+import { agentChecked, agentSummary, canNotify, CHECK_RESULT, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, paymentLine, NOTICE_STATE, queueCounts, questionSource, REFUND_STATE, saleWaits, sitsApart, splitCounts, traceLine, refundOnOffer } from "./labels";
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
@@ -72,7 +72,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
             {row.question.kind === "written" ? (
               <details data-testid="question-source">
                 <summary>Where this question came from</summary>
-                <p>Claude wrote it from CPSC&apos;s words: &quot;{row.question.evidence}&quot;</p>
+                <p>{questionSource(row.question)}</p>
               </details>
             ) : null}
           </div>
@@ -171,7 +171,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
 
         {row.agent ? (
           <details data-testid="how-it-checked">
-            <summary>{agentHeadline(row.agent)}</summary>
+            <summary>{agentSummary(row.agent)}</summary>
             {row.agent.reason ? <p>{row.agent.reason}</p> : null}
             {row.agent.missingField ? <p>Missing: {row.agent.missingField}</p> : null}
             {row.agent.evidence.length > 0 ? (

@@ -110,7 +110,7 @@ describe("checkQuestion", () => {
     const written = { question: "Does your high chair turn into a table and chair set?", evidence: "convert into a table and chair set", everyRecalledUnit: true, accepted: true };
 
     it("is asked while the words it rests on are in CPSC's text", () => {
-      expect(checkQuestion(recall("27040"), written)).toEqual({ question: written.question, kind: "written", evidence: written.evidence, noRulesOut: true });
+      expect(checkQuestion(recall("27040"), written)).toEqual({ question: written.question, kind: "written", evidence: written.evidence, noRulesOut: true, writtenAt: null });
     });
 
     it("is not asked once those words are gone: a question can't outlive its source", () => {

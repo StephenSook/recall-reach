@@ -72,6 +72,8 @@ export type CheckQuestion =
       evidence: string;
       /** A person accepted it and every recalled unit has this trait, so a no sets this product apart. */
       noRulesOut: boolean;
+      /** When Claude wrote it, once for this recall's text, if known. */
+      writtenAt?: string | null;
     };
 
 /**
@@ -85,7 +87,7 @@ export function checkQuestion(
   // With CPSC's list elsewhere no answer about a feature can settle it, so only the page with the list is worth asking about.
   const full = fullScopeInRecord(recall);
   if (full && written && quoted(recallWords(recall), written.evidence)) {
-    return { question: written.question, kind: "written", evidence: written.evidence, noRulesOut: written.everyRecalledUnit && written.accepted };
+    return { question: written.question, kind: "written", evidence: written.evidence, noRulesOut: written.everyRecalledUnit && written.accepted, writtenAt: written.writtenAt ?? null };
   }
   // A partial list would read as "yours isn't on it", so it says all CPSC names when it says any.
   const text = `${recall.title} ${recall.description}`;

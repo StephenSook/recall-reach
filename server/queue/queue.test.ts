@@ -162,7 +162,7 @@ describe("loadQueue", () => {
 
     it("shows the one Claude wrote, with the CPSC words it rests on", async () => {
       await write();
-      expect((await row("27040")).question).toMatchObject({ question: WRITTEN, kind: "written", evidence: "convert into a table and chair set" });
+      expect((await row("27040")).question).toMatchObject({ question: WRITTEN, kind: "written", evidence: "convert into a table and chair set", writtenAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) });
     });
 
     it("has no question for a confirmed match: that gets a safety notice", async () => {
@@ -215,7 +215,14 @@ describe("loadQueue", () => {
         model: "claude-sonnet-5-5",
         checkedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         fellBack: false,
+        saved: false,
       });
+    });
+
+    it("calls an answer made before this shop existed a saved one, so it can't pass for a fresh check", async () => {
+      await addRun();
+      await db.query("update agent_runs set created_at = (select created_at - interval '1 day' from shops where id = $1)", [shopId]);
+      expect((await row("27040")).agent).toMatchObject({ saved: true });
     });
 
     it("says when another model answered, not the main one", async () => {

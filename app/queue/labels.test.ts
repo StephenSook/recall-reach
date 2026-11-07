@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentChecked, agentHeadline, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, refundOnOffer, saleWaits, sitsApart, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
+import { agentChecked, agentHeadline, agentSummary, chipClass, chipsFor, counted, coverageLine, listingCounts, listingCoverageLine, needsApproval, pathNow, paymentLine, queueCounts, questionSource, refundOnOffer, saleWaits, sitsApart, splitCounts, stateChip, traceLine, waitsOnSeller } from "./labels";
 
 const row = (over: Partial<Parameters<typeof chipsFor>[0]> = {}) => ({
   verdict: "MATCH" as const,
@@ -408,10 +408,28 @@ describe("when Claude read it, and which model", () => {
   const at = "2026-11-06T20:30:00.000Z";
 
   it("says when, so a stored answer doesn't pass for a new one", () => {
-    expect(agentChecked({ model: "claude-sonnet-5-5", checkedAt: at, fellBack: false })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-sonnet-5-5");
+    expect(agentChecked({ model: "claude-sonnet-5-5", checkedAt: at, fellBack: false, saved: false })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-sonnet-5-5");
   });
 
   it("says so when the fallback model answered", () => {
-    expect(agentChecked({ model: "claude-haiku-5-5", checkedAt: at, fellBack: true })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-haiku-5-5, the fallback model");
+    expect(agentChecked({ model: "claude-haiku-5-5", checkedAt: at, fellBack: true, saved: false })).toBe("Checked Nov 6, 2026, 3:30 PM ET by claude-haiku-5-5, the fallback model");
+  });
+
+  it("says an answer made before this shop existed was saved and reused, on the card's own line", () => {
+    const run = { outcome: "FINDING", finding: "SAME_PRODUCT", model: "claude-sonnet-5-5", checkedAt: at, fellBack: false, saved: true };
+    expect(agentSummary(run)).toBe("Claude: the words point to this product. Saved answer from Nov 6, 2026, 3:30 PM ET");
+    expect(agentChecked(run)).toBe(
+      "Claude's answer from Nov 6, 2026, 3:30 PM ET by claude-sonnet-5-5, saved and reused: it was made before this shop existed, for the same recall and item text",
+    );
+    expect(agentSummary({ ...run, saved: false })).toBe("Claude: the words point to this product");
+  });
+});
+
+describe("where a family's question came from", () => {
+  it("says when Claude wrote it, and that every shop with this recall asks the same", () => {
+    expect(questionSource({ evidence: "Model 7928", writtenAt: "2026-11-06T20:30:00.000Z" })).toBe(
+      'Claude wrote it on Nov 6, 2026, 3:30 PM ET, once for this recall\'s text, and every shop\'s notice for this recall asks the same. It rests on CPSC\'s words: "Model 7928"',
+    );
+    expect(questionSource({ evidence: "Model 7928", writtenAt: null })).toBe('Claude wrote it from CPSC\'s words, once for this recall\'s text: "Model 7928"');
   });
 });

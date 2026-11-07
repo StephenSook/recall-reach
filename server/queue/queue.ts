@@ -26,6 +26,8 @@ export interface AgentFinding {
   checkedAt: string;
   /** Another model answered, not the main one. */
   fellBack: boolean;
+  /** Made before this shop existed. A demo shop's answers are shared, so this one was saved and reused, not asked now. */
+  saved: boolean;
 }
 
 export interface QueueRow {
@@ -109,7 +111,7 @@ const VERDICT_ORDER = { MATCH: 0, SCOPE_GAP: 1, CLEARED: 2 } as const;
 function askedFor(r: Record<string, unknown>): CheckQuestion | null {
   if (r.verdict !== "SCOPE_GAP" || !r.order_line_id) return null;
   const stored: WrittenQuestion | null = r.stored_question
-    ? { question: String(r.stored_question), evidence: String(r.stored_evidence), everyRecalledUnit: Boolean(r.stored_every), accepted: r.stored_review === "ACCEPTED" }
+    ? { question: String(r.stored_question), evidence: String(r.stored_evidence), everyRecalledUnit: Boolean(r.stored_every), accepted: r.stored_review === "ACCEPTED", writtenAt: r.stored_at ? new Date(r.stored_at as string).toISOString() : null }
     : null;
   const written = r.notice_kind === "CHECK_REQUEST" ? (r.written_question as WrittenQuestion | null) : stored;
   return checkQuestion(
@@ -127,6 +129,8 @@ function askedFor(r: Record<string, unknown>): CheckQuestion | null {
 
 export async function loadQueue(db: Queryable, shopId: string, sessionId: string): Promise<QueueData> {
   const shop = await db.query<{ name: string; kind: string }>("select name, kind from shops where id = $1", [shopId]);
+  const made = await db.query<{ created_at: unknown }>("select created_at from shops where id = $1", [shopId]);
+  const shopMadeAt = made.rows[0] ? new Date(made.rows[0].created_at as string).getTime() : null;
   const run = await db.query<{
     recalls_checked: number;
     searched_from: string | null;
@@ -149,7 +153,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
             n.written_question,
             extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
-            q.question as stored_question, q.evidence as stored_evidence, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
+            q.question as stored_question, q.evidence as stored_evidence, q.created_at as stored_at, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
             coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
@@ -258,6 +262,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
         model: String(r.run_model),
         checkedAt: new Date(r.run_created_at as string).toISOString(),
         fellBack: r.run_model !== MODEL,
+        saved: shopMadeAt !== null && new Date(r.run_created_at as string).getTime() < shopMadeAt,
       };
     }),
   );

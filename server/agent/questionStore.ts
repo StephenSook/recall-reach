@@ -16,6 +16,8 @@ export interface WrittenQuestion {
   everyRecalledUnit: boolean;
   /** A person read it and accepted it. */
   accepted: boolean;
+  /** When Claude wrote it. A copy frozen into a notice may not say. */
+  writtenAt?: string | null;
 }
 
 /** Null if none was written for this exact CPSC text, or a person rejected it. */
