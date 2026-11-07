@@ -16,6 +16,7 @@ import { NoticeActions } from "./NoticeActions";
 import { readCalls } from "@/server/paypal/callLog";
 import { readWarningsFor } from "@/server/warnings/warnings";
 import { WarningCards } from "./WarningCards";
+import { CheckWithClaude } from "./CheckWithClaude";
 import { PayPalCalls } from "./PayPalCalls";
 import { PushRegister } from "./PushRegister";
 import { SellerAnswerForm } from "./SellerAnswerForm";
@@ -83,12 +84,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered }: 
               </form>
             ) : null}
             {canAskClaude ? (
-              <form action={`/api/queue/agent${here}`} method="post">
-                <input type="hidden" name="recordId" value={row.recordId} />
-                <button type="submit" className="btn btn-outline">
-                  Check with Claude
-                </button>
-              </form>
+              <CheckWithClaude recordId={row.recordId} here={here} />
             ) : null}
           </div>
         ) : null}
