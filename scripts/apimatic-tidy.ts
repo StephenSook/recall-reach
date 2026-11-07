@@ -6,16 +6,28 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 
 const BANNED = /[\u2013\u2014\u2018\u2019\u201c\u201d]/g;
-/** A dash with words on both sides: "referenced, run". A dash alone in a table cell is a minus, not a pause. */
-const BETWEEN_WORDS = /(?<=[\p{L}\p{N}`)\]*_]) +\u2014 +(?=[\p{L}\p{N}`(\[*_])/gu;
+/** A dash between words, with its spaces: "referenced, run". In a page and in the script that draws it alike. */
+const BETWEEN_WORDS = / +\u2014 +/g;
+/** A dash alone in a Markdown table cell is a minus, not a pause. */
+const TABLE_CELL = /\| *\u2014 *(?=\|)/g;
+/** A character standing alone in a script, as in a table of HTML entities: code, so it keeps its value. */
+const ALONE_IN_SCRIPT = /`([\u2013\u2014\u2018\u2019\u201c\u201d])`/g;
+const DASHES = /[\u2013\u2014]/g;
 const PLAIN: Record<string, string> = { "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"' };
 const TEXT = new Set([".md", ".mdx", ".txt", ".html", ".xml", ".ts", ".json", ".js", ".mjs", ".css", ".map"]);
 
 const hex = (ch: string) => ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
 
 export function tidy(text: string, ext: string): string {
-  const prose = text.replace(BETWEEN_WORDS, ", ");
-  if (ext === ".js" || ext === ".mjs" || ext === ".map") return prose.replace(BANNED, (ch) => `\\u${hex(ch)}`);
+  const prose = text.replace(TABLE_CELL, "| - ").replace(BETWEEN_WORDS, ", ");
+  if (ext === ".js" || ext === ".mjs" || ext === ".map") {
+    // A dash left over reads as a minus in the page as well as here. A curly quote keeps its value, as its escape, since a
+    // straight one could close the string it sits in.
+    return prose
+      .replace(ALONE_IN_SCRIPT, (_all, ch: string) => `\`\\u${hex(ch)}\``)
+      .replace(DASHES, "-")
+      .replace(BANNED, (ch) => `\\u${hex(ch)}`);
+  }
   if (ext === ".css") return prose.replace(BANNED, (ch) => `\\${hex(ch)}`);
   // In JSON a straight double quote would end the string it's in.
   if (ext === ".json") return prose.replace(BANNED, (ch) => (ch === "\u201c" || ch === "\u201d" ? '\\"' : PLAIN[ch]));

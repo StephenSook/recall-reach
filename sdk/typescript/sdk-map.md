@@ -199,7 +199,7 @@ try {
   }).asApiResult();
   // TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
   if (result.ok) {
-    // TODO: Use 'result.value' - what this operation resolves to
+    // TODO: Use 'result.value', what this operation resolves to
   } else {
     // TODO: Use 'result.message', 'result.method' and 'result.uri', and narrow 'result.payload'
   }

@@ -24,7 +24,7 @@ import { RecallReachPublicApiClient } from "recall-reach-public-api";
 const client = new RecallReachPublicApiClient({});
 \`\`\`
 
-Nothing in \`ClientOptions\` is required \u2014 \`new RecallReachPublicApiClient()\` compiles, and each option left out falls back to its default. This API declares one environment, so there is no environment to select and no host to state at the construction site.
+Nothing in \`ClientOptions\` is required, \`new RecallReachPublicApiClient()\` compiles, and each option left out falls back to its default. This API declares one environment, so there is no environment to select and no host to state at the construction site.
 
 ### From CommonJS [#from-commonjs]
 

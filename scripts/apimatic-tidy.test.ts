@@ -9,7 +9,8 @@ describe("tidying what APIMatic generates", () => {
   it("turns a dash between words into a comma, in prose", () => {
     expect(tidy("before it can be referenced \u2014 run its build", ".md")).toBe("before it can be referenced, run its build");
     expect(tidy("is required \u2014 `new X()` compiles \u2014 and each", ".md")).toBe("is required, `new X()` compiles, and each");
-    expect(tidy("a cell: \u2014 | and 1\u20132", ".md")).toBe("a cell: - | and 1-2");
+    expect(tidy("| a | \u2014 |", ".md")).toBe("| a | - |");
+    expect(tidy("pages 1\u20132", ".md")).toBe("pages 1-2");
     expect(tidy("\u201cquoted\u201d and it\u2019s", ".md")).toBe('"quoted" and it\'s');
   });
 
@@ -18,6 +19,14 @@ describe("tidying what APIMatic generates", () => {
     expect(tidy("'it\u2019s not open'", ".js")).toBe("'it\\u2019s not open'");
     expect(tidy("children:'can be referenced \u2014 run its build'", ".js")).toBe("children:'can be referenced, run its build'");
     expect(tidy('quotes:"\u201c""\u201d"', ".css")).toBe('quotes:"\\201C""\\201D"');
+  });
+
+  it("reads the same in a page and in the script that draws it, so the page doesn't redraw itself", () => {
+    const words = " is required \u2014 ";
+    expect(tidy(`<p>Nothing${words}<code>x</code></p>`, ".html")).toBe("<p>Nothing is required, <code>x</code></p>");
+    expect(tidy(`children:["Nothing${words}",code]`, ".js")).toBe('children:["Nothing is required, ",code]');
+    expect(tidy("<td>\u2014</td>", ".html")).toBe("<td>-</td>");
+    expect(tidy('children:"\u2014"', ".js")).toBe('children:"-"');
   });
 
   it("keeps JSON valid", () => {
