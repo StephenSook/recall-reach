@@ -179,6 +179,9 @@ small,
 }
 
 /* The page frame */
+.calls-scroll {
+  overflow-x: auto;
+}
 .site-header {
   background: var(--color-paper);
   border-bottom: 2px solid var(--color-ink);

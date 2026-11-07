@@ -41,7 +41,8 @@ export function refundReadsThroughServerSdk(
     const payments = new PaymentsController(sdkClient(accessToken, opts.timeoutMs ?? TIMEOUT_MS));
     try {
       const answer = await payments.getRefund({ refundId: decodeURIComponent(read[1]) }, { abortSignal: init?.signal ?? undefined });
-      return new Response(String(answer.body), { status: answer.statusCode, headers: { "content-type": "application/json" } });
+      const debugId = answer.headers?.["paypal-debug-id"];
+      return new Response(String(answer.body), { status: answer.statusCode, headers: { "content-type": "application/json", ...(debugId ? { "paypal-debug-id": debugId } : {}) } });
     } catch (err) {
       // An answer from PayPal, good or bad, is handled above like any other.
       if (err instanceof ApiError) return new Response(typeof err.body === "string" ? err.body : "", { status: err.statusCode, headers: { "content-type": "application/json" } });

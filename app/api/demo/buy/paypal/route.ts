@@ -1,5 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { LiveSaleRefused, startPayPalBuy } from "@/server/demo/liveCatch";
+import { withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { baseUrl, currentSession, fromThisSite, refused, secret, withMessage } from "@/server/web/http";
 import { createRateLimiter } from "@/server/web/rateLimit";
@@ -16,13 +17,13 @@ export async function POST(request: Request): Promise<Response> {
   if (!perShop(session.shopId) || !everyone("all")) return withMessage(request, "Too many sales from this shop. Try again in a while.");
   const form = await request.formData();
   try {
-    const { approveUrl } = await startPayPalBuy(getDb(), payPalClientFromEnv(), {
+    const { approveUrl } = await withCallLog(getDb(), session.shopId, () => startPayPalBuy(getDb(), payPalClientFromEnv(), {
       shopId: session.shopId,
       sessionId: session.sessionId,
       shopItemId: String(form.get("shopItemId") ?? ""),
       siteUrl: baseUrl(request),
       sessionSecret: secret("SESSION_SECRET"),
-    });
+    }));
     return new Response(null, { status: 303, headers: { Location: approveUrl } });
   } catch (err) {
     if (err instanceof LiveSaleRefused) return withMessage(request, err.message);

@@ -4,6 +4,7 @@
 // retried (up to 3 attempts, with backoff) only for requests that are safe to repeat: GETs, and
 // POSTs that carry a PayPal-Request-Id, which PayPal uses to return the original result instead of
 // acting twice (measured 2026-11-05 on a refund: same id, same refund). Nothing here logs.
+import { noteCall } from "./callLog";
 import { createTokenProvider, PAYPAL_SANDBOX_BASE, type TokenProvider } from "./token";
 import { refundReadsThroughServerSdk } from "./sdkRefundRead";
 import { refundsThroughToolkit } from "./toolkitRefund";
@@ -102,6 +103,7 @@ export function createPayPalClient(opts: {
           if (ro.body !== undefined) headers["Content-Type"] = "application/json";
           if (ro.requestId) headers["PayPal-Request-Id"] = ro.requestId;
 
+          const askedAt = Date.now();
           let res: Response;
           try {
             res = await fetchImpl(url.toString(), {
@@ -114,6 +116,8 @@ export function createPayPalClient(opts: {
           } catch (err) {
             throw new Retryable(err);
           }
+
+          noteCall({ method, template: pathTemplate(path), status: res.status, ms: Date.now() - askedAt, debugId: res.headers.get("paypal-debug-id") });
 
           if (res.status === 401 && !refreshedAfter401) {
             refreshedAfter401 = true;

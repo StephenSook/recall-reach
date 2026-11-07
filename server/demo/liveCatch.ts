@@ -6,6 +6,7 @@ import type { ImportedOrderLine } from "../import/shopExport";
 import { storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import type { PayPalClient } from "../paypal/client";
+import { callsBelongTo } from "../paypal/callLog";
 import { captureOrder, createCardOrder, createPayPalOrder, getOrder, orderIdOfCapture } from "../paypal/orders";
 import { createContactCipher } from "../privacy/contactCipher";
 import { pushNewCards } from "../push/push";
@@ -194,6 +195,7 @@ export async function catchLiveSale(db: Db, client: PayPalClient, input: { captu
   const { rows } = await db.query<{ id: string; shop_id: string }>("select id, shop_id from order_lines where order_number = $1 and live_sale", [order.invoiceId]);
   const line = rows[0];
   if (!line) return "NOT_A_LIVE_SALE";
+  callsBelongTo(line.shop_id);
   const capture = order.capture;
   if (capture?.id !== input.captureId || capture.status !== "COMPLETED") return "NOT_COMPLETED";
 

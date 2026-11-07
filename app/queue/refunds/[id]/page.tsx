@@ -1,11 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
+import { readCalls, withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv, PayPalApiError } from "@/server/paypal/client";
 import { centsToValue } from "@/server/paypal/orders";
 import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { currentSession } from "@/server/web/http";
 import { LookAgain } from "../../LookAgain";
+import { PayPalCalls } from "../../PayPalCalls";
 
 export const dynamic = "force-dynamic";
 
@@ -96,12 +98,13 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   const client = payPalClientFromEnv();
   let rec: Reconciliation | null = null;
   try {
-    rec = await readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey });
+    rec = await withCallLog(db, session.shopId, () => readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey }));
   } catch (err) {
     if (err instanceof RefundRefused) notFound();
     // A passing failure shouldn't take the page away from someone, least of all when the page looked again by itself.
     console.error("refund page could not read its records:", err instanceof PayPalApiError ? err.message : err instanceof Error ? err.name : "unknown error");
   }
+  const calls = await readCalls(db, session.shopId).catch(() => []);
   // One page whichever happened, so LookAgain stays mounted and its time limit holds.
   const looking = !rec || (!rec.webhook.seen && rec.ledger.status !== "failed");
   return (
@@ -121,6 +124,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       <p>
         <a href={rec?.matchId ? `/queue#sale-${rec.matchId}` : "/queue"}>Back to the queue</a>
       </p>
+      <PayPalCalls calls={calls} />
     </main>
   );
 }

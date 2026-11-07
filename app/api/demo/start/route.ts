@@ -1,5 +1,6 @@
 import { seedDemoShop } from "@/server/demo/seed";
 import { getDb } from "@/server/db/pg";
+import { callsBelongTo, withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { businessDay } from "@/server/time/businessDay";
 import { fromThisSite, refused, secret, seeOther, signIn } from "@/server/web/http";
@@ -16,10 +17,14 @@ export async function POST(request: Request): Promise<Response> {
   const visitor = clientIp(request.headers);
   if (!visitor || !perVisitor(visitor) || !everyone("all")) return seeOther(request, "/?demo=busy");
   try {
-    const { shopId } = await seedDemoShop(getDb(), payPalClientFromEnv(), {
-      today: businessDay(),
-      secret: secret("SHOP_DATA_KEY"),
-      demoEmail: process.env.DEMO_BUYER_EMAIL || undefined,
+    const { shopId } = await withCallLog(getDb(), null, async () => {
+      const seeded = await seedDemoShop(getDb(), payPalClientFromEnv(), {
+        today: businessDay(),
+        secret: secret("SHOP_DATA_KEY"),
+        demoEmail: process.env.DEMO_BUYER_EMAIL || undefined,
+      });
+      callsBelongTo(seeded.shopId);
+      return seeded;
     });
     return signIn(request, seeOther(request, "/queue"), shopId);
   } catch (err) {

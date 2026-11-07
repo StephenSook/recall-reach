@@ -1,4 +1,5 @@
 import { getDb } from "@/server/db/pg";
+import { withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { askPayPalAgain, RefundRefused } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
@@ -14,7 +15,7 @@ export async function POST(request: Request): Promise<Response> {
   const form = await request.formData();
   const refundId = String(form.get("refundId") ?? "");
   try {
-    await askPayPalAgain(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId, recordKey });
+    await withCallLog(getDb(), session.shopId, () => askPayPalAgain(getDb(), payPalClientFromEnv(), { shopId: session.shopId, refundId, recordKey }));
     return seeOther(request, `/queue/refunds/${refundId}`);
   } catch (err) {
     if (err instanceof RefundRefused) return withMessage(request, err.message);

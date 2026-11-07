@@ -1,5 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { finishPayPalBuy, LiveSaleRefused } from "@/server/demo/liveCatch";
+import { withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { businessDay } from "@/server/time/businessDay";
 import { currentSession, secret, seeOther, withMessage } from "@/server/web/http";
@@ -14,7 +15,7 @@ export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   if (params.has("cancelled")) return withMessage(request, "You cancelled at PayPal. Nothing was sold.");
   try {
-    await finishPayPalBuy(getDb(), payPalClientFromEnv(), {
+    await withCallLog(getDb(), session.shopId, () => finishPayPalBuy(getDb(), payPalClientFromEnv(), {
       shopId: session.shopId,
       sessionId: session.sessionId,
       state: params.get("state") ?? "",
@@ -23,7 +24,7 @@ export async function GET(request: Request): Promise<Response> {
       secret: secret("SHOP_DATA_KEY"),
       sessionSecret: secret("SESSION_SECRET"),
       demoEmail: process.env.DEMO_BUYER_EMAIL || undefined,
-    });
+    }));
     return seeOther(request, "/queue");
   } catch (err) {
     if (err instanceof LiveSaleRefused) return withMessage(request, err.message);

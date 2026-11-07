@@ -1,4 +1,5 @@
 import { getDb } from "@/server/db/pg";
+import { withCallLog } from "@/server/paypal/callLog";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { approveRefund, RefundRefused } from "@/server/paypal/refunds";
 import { currentSession, fromThisSite, refused, seeOther, withMessage } from "@/server/web/http";
@@ -11,7 +12,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!session || !fromThisSite(request)) return refused(401, "sign in as a shop first");
   const form = await request.formData();
   try {
-    await approveRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, sessionId: session.sessionId, matchId: String(form.get("matchId") ?? "") });
+    await withCallLog(getDb(), session.shopId, () => approveRefund(getDb(), payPalClientFromEnv(), { shopId: session.shopId, sessionId: session.sessionId, matchId: String(form.get("matchId") ?? "") }));
     return seeOther(request, "/queue");
   } catch (err) {
     if (err instanceof RefundRefused) return withMessage(request, err.message);

@@ -121,6 +121,16 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "PayPal call panel",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "server/paypal/client.ts", call: "noteCall" },
+      { file: "app/queue/refunds/[id]/page.tsx", find: "<PayPalCalls" },
+      { file: "app/queue/page.tsx", find: "<PayPalCalls" },
+    ],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,

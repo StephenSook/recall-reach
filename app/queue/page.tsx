@@ -13,6 +13,8 @@ import { agentChecked, agentHeadline, canNotify, CHECK_RESULT, chipClass, chipsF
 import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
+import { readCalls } from "@/server/paypal/callLog";
+import { PayPalCalls } from "./PayPalCalls";
 import { PushRegister } from "./PushRegister";
 import { SellerAnswerForm } from "./SellerAnswerForm";
 import { RefundForm } from "./RefundForm";
@@ -229,6 +231,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   if (!shop) redirect("/");
   const params = await searchParams;
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
+  const calls = await readCalls(getDb(), session.shopId).catch(() => []);
   const shopName = shop.name;
   const shopKind = shop.kind;
   const { cards: found, cleared, unrelated } = toCards(rows);
@@ -395,6 +398,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </form>
         </details>
       ) : null}
+      <PayPalCalls calls={calls} />
     </main>
   );
 }
