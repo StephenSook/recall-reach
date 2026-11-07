@@ -196,7 +196,11 @@ export const CLAIMS: Claim[] = [
     name: "PayPal reached from one folder",
     status: "claimed",
     feature: true,
-    evidence: [{ file: "server/paypal/boundary.test.ts", find: "gives Claude's code no way to PayPal's" }],
+    evidence: [
+      { file: "server/paypal/boundary.test.ts", find: "names PayPal's API hosts only in server/paypal" },
+      { file: "server/paypal/boundary.test.ts", find: "imports the Toolkit and the Server SDK only in server/paypal" },
+      { file: "server/paypal/boundary.test.ts", find: "keeps PayPal's code out of what builds Claude's requests, through any chain of imports" },
+    ],
   },
   {
     name: "Published numbers tested on saved records",
