@@ -1358,6 +1358,20 @@ describe("refunds", () => {
       expect(await refusal(again(r.refundId, fakePayPal().client, LATER))).toBe("PAYMENT_DISPUTED");
     });
 
+    it("sends nothing if another request saw a dispute while this one was still checking", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      const pp = fakePayPal();
+      const beaten: PayPalClient = {
+        request: (async (method: "GET" | "POST" | "PATCH", path: string, opts?: Parameters<PayPalClient["request"]>[2]) => {
+          const answer = await pp.client.request(method, path, opts);
+          if (path.startsWith("/v1/customer/disputes")) await db.query("update refunds set dispute_seen_at = $2::timestamptz where id = $1", [r.refundId, LATER.toISOString()]);
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      expect(await refusal(again(r.refundId, beaten, LATER))).toBe("PAYMENT_DISPUTED");
+      expect(pp.posts()).toEqual([]);
+    });
+
     it("finds a refund that landed when every answer was lost, and makes no second refund", async () => {
       const { r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
       const first = pp.posts()[0];

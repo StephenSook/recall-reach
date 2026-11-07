@@ -467,7 +467,7 @@ async function sendRefund(
   const realSendAt = Date.now(); // read before any waiting, so a pause below cannot move the deadline
   const sending = await db.query<{ send_lease_until: Date }>(
     `update refunds set status = 'unconfirmed', updated_at = $3::timestamptz
-     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $4::timestamptz
+     where id = $1 and send_lease_id = $2 and status in ('reserved', 'unconfirmed') and send_lease_until > $4::timestamptz and dispute_seen_at is null
      returning send_lease_until`,
     [send.rowId, send.holder, new Date(sendAt).toISOString(), new Date(sendAt + LAST_ATTEMPT_MS).toISOString()],
   );
@@ -584,16 +584,17 @@ export async function askPayPalAgain(
   const claimed = await db.query<{ send_lease_id: string }>(
     `update refunds set send_lease_until = $2::timestamptz, send_lease_id = gen_random_uuid(), updated_at = $3::timestamptz
      where id = $1 and status = 'unconfirmed' and (send_lease_until is null or send_lease_until <= $3::timestamptz)
-       and seller_sent_to_paypal_at is null and repeat_refused_at is null
+       and seller_sent_to_paypal_at is null and repeat_refused_at is null and dispute_seen_at is null
      returning send_lease_id`,
     [input.refundId, leaseEnd(startedAt, now), claimAt],
   );
   const holder = claimed.rows[0]?.send_lease_id;
   if (!holder) {
-    const { rows: latest } = await db.query<{ seller_sent_to_paypal_at: Date | null; repeat_refused_at: Date | null }>(
-      "select seller_sent_to_paypal_at, repeat_refused_at from refunds where id = $1",
+    const { rows: latest } = await db.query<{ seller_sent_to_paypal_at: Date | null; repeat_refused_at: Date | null; dispute_seen_at: Date | null }>(
+      "select seller_sent_to_paypal_at, repeat_refused_at, dispute_seen_at from refunds where id = $1",
       [input.refundId],
     );
+    if (latest[0].dispute_seen_at) throw disputedAgain();
     if (latest[0].seller_sent_to_paypal_at || latest[0].repeat_refused_at) throw checkInPayPal();
     throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
   }
