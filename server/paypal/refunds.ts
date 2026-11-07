@@ -567,7 +567,13 @@ export async function askPayPalAgain(
     throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
   }
   refusePaymentDates(capture, recallDate, now);
-  await refuseDisputed(client, row.capture_id);
+  // The first request may have landed, so this can't say nothing was refunded. A dispute settles it: the owner looks in PayPal.
+  const dispute = await disputeOnCapture(client, row.capture_id);
+  if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so this wasn't sent again. Please try again.");
+  if (dispute === "DISPUTED") {
+    await db.query("update refunds set seller_sent_to_paypal_at = coalesce(seller_sent_to_paypal_at, $2::timestamptz) where id = $1 and status = 'unconfirmed'", [input.refundId, now.toISOString()]);
+    throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+  }
 
   // Those checks can take minutes, so the limit and the lease are read on the clock as it stands now.
   const claimAt = timeSince(startedAt, now);

@@ -1335,8 +1335,26 @@ describe("refunds", () => {
     it("sends nothing again if the disputes can't be read", async () => {
       const { r } = await noClearAnswer(["lost", "lost", "lost"]);
       const down = fakePayPal({ disputes: "down" });
-      expect(await refusal(again(r.refundId, down.client, LATER))).toBe("DISPUTES_UNREADABLE");
+      const refused = await again(r.refundId, down.client, LATER).catch((err: RefundRefused) => err);
+      expect(refused).toBeInstanceOf(RefundRefused);
+      expect((refused as RefundRefused).code).toBe("DISPUTES_UNREADABLE");
       expect(down.posts()).toEqual([]);
+    });
+
+    it("doesn't say nothing was refunded when the first request may have landed", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      const refused = await again(r.refundId, fakePayPal({ disputes: "down" }).client, LATER).catch((err: RefundRefused) => err);
+      expect((refused as RefundRefused).message).not.toMatch(/nothing was refunded/i);
+      expect((refused as RefundRefused).message).toMatch(/wasn't sent again/);
+    });
+
+    it("sends the owner to PayPal once a dispute shows, and offers no more repeats", async () => {
+      const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+      const disputed = fakePayPal({ disputes: [{ status: "OPEN" }] });
+      expect(await refusal(again(r.refundId, disputed.client, LATER))).toBe("PAYMENT_DISPUTED");
+      const after = await readRefund(db, disputed.client, { shopId, refundId: r.refundId, recordKey: key, now: LATER });
+      expect(after.canAskAgain).toBe(false);
+      expect(after.stuck).not.toBeNull();
     });
 
     it("finds a refund that landed when every answer was lost, and makes no second refund", async () => {
