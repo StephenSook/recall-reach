@@ -55,10 +55,12 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
 
   const checks: Check[] = [];
   let cpscSince: string | null = null;
+  let claude: { fresh?: boolean; lastOkAt?: string | null } | undefined;
   checks.push(
     await attempt("health", async () => {
       const { status, body } = await read("/api/health");
-      const health = JSON.parse(body) as { ok?: boolean; checks?: Record<string, boolean>; market?: { fresh?: boolean }; degraded?: { source?: string; since?: string | null } | null };
+      const health = JSON.parse(body) as { ok?: boolean; checks?: Record<string, boolean>; market?: { fresh?: boolean }; degraded?: { source?: string; since?: string | null } | null; claude?: { fresh?: boolean; lastOkAt?: string | null } };
+      claude = health.claude;
       const named = Object.entries(health.checks ?? {});
       const off = named.filter(([, on]) => on !== true).map(([name]) => name);
       // Only CPSC's own failing, reported on its own line below so nobody chases this site's code. Anything of ours still fails here.
@@ -70,6 +72,7 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
       return pass("health", `${named.length} checks true${health.market?.fresh ? "" : "; the market search is stale, which isn't part of ok"}`);
     }),
   );
+  checks.push(claude?.fresh === true ? pass("Claude", `last good answer ${claude.lastOkAt}`) : fail("Claude", `no good answer in 2 days: last ${claude?.lastOkAt ?? "none on record"}. Its balance may be spent.`));
   if (cpscSince !== null) checks.push(fail("CPSC is failing", `since ${cpscSince}. Not this site's code: it works from the recalls it holds.`));
   let replayHtml = "";
   checks.push(

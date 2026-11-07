@@ -5,7 +5,7 @@ const BASE = "https://site.test";
 
 /** The real site's words, trimmed to what the probe reads. */
 const GOOD: Record<string, string> = {
-  "/api/health": JSON.stringify({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, market: { fresh: true } }),
+  "/api/health": JSON.stringify({ claude: { fresh: true, lastOkAt: "2026-11-07T00:00:00.000Z" }, ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, market: { fresh: true } }),
   "/replay": `<main><p>934 Recalls checked</p><p>3 Recalls matched</p><a href="/api/proof/1f597fa0-6d9b-4a42-8ea2-923a79d466f6">Recount these numbers</a></main>`,
   "/api/proof/1f597fa0-6d9b-4a42-8ea2-923a79d466f6": JSON.stringify({ agree: true }),
   "/eval": "<main>37 of 83 2 of 83 11 of 12 52 of 60 One labeller</main>",
@@ -65,8 +65,28 @@ describe("probe", () => {
     expect(await failed({ "/api/health": health({ ok: true, checks: {} }) })).toContain("health");
   });
 
+  describe("Claude's last good answer", () => {
+    const withClaude = (claude: object | undefined) => JSON.stringify({ ...JSON.parse(GOOD["/api/health"]), claude });
+
+    it("fails when it's over 2 days old, and says when it last worked", async () => {
+      const checks = await probe(BASE, site({ "/api/health": withClaude({ fresh: false, lastOkAt: "2026-11-01T00:00:00.000Z" }) }).fetchImpl);
+      expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["Claude"]);
+      expect(checks.find((c) => c.name === "Claude")?.detail).toContain("2026-11-01");
+    });
+
+    it("fails when health stops saying, rather than taking silence for good news", async () => {
+      expect(await failed({ "/api/health": withClaude(undefined) })).toContain("Claude");
+    });
+
+    it("passes when it's fresh", async () => {
+      const checks = await probe(BASE, site().fetchImpl);
+      expect(checks.find((c) => c.name === "Claude")?.ok).toBe(true);
+    });
+  });
+
   describe("when only CPSC is failing", () => {
     const degraded = JSON.stringify({
+      ...JSON.parse(GOOD["/api/health"]),
       ok: false,
       checks: { ...JSON.parse(GOOD["/api/health"]).checks, lastPull: false },
       degraded: { source: "CPSC", since: "2026-11-07T00:05:00.000Z", lastGoodAt: "2026-11-06T23:43:00.000Z" },
@@ -91,7 +111,7 @@ describe("probe", () => {
   });
 
   it("doesn't fail on the market search going quiet, which isn't part of ok, and says so", async () => {
-    const body = JSON.stringify({ ok: true, checks: JSON.parse(GOOD["/api/health"]).checks, market: { fresh: false } });
+    const body = JSON.stringify({ ...JSON.parse(GOOD["/api/health"]), market: { fresh: false } });
     const checks = await probe(BASE, site({ "/api/health": body }).fetchImpl);
     expect(checks.filter((c) => !c.ok)).toEqual([]);
     expect(checks.find((c) => c.name === "health")?.detail).toContain("market search is stale");
