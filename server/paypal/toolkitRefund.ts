@@ -2,7 +2,7 @@
 // only after a person approved the exact amount. No model is ever handed this tool.
 //
 // It sits below the app's PayPal client as the way out for that one request, so the client's retries, its
-// token refresh and its "no clear answer" logic all apply unchanged. Every other PayPal call uses fetch.
+// token refresh and its "no clear answer" logic all apply unchanged. Only this one request goes through here.
 //
 // Measured on the sandbox and pinned by toolkitRefund.test.ts, because each of these could change with an
 // upgrade (version 1.11.0, 2026-11-05):
