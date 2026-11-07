@@ -108,6 +108,11 @@ describe("this repo", () => {
     expect(pages.filter((p) => p.startsWith("app/")).length).toBeGreaterThan(30);
   });
 
+  it("leaves a feature's row out of the Built With list", () => {
+    expect(builtWith(CLAIMS)).not.toContain("Seller answers");
+    expect(builtWith(CLAIMS)).toContain("Claude");
+  });
+
   it("gives the Built With list, with nothing cut in it", () => {
     const list = builtWith(CLAIMS);
     expect(list).toContain("PayPal Transaction Search");

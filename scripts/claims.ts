@@ -10,7 +10,8 @@ export type Evidence =
   | { file: string; find: string };
 
 export type Claim =
-  | { name: string; status: "claimed"; evidence: Evidence[] }
+  /** A feature keeps its row so its claim can't drift, and isn't a technology, so it stays out of Built With. */
+  | { name: string; status: "claimed"; evidence: Evidence[]; feature?: true }
   | { name: string; status: "cut"; why: string; mentions: string[]; allowedIn?: string[] };
 
 export const CLAIMS: Claim[] = [
@@ -86,6 +87,7 @@ export const CLAIMS: Claim[] = [
   {
     name: "Saved copy of Recall Replay",
     status: "claimed",
+    feature: true,
     evidence: [
       { file: "server/replay/staticPage.ts", find: "export function renderStaticReplay" },
       { file: "scripts/exportReplay.ts", call: "renderStaticReplay" },
@@ -95,6 +97,7 @@ export const CLAIMS: Claim[] = [
   {
     name: "Seller answers",
     status: "claimed",
+    feature: true,
     evidence: [
       { file: "app/queue/SellerAnswerForm.tsx", find: "/api/queue/answers" },
       { file: "app/api/queue/answers/route.ts", call: "recordSellerAnswer" },
@@ -253,4 +256,4 @@ export function checkClaims(claims: Claim[], files: Files): string[] {
   return problems;
 }
 
-export const builtWith = (claims: Claim[]) => claims.filter((c) => c.status === "claimed").map((c) => c.name);
+export const builtWith = (claims: Claim[]) => claims.filter((c) => c.status === "claimed" && !c.feature).map((c) => c.name);
