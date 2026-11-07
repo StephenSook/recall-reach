@@ -57,7 +57,8 @@ async function recheckIfRecallChanged(db: Queryable, input: { shopId: string; ma
   const v = verdictFor(r, { title: r.item_title, orderedOn: r.ordered_on ?? undefined });
   await db.query(
     `update recall_matches set recall_sha256 = $3, verdict = $4, strength = $5, matched = $6::jsonb, missing = $7::jsonb, reason = $8, sale_path = $9, checked_at = now()
-     where id = $1 and shop_id = $2`,
+     where id = $1 and shop_id = $2
+       and not exists (select 1 from notices n where n.match_id = $1 and (n.sent_at is not null or n.responded_at is not null))`,
     [input.matchId, input.shopId, r.raw_sha256, v.verdict, v.strength, JSON.stringify(v.matched), JSON.stringify(v.missing), v.reason, r.ordered_on ? salePath(r.ordered_on, r.recall_date) : null],
   );
 }

@@ -197,6 +197,22 @@ describe("notices", () => {
         await expect(compose(noticeId)).resolves.toBeTruthy();
       });
 
+      it("a send that lands during the recheck still leaves the match as it was", async () => {
+        const m = await matchFor("27072", brezzaLine());
+        const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
+        await cpscChanges("This recall involves sterilizer dryers, model ZZ9999.");
+        const racing = {
+          ...db,
+          query: async (sql: string, params?: unknown[]) => {
+            if (sql.trimStart().startsWith("update recall_matches")) await markSent(db, { shopId, noticeId });
+            return db.query(sql, params);
+          },
+        } as unknown as typeof db;
+        await prepareNotice(racing, { shopId, matchId: m }).catch(() => null);
+        const { rows } = await db.query<{ strength: string }>("select strength from recall_matches where id = $1", [m]);
+        expect(rows[0].strength).toBe("CONFIRMED");
+      });
+
       it("leaves a notice already sent as it was", async () => {
         const m = await matchFor("27072", brezzaLine());
         const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
