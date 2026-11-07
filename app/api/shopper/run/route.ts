@@ -1,6 +1,7 @@
 import { agentClientFromEnv } from "@/server/agent/claude";
 import { MAX_ASK, runShopper, type ShopperRun } from "@/server/agent/shopper";
 import { getDb } from "@/server/db/pg";
+import { readCappedBody } from "@/server/http/body";
 import { checkListing } from "@/server/match/textCheck";
 import { createSlip, SLIP_LASTS_MS } from "@/server/paypal/shopperOrder";
 import { channel3Listings } from "@/server/sweep/channel3";
@@ -9,6 +10,15 @@ import { fromThisSite, refused } from "@/server/web/http";
 import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
 export const dynamic = "force-dynamic";
+
+const MAX_BODY = 2 * 1024;
+const parseJson = (bytes: Uint8Array): unknown => {
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+};
 
 const HOUR = 60 * 60_000;
 // Each run is several real Claude calls, so it's limited per visitor and for everyone together.
@@ -32,7 +42,9 @@ export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
   const visitor = clientIp(request.headers);
   if (!visitor || !perVisitor(visitor) || !everyone("all")) return Response.json(nothing("BUSY"), { status: 429 });
-  const body = (await request.json().catch(() => null)) as { ask?: unknown; budget?: unknown } | null;
+  const read = await readCappedBody(request, MAX_BODY);
+  if (!read.ok) return Response.json({ error: "request too large" }, { status: 413 });
+  const body = parseJson(read.body) as { ask?: unknown; budget?: unknown } | null;
   const ask = typeof body?.ask === "string" ? body.ask.trim() : "";
   const budget = typeof body?.budget === "number" ? body.budget : Number.NaN;
   if (ask.length < 2 || ask.length > MAX_ASK || !Number.isFinite(budget) || budget < 1 || budget > MAX_BUDGET) return refused(400, "give what you're looking for and a budget from 1 to 2000");

@@ -57,6 +57,12 @@ describe("the shopping agent's routes", () => {
       expect(paths.runShopper).not.toHaveBeenCalled();
     });
 
+    it("refuses a body far larger than a question needs, unread", async () => {
+      const res = await run(asking({ ask: "a".repeat(10_000), budget: 50 }, ORIGIN, nextIp()));
+      expect(res.status).toBe(413);
+      expect(paths.runShopper).not.toHaveBeenCalled();
+    });
+
     it("turns the budget into cents itself", async () => {
       await run(asking({ ask: "a tub", budget: 49.5 }, ORIGIN, nextIp()));
       expect(paths.runShopper.mock.calls[0][2]).toMatchObject({ ask: "a tub", budgetCents: 4950 });
