@@ -34,16 +34,16 @@ export const DEFECTS: Defect[] = [
       "From about Nov 7, 2026, 00:05 UTC, CPSC's API answered HTTP 200 with one fake row, its error in the title. We stored that as a partial read, so /api/health answered 503 and those dates counted as read. The poll starts a day back, so nothing was skipped this time.",
     changed: "That row is now a failed fetch and marks nothing as read. /api/health answers 200, names CPSC and says since when, and 503 stays for this site's own failures.",
     commits: ["9d51025", "6fdda6e"],
-    checked: "During the same outage, on the deployed site: the demo shop's 9 items, Replay's 934 recalls and its recount, the public check and the MCP tool all answered from the recalls held here. Catching up once CPSC returns is still to be read.",
-    open: true,
+    checked: "During the same outage, on the deployed site: the demo shop's 9 items, Replay's 934 recalls and its recount, the public check and the MCP tool all answered from the recalls held here. CPSC answered again by 01:30 UTC, and the first good read started from Nov 6, before the outage, with nothing to add.",
+    open: false,
   },
   {
     title: "A title one character off a model could read as a confirmed match",
     found:
       "An outside review ran the real matcher on a title with a code one character from CPSC's model, plus two words from CPSC's description. It came back confirmed, and a confirmed match can lead to a notice and a refund. Found in review of the code, not by tuning on the held-out set.",
-    changed: "A title carrying any code that isn't CPSC's exact model can't be confirmed by its look, so it asks the family instead.",
+    changed: "A title carrying a code that looks like CPSC's model but isn't exactly it can't be confirmed by its look, so it asks the family instead.",
     commits: ["4827c76"],
-    checked: "New tests cover codes one edit away, and an unrelated code. The eval, Replay and the demo queue gave the same numbers before and after.",
+    checked: "New tests cover codes one edit away, and codes that look nothing like a model, such as 2-IN-1. The eval, Replay and the demo queue gave the same numbers before and after.",
     open: false,
   },
   {
