@@ -110,6 +110,7 @@ Measured on PayPal's sandbox, each with its date. The app is built around these,
 - **Nov 5, 2026.** A new sale wasn't in Transaction Search right after it was made: 0 rows. It was there when read again about 213 minutes later. PayPal documents up to 3 hours. So a shop can't find its newest sales, and the demo reads an older pool of real sandbox sales for its history.
 - **Nov 6, 2026.** `custom_field` came back on no Transaction Search row, even for a payment that set `custom_id`. So the app links sales by invoice id or SKU.
 - **Nov 6, 2026.** Read at 17:52 UTC, `/v1/reporting/balances` answered with an `as_of_time` of 12:59:59 UTC, about 5 hours old. A balance read isn't the balance right now.
+- **Nov 7, 2026, UTC.** Asked through PayPal's resend API, a real refund event arrived again with a new transmission id. It was recorded as a duplicate: the count of events stayed at 690 and the refund's row didn't change.
 - **Nov 6, 2026.** From 17:37 UTC, refunds of $30 and up answered `PENDING` with reason `ECHECK`, including calls with no app code in the way. Refunds of $1, $5 and $20 completed. We don't know why. It's open at `/evidence/defects`.
 
 ## How it's built
