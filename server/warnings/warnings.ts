@@ -34,6 +34,7 @@ export interface Warning {
 export function cleanCpscText(text: string): string {
   return text
     .replace(/https?:\/\/\S*\s+lang="[^"]*">/g, "")
+    .replace(/https?:\/\/\S*\u2026\s*/g, "")
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")

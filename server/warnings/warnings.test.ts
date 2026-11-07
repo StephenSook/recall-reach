@@ -62,6 +62,10 @@ describe("reading CPSC's warnings file", () => {
     expect(cleanCpscText(real)).toBe("The crib bumpers can obstruct an infant\u2019s breathing, posing a risk of serious injury or death from suffocation. Padded crib bumpers are banned under the Safe Sleep for Babies Act.");
   });
 
+  it("takes out a cut-off link standing alone, which is the export's leftover and not CPSC's words", () => {
+    expect(cleanCpscText("as required by the https://www.cpsc.gov/Business--Manufacturing/Busines\u2026 Act, posing a risk")).toBe("as required by the Act, posing a risk");
+  });
+
   it("leaves a plain web address alone", () => {
     expect(cleanCpscText("Go to https://www.cpsc.gov/Warnings for more.")).toBe("Go to https://www.cpsc.gov/Warnings for more.");
   });
