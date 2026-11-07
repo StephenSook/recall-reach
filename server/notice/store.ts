@@ -319,17 +319,43 @@ export interface FamilyView {
   answerOpen: boolean;
 }
 
+const fromCpsc = (image: { url: string } | undefined) => {
+  if (!image) return false;
+  try {
+    const { protocol, hostname } = new URL(image.url);
+    return protocol === "https:" && (hostname === "cpsc.gov" || hostname.endsWith(".cpsc.gov"));
+  } catch {
+    return false;
+  }
+};
+
+/** The public sample: CPSC's record for one recall and nothing else. It touches no shop, sale, buyer or notice. */
+export async function sampleFamilyView(db: Queryable, recallNumber: string): Promise<FamilyView | null> {
+  const { rows } = await db.query<RecallRow & { recall_number: string; images: { url: string; caption: string }[] }>(
+    "select recall_number, title, description, url, products, hazards, remedies, images, raw_sha256 from recalls where recall_number = $1 order by recall_date desc limit 1",
+    [recallNumber],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    kind: "SAFETY_NOTICE",
+    shopName: "",
+    recallNumber: r.recall_number,
+    product: r.products[0]?.name ?? r.title,
+    image: fromCpsc(r.images[0]) ? r.images[0] : null,
+    recallUrl: r.url,
+    hazards: r.hazards,
+    remedies: r.remedies,
+    question: null,
+    stopped: false,
+    result: null,
+    expired: false,
+    answerOpen: false,
+  };
+}
+
 /** All the family page gets. No buyer, order or payment data, so none can reach the page. */
 export async function familyView(db: Queryable, noticeId: string): Promise<FamilyView | null> {
-  const fromCpsc = (image: { url: string } | undefined) => {
-    if (!image) return false;
-    try {
-      const { protocol, hostname } = new URL(image.url);
-      return protocol === "https:" && (hostname === "cpsc.gov" || hostname.endsWith(".cpsc.gov"));
-    } catch {
-      return false;
-    }
-  };
   if (!UUID.test(noticeId)) return null;
   const { rows } = await db.query<
     RecallRow & { kind: FamilyView["kind"]; shop_name: string; family_stopped: boolean; check_result: CheckResult | null; check_open: boolean; expired: boolean; written_question: WrittenQuestion | null; images: { url: string; caption: string }[] }

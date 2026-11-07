@@ -24,6 +24,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | [`/safety`](https://recall-reach-web-e022.onrender.com/safety) | Five attacks tried against the real code |
 | [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/evidence/paypal), [`/evidence/ag-grid`](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Each claim, and the file that does it. A test fails if the code leaves that file |
 | [`/evidence/defects`](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found in our own work, what changed, and how it was checked again |
+| [`/r/sample`](https://recall-reach-web-e022.onrender.com/r/sample) | What a family sees for a real recall, as a labelled sample that stays up |
 | [`/check`](https://recall-reach-web-e022.onrender.com/check) | A shop's own order file or a Shopify store's public listings, deleted on request or after 7 days |
 | [`/status`](https://recall-reach-web-e022.onrender.com/status) | Each outside service's last reading, and what that reading measures |
 | [`/privacy`](https://recall-reach-web-e022.onrender.com/privacy) | What is kept, and text a shop can copy |

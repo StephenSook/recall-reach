@@ -111,6 +111,16 @@ export const CLAIMS: Claim[] = [
     evidence: [{ file: "server/agent/moneyFields.test.ts", find: "amount\\|currency\\|capture\\|refund\\|payee" }],
   },
   {
+    name: "Sample family page",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/r/sample/page.tsx", call: "FamilyNotice" },
+      { file: "app/r/[token]/page.tsx", call: "FamilyNotice" },
+      { file: "README.md", find: "/r/sample" },
+    ],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,

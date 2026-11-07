@@ -11,7 +11,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { loadQueue } from "../queue/queue";
-import { checkResult, composeForSeller, familyAnswerFrom, familyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
+import { checkResult, composeForSeller, familyAnswerFrom, familyView, sampleFamilyView, markOpened, markSent, noticeState, NoticeRefused, prepareNotice, recordFamilyAnswer, recordFamilyStopped } from "./store";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -372,6 +372,27 @@ describe("notices", () => {
     const { noticeId } = await prepareNotice(db, { shopId, matchId: m });
     const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
     expect(await refusal(markOpened(db, { shopId: other, noticeId }))).toBe("NO_SUCH_NOTICE");
+  });
+
+  describe("the public sample of the family page", () => {
+    it("gives CPSC's words for one recall as they are, with no shop in it", async () => {
+      const view = await sampleFamilyView(db, "27072");
+      const { rows } = await db.query<{ hazards: string[]; remedies: string[]; url: string }>("select hazards, remedies, url from recalls where recall_number = '27072'");
+      expect(rows).toHaveLength(1);
+      expect(view).toMatchObject({ kind: "SAFETY_NOTICE", shopName: "", recallNumber: "27072", hazards: rows[0].hazards, remedies: rows[0].remedies, recallUrl: rows[0].url, question: null, stopped: false, result: null });
+      expect(rows[0].hazards.length).toBeGreaterThan(0);
+    });
+
+    it("stores nothing, so it can't reach a count", async () => {
+      const count = async () => (await db.query<{ n: string }>("select count(*)::text as n from notices")).rows[0].n;
+      const before = await count();
+      await sampleFamilyView(db, "27072");
+      expect(await count()).toBe(before);
+    });
+
+    it("has nothing to show for a recall it doesn't hold", async () => {
+      expect(await sampleFamilyView(db, "00000")).toBeNull();
+    });
   });
 
   describe("composing for the seller", () => {
