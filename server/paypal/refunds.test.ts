@@ -1355,7 +1355,9 @@ describe("refunds", () => {
       const after = await readRefund(db, disputed.client, { shopId, refundId: r.refundId, recordKey: key, now: LATER });
       expect(after.canAskAgain).toBe(false);
       expect(after.stuck).toMatchObject({ disputed: true });
-      expect(await refusal(again(r.refundId, fakePayPal().client, LATER))).toBe("PAYMENT_DISPUTED");
+      const later = fakePayPal();
+      expect(await refusal(again(r.refundId, later.client, LATER))).toBe("PAYMENT_DISPUTED");
+      expect(later.calls).toEqual([]);
     });
 
     it("while another send holds the lease it refuses first, and reads nothing from PayPal", async () => {
