@@ -88,10 +88,21 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 
 ## What stays where
 
-- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text and the shop's own item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
+- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles and, on `/shopper`, public listing words. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
 - **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - **The app never emails anyone.** Messages open in the shop's own mail.
 - **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days.
+
+### Every call to Claude
+
+| Call | What Claude gets | What it can't touch | If Claude is down |
+|---|---|---|---|
+| Check with Claude, on a card | CPSC's recall text, and the shop's own titles, SKUs and listing descriptions | A verdict, a notice, a refund, anything from PayPal | The card stays as it was and says so |
+| The question for a family | One recall's text from CPSC | A sale, a shop, a family. The question is used only while the words it rests on are in CPSC's record | A family gets CPSC's model numbers or a plain question |
+| The shopping agent | What the person typed, public listing titles and brands with any price taken out, and the recalls its check found | A price, an order, PayPal | The page says the agent isn't available |
+| The daily call | "Say ok." | Everything | `/status` shows the last good answer getting older |
+
+All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-haiku-5-5` when the main model is down. The daily call asks both, so `/status` can show the main model stopping. Matching, notices and refunds don't need Claude: without it, the rules still run and the app still works. What Claude adds is a reading of a card a person would otherwise read alone, a question specific to one recall, and a shopping agent that checks first.
 
 ## Limits
 
