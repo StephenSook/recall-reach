@@ -20,7 +20,7 @@ test("it searches, checks a listing against recalls, and shows what it did", asy
   }
   const pick = page.getByTestId("shopper-pick");
   if (await pick.count()) {
-    await expect(pick).toContainText("No recall match found in");
+    await expect(pick).toContainText("We didn't find a recall naming this maker and product line, or its model, in");
     await expect(pick).toContainText("That doesn't mean it's safe.");
     await expect(pick.getByRole("button", { name: "Approve on PayPal (sandbox)" })).toBeVisible();
   } else {

@@ -140,7 +140,7 @@ export function ShopperForm() {
             {money(view.pick.priceCents)}.
           </p>
           <p>
-            No recall match found in {view.pick.recallsChecked.toLocaleString("en-US")} CPSC recalls{view.pick.from ? ` since ${view.pick.from.slice(0, 4)}` : ""}: none names this maker and product line, or its model.{view.pick.similar > 0 ? ` ${view.pick.similar} recall${view.pick.similar === 1 ? " of the same kind of product doesn't" : "s of the same kind of product don't"} name this maker or model.` : ""} That doesn&apos;t mean it&apos;s safe. Check the model on the product at cpsc.gov/Recalls.
+            We didn&apos;t find a recall naming this maker and product line, or its model, in {view.pick.recallsChecked.toLocaleString("en-US")} CPSC recalls{view.pick.from ? ` since ${view.pick.from.slice(0, 4)}` : ""}.{view.pick.similar > 0 ? ` ${view.pick.similar} recall${view.pick.similar === 1 ? " of the same kind of product doesn't" : "s of the same kind of product don't"} name this maker or model.` : ""} That doesn&apos;t mean it&apos;s safe. Check the model on the product at cpsc.gov/Recalls.
           </p>
           <form action="/api/shopper/buy" method="post">
             <input type="hidden" name="slip" value={view.pick.slipId} />

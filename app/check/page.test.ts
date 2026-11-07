@@ -73,7 +73,7 @@ describe("the check page", () => {
       const page = unescape(await html({ title: "Baby Brezza", model: "" }));
       expect(page).toContain("Can't tell yet.");
       expect(page).toContain('href="/recall/27072"');
-      expect(page).not.toContain("No recall in");
+      expect(page).not.toContain("We didn't find");
     });
 
     it("folds away recalls that only share the kind of product, showing each one's maker", async () => {
@@ -82,11 +82,24 @@ describe("the check page", () => {
       // This fixture holds one month, and this test isn't about the other years.
       coverage.complete = true;
       const page = unescape(await html({ title: "Graco high chair", model: "" }));
-      expect(page.replaceAll("&quot;", '"')).toContain('No recall names "Graco high chair".');
+      expect(page.replaceAll("&quot;", '"')).toContain('We didn\'t find a recall naming "Graco high chair" in 55 CPSC recalls since 2026. That doesn\'t mean it\'s safe.');
+      expect(page).toContain("1 recall of the same kind doesn't name it.");
+      expect(page).toContain('Check the model on the label at <a href="https://www.cpsc.gov/Recalls">cpsc.gov/Recalls</a>.');
       const fold = page.slice(page.indexOf('data-testid="same-kind"'));
       expect(fold).toMatch(/<summary>Show (it|the \d+)<\/summary>/);
       expect(fold).toContain('href="/recall/27040"');
       expect(fold).toContain("Costway");
+    });
+
+    it.each(["Nuna car seat", "carseat", "Car-Seat base"])("says what NARTS says when %s is typed, with its source", async (title) => {
+      const page = await html({ title, model: "" });
+      expect(page).toContain('href="https://www.narts.org/product-safety-in-resale"');
+      expect(page).toContain("says car seats should never be resold.");
+    });
+
+    it("leaves that out for anything else", async () => {
+      expect(await html({ title: "high chair", model: "" })).not.toContain("should never be resold");
+      expect(await html()).not.toContain("should never be resold");
     });
 
     it("keeps what was typed in the form, and says what it checked", async () => {
@@ -103,7 +116,7 @@ describe("the check page", () => {
     it("won't call a store of recalls with years missing a clean answer", async () => {
       const page = unescape(await html({ title: "zzqx vvbn plmk", model: "" }));
       expect(page).toContain("Can't say yet.");
-      expect(page).not.toContain("No recall in");
+      expect(page).not.toContain("We didn't find");
     });
 
     it("asks for something when nothing was typed, without reading the database", async () => {
@@ -121,7 +134,7 @@ describe("the check page", () => {
       };
       const page = unescape(await html({ title: "SECRET-TITLE-TEXT", model: "" }));
       expect(page).toContain("The check could not run. Please try again.");
-      expect(page).not.toContain("No recall in");
+      expect(page).not.toContain("We didn't find");
       expect(JSON.stringify(logged.mock.calls)).not.toContain("SECRET-TITLE-TEXT");
     });
 
@@ -151,6 +164,7 @@ describe("the check page", () => {
       expect(fold).toContain("order_number, title, quantity");
       expect(fold).toContain("We check CPSC recalls from 2022 on.");
       expect(fold).toContain("buyer emails are encrypted");
+      expect(fold).toContain("the web host's request logs may include it");
     });
 
     it("keeps the car seat line and the sample file out of the fold", async () => {

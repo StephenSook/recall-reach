@@ -75,6 +75,44 @@ describe("GET /api/check", () => {
       expect((await mentioned("model=1026")).mentioned).toContain("27012");
     });
 
+    it.each(["sterilizers", "STERILIZER", "Sterilizer's"])("finds a word however it's written: %s", async (typed) => {
+      expect((await mentioned(`title=${encodeURIComponent(typed)}`)).mentioned).toContain("27072");
+    });
+
+    it("finds a plural that ends in es, whose singular isn't what's left without the s", async () => {
+      await real.query("update recalls set title = 'Zorbex Recalls French Press Coffee Makers', products = '[]'::jsonb, description = 'This recall involves a French press.' where recall_number = '27072'");
+      expect((await mentioned(`title=${encodeURIComponent("zorbex presses")}`)).mentioned).toContain("27072");
+      expect((await mentioned(`title=${encodeURIComponent("french presses")}`)).mentioned).toContain("27072");
+      expect((await mentioned(`title=${encodeURIComponent("presses")}`)).mentioned).toContain("27072");
+    });
+
+    it("doesn't take a word other recalls have for a slip: chair isn't one letter off hair", async () => {
+      await real.query("update recalls set title = 'Zorbex Recalls Hair Dryers', description = 'This recall involves hair dryers.', products = '[]'::jsonb where recall_number = '27072'");
+      await real.query("update recalls set description = description || ' A high chair.' where recall_number in ('27012', '27040')");
+      const found = await mentioned(`title=${encodeURIComponent("Graco high chair")}`);
+      expect(found.mentioned).not.toContain("27072");
+      expect(found.total).toBe(0);
+    });
+
+    it("counts a recall holding all but one of four or more typed words as could be", async () => {
+      await real.query("update recalls set title = 'Zorbex Recalls River Street Five Drawer Chests', description = 'This recall involves chests.', products = '[]'::jsonb where recall_number = '27072'");
+      await real.query("update recalls set description = description || ' A river street five drawer chest.' where recall_number in ('27012', '27040', '27055')");
+      expect((await mentioned(`title=${encodeURIComponent("River Street Fibe Drawer Chests")}`)).mentioned).toContain("27072");
+    });
+
+    it("counts one letter wrong in a word of the recall's name as could be", async () => {
+      await real.query("update recalls set title = 'Zorbex Recalls Infant Swings', description = 'This recall involves swings.', products = '[{\"name\":\"Infant Swings\",\"model\":\"\",\"type\":null,\"units\":null}]'::jsonb where recall_number = '27072'");
+      expect((await mentioned(`title=${encodeURIComponent("Zorbx")}`)).mentioned).toContain("27072");
+      expect((await mentioned(`title=${encodeURIComponent("infant swng")}`)).mentioned.concat((await results(`title=${encodeURIComponent("infant swng")}`)).results.filter((r: { sharesWords: boolean }) => r.sharesWords).map((r: { recallNumber: string }) => r.recallNumber))).toContain("27072");
+    });
+
+    it("doesn't take a plural for a slip, so another maker's product stays only the same kind", async () => {
+      await real.query("update recalls set description = description || ' A high chair.' where recall_number in ('27012', '27072')");
+      const body = await results(`title=${encodeURIComponent("Graco high chairs")}`);
+      expect(body.results.length).toBeGreaterThan(0);
+      for (const r of body.results) expect(r.sharesWords).toBe(false);
+    });
+
     it("names one from a maker too short to count as a word", async () => {
       await real.query("update recalls set title = 'H&M Recalls Bath Mats', description = 'This recall involves bath mats.' where recall_number = '27072'");
       expect((await mentioned(`title=${encodeURIComponent("H&M")}`)).mentioned).toContain("27072");

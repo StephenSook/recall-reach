@@ -24,6 +24,12 @@ export function ItemAnswerView({ answer, checked }: { answer: ItemAnswer; checke
       <p className="item-says" role="status">
         {answer.says}
       </p>
+      {answer.sameKind ? <p>{answer.sameKind}</p> : null}
+      {answer.kind === "NOTHING" || answer.kind === "NOT_NAMED" ? (
+        <p>
+          Check the model on the label at <a href="https://www.cpsc.gov/Recalls">cpsc.gov/Recalls</a>.
+        </p>
+      ) : null}
       <p className="note">Checked: {checked}</p>
       {answer.kind === "UNFINISHED" ? (
         <p className="note">

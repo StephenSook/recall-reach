@@ -27,12 +27,13 @@ const ERRORS: Record<string, string> = {
 };
 
 const NOTHING_TYPED = "Type what's on the label, or a model number.";
+const CAR_SEAT = /\bcar[\s-]*seats?\b/i;
 /** Enough to open the whole list of a product kind. The public API's own list stays shorter. */
 const MAX_SHOWN = 60;
 
 const typed = (value: string | string[] | undefined) => (typeof value === "string" ? value : undefined);
 
-/** The same rules and limit as /api/check. This code keeps and logs nothing typed, and no model runs. */
+/** The same rules and limit as /api/check, and no model runs. See the note on what happens to what's typed. */
 async function checkItem(title: string, model: string): Promise<{ answer: ItemAnswer; checked: string } | { refused: string }> {
   const input = readTextCheck(title, model);
   if ("error" in input) return { refused: NOTHING_TYPED };
@@ -74,6 +75,12 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
       {item && "answer" in item ? <ItemAnswerView answer={item.answer} checked={item.checked} /> : null}
       <p className="note">
         This checks CPSC recalls. Car seats are recalled through NHTSA, so check <a href="https://www.nhtsa.gov/recalls">nhtsa.gov/recalls</a>.
+        {CAR_SEAT.test(`${title ?? ""} ${model ?? ""}`) ? (
+          <>
+            {" "}
+            The resale trade group <a href="https://www.narts.org/product-safety-in-resale">NARTS</a> says car seats should never be resold.
+          </>
+        ) : null}
       </p>
       <h2 className="section-title">Check your own order file</h2>
       <p>See which past sales match a real CPSC recall. Nothing goes to a family without you.</p>
@@ -83,6 +90,7 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
       </p>
       <details className="check-details">
         <summary>What this keeps and checks</summary>
+        <p className="note">Our code doesn&apos;t store or log what you type in Check one item. The form puts it in the page address, so the web host&apos;s request logs may include it.</p>
         <p className="note">It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on.</p>
         <p className="note">We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.</p>
         <p className="note">

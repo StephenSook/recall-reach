@@ -102,7 +102,8 @@ describe("what one typed item's check says", () => {
     it("leads with what it does know, and folds the recalls away", () => {
       const answered = said(answer({ results: sameKind(16) }));
       expect(answered.kind).toBe("NOT_NAMED");
-      expect(answered.says).toBe('No recall names "Graco high chair". 16 recalls of the same kind don\'t name it. If your label says one of their makers, read that recall. That doesn\'t mean it\'s safe.');
+      expect(answered.says).toBe('We didn\'t find a recall naming "Graco high chair" in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
+      expect(answered.sameKind).toBe("16 recalls of the same kind don't name it. If your label says one of their makers, read that recall.");
       expect(answered.toRead).toEqual([]);
       expect(answered.folded).toHaveLength(16);
     });
@@ -113,12 +114,18 @@ describe("what one typed item's check says", () => {
 
     it("counts the ones past the list", () => {
       const answered = said(answer({ results: sameKind(10), more: 6 }));
-      expect(answered.says).toContain("16 recalls of the same kind");
+      expect(answered.sameKind).toContain("16 recalls of the same kind");
       expect(answered.folded).toHaveLength(10);
     });
 
     it("reads one in the singular", () => {
-      expect(said(answer({ results: sameKind(1) })).says).toBe('No recall names "Graco high chair". 1 recall of the same kind doesn\'t name it. If your label says its maker, read that recall. That doesn\'t mean it\'s safe.');
+      expect(said(answer({ results: sameKind(1) })).sameKind).toBe("1 recall of the same kind doesn't name it. If your label says its maker, read that recall.");
+    });
+
+    it("counts a recall from the same maker as could be, whatever else the typing got wrong", () => {
+      const answered = said(answer({ results: [...sameKind(3), result({ recallNumber: "25009", tiedToRecall: false, strength: "BRAND", missing: ["model number"] })] }));
+      expect(answered.kind).toBe("CANT_TELL");
+      expect(answered.toRead[0].recallNumber).toBe("25009");
     });
 
     it("goes back to can't tell as soon as one recall could be this item", () => {
@@ -133,7 +140,7 @@ describe("what one typed item's check says", () => {
       for (const given of [answer({ results: sameKind(3), notJudged: 2 }), answer({ results: sameKind(3), checked: { recalls: 1500, from: "2022-01-03", to: "2026-11-05", yearsMissing: [2023] } })]) {
         const answered = said(given);
         expect(answered.kind).toBe("CANT_TELL");
-        expect(answered.says).not.toContain("No recall names");
+        expect(answered.says).not.toContain("We didn't find");
         expect(answered.gap).toBeTruthy();
       }
     });
@@ -143,11 +150,12 @@ describe("what one typed item's check says", () => {
     it("says how many it read, from what year, and that this doesn't mean it's safe", () => {
       const answered = said(answer());
       expect(answered.kind).toBe("NOTHING");
-      expect(answered.says).toBe("No recall in 1,855 CPSC recalls since 2022 names this. That doesn't mean it's safe.");
+      expect(answered.says).toBe('We didn\'t find a recall naming "Graco high chair" in 1,855 CPSC recalls since 2022. That doesn\'t mean it\'s safe.');
+      expect(answered.sameKind).toBeNull();
     });
 
     it("takes the count and year from what was read, not from a fixed number", () => {
-      expect(said(answer({ checked: { recalls: 55, from: "2026-10-01", to: "2026-11-05", yearsMissing: [] } })).says).toContain("No recall in 55 CPSC recalls since 2026 names this.");
+      expect(said(answer({ checked: { recalls: 55, from: "2026-10-01", to: "2026-11-05", yearsMissing: [] } })).says).toContain("in 55 CPSC recalls since 2026.");
     });
 
     it("isn't changed by recalls that only came near on a word", () => {
@@ -164,7 +172,7 @@ describe("what one typed item's check says", () => {
       const answered = said(given);
       expect(answered.kind).toBe("UNFINISHED");
       expect(answered.says).toBe(`Can't say yet. ${why}`);
-      expect(answered.says).not.toContain("No recall in");
+      expect(answered.says).not.toContain("We didn't find");
     });
   });
 

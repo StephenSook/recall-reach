@@ -40,7 +40,8 @@ test("an owner types what's on a label, and reads each kind of answer", async ({
   await page.getByRole("button", { name: "Check it" }).click();
   const sameKind = page.getByTestId("item-answer");
   await expect(sameKind).toHaveAttribute("data-kind", "NOT_NAMED");
-  await expect(sameKind).toContainText('No recall names "Graco high chair".');
+  await expect(sameKind).toContainText('We didn\'t find a recall naming "Graco high chair" in');
+  await expect(sameKind).toContainText("of the same kind don't name it.");
   await expect(sameKind).toContainText("That doesn't mean it's safe.");
   const list = page.getByTestId("same-kind");
   await expect(list.getByRole("link").first()).toBeHidden();
@@ -51,7 +52,7 @@ test("an owner types what's on a label, and reads each kind of answer", async ({
   // Nothing near, and the count comes from what was read.
   await page.getByLabel("What's on the label").fill("zzqx vvbn plmk");
   await page.getByRole("button", { name: "Check it" }).click();
-  await expect(page.getByTestId("item-answer")).toContainText(/No recall in [\d,]+ CPSC recalls since 2022 names this\. That doesn't mean it's safe\./);
+  await expect(page.getByTestId("item-answer")).toContainText(/We didn't find a recall naming "zzqx vvbn plmk" in [\d,]+ CPSC recalls since 2022\. That doesn't mean it's safe\./);
   await expect(page.getByRole("link", { name: "nhtsa.gov/recalls" })).toBeVisible();
 
   // What it keeps and checks is folded, and opens.

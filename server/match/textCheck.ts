@@ -4,7 +4,7 @@ import { missingRecallYears } from "../cpsc/load";
 import { cpscPhoto } from "../cpsc/photo";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
-import { modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
+import { editDistance, modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
 import type { Recall } from "../cpsc/schema";
 
 export const MAX_TITLE = 200;
@@ -77,15 +77,45 @@ function joinedCodes(text: string): string[] {
   return parts.slice(1).map((part, i) => parts[i] + part).filter((t) => t.length >= 4 && /\d/.test(t) && /[A-Z]/.test(t));
 }
 
+const plainText = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** What to look for in CPSC's text, which has every form of a word: presses finds press, and babies finds baby. Too wide is safe here. */
+function stem(word: string): string {
+  if (word.length > 4 && word.endsWith("ies")) return word.slice(0, -3);
+  if (word.length > 4 && word.endsWith("es")) return word.slice(0, -2);
+  return word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word;
+}
+
+const soughtWords = (text: string) => [...new Set(plainText(text).split(" ").filter((w) => words(w).size > 0).map(stem))].slice(0, MAX_WORDS_SOUGHT);
+
 /**
- * Recalls whose text could be what was typed: the whole of it in a row, every word of it, or a word few recalls have. Reading the
- * text itself, so it doesn't lean on the rules, which clear what they can't tie to a product. Separators become spaces, so the
+ * Typed words no recall's text has, so they could be slips. A word another recall has isn't one, however close it reads: chair
+ * isn't a slip for hair.
+ */
+async function wordsNoRecallHas(db: Queryable, typed: string[]): Promise<string[]> {
+  if (typed.length === 0) return [];
+  const { rows } = await db.query<{ word: string }>(
+    `select s.word from unnest($2::text[]) as s(word)
+     where not exists (select 1 from recalls r where r.recall_date >= $1::date and position(s.word in lower(r.title || ' ' || r.description || ' ' || r.products::text)) > 0)`,
+    [CHECK_FROM, typed],
+  );
+  return rows.map((r) => r.word);
+}
+
+/** One letter wrong in a word of the recall's name: Zorbx for Zorbex, swng for swing. */
+function typoOfRecallName(unseen: string[], recall: Pick<Recall, "title" | "products">): boolean {
+  const names = [...words(`${recall.title} ${recall.products.map((p) => p.name).join(" ")}`)];
+  return unseen.some((w) => names.some((n) => Math.abs(n.length - w.length) <= 1 && editDistance(n, w) <= 1));
+}
+
+/**
+ * Recalls whose text could be what was typed: the whole of it in a row, every word of it, all but one of four or more, or a word
+ * few recalls have. Reading the text itself, so it doesn't lean on the rules, which clear what they can't tie to a product. Separators become spaces, so the
  * pieces of a date don't read as one number.
  */
-async function recallsWithTypedWords(db: Queryable, text: string): Promise<{ recallNumber: string; title: string }[]> {
-  const phrase = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+async function recallsWithTypedWords(db: Queryable, text: string, sought: string[]): Promise<{ recallNumber: string; title: string }[]> {
+  const phrase = plainText(text);
   if (phrase.length < 2) return [];
-  const sought = [...words(text)].slice(0, MAX_WORDS_SOUGHT);
   const { rows } = await db.query<{ recall_number: string; title: string }>(
     `with sought as (select unnest($2::text[]) as word),
      held as (
@@ -100,7 +130,7 @@ async function recallsWithTypedWords(db: Queryable, text: string): Promise<{ rec
        or (
          cardinality($2::text[]) > 0
          and (
-           not exists (select 1 from sought s where position(s.word in h.text) = 0)
+           (select count(*) from sought s where position(s.word in h.text) = 0) <= (case when cardinality($2::text[]) >= 4 then 1 else 0 end)
            or exists (select 1 from rarity x where x.recalls <= greatest(1, ceil((select count(*) from held) * $4::float8)) and position(x.word in h.text) > 0)
          )
        )
@@ -160,13 +190,25 @@ export async function checkText(
   });
 
   const kept = judged.filter((j) => j.verdict.verdict !== "CLEARED");
-  const withWords = opts.mentions === false || kept.some((j) => j.tied) ? [] : await recallsWithTypedWords(db, text);
+  const looking = opts.mentions !== false && !kept.some((j) => j.tied);
+  const sought = soughtWords(text);
+  const withWords = looking ? await recallsWithTypedWords(db, text, sought) : [];
   const hasWords = new Set(withWords.map((r) => r.recallNumber));
+  // Only among recalls that came near, which is where trigrams put a slip. A recall found this way goes first in its list.
+  const typos = new Set<string>();
+  if (looking) {
+    const unseen = await wordsNoRecallHas(db, [...words(text)].filter((w) => w.length >= 4).slice(0, MAX_WORDS_SOUGHT));
+    for (const { recall } of judged) {
+      if (typoOfRecallName(unseen, recall)) typos.add(recall.recall_number);
+    }
+  }
+  const slips = judged.filter((j) => typos.has(j.recall.recall_number) && !hasWords.has(j.recall.recall_number));
+  for (const number of typos) hasWords.add(number);
   // A cut-off list has to keep the recalls that could be this text, ahead of ones that only share a kind of product.
   const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied ? 1 : hasWords.has(j.recall.recall_number) ? 2 : 3);
   const found = kept.sort((a, b) => rank(a) - rank(b));
   const foundNumbers = new Set(found.map((j) => j.recall.recall_number));
-  const past = withWords.filter((r) => !foundNumbers.has(r.recallNumber));
+  const past = [...slips.map((j) => ({ recallNumber: j.recall.recall_number, title: j.recall.title })), ...withWords].filter((r) => !foundNumbers.has(r.recallNumber));
   const limit = opts.maxResults ?? MAX_RESULTS;
   return {
     results: found.slice(0, limit).map(({ recall, tied, verdict }) => ({
