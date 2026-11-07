@@ -18,6 +18,8 @@ const NOW = new Date("2026-11-06T15:00:00Z");
 const SESSION = "session-1";
 const key = createRecordKey("test-record-key-secret-0123456789abcdef");
 const PAPABLIC = "Papablic bedside sleeper, gray stars and moon"; // recall 27027, dated 2026-10-15
+/** Built from CPSC's record for 27027, the recall the person approved. */
+const REFUND_NOTE = "Refund for a recalled product. CPSC recall 27027: Papablic Bedside Sleepers with Play Yard Extensions. Follow the recall steps at cpsc.gov/Recalls.";
 
 const line = (over: Partial<ImportedOrderLine> = {}): ImportedOrderLine => ({
   orderNumber: "#R1",
@@ -927,7 +929,7 @@ describe("refunds", () => {
       const r = await execute(a.approvalId, pp.client);
       const post = pp.calls.find((c) => c.method === "POST");
       expect(post?.path).toBe("/v2/payments/captures/CAP-1/refund");
-      expect(post?.opts.body).toEqual({ amount: { currency_code: "USD", value: "52.50" } });
+      expect(post?.opts.body).toEqual({ amount: { currency_code: "USD", value: "52.50" }, note_to_payer: REFUND_NOTE });
       expect(post?.opts.requestId).toMatch(/^[0-9a-f-]{36}$/);
       expect(r).toMatchObject({ status: "refunded", amountCents: 5250, currency: "USD" });
       const { rows } = await db.query<Record<string, unknown>>("select * from refunds where id = $1", [r.refundId]);
@@ -1134,7 +1136,7 @@ describe("refunds", () => {
         expect(a.amountCents).toBe(3000);
         const pp = fakePayPal();
         expect((await execute(a.approvalId, pp.client)).amountCents).toBe(3000);
-        expect(pp.posts()[0].opts.body).toEqual({ amount: { currency_code: "USD", value: "30.00" } });
+        expect(pp.posts()[0].opts.body).toEqual({ amount: { currency_code: "USD", value: "30.00" }, note_to_payer: REFUND_NOTE });
       });
     });
 
@@ -1324,6 +1326,14 @@ describe("refunds", () => {
       expect(r.status).toBe("unconfirmed");
       return { m, r, pp };
     }
+
+    it("asks again with the same note as the first send", async () => {
+      const { r, pp } = await noClearAnswer(["lost", "lost", "lost"]);
+      const repeat = fakePayPal();
+      await again(r.refundId, repeat.client, LATER);
+      expect(pp.posts()[0].opts.body).toMatchObject({ note_to_payer: REFUND_NOTE });
+      expect(repeat.posts()[0].opts.body).toEqual(pp.posts()[0].opts.body);
+    });
 
     it("reads PayPal's disputes before asking again, since the repeat may be the real first refund", async () => {
       const { r } = await noClearAnswer(["lost", "lost", "lost"]);

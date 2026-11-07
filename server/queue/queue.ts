@@ -12,6 +12,7 @@ import type { Strength } from "../match/verdict";
 import { joinShop } from "../match/run";
 import type { SellerAnswer } from "../match/sellerAnswers";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
+import { refundNote } from "../paypal/refundNote";
 
 /** What Claude found for this row. Text for a person to read: it changes no verdict, order or action. */
 export interface AgentFinding {
@@ -63,7 +64,8 @@ export interface QueueRow {
   sellerAnswer: SellerAnswer | null;
   /** Seconds from PayPal's capture to this queue, while the payment is held. PayPal's time itself never reaches the page. */
   caughtSeconds: number | null;
-  approval: { id: string; amountCents: number; currency: string; expiresAt: string } | null;
+  /** note is what goes to PayPal with the refund, made by the code that sends it, so the screen shows what is sent. */
+  approval: { id: string; amountCents: number; currency: string; expiresAt: string; note: string } | null;
   refund: { id: string; status: string; amountCents: number; currency: string; failure: string | null } | null;
 }
 
@@ -226,6 +228,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             amountCents: Number(r.approval_amount),
             currency: String(r.approval_currency),
             expiresAt: new Date(r.approval_expires as string).toISOString(),
+            note: refundNote(String(r.recall_number), (r.products as { name: string }[])[0]?.name ?? String(r.recall_title)),
           }
         : null,
       refund: r.refund_id

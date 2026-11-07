@@ -30,6 +30,8 @@ export interface CreateRefundCall {
   amount: { currency_code: string; value: string };
   requestId: string;
   accessToken: string;
+  /** What the buyer reads with the refund. Built from CPSC's record by refundNote. */
+  noteToPayer?: string;
 }
 
 interface ToolkitAxios {
@@ -87,7 +89,8 @@ function refundToolkit(call: CreateRefundCall): Toolkit {
 export async function createRefundThroughToolkit(call: CreateRefundCall, opts: { baseUrl?: string } = {}): Promise<unknown> {
   const service = refundToolkit(call).getPaypalAPIService();
   if (opts.baseUrl) service.paypalClient.getBaseUrl = () => opts.baseUrl as string;
-  return JSON.parse(await service.run("create_refund", { capture_id: call.captureId, amount: call.amount }));
+  const note = call.noteToPayer ? { note_to_payer: call.noteToPayer } : {};
+  return JSON.parse(await service.run("create_refund", { capture_id: call.captureId, amount: call.amount, ...note }));
 }
 
 export interface ToolkitInUse {
@@ -141,7 +144,10 @@ export async function toolkitSetup(call: CreateRefundCall) {
   };
 }
 
-const refundBody = z.object({ amount: z.object({ currency_code: z.string().min(1), value: z.string().min(1) }) });
+const refundBody = z.object({
+  amount: z.object({ currency_code: z.string().min(1), value: z.string().min(1) }),
+  note_to_payer: z.string().min(1).max(255).optional(),
+});
 
 // The toolkit passes on PayPal's description rather than its issue code, and that prose could name a payment
 // or a buyer. What a refusal leaves behind goes into the ledger, which outlives the 48-hour rule, so only a
@@ -183,7 +189,7 @@ export function refundsThroughToolkit(
     const body = refundBody.safeParse(JSON.parse(String(init?.body ?? "{}")));
     if (!body.success) throw new Error("a refund needs an amount");
 
-    const answer = (await untilAborted(createRefund({ captureId: refund[1], amount: body.data.amount, requestId, accessToken }), init?.signal)) as {
+    const answer = (await untilAborted(createRefund({ captureId: refund[1], amount: body.data.amount, requestId, accessToken, noteToPayer: body.data.note_to_payer }), init?.signal)) as {
       ok?: boolean;
       id?: unknown;
       status?: unknown;

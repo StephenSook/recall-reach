@@ -364,7 +364,7 @@ describe("a store read from its listings", () => {
     it.each([
       ["a refund in flight, after the evidence weakened", { lead: word({ refund: pendingRefund }), also: [] }],
       ["a question already sent", { lead: word({ notice: asked }), also: [] }],
-      ["an approval waiting", { lead: word({ approval: { id: "a", amountCents: 100, currency: "USD", expiresAt: "x" } }), also: [] }],
+      ["an approval waiting", { lead: word({ approval: { id: "a", amountCents: 100, currency: "USD", note: "n", expiresAt: "x" } }), also: [] }],
       ["a stronger recall under the lead", { lead: word({ notice: asked }), also: [{ ...word(), strength: "BRAND" as const }] }],
       ["an action on a recall under the lead", { lead: word(), also: [word({ notice: asked })] }],
     ])("%s", (_name, c) => {

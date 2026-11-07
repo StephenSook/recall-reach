@@ -130,7 +130,7 @@ describe("loadQueue", () => {
   it("shows a pending approval only to the session that made it", async () => {
     const { matchId } = await row("27027");
     const a = await approveRefund(db, paypal, { shopId, sessionId: "session-1", matchId });
-    expect((await row("27027")).approval).toMatchObject({ id: a.approvalId, amountCents: 9000, currency: "USD" });
+    expect((await row("27027")).approval).toMatchObject({ id: a.approvalId, amountCents: 9000, currency: "USD", note: "Refund for a recalled product. CPSC recall 27027: Papablic Bedside Sleepers with Play Yard Extensions. Follow the recall steps at cpsc.gov/Recalls." });
     const other = await loadQueue(db, shopId, "session-2");
     expect(other.rows.find((r) => r.recallNumber === "27027")?.approval).toBeNull();
   });

@@ -113,6 +113,13 @@ describe("create_refund through the toolkit", () => {
     });
   });
 
+  it("passes the note on to PayPal, and sends none when there isn't one", async () => {
+    await toStub({ ...call(), noteToPayer: "Refund for a recalled product." });
+    expect(seen.at(-1)?.body).toMatchObject({ note_to_payer: "Refund for a recalled product." });
+    await toStub(call());
+    expect(seen.at(-1)?.body).not.toHaveProperty("note_to_payer");
+  });
+
   it("reaches the app's client as a refund", async () => {
     const { data, status } = await refund();
     expect(status).toBe(201);

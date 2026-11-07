@@ -19,6 +19,7 @@ import type { RecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { disputeOnCapture } from "./disputes";
 import { centsToValue, getCapture, valueToCents, type CaptureFacts } from "./orders";
+import { refundNote } from "./refundNote";
 
 const APPROVAL_MS = 15 * 60_000;
 const REFUND_WINDOW_DAYS = 180;
@@ -108,9 +109,12 @@ async function approvedFactsHold(
   q: Queryable,
   approval: { recall_id: number; recall_sha256: string; order_line_id: string; line_sha256: string | null },
   lock: "" | " for share" = "",
-): Promise<{ recallDate: string; orderedOn: string }> {
+): Promise<{ recallDate: string; orderedOn: string; note: string }> {
   const recall = (
-    await q.query<{ raw_sha256: string; recall_date: string }>(`select raw_sha256, recall_date from recalls where recall_id = $1${lock}`, [approval.recall_id])
+    await q.query<{ raw_sha256: string; recall_date: string; recall_number: string; title: string; products: { name: string }[] }>(
+      `select raw_sha256, recall_date, recall_number, title, products from recalls where recall_id = $1${lock}`,
+      [approval.recall_id],
+    )
   ).rows[0];
   if (recall.raw_sha256 !== approval.recall_sha256) {
     throw new RefundRefused("RECALL_CHANGED", "CPSC changed this recall after the approval. Please review it again.");
@@ -119,7 +123,9 @@ async function approvedFactsHold(
   if (lineVersion(line) !== approval.line_sha256) {
     throw new RefundRefused("LINE_CHANGED", "This order line changed after the approval. Please review it again.");
   }
-  return { recallDate: recall.recall_date, orderedOn: line.ordered_on };
+  // From the version the person approved, since a changed recall was refused above.
+  const note = refundNote(recall.recall_number, recall.products[0]?.name ?? recall.title);
+  return { recallDate: recall.recall_date, orderedOn: line.ordered_on, note };
 }
 
 /**
@@ -253,7 +259,7 @@ export async function executeRefund(
   const approval = found.rows[0];
   if (!approval) throw invalid();
 
-  const { recallDate, orderedOn } = await approvedFactsHold(db, approval);
+  const { recallDate, orderedOn, note } = await approvedFactsHold(db, approval);
   if (orderedOn <= recallDate) {
     throw new RefundRefused("NOT_REFUND_ELIGIBLE", "Only a sale dated after the recall date can be refunded here. You can still send the notice.");
   }
@@ -302,7 +308,7 @@ export async function executeRefund(
   return sendRefund(
     db,
     client,
-    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, repeat: false, holder: row.send_lease_id, startedAt },
+    { rowId: row.id, requestId: row.request_id, captureId, amountCents: approval.amount_cents, currency: approval.currency, note, repeat: false, holder: row.send_lease_id, startedAt },
     input.recordKey,
     now,
   );
@@ -447,7 +453,7 @@ function refusePaymentDates(capture: CaptureFacts, recallDate: string, now: Date
 async function sendRefund(
   db: Queryable,
   client: PayPalClient,
-  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; repeat: boolean; holder: string; startedAt: number },
+  send: { rowId: string; requestId: string; captureId: string; amountCents: number; currency: string; note: string; repeat: boolean; holder: string; startedAt: number },
   recordKey: RecordKey,
   now: Date,
 ): Promise<RefundOutcome> {
@@ -482,7 +488,7 @@ async function sendRefund(
     const usableLease = sending.rows[0].send_lease_until.getTime() - sendAt - LAST_ATTEMPT_MS;
     const { data } = await client.request<{ id: string; status: string }>("POST", `/v2/payments/captures/${send.captureId}/refund`, {
       requestId: send.requestId,
-      body: { amount: { currency_code: send.currency, value: centsToValue(send.amountCents) } },
+      body: { amount: { currency_code: send.currency, value: centsToValue(send.amountCents) }, note_to_payer: send.note },
       notAfter: realSendAt + usableLease,
     });
     const status = ledgerStatusFor(data.status);
@@ -562,7 +568,7 @@ export async function askPayPalAgain(
   if (tooOldToRepeat(row.created_at, now.getTime())) throw tooOldNow();
   // A first send's checks, except what this refund could itself have changed if it landed: a capture showing a refund,
   // and the amount left. If the first request never reached PayPal, this is the real first refund, so disputes are read too.
-  const { recallDate } = await approvedFactsHold(db, row);
+  const { recallDate, note } = await approvedFactsHold(db, row);
   const today = businessDay(now);
   if ((await identifiedCapture(db, input.shopId, row.order_line_id, row.paypal_payment_id, today)) !== row.capture_id) {
     throw new RefundRefused("PAYMENT_CHANGED", "The PayPal payment for this order line has changed. Please review it again.");
@@ -605,7 +611,7 @@ export async function askPayPalAgain(
   return sendRefund(
     db,
     client,
-    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, repeat: true, holder, startedAt },
+    { rowId: input.refundId, requestId: row.request_id, captureId: row.capture_id, amountCents: row.amount_cents, currency: row.currency, note, repeat: true, holder, startedAt },
     input.recordKey,
     now,
   );

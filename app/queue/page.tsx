@@ -136,7 +136,12 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
               </form>
             ) : null}
             {refundOnOffer(row) && row.approval ? (
-              <RefundForm approvalId={row.approval.id} label={`Refund ${centsToValue(row.approval.amountCents)} ${row.approval.currency}`} />
+              <>
+                <p className="note" data-testid="paypal-receives">
+                  What PayPal receives: a refund of {centsToValue(row.approval.amountCents)} {row.approval.currency} on this sale&apos;s payment, and this note for the buyer: &quot;{row.approval.note}&quot;
+                </p>
+                <RefundForm approvalId={row.approval.id} label={`Refund ${centsToValue(row.approval.amountCents)} ${row.approval.currency}`} />
+              </>
             ) : null}
             {row.refund ? (
               <p>
