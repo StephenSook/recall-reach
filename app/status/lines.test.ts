@@ -34,6 +34,10 @@ describe("what happens when something outside fails", () => {
     expect(seen("PayPal answers a refund with PENDING")).toMatch(/^Seen on the sandbox/);
   });
 
+  it("doesn't promise to read again a record CPSC sent that can't be read", () => {
+    expect(WHAT_HAPPENS.find((w) => w.when === "CPSC's API fails")?.does).toContain("A single record that can't be read is reported and isn't stored.");
+  });
+
   it("uses the words the app shows when Claude's limit runs out", () => {
     expect(WHAT_HAPPENS.find((w) => w.when === "Claude's daily limit runs out")?.does).toContain("reached today's limit");
   });

@@ -16,7 +16,7 @@ export interface StatusLine {
 export const WHAT_HAPPENS: { when: string; does: string; seen: string }[] = [
   {
     when: "CPSC's API fails",
-    does: "The recalls held here keep working, and the CPSC line above says since when. A failed read marks no dates as read, so they're read again when CPSC answers.",
+    does: "The recalls held here keep working, and the CPSC line above says since when. A failed read marks no dates as read, so they're read again when CPSC answers. A single record that can't be read is reported and isn't stored.",
     seen: "Seen on the deployed site from Nov 7, 2026.",
   },
   {
