@@ -14,6 +14,8 @@ import { LookAgain } from "./LookAgain";
 import { MatchGridLoader } from "./MatchGridLoader";
 import { NoticeActions } from "./NoticeActions";
 import { readCalls } from "@/server/paypal/callLog";
+import { readWarningsFor } from "@/server/warnings/warnings";
+import { WarningCards } from "./WarningCards";
 import { PayPalCalls } from "./PayPalCalls";
 import { PushRegister } from "./PushRegister";
 import { SellerAnswerForm } from "./SellerAnswerForm";
@@ -232,6 +234,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   const message = trustedMessage(secret("SESSION_SECRET"), params.message, params.sig);
   const calls = await readCalls(getDb(), session.shopId).catch(() => []);
+  const warnings = await readWarningsFor(getDb(), session.shopId).catch(() => []);
   const shopName = shop.name;
   const shopKind = shop.kind;
   const { cards: found, cleared, unrelated } = toCards(rows);
@@ -398,6 +401,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </form>
         </details>
       ) : null}
+      <WarningCards warnings={warnings} demo={shop.kind === "DEMO"} />
       <PayPalCalls calls={calls} />
     </main>
   );

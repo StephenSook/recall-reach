@@ -322,6 +322,13 @@ components:
       properties:
         ok: { type: boolean }
         build: { type: string, nullable: true, description: The commit this answer came from. }
+        warnings:
+          type: object
+          description: CPSC's warnings file, apart from recalls. Not part of ok.
+          properties:
+            count: { type: integer }
+            lastOkAt: { type: string, format: date-time, nullable: true }
+            fresh: { type: boolean }
         degraded:
           type: object
           nullable: true

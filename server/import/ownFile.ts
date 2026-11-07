@@ -1,5 +1,6 @@
 // A shop checks its own order file. Real recalls against real sales, with no PayPal account connected, so nothing
 // here can refund. Its data is deleted when the shop asks, and after seven days regardless.
+import { checkShopAgainstWarnings } from "../warnings/warnings";
 import type { Db, Queryable } from "../db/types";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
@@ -47,6 +48,7 @@ export async function importOwnFile(
     await db.query("delete from shops where id = $1", [shopId]);
     throw err;
   }
+  await checkShopAgainstWarnings(db, shopId);
   return { shopId, lines: parsed.lines.length, rejected: parsed.rejected.length };
 }
 

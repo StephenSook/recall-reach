@@ -2,6 +2,7 @@
 // Listings aren't sales, so this can't reach a family or refund anyone, and nothing here says anything was sold.
 import type { Db } from "../db/types";
 import { runShopCheck } from "../match/run";
+import { checkShopAgainstWarnings } from "../warnings/warnings";
 import { readStoreListings, type StoreFeedDeps } from "./storeFeed";
 import { createShop } from "./store";
 
@@ -22,5 +23,6 @@ export async function importStoreListings(db: Db, input: { typed: string; today:
     await db.query("delete from shops where id = $1", [shopId]);
     throw err;
   }
+  await checkShopAgainstWarnings(db, shopId);
   return { shopId, listings: read.listings.length, complete: read.complete };
 }

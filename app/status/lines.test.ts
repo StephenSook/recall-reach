@@ -14,6 +14,7 @@ const healthy: Health = {
   replay: { lastRunAt: "2026-11-07T10:00:00.000Z" },
   market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true },
   claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true },
+  warnings: { count: 381, lastOkAt: "2026-11-07T08:00:00.000Z", fresh: true },
   degraded: null,
   paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
 };
@@ -21,7 +22,7 @@ const line = (h: Health, name: string, claude = true) => statusLines(h, { claude
 
 describe("the status page's lines", () => {
   it("has one line for each outside service, in a fixed order", () => {
-    expect(statusLines(healthy, { claudeKeySet: true }).map((l) => l.service)).toEqual(["Postgres", "CPSC recalls", "PayPal webhooks", "PayPal data rule", "Recall Replay", "Channel3", "Claude"]);
+    expect(statusLines(healthy, { claudeKeySet: true }).map((l) => l.service)).toEqual(["Postgres", "CPSC recalls", "CPSC warnings", "PayPal webhooks", "PayPal data rule", "Recall Replay", "Channel3", "Claude"]);
   });
 
   it("says on every line what the reading measures", () => {
@@ -56,6 +57,12 @@ describe("the status page's lines", () => {
     const l = line(failing, "CPSC recalls");
     expect(l?.state).toBe("problem");
     expect(l?.reading).toBe("CPSC's API has been failing since Nov 6, 2026, 7:05 PM ET. Last good read Nov 6, 2026, 6:43 PM ET. The 1,855 recalls held here still work.");
+  });
+
+  it("gives CPSC's warnings their own line and count", () => {
+    expect(line(healthy, "CPSC warnings")).toMatchObject({ state: "ok" });
+    expect(line(healthy, "CPSC warnings")?.reading).toContain("381 warnings held.");
+    expect(line({ ...healthy, warnings: { count: 0, lastOkAt: null, fresh: false } }, "CPSC warnings")).toMatchObject({ state: "problem", reading: "No read on record." });
   });
 
   it("shows a stale CPSC poll as a problem, with when it last worked", () => {

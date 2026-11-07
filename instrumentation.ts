@@ -27,6 +27,7 @@ export async function register(): Promise<void> {
   ]);
   const { refreshSafety } = await import("./server/safety/attacks");
   const { agentClientFromEnv, pingClaude } = await import("./server/agent/claude");
+  const { checkStoredShopsAgainstWarnings, refreshWarnings } = await import("./server/warnings/warnings");
   const claude = agentClientFromEnv();
   const shopDataKey = process.env.SHOP_DATA_KEY;
   startScheduler(
@@ -38,6 +39,11 @@ export async function register(): Promise<void> {
       refreshSafety: shopDataKey ? (at) => refreshSafety(getDb(), { now: at, secret: shopDataKey }) : undefined,
       sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at, undefined, DEMO_RECALL_NUMBERS),
       pingClaude: claude ? (at) => pingClaude(getDb(), claude, at) : undefined,
+      refreshWarnings: async (at) => {
+        const read = await refreshWarnings(getDb(), { now: at });
+        if (read === "READ") await checkStoredShopsAgainstWarnings(getDb());
+        return read;
+      },
     }),
   );
   console.info("background jobs started: cpsc-poll every 15 min; database hourly or on change, with the PayPal purge");

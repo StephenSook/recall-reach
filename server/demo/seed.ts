@@ -7,6 +7,7 @@
 // - The refundable sales are real captures made just now, because each refund uses one up.
 // - The shop, its listings and prices are demo data. Order dates marked "seeded" are chosen to fall before the
 //   recall. The refundable sales are not seeded: their captures really are after the recall.
+import { checkTitlesAgainstWarnings } from "../warnings/warnings";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Db } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
@@ -84,6 +85,9 @@ const CASES: DemoCase[] = [
 // CANNOT IDENTIFY has no line on purpose: the pool's $42 payment says only an amount, and is counted as unidentified.
 
 /** Still on the shelf, on a real recall: what a family can buy for the live catch. Recall 27018 lists model MY002. */
+/** A labelled sample title for CPSC's warnings section. It isn't a sale, and the page says so. */
+const DEMO_WARNING_TITLE = "Mbabyjon crib bumpers";
+
 const SHELF_ITEM = { title: "ONTHEWEI baby bath seat MY002", sku: "DEMO-ONTHEWEI", priceCents: 1800, currency: "USD", recallNumber: "27018", required: true };
 
 const daysBefore = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
@@ -197,6 +201,8 @@ export async function seedDemoShop(
       search: coverage,
       recallsFrom: opts.recallsFrom,
     });
+    // Beside the recall cards, not among them: no order line, so no recall count can move. The matcher still has to find it.
+    await checkTitlesAgainstWarnings(db, shopId, [DEMO_WARNING_TITLE]).catch((err: unknown) => console.error("demo warning skipped:", err instanceof Error ? err.name : "unknown error"));
     return { shopId, run, search: coverage };
   } catch (err) {
     // Nobody can reach a shop that didn't finish, so it doesn't stay.

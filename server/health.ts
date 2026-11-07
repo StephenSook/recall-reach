@@ -1,4 +1,5 @@
 import { lastClaudeAnswer } from "./agent/claude";
+import { lastWarningRead, warningCount } from "./warnings/warnings";
 import { recallCountsByYear } from "./cpsc/load";
 import type { Queryable } from "./db/types";
 import type { RecallPollStatus } from "./jobs/appJobs";
@@ -59,6 +60,8 @@ export interface Health {
    * the recalls it holds, so /api/health answers 200 and names CPSC. An old read with no failure is our job stopping, so it isn't this.
    */
   degraded: { source: "CPSC"; since: string | null; lastGoodAt: string | null } | null;
+  /** CPSC's warnings file, apart from recalls. Not part of ok. Fresh means read in the last 8 days: CPSC updates it weekly. */
+  warnings: { count: number; lastOkAt: string | null; fresh: boolean };
   /** Claude's last good answer. Not part of ok: everything else works without it. The probe fails on it, so nobody finds out from a judge. */
   claude: { lastOkAt: string | null; fresh: boolean };
   paypal: {
@@ -75,6 +78,7 @@ const MAX_REPLAY_AGE_MS = 48 * 3_600_000;
 /** Each recall is searched again after 7 days and nothing is due until then, so a healthy search can go quiet for most of a week. */
 const MAX_MARKET_AGE_MS = 8 * 86_400_000;
 const MAX_CLAUDE_AGE_MS = 2 * 86_400_000;
+const MAX_WARNINGS_AGE_MS = 8 * 86_400_000;
 
 /** Its own try, so this query failing can't call the rest of the app down. */
 async function lastClaudeAnswerOrNull(db: Queryable): Promise<string | null> {
@@ -148,6 +152,7 @@ export async function getHealth(
     const lastRunAt = iso(replay.rows[0]?.at);
     const marketOkAt = await lastMarketSearch(db);
     const claudeOkAt = await lastClaudeAnswerOrNull(db);
+    const warningsRead = { count: await warningCount(db), lastOkAt: await lastWarningRead(db) };
     const p = pulls.rows[0];
     const pulledAt = p ? iso(p.finished_at) : null;
     const checks = {
@@ -189,6 +194,7 @@ export async function getHealth(
       replay: { lastRunAt },
       market: { lastOkAt: marketOkAt, fresh: marketOkAt !== null && now.getTime() - Date.parse(marketOkAt) <= MAX_MARKET_AGE_MS },
       claude: { lastOkAt: claudeOkAt, fresh: claudeOkAt !== null && now.getTime() - Date.parse(claudeOkAt) <= MAX_CLAUDE_AGE_MS },
+      warnings: { ...warningsRead, fresh: warningsRead.lastOkAt !== null && now.getTime() - Date.parse(warningsRead.lastOkAt) <= MAX_WARNINGS_AGE_MS },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: iso(webhook.rows[0]?.at) },
     };
   } catch (err) {
@@ -205,6 +211,7 @@ export async function getHealth(
       replay: { lastRunAt: null },
       market: { lastOkAt: null, fresh: false },
       claude: { lastOkAt: null, fresh: false },
+      warnings: { count: 0, lastOkAt: null, fresh: false },
       paypal: { ...paypalBase, lastVerifiedWebhookAt: null },
     };
   }

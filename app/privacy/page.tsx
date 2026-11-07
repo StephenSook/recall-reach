@@ -8,7 +8,7 @@ export default function Privacy() {
         <h1>Privacy</h1>
       </header>
       <h2 className="section-title">What this app keeps</h2>
-      <p>Your order file&apos;s columns, with buyer emails encrypted, deleted after 7 days or when you ask. CPSC&apos;s public recalls. PayPal sales data is built to be deleted within 48 hours under PayPal&apos;s deletion rule. Stored decisions use your own order number or a keyed hash. It keeps a keyed fingerprint of each PayPal webhook delivery to refuse repeats, with no ids or amounts.</p>
+      <p>Your order file&apos;s columns, with buyer emails encrypted, deleted after 7 days or when you ask. CPSC&apos;s public recalls and product safety warnings. PayPal sales data is built to be deleted within 48 hours under PayPal&apos;s deletion rule. Stored decisions use your own order number or a keyed hash. It keeps a keyed fingerprint of each PayPal webhook delivery to refuse repeats, with no ids or amounts.</p>
       <p>If you type a store&apos;s address, RecallReachBot reads that store&apos;s robots.txt and public /products.json, about 5 seconds apart. It keeps each title and whether it&apos;s for sale, deleted after 7 days or when you ask. It never keeps the vendor, and never reads a store unless someone typed its address.</p>
       <p>If you use the phone app, your phone&apos;s push token is kept with your shop and deleted with it.</p>
       <p>If you answer &quot;Is this the recalled product?&quot;, the recall number, your own title for the item and your answer are kept with your shop and deleted with it. The public page shows counts only.</p>

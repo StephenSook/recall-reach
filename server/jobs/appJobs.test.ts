@@ -94,6 +94,29 @@ describe("the recall poll job", () => {
     });
   });
 
+  describe("CPSC's warnings file", () => {
+    it("is asked on the hourly heartbeat, and says when it read", async () => {
+      const refreshWarnings = vi.fn(async () => "READ");
+      const cpsc = cpscAnswering(() => nov5);
+      const [job] = appJobs(db, { ...cpsc.deps, refreshWarnings });
+      for (let tick = 0; tick < HEARTBEAT_TICKS + 1; tick++) await job.run();
+      expect(refreshWarnings).toHaveBeenCalledTimes(2);
+      expect(info[0]).toContain("warnings read");
+    });
+
+    it("reports a failure without stopping the poll", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const cpsc = cpscAnswering(() => nov5);
+        const [job] = appJobs(db, { ...cpsc.deps, refreshWarnings: async () => Promise.reject(new Error("blocked")) });
+        await expect(job.run()).rejects.toThrow("blocked");
+        expect(recallPollStatus().lastPollOk).toBe(true);
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   describe("the daily call to Claude", () => {
     it("is asked on the hourly heartbeat, not on every poll, and says when it ran", async () => {
       const pingClaude = vi.fn(async () => "OK");

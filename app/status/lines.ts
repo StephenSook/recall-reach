@@ -37,6 +37,12 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
       measures: "The last hourly read of CPSC's API, and whether it worked in the last 2.5 hours. Not a call made now.",
     },
     {
+      service: "CPSC warnings",
+      state: !db ? "unknown" : h.warnings.fresh ? "ok" : "problem",
+      reading: !db ? NOT_READ : h.warnings.lastOkAt ? `Last read ${ranAt(h.warnings.lastOkAt)}. ${h.warnings.count.toLocaleString("en-US")} warnings held.` : "No read on record.",
+      measures: "The last daily read of CPSC's warnings file, and whether it's under 8 days old. Apart from recalls. Not a call made now.",
+    },
+    {
       service: "PayPal webhooks",
       state: h.paypal.webhookConfigured ? "ok" : "problem",
       reading: paypalReading,

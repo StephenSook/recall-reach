@@ -131,6 +131,15 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "CPSC Product Safety Warnings",
+    status: "claimed",
+    evidence: [
+      { file: "server/warnings/warnings.ts", find: "product_safety_warning_listing.csv" },
+      { file: "instrumentation.ts", call: "refreshWarnings" },
+      { file: "app/queue/page.tsx", find: "<WarningCards" },
+    ],
+  },
+  {
     name: "Published defects",
     status: "claimed",
     feature: true,

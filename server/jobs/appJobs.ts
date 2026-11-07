@@ -50,7 +50,7 @@ async function lastPolledThrough(db: Db): Promise<string | null> {
  * when CPSC's answer differs from the last one held in memory, and on the hourly heartbeat, which
  * also runs the PayPal purge so both share one wake-up.
  */
-export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; refreshSafety?: (at: Date) => Promise<string>; pingClaude?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
+export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshReplay?: (at: Date) => Promise<string>; refreshSafety?: (at: Date) => Promise<string>; pingClaude?: (at: Date) => Promise<string>; refreshWarnings?: (at: Date) => Promise<string>; sweepMarket?: (at: Date) => Promise<{ searched: number; failed: number; left: number }>; maxShopsPerSweep?: number; backfillFromYear?: number; backfillBudgetMs?: number } = {}): Job[] {
   const now = deps.now ?? (() => new Date());
   let ticks = 0;
   let lastHash: string | null = null;
@@ -219,6 +219,18 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
       }
     }
 
+    // CPSC's warnings, a file of their own. It keeps its own day, and a failure holds on to what's here.
+    let warnings: string | null = null;
+    let warningsError: unknown = null;
+    if (heartbeat && deps.refreshWarnings && Date.now() - started < JOB_BUDGET_MS) {
+      try {
+        warnings = await deps.refreshWarnings(at);
+      } catch (err) {
+        warningsError = err;
+        console.error(`CPSC warnings read failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      }
+    }
+
     holder.__recallReachPoll = { lastPollAt: at.toISOString(), lastPollOk: fetchError === null, dbTouched: touchDb, sweep, sweepOk };
     const why = heartbeat ? " (heartbeat)" : changed ? " (changed)" : touchDb ? " (shops waiting)" : "";
     const fetched = payload ? `fetched ${payload.length}` : "fetch failed";
@@ -232,10 +244,11 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
         (replay && replay !== "FRESH" ? `, replay ${replay.toLowerCase()}` : "") +
         (safety && safety !== "FRESH" ? `, safety ${safety.toLowerCase()}` : "") +
         (market ? `, market searched ${market.searched}, ${market.left} left${market.failed > 0 ? `, ${market.failed} failed` : ""}` : "") +
-        (claude && claude !== "NOT_DUE" ? `, claude ${claude.toLowerCase()}` : ""),
+        (claude && claude !== "NOT_DUE" ? `, claude ${claude.toLowerCase()}` : "") +
+        (warnings && warnings !== "FRESH" ? `, warnings ${warnings.toLowerCase()}` : ""),
     );
 
-    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? safetyError ?? marketError ?? claudeError;
+    const failure = fetchError ?? writeError ?? purgeError ?? sweepError ?? replayError ?? safetyError ?? marketError ?? claudeError ?? warningsError;
     if (failure) throw failure;
   };
 
