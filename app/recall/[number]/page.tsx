@@ -17,6 +17,15 @@ export default async function PublicRecallPage({ params }: { params: Promise<{ n
     <main className="family">
       <div className="column">
         <h1>{recall.title}</h1>
+        {recall.image ? (
+          <figure className="photo">
+            {/* eslint-disable-next-line @next/next/no-img-element -- CPSC's own photo, served by CPSC */}
+            <img src={recall.image.url} alt={recall.image.caption} referrerPolicy="no-referrer" />
+            <figcaption>{recall.image.caption}. Photo from CPSC.</figcaption>
+          </figure>
+        ) : null}
+        <h2>What was recalled, in CPSC&apos;s words</h2>
+        <p>{recall.description}</p>
         <h2>The hazard, in CPSC&apos;s words</h2>
         <div className="hazard">
           {recall.hazards.map((h) => (

@@ -36,6 +36,21 @@ describe("the public recall page", () => {
     expect(html).toContain(`<a href="${RECALL.url}">Open CPSC&#x27;s recall page</a>`);
   });
 
+  it("shows CPSC's photo and caption, and what was recalled, before the hazard, so the product can be recognized", async () => {
+    read.mockResolvedValue({ ...RECALL, description: "The recall involves dryers, model BRZ0083.", image: { url: "https://www.cpsc.gov/s3fs-public/a.jpg", caption: "Recalled dryer model numbers BRZ0083 and BRZ0156" } });
+    const html = await page();
+    expect(html).toContain('src="https://www.cpsc.gov/s3fs-public/a.jpg"');
+    expect(html).toContain("Recalled dryer model numbers BRZ0083 and BRZ0156. Photo from CPSC.");
+    expect(html).toContain("The recall involves dryers, model BRZ0083.");
+    expect(html.indexOf("Photo from CPSC")).toBeLessThan(html.indexOf("The hazard, in CPSC"));
+    expect(html.indexOf("The recall involves dryers")).toBeLessThan(html.indexOf("The hazard, in CPSC"));
+  });
+
+  it("leaves the photo out when there isn't one of CPSC's", async () => {
+    read.mockResolvedValue({ ...RECALL, image: null });
+    expect(await page()).not.toContain("<img");
+  });
+
   it("says nothing about a shop, a payment, Claude or a match, and has no form", async () => {
     const html = await page();
     expect(html).not.toMatch(/shop|paypal|claude|match|refund|<form/i);
