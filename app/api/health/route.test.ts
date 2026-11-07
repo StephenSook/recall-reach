@@ -31,6 +31,14 @@ describe("GET /api/health", () => {
     await real.close();
   });
 
+  it("answers 200 when only CPSC is failing, with ok false and CPSC named in the body", async () => {
+    await healthy();
+    await real.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'failed', now())");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: false, degraded: { source: "CPSC" } });
+  });
+
   const healthy = async () => {
     await real.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'ok', now())");
     await real.query(

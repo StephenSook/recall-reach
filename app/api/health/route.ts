@@ -13,5 +13,6 @@ export async function GET(): Promise<Response> {
     console.error("health check failed:", err instanceof Error ? err.message : err);
     return Response.json({ ok: false, database: { ok: false } }, { status: 503, headers: { "cache-control": "no-store" } });
   }
-  return Response.json(health, { status: health.ok ? 200 : 503, headers: { "cache-control": "no-store" } });
+  // CPSC failing isn't this site failing: the body says so, and 503 stays for what's ours.
+  return Response.json(health, { status: health.ok || health.degraded ? 200 : 503, headers: { "cache-control": "no-store" } });
 }

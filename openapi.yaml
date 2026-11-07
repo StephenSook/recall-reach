@@ -173,7 +173,7 @@ paths:
       summary: Whether the site is working, check by check
       responses:
         "200":
-          description: Every check passed.
+          description: Every check passed, or only CPSC is failing. Then ok is false and degraded names it, since this site still works from the recalls it holds.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Health" }
@@ -321,6 +321,15 @@ components:
       required: [ok, checkedAt, checks, database, market]
       properties:
         ok: { type: boolean }
+        degraded:
+          type: object
+          nullable: true
+          description: Set when CPSC is the only thing failing.
+          required: [source, since, lastGoodAt]
+          properties:
+            source: { type: string, enum: [CPSC] }
+            since: { type: string, format: date-time, nullable: true }
+            lastGoodAt: { type: string, format: date-time, nullable: true }
         checkedAt: { type: string, format: date-time }
         market:
           type: object

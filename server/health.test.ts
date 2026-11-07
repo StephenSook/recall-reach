@@ -86,6 +86,58 @@ describe("getHealth", () => {
       expect(await check()).toMatchObject({ ok: true, checks: { database: true, webhook: true, lastPull: true, purge: true, poll: true, replay: true, logging: true }, replay: { lastRunAt: "2026-11-06T02:00:00.000Z" } });
     });
 
+    describe("when only CPSC is failing", () => {
+      const allElseWell = () => replayed("2026-11-06T02:00:00Z");
+
+      it("names CPSC, when it started and the last good read, and isn't ok", async () => {
+        await allElseWell();
+        await pulled("ok", "2026-11-06T08:00:00Z");
+        await pulled("failed", "2026-11-06T10:00:00Z");
+        await pulled("failed", "2026-11-06T11:30:00Z");
+        expect(await check()).toMatchObject({
+          ok: false,
+          degraded: { source: "CPSC", since: "2026-11-06T10:00:00.000Z", lastGoodAt: "2026-11-06T08:00:00.000Z" },
+        });
+      });
+
+      it("counts an error row stored as a partial read, from before that was fixed", async () => {
+        await allElseWell();
+        await pulled("ok", "2026-11-06T08:00:00Z");
+        await pulled("partial", "2026-11-06T11:00:00Z");
+        expect((await check()).degraded?.source).toBe("CPSC");
+      });
+
+      it("counts a poll that has only just failed, using its own time", async () => {
+        await allElseWell();
+        await pulled("ok");
+        const poll = { lastPollAt: "2026-11-06T11:45:00.000Z", lastPollOk: false, dbTouched: false };
+        expect(await check(poll)).toMatchObject({ ok: false, degraded: { source: "CPSC", since: "2026-11-06T11:45:00.000Z" } });
+      });
+
+      it("isn't CPSC when our own job has stopped: the last read is simply old", async () => {
+        await allElseWell();
+        await pulled("ok", "2026-11-06T02:00:00Z");
+        expect(await check()).toMatchObject({ ok: false, degraded: null });
+      });
+
+      it("isn't CPSC when the last failure is old too, because nothing has tried since", async () => {
+        await allElseWell();
+        await pulled("failed", "2026-11-06T02:00:00Z");
+        expect(await check()).toMatchObject({ ok: false, degraded: null });
+      });
+
+      it("isn't only CPSC when something of ours is off as well", async () => {
+        await pulled("failed");
+        expect(await check()).toMatchObject({ ok: false, checks: { replay: false }, degraded: null });
+      });
+
+      it("is nothing when all is well", async () => {
+        await allElseWell();
+        await pulled("ok");
+        expect(await check()).toMatchObject({ ok: true, degraded: null });
+      });
+    });
+
     describe("Claude's last good answer", () => {
       const allElseWell = async () => {
         await pulled("ok");

@@ -52,6 +52,11 @@ export interface Health {
    * and a free tier going quiet is not the app being down.
    */
   market: { lastOkAt: string | null; fresh: boolean };
+  /**
+   * Set when CPSC is the only thing failing. ok stays false, because recalls aren't arriving, but this site still works from
+   * the recalls it holds, so /api/health answers 200 and names CPSC. An old read with no failure is our job stopping, so it isn't this.
+   */
+  degraded: { source: "CPSC"; since: string | null; lastGoodAt: string | null } | null;
   /** Claude's last good answer. Not part of ok: everything else works without it. The probe fails on it, so nobody finds out from a judge. */
   claude: { lastOkAt: string | null; fresh: boolean };
   paypal: {
@@ -130,6 +135,12 @@ export async function getHealth(
       "select status, finished_at from cpsc_pulls where status <> 'running' and range_field = 'LastPublishDate' order by finished_at desc limit 1",
     );
     const polledAt = iso(lastPoll.rows[0]?.finished_at);
+    const outage = await db.query<{ last_good: unknown; since: unknown }>(
+      `with good as (select max(finished_at) as at from cpsc_pulls where range_field = 'LastPublishDate' and status = 'ok')
+       select (select at from good) as last_good,
+              (select min(finished_at) from cpsc_pulls where range_field = 'LastPublishDate' and status not in ('ok', 'running')
+               and finished_at > coalesce((select at from good), '-infinity'::timestamptz)) as since`,
+    );
     const replay = await db.query<{ at: unknown }>("select max(created_at) as at from replay_runs");
     const lastRunAt = iso(replay.rows[0]?.at);
     const marketOkAt = await lastMarketSearch(db);
@@ -145,8 +156,14 @@ export async function getHealth(
       replay: lastRunAt !== null && now.getTime() - Date.parse(lastRunAt) <= MAX_REPLAY_AGE_MS,
       logging: loggingOk,
     };
+    const recent = (at: string | null) => at !== null && now.getTime() - Date.parse(at) <= MAX_PULL_AGE_MS;
+    const lastStatus = lastPoll.rows[0]?.status;
+    const cpscFailing = (poll.lastPollOk === false && recent(poll.lastPollAt)) || (lastStatus !== undefined && lastStatus !== "ok" && recent(polledAt));
+    const oursOff = Object.entries(checks).some(([name, on]) => !on && name !== "lastPull" && name !== "poll");
+    const allOk = Object.values(checks).every(Boolean);
     return {
-      ok: Object.values(checks).every(Boolean),
+      ok: allOk,
+      degraded: !allOk && cpscFailing && !oursOff ? { source: "CPSC", since: iso(outage.rows[0]?.since) ?? poll.lastPollAt, lastGoodAt: iso(outage.rows[0]?.last_good) } : null,
       checkedAt,
       checks,
       database: { ok: true },
@@ -174,6 +191,7 @@ export async function getHealth(
     console.error("health check: database query failed:", err instanceof Error ? err.message : err);
     return {
       ok: false,
+      degraded: null,
       checkedAt,
       checks: { database: false, webhook: webhookOk, lastPull: false, purge: false, poll: pollOk, replay: false, logging: loggingOk },
       database: { ok: false },

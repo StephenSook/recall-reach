@@ -54,16 +54,23 @@ export async function probe(base: string, fetchImpl: typeof fetch = fetch): Prom
     });
 
   const checks: Check[] = [];
+  let cpscSince: string | null = null;
   checks.push(
     await attempt("health", async () => {
       const { status, body } = await read("/api/health");
-      const health = JSON.parse(body) as { ok?: boolean; checks?: Record<string, boolean>; market?: { fresh?: boolean } };
+      const health = JSON.parse(body) as { ok?: boolean; checks?: Record<string, boolean>; market?: { fresh?: boolean }; degraded?: { source?: string; since?: string | null } | null };
       const named = Object.entries(health.checks ?? {});
       const off = named.filter(([, on]) => on !== true).map(([name]) => name);
+      // Only CPSC's own failing, reported on its own line below so nobody chases this site's code. Anything of ours still fails here.
+      if (health.degraded?.source === "CPSC" && named.length > 0 && off.every((name) => name === "lastPull" || name === "poll")) {
+        cpscSince = health.degraded.since ?? "an unknown time";
+        return pass("health", "only CPSC is failing; this site's own checks pass");
+      }
       if (health.ok !== true || named.length === 0 || off.length > 0) return fail("health", `answered ${status}, ok ${String(health.ok)}, off: ${off.join(", ") || "none"}`);
       return pass("health", `${named.length} checks true${health.market?.fresh ? "" : "; the market search is stale, which isn't part of ok"}`);
     }),
   );
+  if (cpscSince !== null) checks.push(fail("CPSC is failing", `since ${cpscSince}. Not this site's code: it works from the recalls it holds.`));
   let replayHtml = "";
   checks.push(
     await attempt("replay numbers", async () => {

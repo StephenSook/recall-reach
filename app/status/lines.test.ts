@@ -13,6 +13,7 @@ const healthy: Health = {
   replay: { lastRunAt: "2026-11-07T10:00:00.000Z" },
   market: { lastOkAt: "2026-11-05T10:00:00.000Z", fresh: true },
   claude: { lastOkAt: "2026-11-07T09:00:00.000Z", fresh: true },
+  degraded: null,
   paypal: { environment: "sandbox", webhookConfigured: true, lastVerifiedWebhookAt: "2026-11-07T09:00:00.000Z" },
 };
 const line = (h: Health, name: string, claude = true) => statusLines(h, { claudeKeySet: claude }).find((l) => l.service === name);
@@ -47,6 +48,13 @@ describe("the status page's lines", () => {
     expect(line(none, "PayPal webhooks")).toMatchObject({ state: "ok", reading: "Webhook ID set. No delivery on record." });
     const unset = { ...healthy, paypal: { ...healthy.paypal, webhookConfigured: false } };
     expect(line(unset, "PayPal webhooks")?.state).toBe("problem");
+  });
+
+  it("says plainly when CPSC is what's failing, since when, and what still works", () => {
+    const failing: Health = { ...healthy, ok: false, checks: { ...healthy.checks, lastPull: false }, degraded: { source: "CPSC", since: "2026-11-07T00:05:00.000Z", lastGoodAt: "2026-11-06T23:43:00.000Z" } };
+    const l = line(failing, "CPSC recalls");
+    expect(l?.state).toBe("problem");
+    expect(l?.reading).toBe("CPSC's API has been failing since Nov 6, 2026, 7:05 PM ET. Last good read Nov 6, 2026, 6:43 PM ET. The 1,855 recalls held here still work.");
   });
 
   it("shows a stale CPSC poll as a problem, with when it last worked", () => {

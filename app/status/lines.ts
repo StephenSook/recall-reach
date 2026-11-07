@@ -29,7 +29,11 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
     {
       service: "CPSC recalls",
       state: !db ? "unknown" : h.checks.lastPull ? "ok" : "problem",
-      reading: !db ? NOT_READ : pull ? `Last read finished ${ranAt(pull.finishedAt)}. ${h.cpsc?.recalls.toLocaleString("en-US")} recalls held.` : "No read on record.",
+      reading: !db
+        ? NOT_READ
+        : h.degraded
+          ? `CPSC's API has been failing since ${h.degraded.since ? ranAt(h.degraded.since) : "the last read"}. Last good read ${h.degraded.lastGoodAt ? ranAt(h.degraded.lastGoodAt) : "not on record"}. The ${h.cpsc?.recalls.toLocaleString("en-US")} recalls held here still work.`
+          : pull ? `Last read finished ${ranAt(pull.finishedAt)}. ${h.cpsc?.recalls.toLocaleString("en-US")} recalls held.` : "No read on record.",
       measures: "The last hourly read of CPSC's API, and whether it worked in the last 2.5 hours. Not a call made now.",
     },
     {

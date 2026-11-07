@@ -65,6 +65,31 @@ describe("probe", () => {
     expect(await failed({ "/api/health": health({ ok: true, checks: {} }) })).toContain("health");
   });
 
+  describe("when only CPSC is failing", () => {
+    const degraded = JSON.stringify({
+      ok: false,
+      checks: { ...JSON.parse(GOOD["/api/health"]).checks, lastPull: false },
+      degraded: { source: "CPSC", since: "2026-11-07T00:05:00.000Z", lastGoodAt: "2026-11-06T23:43:00.000Z" },
+    });
+
+    it("fails on a check named for CPSC, not on this site's health", async () => {
+      const checks = await probe(BASE, site({ "/api/health": degraded }).fetchImpl);
+      expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["CPSC is failing"]);
+      expect(checks.find((c) => c.name === "CPSC is failing")?.detail).toContain("2026-11-07T00:05:00.000Z");
+      expect(checks.find((c) => c.name === "health")?.detail).toContain("only CPSC");
+    });
+
+    it("still fails on health if something of ours is off as well, whatever the page claims", async () => {
+      const body = JSON.stringify({ ...JSON.parse(degraded), checks: { ...JSON.parse(degraded).checks, purge: false } });
+      expect(await failed({ "/api/health": body })).toContain("health");
+    });
+
+    it("has no such line when CPSC is answering", async () => {
+      const checks = await probe(BASE, site().fetchImpl);
+      expect(checks.map((c) => c.name)).not.toContain("CPSC is failing");
+    });
+  });
+
   it("doesn't fail on the market search going quiet, which isn't part of ok, and says so", async () => {
     const body = JSON.stringify({ ok: true, checks: JSON.parse(GOOD["/api/health"]).checks, market: { fresh: false } });
     const checks = await probe(BASE, site({ "/api/health": body }).fetchImpl);
