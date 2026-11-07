@@ -7,9 +7,20 @@ const jost = Jost({
   subsets: ["latin"],
 });
 
+const DESCRIPTION = "Check past sales for recalls and reach the families who bought them.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://recall-reach-web-e022.onrender.com"),
   title: "Recall Reach",
-  description: "Check past sales for recalls and reach the families who bought them.",
+  description: DESCRIPTION,
+  openGraph: {
+    title: "Recall Reach",
+    description: DESCRIPTION,
+    siteName: "Recall Reach",
+    type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Recall Reach. Check past sales for recalls and reach the families who bought them." }],
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
