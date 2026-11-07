@@ -8,8 +8,12 @@ info:
   license:
     name: MIT
     url: https://opensource.org/license/mit
+  contact:
+    name: Recall Reach
+    url: https://github.com/StephenSook/recall-reach
 servers:
   - url: https://recall-reach-web-e022.onrender.com
+    description: The deployed site. Its payments run on PayPal's sandbox.
 tags:
   - name: Check
   - name: Evidence
@@ -37,7 +41,7 @@ paths:
           example: BRZ0083
       responses:
         "200":
-          description: The recalls this text comes near, closest first. An empty list means nothing came near.
+          description: "The recalls this text comes near, closest first. An empty list isn't the same as nothing near: read mentioned too."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CheckAnswer" }
@@ -72,10 +76,10 @@ paths:
               type: object
               required: [jsonrpc, method]
               properties:
-                jsonrpc: { type: string, enum: ["2.0"] }
-                id: { type: integer }
-                method: { type: string }
-                params: { type: object }
+                jsonrpc: { type: string, description: 'Always "2.0".', example: "2.0" }
+                id: { type: integer, description: "The request's number, sent back with its answer." }
+                method: { type: string, description: "An MCP method, such as tools/list or tools/call.", example: tools/list }
+                params: { type: object, description: "The method's arguments, such as a tool's name and its arguments." }
       responses:
         "200":
           description: A JSON-RPC response.
@@ -91,6 +95,7 @@ paths:
       tags: [Check]
       operationId: mcpNoStream
       summary: Not offered. Every answer comes back on its own POST.
+      description: The server is stateless and opens no event stream, so a GET is refused with 405.
       responses:
         "405":
           description: Use POST.
@@ -102,6 +107,7 @@ paths:
       tags: [Evidence]
       operationId: newestRecallDay
       summary: The newest day of recalls in the latest Recall Replay, against the demo shop
+      description: Read from the latest stored Recall Replay run, so it costs no new check. Only the demo shop is public.
       parameters:
         - name: shop
           in: query
@@ -151,6 +157,7 @@ paths:
       tags: [Evidence]
       operationId: recountReplay
       summary: Recount a Recall Replay's headline numbers from its own rows
+      description: Works the counts out again from the run's stored rows and compares them with the numbers it reported.
       parameters:
         - name: runId
           in: path
@@ -172,6 +179,7 @@ paths:
       tags: [Status]
       operationId: health
       summary: Whether the site is working, check by check
+      description: Each check and the reading behind it. Never includes a secret or a database error's text.
       responses:
         "200":
           description: Every check passed, or only CPSC is failing. Then ok is false and degraded names it, since this site still works from the recalls it holds.
@@ -188,6 +196,7 @@ paths:
       tags: [Status]
       operationId: live
       summary: Whether the server answers. Touches no database.
+      description: For the host's health check. It says only that the server is up.
       responses:
         "200":
           description: It answers.
