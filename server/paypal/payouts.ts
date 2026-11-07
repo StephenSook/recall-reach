@@ -54,19 +54,35 @@ export async function reviewPayout(
   }
   const email = input.email.trim();
   if (!EMAIL.test(email)) throw new PayoutRefused("BAD_EMAIL", "Enter the email the shop collected for this buyer.");
+  // One statement. A new approval is a new payment, so what PayPal said about the old batch goes with it, and no send can fall between.
   const { rows } = await db.query<{ id: string }>(
-    `insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, expires_at)
-     values ($1, $2, $3, $4, $5, $6, 'reviewed', $7)
-     on conflict (shop_id, sample_key) do update set session_id = excluded.session_id, receiver_enc = excluded.receiver_enc, amount_cents = excluded.amount_cents,
-       status = 'reviewed', paypal_status = null, batch_ref_hmac = null, expires_at = excluded.expires_at, request_id = gen_random_uuid(), updated_at = now()
-     where payouts.status in ('reviewed', 'failed')
-     returning id`,
+    `with up as (
+       insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, expires_at)
+       values ($1, $2, $3, $4, $5, $6, 'reviewed', $7)
+       on conflict (shop_id, sample_key) do update set session_id = excluded.session_id, receiver_enc = excluded.receiver_enc, amount_cents = excluded.amount_cents,
+         status = 'reviewed', paypal_status = null, batch_ref_hmac = null, expires_at = excluded.expires_at, request_id = gen_random_uuid(), updated_at = now()
+       where payouts.status in ('reviewed', 'failed')
+       returning id
+     ), gone as (delete from paypal_payout_refs where payout_row_id in (select id from up))
+     select id from up`,
     [input.shopId, input.sessionId, PAST_WINDOW_SAMPLE.key, input.cipher.seal(email), cents, PAST_WINDOW_SAMPLE.currency, new Date(input.now.getTime() + REVIEW_LASTS_MS).toISOString()],
   );
   if (!rows[0]) throw new PayoutRefused("ALREADY_SENT", "This payment has already gone to PayPal. Check it against PayPal.");
-  // A new approval is a new payment. What PayPal says about the old batch no longer applies to it.
-  await db.query("delete from paypal_payout_refs where payout_row_id = $1", [rows[0].id]);
   return { id: rows[0].id, amountCents: cents };
+}
+
+/** Answers only move forward. "Still waiting" can't undo a final answer, and PayPal's events don't arrive in order. A reversal can still follow paid. */
+const STATUS_RANK = "case status when 'sending' then 0 when 'unconfirmed' then 1 when 'unclaimed' then 2 else 3 end";
+const rankOf = (status: PayoutStatus) => (status === "unconfirmed" ? 1 : status === "unclaimed" ? 2 : 3);
+
+async function moveStatus(db: Queryable, status: PayoutStatus, paypalStatus: string | null, where: string, args: unknown[]): Promise<void> {
+  await db.query(`update payouts set status = $1, paypal_status = $2, updated_at = now() where ${where} and ${STATUS_RANK} <= $3`, [status, paypalStatus, rankOf(status), ...args]);
+}
+
+/** What's on the row now, whichever answer got there first. A send cut off partway has no clear answer either. */
+async function currentStatus(db: Queryable, id: string): Promise<{ status: PayoutStatus; paypalStatus: string | null }> {
+  const { rows } = await db.query<{ status: string; paypal_status: string | null }>("select status, paypal_status from payouts where id = $1", [id]);
+  return { status: rows[0].status === "sending" ? "unconfirmed" : (rows[0].status as PayoutStatus), paypalStatus: rows[0].paypal_status };
 }
 
 const clearlyRefused = (err: unknown): err is PayPalApiError => err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && !err.uncertain;
@@ -75,15 +91,15 @@ const clearlyRefused = (err: unknown): err is PayPalApiError => err instanceof P
 export async function sendPayout(
   db: Queryable,
   client: PayPalClient,
-  input: { shopId: string; sessionId: string; payoutId: string; recordKey: RecordKey; cipher: ContactCipher; now: Date },
+  input: { shopId: string; sessionId: string; payoutId: string; approvalId: string; recordKey: RecordKey; cipher: ContactCipher; now: Date },
 ): Promise<{ id: string; status: PayoutStatus; paypalStatus: string | null }> {
   const invalid = () => new PayoutRefused("NOT_VALID", "This approval is missing, expired, or from another session. Review the payment again.");
-  if (!UUID.test(input.payoutId)) throw invalid();
+  if (!UUID.test(input.payoutId) || !UUID.test(input.approvalId)) throw invalid();
   const { rows } = await db.query<{ id: string; receiver_enc: string; amount_cents: number; currency: string; request_id: string }>(
     `update payouts set status = 'sending', updated_at = now()
-     where id = $1 and shop_id = $2 and session_id = $3 and status = 'reviewed' and expires_at > $4::timestamptz
+     where id = $1 and shop_id = $2 and session_id = $3 and request_id = $5::uuid and status = 'reviewed' and expires_at > $4::timestamptz
      returning id, receiver_enc, amount_cents, currency, request_id`,
-    [input.payoutId, input.shopId, input.sessionId, input.now.toISOString()],
+    [input.payoutId, input.shopId, input.sessionId, input.now.toISOString(), input.approvalId],
   );
   const row = rows[0];
   if (!row) {
@@ -92,8 +108,8 @@ export async function sendPayout(
     throw invalid();
   }
   const settle = async (status: PayoutStatus, paypalStatus: string | null) => {
-    await db.query("update payouts set status = $2, paypal_status = $3, updated_at = now() where id = $1", [row.id, status, paypalStatus]);
-    return { id: row.id, status, paypalStatus };
+    await moveStatus(db, status, paypalStatus, "id = $4", [row.id]);
+    return { id: row.id, ...(await currentStatus(db, row.id)) };
   };
   try {
     // request_id is new with each approval, so PayPal itself refuses a second batch for the same one.
@@ -107,7 +123,7 @@ export async function sendPayout(
             amount: { value: centsToValue(row.amount_cents), currency: row.currency },
             receiver: input.cipher.open(row.receiver_enc),
             note: `From the shop, about a product CPSC recalled: CPSC recall ${PAST_WINDOW_SAMPLE.recallNumber}. Follow the recall steps at cpsc.gov/Recalls. Sandbox test money.`,
-            sender_item_id: row.id,
+            sender_item_id: row.request_id,
           },
         ],
       },
@@ -132,8 +148,8 @@ function fromItemStatus(status: string): Exclude<PayoutStatus, "reviewed"> {
 
 export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, input: { shopId: string; payoutId: string; now: Date }): Promise<{ status: PayoutStatus; paypalStatus: string | null }> {
   if (!UUID.test(input.payoutId)) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
-  const { rows } = await db.query<{ id: string; batch_id: string | null; batch_ref_hmac: string | null }>(
-    "select p.id, r.batch_id, p.batch_ref_hmac from payouts p left join paypal_payout_refs r on r.payout_row_id = p.id where p.id = $1 and p.shop_id = $2",
+  const { rows } = await db.query<{ id: string; request_id: string; batch_id: string | null; batch_ref_hmac: string | null }>(
+    "select p.id, p.request_id, r.batch_id, p.batch_ref_hmac from payouts p left join paypal_payout_refs r on r.payout_row_id = p.id where p.id = $1 and p.shop_id = $2",
     [input.payoutId, input.shopId],
   );
   if (!rows[0]) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
@@ -142,24 +158,36 @@ export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, 
   const { data } = await client.request<{ items?: { transaction_status?: string }[] }>("GET", `/v1/payments/payouts/${encodeURIComponent(rows[0].batch_id)}`);
   const paypalStatus = data.items?.[0]?.transaction_status ?? null;
   const status = paypalStatus ? fromItemStatus(paypalStatus) : "unconfirmed";
-  await db.query("update payouts set status = $2, paypal_status = $3, updated_at = now() where id = $1", [rows[0].id, status, paypalStatus]);
-  return { status, paypalStatus };
+  // Only for the approval this read began with: the owner may have reviewed a new payment since.
+  await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
+  return currentStatus(db, rows[0].id);
 }
 
-/** PayPal's item webhook, once its signature is verified: the batch is found by its keyed hash. */
-export async function recordPayoutItemEvent(db: Queryable, recordKey: RecordKey, resource: { payout_batch_id?: unknown; transaction_status?: unknown }): Promise<boolean> {
+/**
+ * PayPal's item webhook, once its signature is verified. Found by the batch's keyed hash, or by the approval the item carries
+ * when the send's own answer was lost, in which case this is the first we hear of the batch.
+ */
+export async function recordPayoutItemEvent(
+  db: Queryable,
+  recordKey: RecordKey,
+  resource: { payout_batch_id?: unknown; transaction_status?: unknown; payout_item?: { sender_item_id?: unknown } },
+): Promise<boolean> {
   if (typeof resource.payout_batch_id !== "string" || typeof resource.transaction_status !== "string") return false;
-  // A late "still waiting" can't undo a final answer. Webhooks don't arrive in order.
-  const { rows } = await db.query(
-    `update payouts set status = $2, paypal_status = $3, updated_at = now()
-     where batch_ref_hmac = $1 and ($2 <> 'unconfirmed' or status in ('sending', 'unconfirmed', 'unclaimed')) returning 1`,
-    [recordKey("paypal-resource", resource.payout_batch_id), fromItemStatus(resource.transaction_status), resource.transaction_status],
-  );
-  return rows.length > 0;
+  const batchHash = recordKey("paypal-resource", resource.payout_batch_id);
+  const carried = resource.payout_item?.sender_item_id;
+  const approval = typeof carried === "string" && UUID.test(carried) ? carried : null;
+  const { rows } = await db.query<{ id: string }>("select id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
+  if (!rows[0]) return false;
+  const first = await db.query("update payouts set batch_ref_hmac = $2 where id = $1 and batch_ref_hmac is null returning id", [rows[0].id, batchHash]);
+  if (first.rows.length > 0) await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do nothing", [rows[0].id, resource.payout_batch_id]);
+  await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4", [rows[0].id]);
+  return true;
 }
 
 export interface ShopPayout {
   id: string;
+  /** New with each review. The second approval carries it, so an old page can't send what a newer review set. */
+  approvalId: string;
   status: PayoutStatus;
   paypalStatus: string | null;
   receiver: string;
@@ -168,14 +196,15 @@ export interface ShopPayout {
 }
 
 export async function shopPayout(db: Queryable, shopId: string, cipher: ContactCipher): Promise<ShopPayout | null> {
-  const { rows } = await db.query<{ id: string; status: string; paypal_status: string | null; receiver_enc: string; amount_cents: number; currency: string }>(
-    "select id, status, paypal_status, receiver_enc, amount_cents, currency from payouts where shop_id = $1 and sample_key = $2",
+  const { rows } = await db.query<{ id: string; request_id: string; status: string; paypal_status: string | null; receiver_enc: string; amount_cents: number; currency: string }>(
+    "select id, request_id, status, paypal_status, receiver_enc, amount_cents, currency from payouts where shop_id = $1 and sample_key = $2",
     [shopId, PAST_WINDOW_SAMPLE.key],
   );
   const r = rows[0];
   if (!r) return null;
   return {
     id: r.id,
+    approvalId: r.request_id,
     // A send cut off partway has no clear answer either.
     status: r.status === "sending" ? "unconfirmed" : (r.status as PayoutStatus),
     paypalStatus: r.paypal_status,

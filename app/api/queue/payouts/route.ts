@@ -38,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
       const recordKey = recordKeyFromEnv();
       if (!recordKey) return refused(503, "the server is missing its record key");
       if (!sendsPerShop(session.shopId) || !sendsByEveryone("all")) return withMessage(request, "Too many payments from here. Try again in a while.");
-      await withCallLog(db, session.shopId, () => sendPayout(db, payPalClientFromEnv(), { shopId: session.shopId, sessionId: session.sessionId, payoutId, recordKey, cipher, now }));
+      await withCallLog(db, session.shopId, () => sendPayout(db, payPalClientFromEnv(), { shopId: session.shopId, sessionId: session.sessionId, payoutId, approvalId: String(form.get("approvalId") ?? ""), recordKey, cipher, now }));
       return back();
     }
     if (action === "read") {

@@ -61,8 +61,8 @@ describe("POST /api/queue/payouts", () => {
   });
 
   it("takes the shop from the session, whatever the form says", async () => {
-    await post({ action: "send", payoutId: "p", shopId: "someone-elses" });
-    expect(paths.send.mock.calls[0][2]).toMatchObject({ shopId: session.current?.shopId, payoutId: "p" });
+    await post({ action: "send", payoutId: "p", approvalId: "a", shopId: "someone-elses" });
+    expect(paths.send.mock.calls[0][2]).toMatchObject({ shopId: session.current?.shopId, payoutId: "p", approvalId: "a" });
   });
 
   it("limits how many a shop can send", async () => {

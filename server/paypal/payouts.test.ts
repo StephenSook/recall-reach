@@ -43,7 +43,8 @@ describe("a payment past the refund window", () => {
 
   const review = (over: Partial<{ email: string; amount: string; session: string; shop: string }> = {}) =>
     reviewPayout(db, { shopId: over.shop ?? shopId, sessionId: over.session ?? SESSION, email: over.email ?? RECEIVER, amount: over.amount ?? "24.00", cipher: cipher(), now: NOW });
-  const send = (id: string, client: PayPalClient, session = SESSION, now = NOW) => sendPayout(db, client, { shopId, sessionId: session, payoutId: id, recordKey: key, cipher: cipher(), now });
+  const approvalOf = async (id: string) => (await db.query<{ request_id: string }>("select request_id from payouts where id = $1", [id])).rows[0]?.request_id ?? "";
+  const send = async (id: string, client: PayPalClient, session = SESSION, now = NOW) => sendPayout(db, client, { shopId, sessionId: session, payoutId: id, approvalId: await approvalOf(id), recordKey: key, cipher: cipher(), now });
   const code = (p: Promise<unknown>) => p.then(() => "no refusal", (err: unknown) => (err instanceof PayoutRefused ? err.code : `other: ${String(err)}`));
 
   describe("the first approval", () => {
@@ -96,6 +97,15 @@ describe("a payment past the refund window", () => {
       expect(call.opts.requestId).toBe(body.sender_batch_header.sender_batch_id);
     });
 
+    it("an old confirmation can't send a newer amount: it's tied to the review it came from", async () => {
+      const pp = fakePayPal();
+      const { id } = await review({ amount: "1.00" });
+      const old = await approvalOf(id);
+      await review({ amount: "24.00" });
+      expect(await code(sendPayout(db, pp.client, { shopId, sessionId: SESSION, payoutId: id, approvalId: old, recordKey: key, cipher: cipher(), now: NOW }))).toBe("NOT_VALID");
+      expect(pp.calls).toEqual([]);
+    });
+
     it("never reads as paid on the send alone", async () => {
       const pp = fakePayPal();
       const { id } = await review();
@@ -136,7 +146,7 @@ describe("a payment past the refund window", () => {
       const pp = fakePayPal();
       const { id } = await review();
       const other = await createShop(db, { name: "Other", kind: "DEMO" });
-      await expect(sendPayout(db, pp.client, { shopId: other, sessionId: SESSION, payoutId: id, recordKey: key, cipher: createContactCipher(SECRET, other), now: NOW })).rejects.toBeInstanceOf(PayoutRefused);
+      await expect(sendPayout(db, pp.client, { shopId: other, sessionId: SESSION, payoutId: id, approvalId: await approvalOf(id), recordKey: key, cipher: createContactCipher(SECRET, other), now: NOW })).rejects.toBeInstanceOf(PayoutRefused);
       expect(pp.calls).toEqual([]);
     });
 
@@ -234,6 +244,87 @@ describe("a payment past the refund window", () => {
       await hook("SUCCESS");
       await hook("PENDING");
       expect(await statusOf(id)).toBe("paid");
+    });
+
+    it("a late UNCLAIMED can't undo paid, and a later reversal can", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      await hook("SUCCESS");
+      await hook("UNCLAIMED");
+      expect(await statusOf(id)).toBe("paid");
+      await hook("REVERSED");
+      expect(await statusOf(id)).toBe("failed");
+    });
+
+    it("a final answer that arrives while the send is still finishing stands", async () => {
+      const { id } = await review();
+      let delivered = false;
+      const racing: PayPalClient = {
+        request: (async (method: string, path: string, opts: unknown) => {
+          const answer = await fakePayPal().client.request(method as "POST", path, opts as never);
+          if (method === "POST") {
+            delivered = true;
+            await db.query("update payouts set batch_ref_hmac = $2 where id = $1", [id, key("paypal-resource", "RAWBATCH1")]);
+            await hook("SUCCESS");
+          }
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      expect((await send(id, racing)).status).toBe("paid");
+      expect(delivered).toBe(true);
+      expect(await statusOf(id)).toBe("paid");
+    });
+
+    it("finds the payment by the approval it carries when the send's answer was lost, and can read it after", async () => {
+      const lost = fakePayPal({
+        post: () => {
+          throw new Error("PayPal gave no answer");
+        },
+      });
+      const { id } = await review();
+      await send(id, lost.client);
+      const approval = lost.calls[0].opts as { body: { items: { sender_item_id: string }[] } };
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval.body.items[0].sender_item_id } })).toBe(true);
+      expect(await statusOf(id)).toBe("paid");
+      expect((await db.query<{ batch_id: string }>("select batch_id from paypal_payout_refs")).rows[0].batch_id).toBe("RAWBATCH1");
+      const again = fakePayPal({ itemStatus: "SUCCESS" });
+      expect(await readPayoutFromPayPal(db, again.client, { shopId, payoutId: id, now: NOW })).toMatchObject({ status: "paid" });
+    });
+
+    it("an event carrying another shop's approval or an unknown one changes nothing", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "OTHER", transaction_status: "SUCCESS", payout_item: { sender_item_id: "00000000-0000-4000-8000-000000000009" } })).toBe(false);
+      expect(await statusOf(id)).toBe("unconfirmed");
+    });
+
+    it("a read finishing after a final answer can't undo it", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      const slow: PayPalClient = {
+        request: (async (method: string, path: string, opts: unknown) => {
+          const answer = await fakePayPal({ itemStatus: "PENDING" }).client.request(method as "GET", path, opts as never);
+          await hook("SUCCESS");
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      await readPayoutFromPayPal(db, slow, { shopId, payoutId: id, now: NOW });
+      expect(await statusOf(id)).toBe("paid");
+    });
+
+    it("a read still running when the owner reviews again doesn't touch the new review", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      await hook("RETURNED");
+      const slow: PayPalClient = {
+        request: (async (method: string, path: string, opts: unknown) => {
+          const answer = await fakePayPal({ itemStatus: "SUCCESS" }).client.request(method as "GET", path, opts as never);
+          await review({ amount: "2.00" });
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      await readPayoutFromPayPal(db, slow, { shopId, payoutId: id, now: NOW });
+      expect(await statusOf(id)).toBe("reviewed");
     });
 
     it("a batch PayPal returned is forgotten when the owner reviews again", async () => {

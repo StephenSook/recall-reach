@@ -5,7 +5,7 @@ import type { ShopPayout } from "@/server/paypal/payouts";
 import { PastWindowPayout } from "./PastWindowPayout";
 
 const RECEIVER = "sb@personal.example.com";
-const payout = (over: Partial<ShopPayout> = {}): ShopPayout => ({ id: "p1", status: "reviewed", paypalStatus: null, receiver: RECEIVER, amountCents: 2400, currency: "USD", ...over });
+const payout = (over: Partial<ShopPayout> = {}): ShopPayout => ({ id: "p1", status: "reviewed", approvalId: "approval-1", paypalStatus: null, receiver: RECEIVER, amountCents: 2400, currency: "USD", ...over });
 const html = (p: ShopPayout | null) => renderToStaticMarkup(createElement(PastWindowPayout, { product: "CheerKid Baby Bath Seats", recalledOn: "2026-02-12", payout: p, receiver: RECEIVER }));
 
 describe("the payment past the refund window", () => {
@@ -32,6 +32,10 @@ describe("the payment past the refund window", () => {
 
   it("the second approval names the exact amount, where it comes from and the address", () => {
     expect(html(payout())).toContain(`Send 24.00 USD from the shop&#x27;s balance to ${RECEIVER}?`);
+  });
+
+  it("the second approval carries the review it came from", () => {
+    expect(html(payout())).toContain('name="approvalId" value="approval-1"');
   });
 
   it("never says paid until PayPal does", () => {

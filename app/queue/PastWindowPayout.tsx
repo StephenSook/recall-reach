@@ -44,6 +44,7 @@ export function PastWindowPayout({ product, recalledOn, payout, receiver }: { pr
           <form action={ACTION} method="post" data-testid="payout-confirm">
             <input type="hidden" name="action" value="send" />
             <input type="hidden" name="payoutId" value={payout.id} />
+            <input type="hidden" name="approvalId" value={payout.approvalId} />
             <p>
               Send {money(payout.amountCents, payout.currency)} from the shop&apos;s balance to {payout.receiver}?
             </p>
