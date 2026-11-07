@@ -3,7 +3,7 @@
 import { missingRecallYears } from "../cpsc/load";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
-import { modelTokens, normalizeModel, verdictFor, type VerdictResult } from "./verdict";
+import { modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor } from "./verdict";
 import type { Recall } from "../cpsc/schema";
 
 export const MAX_TITLE = 200;
@@ -24,6 +24,8 @@ export type TextCheckResult = {
   url: string | null;
   verdict: "MATCH" | "SCOPE_GAP";
   strength: VerdictResult["strength"];
+  /** The text has this recall's model, a code close to it, or its maker and product line. Otherwise it only shares a kind of product. */
+  tiedToRecall: boolean;
   reason: string;
   missing: string[];
 };
@@ -115,6 +117,7 @@ export async function checkText(
       url: recall.url,
       verdict: verdict.verdict as TextCheckResult["verdict"],
       strength: verdict.strength,
+      tiedToRecall: verdict.verdict === "MATCH" || verdict.strength === "CONFIRMED" || (verdict.strength === "BRAND" && namesProductLine(verdict.matched)) || nearMissCodes(`${recall.title} ${recall.description}`, text).length > 0,
       reason: verdict.reason,
       missing: verdict.missing,
     })),
@@ -126,11 +129,22 @@ export async function checkText(
   };
 }
 
-/**
- * The results that tie this text to one recall: its model, or its maker and product line. The rest only share a kind of
- * product with it, which any high chair does with every recalled high chair, so those say nothing about this one.
- */
-export const namingResults = (answer: Pick<TextCheckAnswer, "results">) => answer.results.filter((r) => r.verdict === "MATCH" || r.strength === "CONFIRMED" || r.strength === "BRAND");
+/** The results tied to one recall. The rest only share a kind of product with it, as any high chair does with every recalled high chair. */
+export const namingResults = (answer: Pick<TextCheckAnswer, "results">) => answer.results.filter((r) => r.tiedToRecall);
+
+export type ListingCheck = "NAMES_A_RECALL" | "NO_MATCH_FOUND" | "COULD_NOT_FINISH";
+
+/** Whether a listing may be offered. Only NO_MATCH_FOUND may. Unsure never reads as clear. */
+export function readListingCheck(answer: TextCheckAnswer, listing: { brand: string | null }): ListingCheck {
+  if (namingResults(answer).length > 0 || answer.more > 0) return "NAMES_A_RECALL";
+  if (answer.notJudged > 0 || answer.checked.yearsMissing.length > 0) return "COULD_NOT_FINISH";
+  // With no maker named, nothing separates this from a recall of the same kind of product.
+  return !listing.brand && answer.results.length > 0 ? "COULD_NOT_FINISH" : "NO_MATCH_FOUND";
+}
+
+/** Every result, and the listing's whole text: cutting it short could drop the model that names a recall. */
+export const checkListing = (db: Queryable, listing: { title: string; brand: string | null }, today: string) =>
+  checkText(db, { title: `${listing.brand ?? ""} ${listing.title}`.trim(), model: "" }, today, { maxResults: MAX_CANDIDATES });
 
 const RECALL_NUMBER = /^[A-Za-z0-9-]{1,16}$/;
 

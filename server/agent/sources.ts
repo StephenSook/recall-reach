@@ -112,10 +112,12 @@ export async function searchItems(db: Queryable, shopId: string, query: string):
   return rows.map((r) => ({ record: { kind: r.kind, id: r.id }, text: { title: shopOwnedText(r.title), sku: own(r.sku) } }));
 }
 
-/** What the shopping agent reads about a listing: its words, and never its price. */
+const PRICE_IN_WORDS = /(?:[$€£]\s?|\b(?:USD|US\$|EUR|GBP)\s?)\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|dollars?|bucks)\b/gi;
+
+/** What the shopping agent reads about a listing: its words, with any price in them taken out. */
 export const listingForClaude = (id: string, listing: Pick<BuyableListing, "title" | "brand">): AllowedValue => ({
   id: listingText(id),
-  title: listingText(listing.title),
+  title: listingText(listing.title.replace(PRICE_IN_WORDS, " ").replace(/\s+/g, " ").trim()),
   brand: listing.brand ? listingText(listing.brand) : null,
 });
 

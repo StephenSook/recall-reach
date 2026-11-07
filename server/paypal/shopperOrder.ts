@@ -1,8 +1,9 @@
 // The shopping agent's offer, turned into a sandbox order a person approves on PayPal's page. The model has no part in this: the
 // price is read again here, from the listing, and the slip it matches can be used once, for a few minutes.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Queryable } from "../db/types";
-import { namingResults, type TextCheckAnswer } from "../match/textCheck";
+import { readListingCheck, type TextCheckAnswer } from "../match/textCheck";
+import type { RecordKey } from "../privacy/recordKey";
 import type { BuyableListing, ListingSource } from "../sweep/channel3";
 import type { PayPalClient } from "./client";
 import { captureOrder, createPayPalOrder, getOrder } from "./orders";
@@ -51,8 +52,8 @@ const orderNumberOf = (slipId: string) => `SHOP-${slipId.replace(/-/g, "")}`;
 export async function startShopperOrder(
   db: Queryable,
   client: PayPalClient,
-  input: { slipId: string; siteUrl: string; now: Date },
-  deps: { read: ListingSource["read"]; check: (title: string) => Promise<TextCheckAnswer> },
+  input: { slipId: string; siteUrl: string; recordKey: RecordKey; now: Date },
+  deps: { read: ListingSource["read"]; check: (listing: BuyableListing) => Promise<TextCheckAnswer> },
 ): Promise<{ approveUrl: string }> {
   const noSlip = () => new SlipRefused("NO_SLIP", "That offer isn't here any more. Search again.");
   if (!UUID.test(input.slipId)) throw noSlip();
@@ -68,21 +69,22 @@ export async function startShopperOrder(
   const live = await deps.read(slip.listing_id).catch(() => null);
   if (!live) throw new SlipRefused("GONE", "That listing couldn't be read again, so nothing was started. Search again.");
   if (cartHash(live) !== slip.cart_hash) throw new SlipRefused("CHANGED", "That listing's price or title changed, so nothing was started. Search again.");
-  const check = await deps.check(`${live.brand ?? ""} ${live.title}`.trim());
-  if (namingResults(check).length > 0 || check.more > 0 || check.notJudged > 0 || check.checked.yearsMissing.length > 0) {
+  if (readListingCheck(await deps.check(live), live) !== "NO_MATCH_FOUND") {
     throw new SlipRefused("NOW_FLAGGED", "That listing no longer comes back with no recall match, so nothing was started.");
   }
   try {
-    const { approveUrl } = await createPayPalOrder(client, {
+    // The slip's own id: a retry after a lost answer gets PayPal's first order, not a second one.
+    const { orderId, approveUrl } = await createPayPalOrder(client, {
       orderNumber: orderNumberOf(slip.id),
       currency: live.currency,
       discountCents: 0,
       lines: [{ title: live.title, sku: null, quantity: 1, unitPriceCents: live.priceCents }],
-      requestId: randomUUID(),
+      requestId: slip.id,
       returnUrl: `${input.siteUrl}/api/shopper/return?slip=${slip.id}`,
       cancelUrl: `${input.siteUrl}/shopper?cancelled=1`,
       brandName: BRAND_NAME,
     });
+    await db.query("update shopping_slips set order_ref_hmac = $2 where id = $1", [slip.id, input.recordKey("paypal-resource", orderId)]);
     return { approveUrl };
   } catch (err) {
     await db.query("update shopping_slips set used_at = null where id = $1 and finished_at is null", [slip.id]);
@@ -91,12 +93,13 @@ export async function startShopperOrder(
 }
 
 /** The buyer is back from PayPal. The address proves nothing: the order is read from PayPal, and only COMPLETED reads as done. */
-export async function finishShopperOrder(db: Queryable, client: PayPalClient, input: { slipId: string; orderId: string; now: Date }): Promise<void> {
+export async function finishShopperOrder(db: Queryable, client: PayPalClient, input: { slipId: string; orderId: string; recordKey: RecordKey; now: Date }): Promise<void> {
   const notPaid = () => new SlipRefused("NOT_PAID", "PayPal doesn't show this order as complete.");
   if (!UUID.test(input.slipId) || !PAYPAL_ID.test(input.orderId)) throw notPaid();
-  const { rows } = await db.query<{ id: string; price_cents: number; currency: string; used_at: unknown }>("select id, price_cents, currency, used_at from shopping_slips where id = $1", [input.slipId]);
+  const { rows } = await db.query<{ id: string; price_cents: number; currency: string; order_ref_hmac: string | null }>("select id, price_cents, currency, order_ref_hmac from shopping_slips where id = $1", [input.slipId]);
   const slip = rows[0];
-  if (!slip?.used_at) throw notPaid();
+  // Only the order this slip started is read from PayPal.
+  if (!slip?.order_ref_hmac || slip.order_ref_hmac !== input.recordKey("paypal-resource", input.orderId)) throw notPaid();
   const matches = (o: Awaited<ReturnType<typeof getOrder>>) => o.invoiceId === orderNumberOf(slip.id) && o.amountCents === slip.price_cents && o.currency === slip.currency;
   const before = await getOrder(client, input.orderId);
   if (!matches(before)) throw notPaid();

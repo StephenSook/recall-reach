@@ -5,13 +5,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { BetaContentBlock, BetaMessageParam, BetaToolResultBlockParam, BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
 import type { Queryable } from "../db/types";
-import { namingResults, type TextCheckAnswer } from "../match/textCheck";
+import { namingResults, readListingCheck, type ListingCheck, type TextCheckAnswer } from "../match/textCheck";
 import type { BuyableListing } from "../sweep/channel3";
 import { ourText, toolResult, type OurText } from "./boundary";
 import { askClaude, nothingSpent, OverBudget, withFallback } from "./claude";
 import { checkForClaude, listingForClaude } from "./sources";
 
 const MAX_STEPS = 8;
+/** It only ever calls tools with short inputs. With eight steps, this keeps one run's worst cost near ten cents. */
+const MAX_ANSWER_TOKENS = 1024;
 /** Leaves the day's last dollars for the checks people came for. It counts against the same daily total. */
 export const SHOPPER_CAP_MICROS = 3_000_000;
 export const MAX_ASK = 200;
@@ -57,7 +59,7 @@ const listingInput = z.object({ listing_id: z.string() });
 
 export type ShopperStep =
   | { kind: "search"; query: string; found: number; inBudget: number }
-  | { kind: "check"; title: string; result: CheckResult; recalls: string[] };
+  | { kind: "check"; title: string; result: ListingCheck; recalls: string[] };
 
 export interface BlockedListing {
   listing: BuyableListing;
@@ -74,18 +76,8 @@ export interface ShopperRun {
 
 export interface ShopperDeps {
   search: (query: string) => Promise<BuyableListing[]>;
-  check: (title: string) => Promise<TextCheckAnswer>;
+  check: (listing: BuyableListing) => Promise<TextCheckAnswer>;
 }
-
-type CheckResult = "NAMES_A_RECALL" | "NO_MATCH_FOUND" | "COULD_NOT_FINISH";
-
-/** A clear answer needs every near recall judged and every year loaded. Otherwise it can't be called no match. */
-function resultOf(answer: TextCheckAnswer): CheckResult {
-  if (namingResults(answer).length > 0 || answer.more > 0) return "NAMES_A_RECALL";
-  return answer.notJudged > 0 || answer.checked.yearsMissing.length > 0 ? "COULD_NOT_FINISH" : "NO_MATCH_FOUND";
-}
-
-const listingWords = (l: BuyableListing) => `${l.brand ?? ""} ${l.title}`.trim();
 
 async function runLoop(db: Queryable, client: Anthropic, model: string, input: { ask: string; budgetCents: number; now: Date }, deps: ShopperDeps, used: { steps: number }): Promise<ShopperRun> {
   const steps: ShopperStep[] = [];
@@ -123,8 +115,8 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, input: {
       const parsed = listingInput.safeParse(block.input);
       const listing = parsed.success ? known.get(parsed.data.listing_id) : undefined;
       if (!parsed.success || !listing) return fail(ourText("There is no listing with that id."));
-      const answer = await deps.check(listingWords(listing));
-      const result = resultOf(answer);
+      const answer = await deps.check(listing);
+      const result = readListingCheck(answer, listing);
       answers.set(parsed.data.listing_id, { result, answer });
       const naming = namingResults(answer);
       steps.push({ kind: "check", title: listing.title, result, recalls: naming.map((r) => r.recallNumber) });
@@ -147,7 +139,7 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, input: {
 
   while (used.steps < MAX_STEPS) {
     used.steps++;
-    const response = await askClaude(db, client, { model, system: SYSTEM, tools: SHOPPER_TOOLS, messages, now: input.now, capMicros: SHOPPER_CAP_MICROS }, nothingSpent());
+    const response = await askClaude(db, client, { model, system: SYSTEM, tools: SHOPPER_TOOLS, messages, now: input.now, capMicros: SHOPPER_CAP_MICROS, maxTokens: MAX_ANSWER_TOKENS }, nothingSpent());
     if (response.stop_reason === "refusal") return done("REFUSED");
     if (response.stop_reason === "max_tokens") return done("NO_PICK");
     messages.push({ role: "assistant", content: response.content });

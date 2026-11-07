@@ -3,11 +3,13 @@ import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import type { TextCheckAnswer } from "../match/textCheck";
 import type { BuyableListing } from "../sweep/channel3";
+import { createRecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { cartHash, createSlip, finishShopperOrder, readFinishedSlip, SlipRefused, startShopperOrder } from "./shopperOrder";
 
 const NOW = new Date("2026-11-07T15:00:00Z");
 const LISTING: BuyableListing = { id: "raw-tub", title: "Folding Tub", brand: "Acme", priceCents: 2499, currency: "USD" };
+const key = createRecordKey("test-record-key-secret-0123456789abcdef");
 const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
 
 function fakePayPal(over: { failCreate?: boolean; order?: (invoice: string) => Record<string, unknown> } = {}) {
@@ -47,8 +49,8 @@ describe("an offer from the shopping agent", () => {
     await db.close();
   });
 
-  const deps = (over: Partial<{ read: (id: string) => Promise<BuyableListing | null>; check: (t: string) => Promise<TextCheckAnswer> }> = {}) => ({ read: async () => LISTING, check: async () => clear, ...over });
-  const start = (slipId: string, client: PayPalClient, over = {}, now = NOW) => startShopperOrder(db, client, { slipId, siteUrl: "https://site.test", now }, deps(over));
+  const deps = (over: Partial<{ read: (id: string) => Promise<BuyableListing | null>; check: (l: BuyableListing) => Promise<TextCheckAnswer> }> = {}) => ({ read: async () => LISTING, check: async () => clear, ...over });
+  const start = (slipId: string, client: PayPalClient, over = {}, now = NOW) => startShopperOrder(db, client, { slipId, siteUrl: "https://site.test", recordKey: key, now }, deps(over));
   const code = (p: Promise<unknown>) => p.then(() => "no refusal", (err: unknown) => (err instanceof SlipRefused ? err.code : `other: ${String(err)}`));
 
   it("hashes each part apart, so moved characters make another cart", () => {
@@ -109,8 +111,9 @@ describe("an offer from the shopping agent", () => {
   });
 
   it.each([
-    ["a recall names it now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "MATCH", strength: "CONFIRMED", reason: "r", missing: [] }] } as TextCheckAnswer],
-    ["a recall names its maker and line now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "BRAND", reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a recall names it now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "MATCH", strength: "CONFIRMED", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a recall names its maker and line now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
+    ["a code close to a recalled model shows now", { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: true, reason: "r", missing: [] }] } as TextCheckAnswer],
     ["the check couldn't finish", { ...clear, notJudged: 1 }],
     ["a year didn't load", { ...clear, checked: { ...clear.checked, yearsMissing: [2025] } }],
   ])("starts nothing if %s", async (_name, answer) => {
@@ -122,8 +125,23 @@ describe("an offer from the shopping agent", () => {
 
   it("isn't stopped by a recall of the same kind of product", async () => {
     const { id } = await createSlip(db, LISTING, NOW);
-    const similar = { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", reason: "r", missing: [] }] } as TextCheckAnswer;
+    const similar = { ...clear, results: [{ recallNumber: "1", title: "t", recallDate: "d", url: null, verdict: "SCOPE_GAP", strength: "PRODUCT_WORDS", tiedToRecall: false, reason: "r", missing: [] }] } as TextCheckAnswer;
     expect(await code(start(id, fakePayPal().client, { check: async () => similar }))).toBe("no refusal");
+  });
+
+  it("asks PayPal with the slip's own id, so a retry after a lost answer can't make a second order", async () => {
+    const { id } = await createSlip(db, LISTING, NOW);
+    const seen: (string | undefined)[] = [];
+    const client: PayPalClient = {
+      request: (async (_m: string, _p: string, opts: { requestId?: string }) => {
+        seen.push(opts.requestId);
+        if (seen.length === 1) throw new PayPalApiError(500, "POST", "/v2/checkout/orders", "LOST");
+        return { status: 200, data: { id: "ORDER1", links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=ORDER1" }] } };
+      }) as PayPalClient["request"],
+    };
+    await expect(start(id, client)).rejects.toBeInstanceOf(PayPalApiError);
+    await start(id, client);
+    expect(seen).toEqual([id, id]);
   });
 
   it("gives the slip back when PayPal can't make the order, since nothing happened", async () => {
@@ -148,7 +166,7 @@ describe("an offer from the shopping agent", () => {
       await start(id, pp.client);
       return { id, pp };
     };
-    const finish = (id: string, client: PayPalClient) => finishShopperOrder(db, client, { slipId: id, orderId: "ORDER1", now: NOW });
+    const finish = (id: string, client: PayPalClient, orderId = "ORDER1") => finishShopperOrder(db, client, { slipId: id, orderId, recordKey: key, now: NOW });
 
     it("captures once approved, and reads as done only when PayPal's order and capture say COMPLETED", async () => {
       const { id, pp } = await started();
@@ -182,6 +200,14 @@ describe("an offer from the shopping agent", () => {
       const { id } = await started(pp);
       expect(await code(finish(id, pp.client))).toBe("NOT_PAID");
       expect(await readFinishedSlip(db, id)).toBeNull();
+    });
+
+    it("won't read PayPal for an order this slip didn't start", async () => {
+      const { id, pp } = await started();
+      const before = pp.calls.length;
+      expect(await code(finish(id, pp.client, "SOME-OTHER-ORDER"))).toBe("NOT_PAID");
+      expect(pp.calls).toHaveLength(before);
+      expect(JSON.stringify((await db.query("select * from shopping_slips")).rows)).not.toContain("ORDER1");
     });
 
     it("won't finish a slip nobody started", async () => {

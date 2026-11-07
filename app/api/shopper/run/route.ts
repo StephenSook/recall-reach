@@ -1,7 +1,7 @@
 import { agentClientFromEnv } from "@/server/agent/claude";
 import { MAX_ASK, runShopper, type ShopperRun } from "@/server/agent/shopper";
 import { getDb } from "@/server/db/pg";
-import { checkText, MAX_TITLE } from "@/server/match/textCheck";
+import { checkListing } from "@/server/match/textCheck";
 import { createSlip, SLIP_LASTS_MS } from "@/server/paypal/shopperOrder";
 import { channel3Listings } from "@/server/sweep/channel3";
 import { businessDay } from "@/server/time/businessDay";
@@ -10,14 +10,14 @@ import { clientIp, createRateLimiter } from "@/server/web/rateLimit";
 
 export const dynamic = "force-dynamic";
 
-// Every result counts here, or a recall naming this listing could sit past the first few.
-const ALL_NEAR = 200;
-
 const HOUR = 60 * 60_000;
 // Each run is several real Claude calls, so it's limited per visitor and for everyone together.
 const perVisitor = createRateLimiter({ limit: 5, windowMs: HOUR });
 const everyone = createRateLimiter({ limit: 40, windowMs: HOUR });
 const MAX_BUDGET = 2000;
+// Spending is counted after each answer, so runs side by side could pass the day's limit together. This keeps that overshoot small.
+const MAX_AT_ONCE = 3;
+let running = 0;
 
 export interface ShopperView {
   outcome: ShopperRun["outcome"] | "BUSY";
@@ -38,13 +38,18 @@ export async function POST(request: Request): Promise<Response> {
   if (ask.length < 2 || ask.length > MAX_ASK || !Number.isFinite(budget) || budget < 1 || budget > MAX_BUDGET) return refused(400, "give what you're looking for and a budget from 1 to 2000");
   const client = agentClientFromEnv();
   if (!client) return Response.json(nothing("UNAVAILABLE"));
+  if (running >= MAX_AT_ONCE) return Response.json(nothing("BUSY"), { status: 429 });
   const db = getDb();
   const now = new Date();
+  running++;
   const run = await runShopper(db, client, { ask, budgetCents: Math.round(budget * 100), now }, {
     search: channel3Listings().search,
-    check: (title) => checkText(db, { title: title.slice(0, MAX_TITLE), model: "" }, businessDay(now), { maxResults: ALL_NEAR }),
+    check: (listing) => checkListing(db, listing, businessDay(now)),
+  }).finally(() => {
+    running--;
   });
-  const slip = run.pick ? await createSlip(db, run.pick.listing, now) : null;
+  // The offer's ten minutes start when it's made, not when the agent began.
+  const slip = run.pick ? await createSlip(db, run.pick.listing, new Date()) : null;
   const view: ShopperView = {
     outcome: run.outcome,
     steps: run.steps,

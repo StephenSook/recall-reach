@@ -29,7 +29,7 @@ export default async function ShopperPage({ searchParams }: { searchParams: Prom
         </p>
       ) : null}
       <ShopperForm />
-      <p className="note">The agent never sees a price and can&apos;t set one. It can&apos;t buy anything. You decide on PayPal&apos;s page.</p>
+      <p className="note">The agent can&apos;t set a price: the server reads it from the listing when you press. The agent can&apos;t buy anything. You decide on PayPal&apos;s page.</p>
       <p className="note">This uses PayPal&apos;s sandbox. It&apos;s test money, nothing ships, and no store is paid. PayPal&apos;s page needs a sandbox buyer login.</p>
     </main>
   );

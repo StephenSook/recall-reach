@@ -35,11 +35,11 @@ const TUB = listing("raw-tub", "Folding Tub", 2499);
 const DEAR = listing("raw-dear", "Gold Seat", 90000);
 
 const clear: TextCheckAnswer = { results: [], more: 0, cleared: 0, notJudged: 0, checked: { recalls: 1855, from: "2022-01-03", to: "2026-11-05", yearsMissing: [] }, note: "" };
-const flagged: TextCheckAnswer = { ...clear, results: [{ recallNumber: "26266", title: "CheerKid Recalls Baby Bath Seats", recallDate: "2026-02-12", url: "https://www.cpsc.gov/x", verdict: "SCOPE_GAP", strength: "BRAND", reason: "r", missing: [] }] };
+const flagged: TextCheckAnswer = { ...clear, results: [{ recallNumber: "26266", title: "CheerKid Recalls Baby Bath Seats", recallDate: "2026-02-12", url: "https://www.cpsc.gov/x", verdict: "SCOPE_GAP", strength: "BRAND", tiedToRecall: true, reason: "r", missing: [] }] };
 
 const deps = (over: Partial<ShopperDeps> = {}): ShopperDeps => ({
   search: async () => [SEAT, TUB, DEAR],
-  check: async (title) => (title.includes("Seat") ? flagged : clear),
+  check: async (l) => (l.title.includes("Seat") ? flagged : clear),
   ...over,
 });
 
@@ -64,7 +64,7 @@ describe("the shopping agent", () => {
   });
 
   it("a recall of the same kind of product doesn't block a listing, and is counted on the offer", async () => {
-    const similar: TextCheckAnswer = { ...clear, results: [{ ...flagged.results[0], strength: "PRODUCT_WORDS" }] };
+    const similar: TextCheckAnswer = { ...clear, results: [{ ...flagged.results[0], strength: "PRODUCT_WORDS", tiedToRecall: false }] };
     const { client } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")]]);
     const result = await run(client, { check: async () => similar });
     expect(result.outcome).toBe("PICKED");
@@ -75,9 +75,31 @@ describe("the shopping agent", () => {
 
   it("can't offer a listing a recall names by its maker and line, or by its model", async () => {
     const { client, requests } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")], { stop: "end_turn" }]);
-    const result = await run(client, { check: async () => ({ ...clear, results: [{ ...flagged.results[0], strength: "BRAND" }, { ...flagged.results[0], recallNumber: "1", strength: "PRODUCT_WORDS" }] }) });
+    const result = await run(client, { check: async () => ({ ...clear, results: [{ ...flagged.results[0], strength: "BRAND" }, { ...flagged.results[0], recallNumber: "1", strength: "PRODUCT_WORDS", tiedToRecall: false }] }) });
     expect(requests[3]).toContain("did not say NO_MATCH_FOUND");
     expect(result.blocked[0].recalls.map((r) => r.number)).toEqual(["26266"]);
+  });
+
+  it("a code close to a recalled model blocks a listing, though no maker is named", async () => {
+    const { client, requests } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")], { stop: "end_turn" }]);
+    const result = await run(client, { check: async () => ({ ...clear, results: [{ ...flagged.results[0], strength: "PRODUCT_WORDS", tiedToRecall: true }] }) });
+    expect(requests[3]).toContain("did not say NO_MATCH_FOUND");
+    expect(result.pick).toBeNull();
+    expect(result.blocked).toHaveLength(1);
+  });
+
+  it("a listing with no maker can't be told apart from a recall of the same kind of product, so it can't be offered", async () => {
+    const { client, requests } = fakeClaude([[search()], [check()], [propose()], { stop: "end_turn" }]);
+    const noMaker = { ...TUB, brand: null };
+    const result = await run(client, { search: async () => [noMaker], check: async () => ({ ...clear, results: [{ ...flagged.results[0], strength: "PRODUCT_WORDS", tiedToRecall: false }] }) });
+    expect(requests[3]).toContain("did not say NO_MATCH_FOUND");
+    expect(result.pick).toBeNull();
+    expect(result.steps.at(-1)).toMatchObject({ kind: "check", result: "COULD_NOT_FINISH" });
+  });
+
+  it("a listing with no maker and nothing near it can be offered", async () => {
+    const { client } = fakeClaude([[search()], [check()], [propose()]]);
+    expect((await run(client, { search: async () => [{ ...TUB, brand: null }], check: async () => clear })).outcome).toBe("PICKED");
   });
 
   it("can't offer a listing it hasn't checked", async () => {
@@ -149,6 +171,20 @@ describe("the shopping agent", () => {
     const result = await run(client, { search: async () => Promise.reject(new Error("down")) });
     expect(requests[1]).toContain("didn't answer");
     expect(result.outcome).toBe("NO_PICK");
+  });
+
+  it("takes a price out of a listing's words before the model reads them", async () => {
+    const priced = { ...TUB, title: "Folding Tub - $24.99 Sale USD 24.99" };
+    const { client, requests } = fakeClaude([[search()], [call("finish_without_pick", { why: "NOTHING_FITS" })]]);
+    await run(client, { search: async () => [priced] });
+    expect(requests[1]).toContain("Folding Tub");
+    expect(requests[1]).not.toContain("24.99");
+  });
+
+  it("keeps each answer small, so one run's cost has a low ceiling", async () => {
+    const { client, requests } = fakeClaude([[call("finish_without_pick", { why: "NOTHING_FITS" })]]);
+    await run(client);
+    expect(JSON.parse(requests[0]).max_tokens).toBeLessThanOrEqual(1024);
   });
 
   it("shows the buyer no words the model wrote, except its search terms", async () => {

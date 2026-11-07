@@ -33,6 +33,7 @@ const CHECK_OUTPUT = {
       url: z.string().nullable(),
       verdict: z.enum(["MATCH", "SCOPE_GAP"]).describe("MATCH: the text shows what the recall names. SCOPE_GAP: it comes close, but the text can't show this item is covered."),
       strength: z.string(),
+      tiedToRecall: z.boolean().describe("The text has this recall's model, a code close to it, or its maker and product line. Otherwise it only shares a kind of product."),
       reason: z.string(),
       missing: z.array(z.string()),
     }),

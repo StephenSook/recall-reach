@@ -6,6 +6,7 @@ const paths = vi.hoisted(() => ({ runShopper: vi.fn(), createSlip: vi.fn(), star
 vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
 vi.mock("@/server/agent/shopper", async (original) => ({ ...(await original<typeof import("@/server/agent/shopper")>()), runShopper: paths.runShopper }));
 vi.mock("@/server/agent/claude", async (original) => ({ ...(await original<typeof import("@/server/agent/claude")>()), agentClientFromEnv: paths.agent }));
+vi.mock("@/server/privacy/recordKey", () => ({ recordKeyFromEnv: () => () => "hash" }));
 vi.mock("@/server/paypal/client", async (original) => ({ ...(await original<typeof import("@/server/paypal/client")>()), payPalClientFromEnv: () => ({}) }));
 vi.mock("@/server/paypal/shopperOrder", async (original) => ({
   ...(await original<typeof import("@/server/paypal/shopperOrder")>()),
@@ -74,6 +75,38 @@ describe("the shopping agent's routes", () => {
       expect(await (await run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp()))).json()).toMatchObject({ outcome: "UNAVAILABLE" });
     });
 
+    it("runs only a few at once, so the spend can't race past its limit", async () => {
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      paths.runShopper.mockImplementation(async () => {
+        await held;
+        return { outcome: "NO_PICK", steps: [], blocked: [], pick: null };
+      });
+      const running = [1, 2, 3].map(() => run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp())));
+      await vi.waitFor(() => expect(paths.runShopper).toHaveBeenCalledTimes(3));
+      const fourth = await run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp()));
+      expect(fourth.status).toBe(429);
+      release();
+      await Promise.all(running);
+      expect((await run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp()))).status).toBe(200);
+    });
+
+    it("times the offer from when it's made, not from when the agent began", async () => {
+      paths.runShopper.mockImplementation(async () => {
+        vi.setSystemTime(new Date("2026-11-07T12:11:00Z"));
+        return { outcome: "PICKED", steps: [], blocked: [], pick: { listing: LISTING, recallsChecked: 1855, from: "2022-01-05", similar: 0 } };
+      });
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-07T12:00:00Z") });
+      try {
+        await run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp()));
+      } finally {
+        vi.useRealTimers();
+      }
+      expect((paths.createSlip.mock.calls[0][2] as Date).toISOString()).toBe("2026-11-07T12:11:00.000Z");
+    });
+
     it("makes a slip only for an offer, and sends the page no listing id", async () => {
       paths.runShopper.mockResolvedValue({ outcome: "PICKED", steps: [], blocked: [{ listing: { ...LISTING, id: "raw-blocked" }, recalls: [] }], pick: { listing: LISTING, recallsChecked: 1855, from: "2022-01-05", similar: 2 } });
       const res = await run(asking({ ask: "a tub", budget: 50 }, ORIGIN, nextIp()));
@@ -102,7 +135,7 @@ describe("the shopping agent's routes", () => {
       const res = await buy(pressing());
       expect(res.status).toBe(303);
       expect(res.headers.get("location")).toBe("https://www.sandbox.paypal.com/checkoutnow?token=T");
-      expect(Object.keys(paths.start.mock.calls[0][2]).sort()).toEqual(["now", "siteUrl", "slipId"]);
+      expect(Object.keys(paths.start.mock.calls[0][2]).sort()).toEqual(["now", "recordKey", "siteUrl", "slipId"]);
     });
 
     it("says why it stopped", async () => {
@@ -112,7 +145,16 @@ describe("the shopping agent's routes", () => {
   });
 
   describe("back from PayPal", () => {
-    const returning = (query: string) => new Request(`${ORIGIN}/api/shopper/return?${query}`);
+    const returning = (query: string, ip = "1.2.3.4") => new Request(`${ORIGIN}/api/shopper/return?${query}`, { headers: { "true-client-ip": ip } });
+
+    it("limits how often one visitor can come back", async () => {
+      paths.finish.mockResolvedValue(undefined);
+      const ip = nextIp();
+      for (let i = 0; i < 30; i++) await back(returning("slip=s1&token=T", ip));
+      const res = await back(returning("slip=s1&token=T", ip));
+      expect(new URL(res.headers.get("location") ?? "").search).toBe("?error=BUSY");
+      expect(paths.finish).toHaveBeenCalledTimes(30);
+    });
 
     it("reads the order and shows it done only if that worked", async () => {
       paths.finish.mockResolvedValue(undefined);
@@ -129,7 +171,7 @@ describe("the shopping agent's routes", () => {
 
     it("says the agent can't set a price or buy, and that it's test money", async () => {
       const html = await page();
-      expect(html).toContain("The agent never sees a price and can&#x27;t set one.");
+      expect(html).toContain("The agent can&#x27;t set a price: the server reads it from the listing when you press.");
       expect(html).toContain("It&#x27;s test money, nothing ships, and no store is paid.");
     });
 
