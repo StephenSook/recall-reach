@@ -8,6 +8,7 @@ const PAGES = [
   { href: "/eval", label: "How well it works" },
   { href: "/safety", label: "Safety" },
   { href: "/check", label: "Check" },
+  { href: "/shopper", label: "Shopping agent" },
 ];
 
 const isHere = (path: string, href: string) => path === href || path.startsWith(`${href}/`);

@@ -26,6 +26,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | [`/evidence/defects`](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found in our own work, what changed, and how it was checked again |
 | [`/r/sample`](https://recall-reach-web-e022.onrender.com/r/sample) | What a family sees for a real recall, as a labelled sample that stays up |
 | [`/check`](https://recall-reach-web-e022.onrender.com/check) | A shop's own order file or a Shopify store's public listings, deleted on request or after 7 days |
+| [`/shopper`](https://recall-reach-web-e022.onrender.com/shopper) | A shopping agent that searches public listings through Channel3 and has to check one against CPSC recalls before it may offer it. A person approves on PayPal's page, in the sandbox |
 | [`/status`](https://recall-reach-web-e022.onrender.com/status) | Each outside service's last reading, and what that reading measures |
 | [`/privacy`](https://recall-reach-web-e022.onrender.com/privacy) | What is kept, and text a shop can copy |
 
@@ -72,7 +73,8 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
-| Claude | Nothing. It reads recall text and the shop's own titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| Claude | Nothing. It reads recall text, the shop's own titles and, on `/shopper`, public listing titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| A person on `/shopper` | Approve one sandbox test order on PayPal's page, at the price the server read from the listing. Nothing ships and no store is paid |
 | A family | Answer on their phone page. That changes the seller's card, and moves no money |
 
 ## What's live and what's demo
@@ -101,6 +103,7 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 - The store address on `/check` reads Shopify's public `/products.json` only, so it sees what's listed today and no sales. Its results say "need a check". A listing can't confirm a recall.
 - This checks CPSC recalls. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls.
 - Tested on demo data and public listings. No real shop has run it yet.
+- `/shopper` reads a listing's words. A match is about those words, not a finding that the item is recalled, and no match doesn't mean it's safe. Listings change, so a run isn't a fixed result. The listings seen so far are new goods, not secondhand.
 
 ## What the real sandbox did
 

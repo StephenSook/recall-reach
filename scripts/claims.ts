@@ -95,6 +95,18 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Shopping agent",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/api/shopper/run/route.ts", call: "runShopper" },
+      { file: "server/agent/shopper.ts", find: "propose_listing" },
+      { file: "server/sweep/channel3.ts", find: "export function channel3Listings" },
+      { file: "app/api/shopper/buy/route.ts", call: "startShopperOrder" },
+      { file: "server/paypal/shopperOrder.ts", call: "createPayPalOrder" },
+    ],
+  },
+  {
     name: "Seller answers",
     status: "claimed",
     feature: true,

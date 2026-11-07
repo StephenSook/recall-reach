@@ -11,6 +11,8 @@ A read-only MCP server, with no sign-in: https://recall-reach-web-e022.onrender.
 
 Neither can reach a shop or a sale, and neither changes anything. They are rate limited.
 
+A shopping agent built on them, for a person to use: https://recall-reach-web-e022.onrender.com/shopper
+
 ## Pages
 
 - [Judge's route](https://recall-reach-web-e022.onrender.com/judge): a numbered walk through the product

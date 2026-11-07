@@ -27,6 +27,7 @@ describe("the site header", () => {
       ["/eval", "How well it works"],
       ["/safety", "Safety"],
       ["/check", "Check"],
+      ["/shopper", "Shopping agent"],
     ]);
   });
 

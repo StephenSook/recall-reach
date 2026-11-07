@@ -31,6 +31,9 @@ export default function JudgeDoor() {
         <li>
           <strong>Try to break it.</strong> <Link href="/safety">The safety checks</Link> try five attacks on the real code.
         </li>
+        <li>
+          <strong>Ask the shopping agent.</strong> <Link href="/shopper">Press a chip</Link> and wait about ten seconds. Look for a listing it wouldn&apos;t offer, with the recall named, and open What the agent did. Listings change, so a run may come back different, and it may not stop any. It uses real Claude and real listings, on a small daily limit.
+        </li>
       </ol>
       <h2 className="section-title">From a terminal</h2>
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
