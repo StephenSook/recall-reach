@@ -4,6 +4,8 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
+![The demo shop's queue on the deployed site: 1,855 recalls checked, 4 matched, 5 can't tell yet, 24 cleared, with each sale's state and why it came up](docs/images/queue.png)
+
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet.
 
 ## What it does
@@ -13,6 +15,15 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 3. **Asks the family what the recall needs.** Claude writes one question resting on words CPSC really wrote, and the check rejects a question whose quote isn't in the record. The owner approves it before it goes out.
 4. **Leaves every message and refund to a person.** The owner approves it, the notice opens in the shop's own mail, and they send it. The family answers on a phone page, and the seller's card changes.
 5. **Refunds only what it should.** A sale after the recall date, within 180 days of the payment, for the exact amount the owner approved. The refund goes through PayPal Agent Toolkit with one request id, and the page reconciles our record against PayPal's refund, PayPal's payment and the webhook.
+
+
+A sale's 180 days, against the recall date and today, on the demo shop:
+
+![Refund windows for recall 27027: two sales made after the recall, each with a bar for its 180 days](docs/images/refund-windows.png)
+
+Checking one item at the counter, on a phone:
+
+<img src="docs/images/check-one-item.png" alt="Check one item on a phone: a label and model number typed in, and an answer saying this matches a recall, with a link to read it" width="320">
 
 ## See it for yourself
 
