@@ -11,7 +11,7 @@ export function WarningCards({ warnings, demo }: { warnings: ShopWarning[]; demo
   return (
     <details data-testid="cpsc-warnings" className="window" style={{ marginTop: 16 }}>
       <summary>CPSC warnings ({warnings.length})</summary>
-      <p className="note">When a company can&apos;t be found or won&apos;t cooperate, CPSC warns instead of recalling. There&apos;s no remedy from the company, so there&apos;s nothing to refund here. These aren&apos;t in any recall count.</p>
+      <p className="note">CPSC often warns instead of recalling when a company hasn&apos;t agreed to a recall or hasn&apos;t responded. No refund is offered here. These aren&apos;t in any recall count.</p>
       {warnings.map((w) => (
         <section key={`${w.number}:${w.itemTitle}`} data-testid="cpsc-warning">
           <p>

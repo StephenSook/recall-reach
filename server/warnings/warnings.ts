@@ -1,5 +1,5 @@
-// CPSC's product safety warnings. When a company can't be found or won't cooperate, CPSC warns instead of recalling: no recall
-// and no remedy. Kept apart from recalls, so they reach no recall count, no Replay and no refund. A warning is notice only.
+// CPSC's product safety warnings. CPSC often warns instead of recalling when a company hasn't agreed to a recall or hasn't
+// responded. Kept apart from recalls, so they reach no recall count, no Replay and no refund. A warning is notice only.
 import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
 import type { Queryable } from "../db/types";
@@ -30,6 +30,17 @@ export interface Warning {
   soldAt: string;
 }
 
+/** CPSC's export leaves the tail of a cut-off link and some entities in its text. This takes out only that, and keeps every word. */
+export function cleanCpscText(text: string): string {
+  return text
+    .replace(/https?:\/\/\S*\s+lang="[^"]*">/g, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 const dayOf = (text: string): string | null => {
   const at = Date.parse(`${text.trim()} UTC`);
   return Number.isNaN(at) ? null : new Date(at).toISOString().slice(0, 10);
@@ -54,10 +65,10 @@ export function parseWarningsCsv(text: string): Warning[] {
       warnedOn,
       title: r["Product Safety Warning Title"] ?? "",
       product: r["Name of product"] ?? "",
-      description: r["Description"] ?? "",
-      hazard: r["Hazard Description"] ?? "",
-      consumerAction: r["Consumer Action"] ?? "",
-      soldAt: r["Sold At"] ?? "",
+      description: cleanCpscText(r["Description"] ?? ""),
+      hazard: cleanCpscText(r["Hazard Description"] ?? ""),
+      consumerAction: cleanCpscText(r["Consumer Action"] ?? ""),
+      soldAt: cleanCpscText(r["Sold At"] ?? ""),
     });
   }
   if (rows.length < MIN_ROWS) throw new WarningsUnreadable(`CPSC's warnings file had only ${rows.length} rows`);
@@ -130,8 +141,8 @@ export function descriptiveWords(products: string[]): Set<string> {
 
 /**
  * The matcher reads a brand from a recall's title, and a warning's title is worded differently, so this says it the matcher's
- * way: the product name's first word as the maker. A warning needs the maker and the product both, because with no recall and
- * no remedy, a loose match would only frighten a family.
+ * way: the product name's first word as the maker. A warning needs the maker and the product both, because a loose match
+ * would only frighten a family.
  */
 export function nearWarning(w: Pick<Warning, "product" | "description">, title: string, maker: string): boolean {
   if (!wordsOf(title).includes(maker)) return false;
@@ -207,10 +218,11 @@ export async function readWarningsFor(db: Queryable, shopId: string): Promise<Sh
     warnedOn: String(r.warned_on),
     title: r.title,
     product: r.product,
-    description: r.description,
-    hazard: r.hazard,
-    consumerAction: r.consumer_action,
-    soldAt: r.sold_at,
+    // Rows read before the export's markup was handled keep it until the next read.
+    description: cleanCpscText(r.description),
+    hazard: cleanCpscText(r.hazard),
+    consumerAction: cleanCpscText(r.consumer_action),
+    soldAt: cleanCpscText(r.sold_at),
     itemTitle: r.item_title,
   }));
 }

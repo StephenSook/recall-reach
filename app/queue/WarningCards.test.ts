@@ -28,7 +28,7 @@ describe("a shop's CPSC warnings", () => {
 
   it("offers no refund, and says why", () => {
     const page = html([warning]);
-    expect(page).toContain("nothing to refund here");
+    expect(page).toContain("No refund is offered here.");
     expect(page).not.toMatch(/<button|Review refund/);
   });
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
-import { checkTitlesAgainstWarnings, checkShopAgainstWarnings, descriptiveWords, makerOf, parseWarningsCsv, readWarningsFor, refreshWarnings, storeWarnings, type Warning, warningCount, WarningsUnreadable } from "./warnings";
+import { checkTitlesAgainstWarnings, checkShopAgainstWarnings, cleanCpscText, descriptiveWords, makerOf, parseWarningsCsv, readWarningsFor, refreshWarnings, storeWarnings, type Warning, warningCount, WarningsUnreadable } from "./warnings";
 
 const HEADER =
   '﻿"Product Safety Warning Number","Product Safety Warning Date","Product Safety Warning Title","Name of product","Description","Hazard Description","Consumer Action","Original Product Safety Warning Announcement","Units","Incidents","Sold At Label","Sold At","Importers","Manufacturers","Distributors","Manufactured In","Custom Label","Custom Field"';
@@ -54,6 +54,30 @@ describe("reading CPSC's warnings file", () => {
     ["nothing", ""],
   ])("refuses %s, and never reads it as data", (_name, text) => {
     expect(() => parseWarningsCsv(text)).toThrow(WarningsUnreadable);
+  });
+
+  it("cleans a real row, 27-002, with a link fragment and an entity, and changes nothing else", () => {
+    const real =
+      'The crib bumpers can obstruct an infant\u2019s breathing, posing a risk of serious injury or death from suffocation. Padded crib bumpers are banned under the https://www.cpsc.gov/Newsroom/News-Releases/2023/CPSC-Approves-Rules-Im\u2026 lang="EN-US">Safe Sleep for Babies Act.&nbsp;';
+    expect(cleanCpscText(real)).toBe("The crib bumpers can obstruct an infant\u2019s breathing, posing a risk of serious injury or death from suffocation. Padded crib bumpers are banned under the Safe Sleep for Babies Act.");
+  });
+
+  it("leaves a plain web address alone", () => {
+    expect(cleanCpscText("Go to https://www.cpsc.gov/Warnings for more.")).toBe("Go to https://www.cpsc.gov/Warnings for more.");
+  });
+
+  it("takes out the markup CPSC's export leaves in, and keeps every word", () => {
+    const rows = parseWarningsCsv(
+      csv(
+        row({
+          hazard: 'Padded crib bumpers are banned under the https://www.cpsc.gov/Newsroom/News-Releases/2023/CPSC-Approves-Rules-Im\u2026 lang="EN-US">Safe Sleep for Babies Act.&nbsp;',
+          action: "Stop using them &amp; dispose of them.&nbsp;",
+        }),
+        ...many(100),
+      ),
+    );
+    expect(rows[0].hazard).toBe("Padded crib bumpers are banned under the Safe Sleep for Babies Act.");
+    expect(rows[0].consumerAction).toBe("Stop using them & dispose of them.");
   });
 
   it("leaves out a row with no number or no date it can read, and takes the rest", () => {
