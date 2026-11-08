@@ -13,6 +13,21 @@ describe("the queue's PayPal sign-in panel", () => {
     expect(p.lines.join(" ")).toContain("a keyed hash of your PayPal account id");
   });
 
+  const KEPT = { deletesAfter: new Date("2027-11-08T12:00:00Z"), keptByOwner: true, unkeptDeletesAfter: new Date("2026-11-15T12:00:00Z") };
+
+  it("says that linking keeps the shop past 7 days, and how long", () => {
+    expect(ownerPanel(null, { setUp: true }).lines.join(" ")).toContain("keeps this shop, its order file and its receipts past 7 days");
+  });
+
+  it("says when a linked shop is due to go, and what unlinking would bring back", () => {
+    const text = ownerPanel({ linkedAt: "2026-11-08T12:00:00.000Z", signedInAt: null, isSeller: null }, { setUp: true, lifetime: KEPT, now: new Date("2026-11-09T12:00:00Z") }).lines.join(" ");
+    expect(text).toContain("kept until you delete it, or a year passes with no PayPal sign-in");
+    expect(text).toMatch(/due to be deleted after Nov 8, 2027/);
+    expect(text).toMatch(/If you unlink, its data is deleted after Nov 15, 2026/);
+    const late = ownerPanel({ linkedAt: "2026-11-08T12:00:00.000Z", signedInAt: null, isSeller: null }, { setUp: true, lifetime: KEPT, now: new Date("2026-12-01T12:00:00Z") }).lines.join(" ");
+    expect(late).toContain("If you unlink, its data is deleted within the hour");
+  });
+
   it("says when it was linked, and whether it is the account refunds go from, only as measured", () => {
     const at = "2026-11-08T12:00:00.000Z";
     expect(ownerPanel({ linkedAt: at, signedInAt: null, isSeller: true }, { setUp: true }).lines.join(" ")).toContain("the same PayPal account your refunds go from");

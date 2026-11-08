@@ -1,9 +1,10 @@
 import type { OwnerLink } from "@/server/owner/ownerLink";
+import type { ShopLifetime } from "@/server/shop/lifetime";
 import { ownerPanel } from "./ownerPanel";
 
 /** A real shop links its owner's PayPal login, so that login opens the shop again from any browser. */
-export function OwnerSignIn({ link, setUp }: { link: OwnerLink | null; setUp: boolean }) {
-  const panel = ownerPanel(link, { setUp });
+export function OwnerSignIn({ link, setUp, lifetime }: { link: OwnerLink | null; setUp: boolean; lifetime: ShopLifetime | null }) {
+  const panel = ownerPanel(link, { setUp, lifetime });
   return (
     <section className="upload" data-testid="owner-signin" aria-labelledby="owner-signin-title">
       <h2 id="owner-signin-title" className="section-title">

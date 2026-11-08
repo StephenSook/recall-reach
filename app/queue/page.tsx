@@ -6,7 +6,8 @@ import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { baseUrl, currentSession, secret } from "@/server/web/http";
-import { shopDeletesAfter, shopReceiptLink } from "@/server/safetyReceipt/store";
+import { shopReceiptLink } from "@/server/safetyReceipt/store";
+import { shopLifetime } from "@/server/shop/lifetime";
 import { ranAt } from "@/app/replay/labels";
 import { receiptQr } from "@/server/safetyReceipt/qr";
 import { ReceiptCard } from "./ReceiptCard";
@@ -288,7 +289,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const receiptToken = await shopReceiptLink(getDb(), session.shopId, secret("SESSION_SECRET"));
   const receiptLink = receiptToken ? `${baseUrl()}/s/${receiptToken}` : null;
   const qr = receiptLink ? await receiptQr(receiptLink) : null;
-  const receiptsGo = await shopDeletesAfter(getDb(), session.shopId);
+  const life = await shopLifetime(getDb(), session.shopId);
   const { cards: found, cleared, unrelated } = toCards(rows);
   // A real shop's cards split by what they rest on, with shared words last. A demo shop keeps its one list, so its numbers can't move.
   const real = shopKind === "REAL";
@@ -384,7 +385,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
       {linksPayPal ? <PayPalConnect connection={connection} setUp={platformFromEnv() !== null} /> : null}
-      {shop.kind === "REAL" ? <OwnerSignIn link={ownerLink} setUp={ownerSignInFromEnv(baseUrl()) !== null} /> : null}
+      {shop.kind === "REAL" ? <OwnerSignIn link={ownerLink} setUp={ownerSignInFromEnv(baseUrl()) !== null} lifetime={life} /> : null}
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; } .queue-heading { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; clip-path: none !important; white-space: normal !important; }`}</style>
       </noscript>
@@ -459,7 +460,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <WarningCards warnings={warnings} demo={shop.kind === "DEMO"} />
       {pastWindow ? <PastWindowPayout product={pastWindow.product} recalledOn={pastWindow.recalledOn} payout={pastWindow.payout} receiver={pastWindow.receiver} /> : null}
       <PayPalCalls calls={calls} />
-      {receiptLink && qr && receiptsGo ? <ReceiptCard link={receiptLink} qr={qr} demo={shopKind === "DEMO"} deletesAfter={ranAt(receiptsGo.toISOString())} /> : null}
+      {receiptLink && qr && life ? <ReceiptCard link={receiptLink} qr={qr} demo={shopKind === "DEMO"} kept={life.keptByOwner} deletesAfter={ranAt(life.deletesAfter.toISOString())} /> : null}
     </main>
   );
 }
