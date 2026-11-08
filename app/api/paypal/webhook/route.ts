@@ -5,10 +5,26 @@ import { catchLiveSale } from "@/server/demo/liveCatch";
 import { readCappedBody } from "@/server/http/body";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { askPayPalToVerify } from "@/server/paypal/webhookCheck";
-import { handleWebhookDelivery, MAX_WEBHOOK_BYTES } from "@/server/paypal/webhookHandler";
-import { recordKeyFromEnv } from "@/server/privacy/recordKey";
+import { platformFromEnv } from "@/server/paypal/platform";
+import { handleWebhookDelivery, MAX_WEBHOOK_BYTES, type PlatformWebhook } from "@/server/paypal/webhookHandler";
+import { forgetMerchant } from "@/server/shop/paypalConnection";
+import { recordKeyFromEnv, type RecordKey } from "@/server/privacy/recordKey";
 
 export const dynamic = "force-dynamic";
+
+/** The platform app connected shops link to. Its events post here under its own webhook id. */
+function platformWebhook(recordKey: RecordKey | null): PlatformWebhook | undefined {
+  const webhookId = process.env.PAYPAL_PLATFORM_WEBHOOK_ID?.trim();
+  if (!webhookId) return undefined;
+  const platform = platformFromEnv();
+  return {
+    webhookId,
+    checkWithPayPal: platform ? (transmission, id, rawBody) => askPayPalToVerify(platform.client, transmission, id, rawBody) : undefined,
+    onConsentRevoked: async (merchantId) => {
+      if (recordKey) await forgetMerchant(getDb(), recordKey("paypal-merchant", merchantId));
+    },
+  };
+}
 
 // PayPal posts webhook events here. The raw bytes are read before any parsing because the
 // signature covers the exact body PayPal sent; reading stops at MAX_WEBHOOK_BYTES.
@@ -16,14 +32,16 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const read = await readCappedBody(request, MAX_WEBHOOK_BYTES);
     if (!read.ok) return Response.json({ error: "payload too large" }, { status: 413 });
+    const recordKey = recordKeyFromEnv();
     const { status, body, followUp } = await handleWebhookDelivery({
       rawBody: read.body,
       headers: request.headers,
       webhookId: process.env.PAYPAL_WEBHOOK_ID,
       db: getDb(),
-      recordKey: recordKeyFromEnv(),
+      recordKey,
       onCaptureCompleted: (captureId) => withCallLog(getDb(), null, () => catchLiveSale(getDb(), payPalClientFromEnv(), { captureId, now: new Date() })),
       checkWithPayPal: (transmission, webhookId, rawBody) => askPayPalToVerify(payPalClientFromEnv(), transmission, webhookId, rawBody),
+      platform: platformWebhook(recordKey),
     });
     // PayPal's own check runs once PayPal has its answer, so neither the reply nor a live catch waits on it.
     if (followUp) after(followUp);

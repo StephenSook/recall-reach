@@ -56,6 +56,15 @@ function eventCreateTime(event: WebhookEvent): string | null {
  * A completed capture goes to onCaptureCompleted, which must be safe to repeat: if it throws, the
  * delivery fails and PayPal tries again.
  */
+export interface PlatformWebhook {
+  webhookId: string | undefined;
+  checkWithPayPal?: (transmission: TransmissionHeaders, webhookId: string, rawBody: Uint8Array) => Promise<PayPalCheck>;
+  /** A seller took back the consent it gave the platform. Must be safe to repeat. */
+  onConsentRevoked?: (merchantId: string) => Promise<unknown>;
+}
+
+const MERCHANT_ID = /^[A-Z0-9]{8,20}$/;
+
 export async function handleWebhookDelivery(input: {
   rawBody: Uint8Array;
   headers: Headers;
@@ -67,6 +76,8 @@ export async function handleWebhookDelivery(input: {
   onCaptureCompleted?: (captureId: string) => Promise<unknown>;
   /** PayPal's verify-webhook-signature, given the exact bytes. Asked only about a new event our check verified. */
   checkWithPayPal?: (transmission: TransmissionHeaders, webhookId: string, rawBody: Uint8Array) => Promise<PayPalCheck>;
+  /** The platform app, which connected shops link to. Its events post to the same URL under its own webhook id. */
+  platform?: PlatformWebhook;
 }): Promise<WebhookResponse> {
   if (!input.webhookId || !input.recordKey) {
     console.error("PayPal webhook received but PAYPAL_WEBHOOK_ID or RECORD_HMAC_SECRET is not set");
@@ -78,9 +89,23 @@ export async function handleWebhookDelivery(input: {
   }
 
   const transmission = readTransmissionHeaders(input.headers);
-  const result = await verifyWebhook(input.rawBody, transmission, input.webhookId, {
+  let result = await verifyWebhook(input.rawBody, transmission, input.webhookId, {
     fetchCert: input.fetchCert,
   });
+  // The signature covers the webhook id, so an event verifies under exactly one app's id. That app's id and check go with it.
+  let webhookId = input.webhookId;
+  let check = input.checkWithPayPal;
+  let fromPlatform = false;
+  const platformId = input.platform?.webhookId;
+  if (!result.verified && platformId && platformId !== input.webhookId) {
+    const second = await verifyWebhook(input.rawBody, transmission, platformId, { fetchCert: input.fetchCert });
+    if (second.verified) {
+      result = second;
+      webhookId = platformId;
+      check = input.platform?.checkWithPayPal;
+      fromPlatform = true;
+    }
+  }
   if (!result.verified) {
     console.warn(`PayPal webhook rejected: ${result.reason}`);
     return { status: 401, body: { error: "signature not verified" } };
@@ -164,20 +189,24 @@ export async function handleWebhookDelivery(input: {
   const sentAt = Date.parse(transmission.transmissionTime ?? "");
   const age = Number.isNaN(sentAt) ? "unknown" : String(Math.round((at - sentAt) / 1000));
   console.info(
-    `PayPal webhook accepted: type=${event.event_type} transmission_new=${transmissionNew} ` +
+    `PayPal webhook accepted: type=${event.event_type} app=${fromPlatform ? "platform" : "demo"} transmission_new=${transmissionNew} ` +
       `transmission_age_s=${age} duplicate=${duplicate}`,
   );
-  if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId) await input.onCaptureCompleted?.(resourceId);
+  // A connected shop's capture is that shop's own sale, read through its own connection, never the demo's live catch.
+  if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId && !fromPlatform) await input.onCaptureCompleted?.(resourceId);
+  // Forgetting a link fails safe, so it doesn't wait on a PayPal read. Only the platform app's own event counts.
+  const revokedMerchant = (event.resource as { merchant_id?: unknown } | undefined)?.merchant_id;
+  if (fromPlatform && event.event_type === "MERCHANT.PARTNER-CONSENT.REVOKED" && typeof revokedMerchant === "string" && MERCHANT_ID.test(revokedMerchant)) {
+    await input.platform?.onConsentRevoked?.(revokedMerchant);
+  }
   if (event.event_type?.startsWith("PAYMENT.PAYOUTS-ITEM.") && event.resource) await recordPayoutItemEvent(input.db, key, event.resource as { payout_batch_id?: unknown; transaction_status?: unknown });
-  const check = input.checkWithPayPal;
-  const webhookId = input.webhookId;
   // Asked once, for a new event, after PayPal has its answer. Whatever goes wrong is recorded as no answer, never a pass.
   const followUp =
     check && !duplicate
       ? async () => {
           let answer: PayPalCheck = "UNAVAILABLE";
           try {
-            answer = await check(transmission, webhookId, input.rawBody);
+            answer = await check(transmission, webhookId!, input.rawBody);
           } catch {
             answer = "UNAVAILABLE";
           }

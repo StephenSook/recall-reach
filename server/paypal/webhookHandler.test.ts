@@ -96,6 +96,52 @@ describe("handleWebhookDelivery", () => {
     });
   });
 
+  describe("an event through the platform app, for a connected shop", () => {
+    const PLATFORM_ID = "TEST-PLATFORM-WEBHOOK-ID";
+    const raw = (type: string, resource: Record<string, unknown>, id = "WH-PLATFORM-1") => new TextEncoder().encode(JSON.stringify({ id, event_type: type, resource_type: "x", create_time: "2026-11-08T15:00:00Z", resource }));
+    const send = (bytes: Uint8Array, signedFor: string, extra: Partial<Parameters<typeof handleWebhookDelivery>[0]> = {}) =>
+      handleWebhookDelivery({ rawBody: bytes, headers: paypalHeaders(bytes, signedFor), webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, ...extra });
+
+    it("is verified under the platform's webhook id when the demo's doesn't match, and recorded once", async () => {
+      const bytes = raw("PAYMENT.CAPTURE.REFUNDED", { id: "R-P-1", status: "COMPLETED" });
+      expect((await send(bytes, PLATFORM_ID)).status).toBe(401);
+      expect((await send(bytes, PLATFORM_ID, { platform: { webhookId: PLATFORM_ID } })).status).toBe(200);
+      expect(await rows()).toHaveLength(1);
+    });
+
+    it("keeps a connected shop's completed capture away from the demo's live catch", async () => {
+      const seen = vi.fn(async () => undefined);
+      const bytes = raw("PAYMENT.CAPTURE.COMPLETED", { id: "CAPTURE-SELLER-1" });
+      expect((await send(bytes, PLATFORM_ID, { onCaptureCompleted: seen, platform: { webhookId: PLATFORM_ID } })).status).toBe(200);
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it("forgets the seller when PayPal says it took its consent back", async () => {
+      const revoked = vi.fn(async () => undefined);
+      const bytes = raw("MERCHANT.PARTNER-CONSENT.REVOKED", { merchant_id: "SELLERPAYER1" });
+      await send(bytes, PLATFORM_ID, { platform: { webhookId: PLATFORM_ID, onConsentRevoked: revoked } });
+      expect(revoked).toHaveBeenCalledWith("SELLERPAYER1");
+    });
+
+    it("forgets no seller for a revocation signed for the demo's app, or with a merchant id not in PayPal's form", async () => {
+      const revoked = vi.fn(async () => undefined);
+      await send(raw("MERCHANT.PARTNER-CONSENT.REVOKED", { merchant_id: "SELLERPAYER1" }, "WH-R-1"), WEBHOOK_ID, { platform: { webhookId: PLATFORM_ID, onConsentRevoked: revoked } });
+      await send(raw("MERCHANT.PARTNER-CONSENT.REVOKED", { merchant_id: "../x" }, "WH-R-2"), PLATFORM_ID, { platform: { webhookId: PLATFORM_ID, onConsentRevoked: revoked } });
+      expect(revoked).not.toHaveBeenCalled();
+    });
+
+    it("asks the platform app's own check, with the platform's webhook id", async () => {
+      const demoCheck = vi.fn(async () => "SUCCESS" as const);
+      const platformCheck = vi.fn(async () => "SUCCESS" as const);
+      const bytes = raw("PAYMENT.CAPTURE.REFUNDED", { id: "R-P-2", status: "COMPLETED" }, "WH-PLATFORM-2");
+      const res = await send(bytes, PLATFORM_ID, { checkWithPayPal: demoCheck, platform: { webhookId: PLATFORM_ID, checkWithPayPal: platformCheck } });
+      await res.followUp?.();
+      expect(demoCheck).not.toHaveBeenCalled();
+      expect(platformCheck).toHaveBeenCalledWith(expect.anything(), PLATFORM_ID, bytes);
+      expect((await rows())[0].paypal_check).toBe("SUCCESS");
+    });
+  });
+
   describe("after the purge has taken the event's row", () => {
     const capture = Buffer.from(JSON.stringify({ id: "WH-OLD", event_type: "PAYMENT.CAPTURE.COMPLETED", resource_type: "capture", resource: { id: "CAPTURE-OLD" } }));
     const later = () => Date.now() + 47 * 3_600_000;
@@ -235,9 +281,9 @@ describe("handleWebhookDelivery", () => {
       await at(paypalHeaders(body, WEBHOOK_ID, "transmission-1"));
       const lines = info.mock.calls.map((c) => String(c[0]));
       expect(lines).toEqual([
-        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=true transmission_age_s=7 duplicate=false",
-        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=true transmission_age_s=7 duplicate=true",
-        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED transmission_new=false transmission_age_s=7 duplicate=true",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED app=demo transmission_new=true transmission_age_s=7 duplicate=false",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED app=demo transmission_new=true transmission_age_s=7 duplicate=true",
+        "PayPal webhook accepted: type=PAYMENT.CAPTURE.REFUNDED app=demo transmission_new=false transmission_age_s=7 duplicate=true",
       ]);
       for (const raw of ["WH-TEST-1", "transmission-1", "transmission-2", "2026-11-05T20:00:00Z", "TEST-REFUND-1"]) {
         expect(lines.join("\n"), raw).not.toContain(raw);

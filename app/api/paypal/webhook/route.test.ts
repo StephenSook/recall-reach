@@ -69,4 +69,32 @@ describe("POST /api/paypal/webhook", () => {
     expect(await res.json()).toEqual({ error: "internal error" });
     expect(logged).toHaveBeenCalled();
   });
+
+  it("hands the handler the platform app's webhook id, its own check and a way to forget a seller, once it is set up", async () => {
+    vi.stubEnv("PAYPAL_PLATFORM_WEBHOOK_ID", "PLATFORMHOOK1");
+    vi.stubEnv("PAYPAL_PLATFORM_CLIENT_ID", "platform-client");
+    vi.stubEnv("PAYPAL_PLATFORM_CLIENT_SECRET", "platform-secret");
+    vi.stubEnv("PAYPAL_PARTNER_MERCHANT_ID", "PARTNER123");
+    try {
+      handle.mockResolvedValue({ status: 200, body: { received: true, duplicate: false } });
+      await post();
+      const platform = handle.mock.calls[0][0].platform;
+      expect(platform.webhookId).toBe("PLATFORMHOOK1");
+      expect(platform.checkWithPayPal).toEqual(expect.any(Function));
+      expect(platform.onConsentRevoked).toEqual(expect.any(Function));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("hands no platform app when none is set up", async () => {
+    vi.stubEnv("PAYPAL_PLATFORM_WEBHOOK_ID", "");
+    try {
+      handle.mockResolvedValue({ status: 200, body: { received: true, duplicate: false } });
+      await post();
+      expect(handle.mock.calls[0][0].platform).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
