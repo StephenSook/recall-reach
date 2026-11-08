@@ -225,6 +225,8 @@ describe("PayPal client", () => {
     ["/v2/payments/refunds/ABCDEFGH", "/v2/payments/refunds/:id"],
     ["/v2/checkout/orders/ABCDEFGH", "/v2/checkout/orders/:id"],
     ["/v1/reporting/transactions", "/v1/reporting/transactions"],
+    ["/v1/customer/partners/ABCDEFGH/merchant-integrations", "/v1/customer/partners/:id/merchant-integrations"],
+    ["/v1/customer/partners/ABCDEFGH/merchant-integrations/ABCDEFGH", "/v1/customer/partners/:id/merchant-integrations/:id"],
   ])("hides an id by where it sits, whatever it is made of: %s", (path, template) => {
     const err = new PayPalApiError(422, "GET", path);
     expect(err.path).toBe(template);
