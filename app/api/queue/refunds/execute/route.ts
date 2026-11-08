@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { withCallLog } from "@/server/paypal/callLog";
-import { payPalClientFromEnv } from "@/server/paypal/client";
+import { payPalClientForShop } from "@/server/paypal/shopClient";
 import { executeRefund, RefundRefused } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { currentSession, fromThisSite, refused, seeOther, withMessage } from "@/server/web/http";
@@ -14,8 +14,9 @@ export async function POST(request: Request): Promise<Response> {
   if (!recordKey) return refused(503, "the server is missing its record key");
   const form = await request.formData();
   try {
+    const { client } = await payPalClientForShop(getDb(), session.shopId);
     const outcome = await withCallLog(getDb(), session.shopId, () =>
-      executeRefund(getDb(), payPalClientFromEnv(), {
+      executeRefund(getDb(), client, {
         shopId: session.shopId,
         sessionId: session.sessionId,
         approvalId: String(form.get("approvalId") ?? ""),

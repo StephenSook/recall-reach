@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { readCalls, withCallLog } from "@/server/paypal/callLog";
-import { payPalClientFromEnv, PayPalApiError } from "@/server/paypal/client";
+import { PayPalApiError } from "@/server/paypal/client";
+import { payPalClientForShop } from "@/server/paypal/shopClient";
 import { centsToValue } from "@/server/paypal/orders";
 import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
@@ -117,7 +118,8 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   // Outside the try: a missing setting isn't a passing failure, and shouldn't read as one.
   const db = getDb();
-  const client = payPalClientFromEnv();
+  // A shop connected to its own PayPal account is read through it, acting for the shop.
+  const client = (await payPalClientForShop(db, session.shopId)).client;
   let rec: Reconciliation | null = null;
   try {
     rec = await withCallLog(db, session.shopId, () => readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey }));
