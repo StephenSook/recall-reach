@@ -162,6 +162,11 @@ export async function runShopCheck(
     dateFilter?: boolean;
     /** True only if PayPal was read for this run. Otherwise an absent payment proves nothing. */
     paypalSearched?: boolean;
+    /**
+     * A connected shop's latest PayPal read stopped partway: payments stored by an earlier read may not be the only ones
+     * for a sale, so a new card records no join from them. Cards that already had one keep it until a complete read.
+     */
+    storedPaymentsUnproven?: boolean;
     /** What PayPal's search really covered, when one ran. */
     search?: SearchCoverage;
     /** Check this one record only. It says nothing about the shop's coverage, so no run is recorded. */
@@ -241,7 +246,8 @@ export async function runShopCheck(
       counts[v.verdict]++;
       const path: SalePath | null = c.ordered_on ? salePath(c.ordered_on, recall.recall_date) : null;
       const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
-      const join = computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
+      const unproven = Boolean(opts.storedPaymentsUnproven) && computed !== null;
+      const join = unproven || (computed === "NO_PAYPAL_RECORD" && !paypalSearched) ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
         `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id, strength, safety_receipt_id)
          values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13, $14, $16)
@@ -269,7 +275,7 @@ export async function runShopCheck(
           path,
           join,
           paypalSearched,
-          c.kind === "order_line" ? joined.lines[c.id]?.paymentKey ?? null : null,
+          c.kind === "order_line" && !unproven ? joined.lines[c.id]?.paymentKey ?? null : null,
           v.strength,
           Boolean(opts.onlyRecallIds),
           c.kind === "safety_receipt" ? c.id : null,

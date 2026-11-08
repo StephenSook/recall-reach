@@ -37,5 +37,11 @@ export async function readConnectedShopSales(db: Queryable, client: PayPalClient
 
 /** Checks the shop against the recalls with what that read saved. Run after the shop's lock is released, as an upload's check is. */
 export async function checkConnectedShop(db: Db, input: { shopId: string; now: Date; coverage: SearchCoverage }): Promise<void> {
-  await runShopCheck(db, input.shopId, { today: businessDay(input.now), paypalSearched: input.coverage.complete, failedMonths: failedMonths(input.coverage.failedWindows), search: input.coverage });
+  await runShopCheck(db, input.shopId, {
+    today: businessDay(input.now),
+    paypalSearched: input.coverage.complete,
+    storedPaymentsUnproven: !input.coverage.complete,
+    failedMonths: failedMonths(input.coverage.failedWindows),
+    search: input.coverage,
+  });
 }

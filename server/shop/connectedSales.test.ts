@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { pullRecalls } from "../cpsc/pull";
 import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
@@ -75,5 +77,22 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
     expect((await db.query("select 1 from paypal_payments where shop_id = $1", [shopId])).rows).toHaveLength(0);
     const { joined } = await joinShop(db, shopId, { today: "2026-11-08" });
     expect(Object.values(joined.lines).map((l) => l.state)).not.toContain("IDENTIFIED");
+  });
+
+  it("joins no new card to a payment an earlier read left behind, after a read that stopped partway", async () => {
+    const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
+    await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+    // A payment an earlier complete read saved, for the shop's own order number.
+    await db.query(
+      `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+       values ($1, 'EARLIER1', $2, 'EARLIER1', 'S', '2026-11-05T15:00:00Z', 4200, 'USD', '[]'::jsonb)`,
+      [shopId, sold.orderNumber],
+    );
+    const read = await readConnectedShopSales(db, searching(true), { shopId, now: NOW });
+    expect(read.complete).toBe(false);
+    await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
+    const { rows } = await db.query<{ join_state: string | null }>("select join_state from recall_matches where shop_id = $1 and order_line_id is not null", [shopId]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map((r) => r.join_state)).not.toContain("IDENTIFIED");
   });
 });
