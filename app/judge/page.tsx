@@ -80,6 +80,10 @@ export default function JudgeDoor() {
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"`}</pre>
+      <p>
+        The same calls, with their checks, are a public <a href="https://www.postman.com/stephensook-9992516/recall-reach/collection/60034350-b3303ddb-0026-4004-92ba-a40427cef179">Postman collection</a>, no login needed. From the repository, Newman runs them against this site and writes nothing:
+      </p>
+      <pre data-testid="newman">pnpm dlx newman run postman/recall-reach.postman_collection.json</pre>
       <h2 className="section-title">From an agent</h2>
       <pre data-testid="mcp-add">claude mcp add --transport http recall-reach https://recall-reach-web-e022.onrender.com/api/mcp</pre>
       <p>Two read-only tools, no key: check_recall and get_recall.</p>
