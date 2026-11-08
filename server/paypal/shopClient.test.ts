@@ -48,20 +48,27 @@ describe("which PayPal account a shop's refunds go from", () => {
     await connect();
     const chosen = await payPalClientForShop(db, shopId, ENV);
     expect(chosen.actingForShop).toBe(true);
-    await chosen.client.request("GET", "/v2/payments/captures/CAP1");
+    await chosen.client!.request("GET", "/v2/payments/captures/CAP1");
     const assertion = seen[0].get("paypal-auth-assertion") ?? "";
     expect(JSON.parse(Buffer.from(assertion.split(".")[1], "base64url").toString())).toEqual({ iss: "platform-id", payer_id: "SELLERPAYER1" });
   });
 
-  it("uses the platform's own account for a shop that isn't connected, or whose last answer wasn't connected", async () => {
-    expect((await payPalClientForShop(db, shopId, ENV)).actingForShop).toBe(false);
+  it("gives a real shop no PayPal account at all until PayPal says it's connected, never the demo's", async () => {
+    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false });
     await connect({ merchantId: "SELLERPAYER1", paymentsReceivable: false, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE] });
-    expect((await payPalClientForShop(db, shopId, ENV)).actingForShop).toBe(false);
+    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false });
   });
 
-  it("uses the platform's own account when the platform app isn't set up here", async () => {
+  it("gives a real shop no PayPal account when the platform app isn't set up here", async () => {
     await connect();
     const env = { ...ENV, PAYPAL_PLATFORM_CLIENT_ID: undefined } as unknown as NodeJS.ProcessEnv;
-    expect((await payPalClientForShop(db, shopId, env)).actingForShop).toBe(false);
+    expect(await payPalClientForShop(db, shopId, env)).toEqual({ client: null, actingForShop: false });
+  });
+
+  it("gives a demo shop the demo's own sandbox account", async () => {
+    const demo = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+    const chosen = await payPalClientForShop(db, demo, ENV);
+    expect(chosen.actingForShop).toBe(false);
+    expect(chosen.client).not.toBeNull();
   });
 });

@@ -122,7 +122,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   const client = (await payPalClientForShop(db, session.shopId)).client;
   let rec: Reconciliation | null = null;
   try {
-    rec = await withCallLog(db, session.shopId, () => readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey }));
+    if (client) rec = await withCallLog(db, session.shopId, () => readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey }));
   } catch (err) {
     if (err instanceof RefundRefused) notFound();
     // A passing failure shouldn't take the page away from someone, least of all when the page looked again by itself.
@@ -130,7 +130,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   }
   const calls = await readCalls(db, session.shopId).catch(() => []);
   // One page whichever happened, so LookAgain stays mounted and its time limit holds.
-  const looking = !rec || (!rec.webhook.seen && rec.ledger.status !== "failed") || rec.webhook.paypalCheck === "ASKING";
+  const looking = Boolean(client) && (!rec || (!rec.webhook.seen && rec.ledger.status !== "failed") || rec.webhook.paypalCheck === "ASKING");
   return (
     <main className="page">
       <header className="page-head">
@@ -138,6 +138,10 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
       </header>
       {rec ? (
         <Records rec={rec} id={id} />
+      ) : !client ? (
+        <p role="alert" className="alert" data-testid="not-connected">
+          This shop&apos;s PayPal account isn&apos;t connected, so PayPal can&apos;t be asked about this refund. Connect it from your queue.
+        </p>
       ) : (
         <p role="alert" className="alert" data-testid="read-failed">
           The records can&apos;t be read just now, so they can&apos;t be compared yet. This page will look again.

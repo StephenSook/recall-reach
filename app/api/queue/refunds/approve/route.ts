@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { withCallLog } from "@/server/paypal/callLog";
-import { payPalClientForShop } from "@/server/paypal/shopClient";
+import { NOT_CONNECTED, payPalClientForShop } from "@/server/paypal/shopClient";
 import { approveRefund, RefundRefused } from "@/server/paypal/refunds";
 import { currentSession, fromThisSite, refused, seeOther, withMessage } from "@/server/web/http";
 
@@ -13,6 +13,7 @@ export async function POST(request: Request): Promise<Response> {
   const form = await request.formData();
   try {
     const { client } = await payPalClientForShop(getDb(), session.shopId);
+    if (!client) return withMessage(request, NOT_CONNECTED);
     await withCallLog(getDb(), session.shopId, () => approveRefund(getDb(), client, { shopId: session.shopId, sessionId: session.sessionId, matchId: String(form.get("matchId") ?? "") }));
     return seeOther(request, "/queue");
   } catch (err) {

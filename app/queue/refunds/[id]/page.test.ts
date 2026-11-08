@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
 vi.mock("@/server/paypal/client", async (original) => ({ ...(await original<object>()), payPalClientFromEnv: () => clientFromEnv() }));
+// The shop's own client, or none for a real shop with no PayPal connected.
+const shopClient = vi.fn(async (): Promise<{ client: unknown; actingForShop: boolean }> => ({ client: clientFromEnv(), actingForShop: false }));
+vi.mock("@/server/paypal/shopClient", () => ({ payPalClientForShop: () => shopClient() }));
 vi.mock("@/server/privacy/recordKey", () => ({ recordKeyFromEnv: () => () => "key" }));
 vi.mock("@/server/web/http", () => ({ currentSession: async () => ({ shopId: "s1", sessionId: "x" }) }));
 vi.mock("@/server/paypal/refunds", async (original) => ({ ...(await original<object>()), readRefund: (...args: unknown[]) => readRefund(...args) }));
@@ -136,6 +139,16 @@ describe("the refund page", () => {
     expect(page).not.toContain("refund it there");
     readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: false } }));
     expect((await render()).replace(/<!-- -->/g, "")).toContain("If no refund shows, refund it there.");
+  });
+
+  it("says plainly that PayPal can't be asked when a real shop's PayPal isn't connected, and doesn't keep looking", async () => {
+    shopClient.mockResolvedValueOnce({ client: null, actingForShop: false });
+    readRefund.mockClear();
+    const html = await render();
+    expect(html).toContain('data-testid="not-connected"');
+    expect(html).not.toContain('data-testid="read-failed"');
+    expect(html).not.toContain("looking-again");
+    expect(readRefund).not.toHaveBeenCalled();
   });
 
   it("says what the page does", async () => {
