@@ -413,8 +413,8 @@ test.describe("a recall's refund windows", () => {
     await startDemoShop(page);
     const elsewhere: string[] = [];
     page.on("request", (r) => {
-      // Only what this page itself asks for. The demo queue's shelf button loads PayPal's own script, which is its job.
-      if (!r.frame().url().includes("/queue/recalls/")) return;
+      // Only once this page is showing, frames included. The demo queue's shelf button loads PayPal's own script, which is its job.
+      if (!page.url().includes("/queue/recalls/")) return;
       if (!r.url().startsWith(baseURL ?? "") && !r.url().startsWith("data:")) elsewhere.push(new URL(r.url()).host);
     });
 
@@ -440,6 +440,20 @@ test.describe("a recall's refund windows", () => {
     expect(bar?.width ?? 0).toBeGreaterThan(300);
     await expect(page.getByTestId("timeline-list").locator("li")).toHaveCount(2);
     expect(elsewhere).toEqual([]);
+    // The check has to be able to see one: an off-site script and an off-site frame, added here, are counted.
+    await page.evaluate(() => {
+      const script = document.createElement("script");
+      script.src = "https://script.example.invalid/x.js";
+      script.id = "control-script";
+      document.head.append(script);
+      const frame = document.createElement("iframe");
+      frame.src = "https://frame.example.invalid/";
+      frame.id = "control-frame";
+      document.body.append(frame);
+    });
+    await expect.poll(() => [...elsewhere].sort()).toEqual(["frame.example.invalid", "script.example.invalid"]);
+    await page.evaluate(() => { document.getElementById("control-script")?.remove(); document.getElementById("control-frame")?.remove(); });
+    elsewhere.length = 0;
 
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(timeline).toHaveCount(0);
