@@ -16,12 +16,18 @@ describe("response headers", () => {
     expect(family?.headers).toContainEqual({ key: "Referrer-Policy", value: "no-referrer" });
   });
 
-  it("keeps PayPal's ids on the way back out of referrers and request logs", async () => {
+  // Every way back from PayPal: a sandbox order, a shop connecting its account (PayPal adds the seller's merchant id), and
+  // an owner's sign-in (a one-time code and its state). None of it may sit in a referrer or a request log.
+  it.each([
+    ["/api/demo/buy/paypal/return", "?state=s&token=ORDER1&PayerID=PAYER1"],
+    ["/api/shop/paypal/back", "?merchantId=T&merchantIdInPayPal=SELLERPAYER1&permissionsGranted=true"],
+    ["/api/owner/paypal/return", "?code=C21AA-code&state=S"],
+  ])("keeps PayPal's ids on the way back from %s out of referrers and request logs", async (path, query) => {
     const rules = await nextConfig.headers!();
-    const back = rules.find((r) => r.source === "/api/demo/buy/paypal/return");
+    const back = rules.find((r) => r.source === path);
     expect(back?.headers).toContainEqual({ key: "Referrer-Policy", value: "no-referrer" });
     const logging = nextConfig.logging;
     const ignored = logging && typeof logging.incomingRequests === "object" ? logging.incomingRequests.ignore : [];
-    expect(ignored?.some((pattern) => pattern.test("/api/demo/buy/paypal/return?state=s&token=ORDER1&PayerID=PAYER1"))).toBe(true);
+    expect(ignored?.some((pattern) => pattern.test(`${path}${query}`))).toBe(true);
   });
 });

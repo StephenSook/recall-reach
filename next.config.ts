@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
-// PayPal adds its order and payer ids to this address, and those stay out of logs and referrers.
-const PAYPAL_RETURN = "/api/demo/buy/paypal/return";
+// Each way back from PayPal carries PayPal's ids in its address: a sandbox order's ids, a connecting seller's merchant id,
+// or an owner's one-time sign-in code. They stay out of referrers, and out of Next's request log, which only the dev
+// server writes. The host's own access log is outside this app; what limits it there is that the sign-in code works
+// once and its state is used up on the first return.
+const PAYPAL_RETURNS = ["/api/demo/buy/paypal/return", "/api/shop/paypal/back", "/api/owner/paypal/return"];
 
 const nextConfig: NextConfig = {
   async headers() {
@@ -10,7 +13,7 @@ const nextConfig: NextConfig = {
       { source: "/r/:token", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/s/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "private, no-store" }] },
       { source: "/api/safety-receipts/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "private, no-store" }] },
-      { source: PAYPAL_RETURN, headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      ...PAYPAL_RETURNS.map((source) => ({ source, headers: [{ key: "Referrer-Policy", value: "no-referrer" }] })),
     ];
   },
   // The API docs portal APIMatic generated is static files in public/api-docs. A folder's address serves its index.html.
@@ -24,7 +27,7 @@ const nextConfig: NextConfig = {
       fallback: [],
     };
   },
-  logging: { incomingRequests: { ignore: [new RegExp(PAYPAL_RETURN)] } },
+  logging: { incomingRequests: { ignore: PAYPAL_RETURNS.map((path) => new RegExp(`${path}(\\?|$)`)) } },
   turbopack: {
     rules: {
       "*.css": {
