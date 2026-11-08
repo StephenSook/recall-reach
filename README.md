@@ -126,7 +126,7 @@ All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-hai
 - Shops are checked against CPSC recalls from 2022 on. The queue says the real number and dates it checked, and names any year that didn't load.
 - The matcher reads words. It can't see a label on a real product, so a look-alike can still reach a seller as a card to review.
 - `/eval`'s labels were written by Claude and aren't independent. The page says so.
-- Sandbox PayPal only. A real shop's file alone can't refund. A refund goes from the shop's own PayPal account, only once PayPal says it's connected and the latest read of its sales covered every window.
+- Sandbox PayPal only. A real shop's file alone can't refund. A refund goes from the shop's own PayPal account, only once PayPal says it's connected and the latest read of its sales covered every window. A refund from a connected shop's own account has not been run end to end yet.
 - A refund already being sent can still finish if, at that moment, its owner presses Disconnect or a new read of the shop's sales stops partway. Stopping it would mean holding a database transaction open across PayPal's reply, which breaks how the ledger survives a crash. Disconnect says so, and PayPal's own permission stays until the seller removes it in PayPal.
 - The store address on `/check` reads Shopify's public `/products.json` only, so it sees what's listed today and no sales. Its results say "need a check". A listing can't confirm a recall.
 - This checks CPSC recalls. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls.
