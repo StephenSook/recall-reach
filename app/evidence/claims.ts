@@ -7,7 +7,7 @@ export interface Claim {
 }
 
 export const PAYPAL_CLAIMS: Claim[] = [
-  { what: "The shelf has PayPal's v6 button wired to order and capture routes; a real browser run is still needed", file: "app/queue/paypalSdk.ts", find: "createPayPalOneTimePaymentSession" },
+  { what: "The shelf has PayPal's v6 button wired to order and capture routes; a person paid through it in the sandbox on Nov 8, 2026", file: "app/queue/paypalSdk.ts", find: "createPayPalOneTimePaymentSession" },
   { what: "Creates the optional shop plan's sandbox product", file: "server/paypal/subscriptions.ts", find: "/v1/catalogs/products" },
   { what: "Creates a sandbox billing plan at the price in SHOP_PLAN", file: "server/paypal/subscriptions.ts", find: '"POST", "/v1/billing/plans"' },
   { what: "Creates a shop subscription with an HMAC custom_id", file: "server/paypal/subscriptions.ts", find: '"POST", "/v1/billing/subscriptions"' },
