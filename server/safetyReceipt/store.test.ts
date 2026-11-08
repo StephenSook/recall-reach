@@ -142,6 +142,22 @@ describe("family-given safety receipts", () => {
     expect((await shopDeletesAfter(db, shopId))).toBeNull();
   });
 
+  it("keeps the shown moment and the purge together across both daylight saving changes, whatever the database's time zone", async () => {
+    await db.query("set timezone = 'America/New_York'");
+    try {
+      for (const joined of ["2026-03-04T12:00:00Z", "2026-10-29T12:00:00Z"]) {
+        await db.query("update shops set created_at = $2 where id = $1", [shopId, joined]);
+        const after = (await shopDeletesAfter(db, shopId))!;
+        expect(after.getTime() - Date.parse(joined)).toBe(7 * 86_400_000);
+        expect(await purgeOldOwnShops(db, new Date(after.getTime() - 1_000))).toBe(0);
+        expect(await purgeOldOwnShops(db, new Date(after.getTime() + 1_000))).toBe(1);
+        shopId = await createShop(db, { name: "Our shop", kind: "REAL" });
+      }
+    } finally {
+      await db.query("set timezone = 'UTC'");
+    }
+  });
+
   it("gives the receipt page that same moment", async () => {
     const token = (await shopReceiptLink(db, shopId, SECRET))!;
     const shop = await receiptShop(db, token, SECRET);

@@ -70,6 +70,8 @@ export async function purgeOldDemoShops(db: Queryable, now: Date = new Date()): 
 }
 
 export async function purgeOldOwnShops(db: Queryable, now: Date = new Date()): Promise<number> {
-  const { rows } = await db.query("delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(days => $2) returning id", [now.toISOString(), OWN_FILE_DAYS]);
+  // Elapsed hours, not calendar days: a day across a daylight saving change isn't 24 hours in the database's time zone, and
+  // the date every screen shows (shopDataDeletedAfter) is exactly OWN_FILE_DAYS * 24 hours after the shop joined.
+  const { rows } = await db.query("delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(hours => $2) returning id", [now.toISOString(), OWN_FILE_DAYS * 24]);
   return rows.length;
 }
