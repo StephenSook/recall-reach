@@ -108,6 +108,17 @@ describe("connecting a shop's own PayPal account", () => {
     expect((await readConnection(db, { shopId, secret: SECRET }))?.refusal).toMatch(/^Connected, but the shop's sales couldn't be read\./);
   });
 
+  it("stops refunds after a read whose save failed, even when an earlier read was complete", async () => {
+    const { env } = platform({ integration: READY });
+    await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+    await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+    expect((await readConnection(db, { shopId, secret: SECRET }))?.salesReadComplete).toBe(true);
+    await db.query("delete from paypal_payments where shop_id = $1", [shopId]);
+    await db.query("alter table paypal_payments add constraint no_rows_here check (false)");
+    expect(await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toMatchObject({ state: "CONNECTED", sales: { refusal: expect.any(String) } });
+    expect((await readConnection(db, { shopId, secret: SECRET }))?.salesReadComplete).toBe(false);
+  });
+
   it("reads a connected shop's sales against a deadline, so a slow PayPal can't hold the shop's lock for long", async () => {
     const deadlines: (number | undefined)[] = [];
     const { env } = platform({ integration: READY });

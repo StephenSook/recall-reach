@@ -6,7 +6,7 @@ import { createReferral, isConnected, readSellerStatus, type PlatformEnv } from 
 import type { RecordKey } from "../privacy/recordKey";
 import type { SearchCoverage } from "../paypal/transactions";
 import { checkConnectedShop, readConnectedShopSales } from "./connectedSales";
-import { clearSellerStatus, readConnection, recordConnectRefusal, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor, withConnectionLock } from "./paypalConnection";
+import { clearSellerStatus, readConnection, recordConnectRefusal, recordSalesRead, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor, withConnectionLock } from "./paypalConnection";
 
 /** PayPal's answer as a person can read it: the status, PayPal's issue name and its debug id. */
 export function refusalText(err: unknown): string {
@@ -71,6 +71,8 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
       return { state: "CONNECTED", sales: { complete: sales.complete, payments: sales.payments } };
     } catch (err) {
       await tx.query("rollback to savepoint seller_saved");
+      // Whatever an earlier read established, this one didn't finish: refunds wait for one that does.
+      await recordSalesRead(tx, { shopId: input.shopId, complete: false, now: input.now });
       // Connected, but the sales didn't arrive: its refunds stay notice-only, and the page says why. Search failures come
       // back as failed windows, not throws, so anything else here is this site failing to save them, and says so.
       const refusal = err instanceof PayPalApiError ? refusalText(err) : "The sales PayPal returned couldn't be saved here.";
