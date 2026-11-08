@@ -204,12 +204,20 @@ small,
 }
 .site-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0 16px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   font-size: 15px;
+}
+.site-nav::-webkit-scrollbar {
+  display: none;
 }
 .site-nav a {
   display: inline-block;
+  flex: none;
+  white-space: nowrap;
   padding-block: 4px;
   color: var(--color-ink);
   text-decoration: none;
