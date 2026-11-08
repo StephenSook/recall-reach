@@ -9,11 +9,12 @@ import { businessDay } from "../time/businessDay";
 
 const DAY_MS = 86_400_000;
 
-export async function readConnectedShopSales(db: Db, client: PayPalClient, input: { shopId: string; now: Date }): Promise<{ complete: boolean; payments: number }> {
+/** With notAfter, no PayPal request starts after it: the read then says it isn't complete, and refunds wait for a full one. */
+export async function readConnectedShopSales(db: Db, client: PayPalClient, input: { shopId: string; now: Date; notAfter?: number }): Promise<{ complete: boolean; payments: number }> {
   const { rows } = await db.query<{ first: string | null }>("select min(ordered_on)::text as first from order_lines where shop_id = $1", [input.shopId]);
   // From the day before the file's first order. searchTransactions caps it at what PayPal keeps.
   const from = rows[0]?.first ? new Date(Date.parse(`${rows[0].first}T00:00:00Z`) - DAY_MS) : new Date(input.now.getTime() - 90 * DAY_MS);
-  const { payments, coverage } = await searchTransactions(client, { from, to: input.now });
+  const { payments, coverage } = await searchTransactions(client, { from, to: input.now }, { notAfter: input.notAfter });
   // A search row has no order id. Its transaction id is the capture's, and it is what makes the row unique here.
   for (const p of payments) {
     await db.query(

@@ -27,6 +27,9 @@ export async function startConnect(db: Db, platform: PlatformEnv, input: { shopI
   });
 }
 
+/** How long a check with PayPal may spend reading the shop's sales while it holds the shop's lock. */
+export const SALES_READ_MS = 45_000;
+
 export type Refreshed =
   | { state: "NOT_STARTED" }
   | { state: "WAITING" }
@@ -58,7 +61,7 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     await tx.query("savepoint seller_saved");
     try {
       // Still inside the lock: nothing can change the link while the seller's sales are read and joined.
-      return { state: "CONNECTED", sales: await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now }) };
+      return { state: "CONNECTED", sales: await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now, notAfter: input.now.getTime() + SALES_READ_MS }) };
     } catch (err) {
       await tx.query("rollback to savepoint seller_saved");
       // Connected, but the sales didn't arrive: its refunds stay notice-only, and the page says why. Search failures come

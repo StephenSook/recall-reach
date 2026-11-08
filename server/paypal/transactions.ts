@@ -101,9 +101,11 @@ function paidAtOf(value: string | undefined): string | null {
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
+/** With notAfter, no request starts after that moment: the windows left count as failed, so the coverage says so. */
 export async function searchTransactions(
   client: PayPalClient,
   range: { from: Date; to: Date },
+  opts: { notAfter?: number } = {},
 ): Promise<{ payments: SearchedPayment[]; coverage: SearchCoverage }> {
   const limit = new Date(range.to);
   limit.setUTCMonth(limit.getUTCMonth() - HISTORY_MONTHS);
@@ -124,6 +126,7 @@ export async function searchTransactions(
       for (let page = 1; ; page++) {
         const { data } = await client.request("GET", PATH, {
           query: { start_date: window.start, end_date: window.end, fields: "all", page_size: PAGE_SIZE, page },
+          notAfter: opts.notAfter,
         });
         const parsed = pageSchema.parse(data);
         for (const { transaction_info: info, cart_info: cart } of parsed.transaction_details ?? []) {

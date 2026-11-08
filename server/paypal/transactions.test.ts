@@ -63,6 +63,22 @@ describe("searchWindows", () => {
 });
 
 describe("searchTransactions", () => {
+  it("passes its deadline to every request, so no window starts after it, and the coverage says what didn't run", async () => {
+    const seen: (number | undefined)[] = [];
+    const deadline = Date.now() + 60_000;
+    const client: PayPalClient = {
+      request: (async (_m: Method, _path: string, opts: RequestOptions = {}) => {
+        seen.push(opts.notAfter);
+        if (seen.length > 1) throw new Error("too late to send this request");
+        return { status: 200, data: page([]) };
+      }) as PayPalClient["request"],
+    };
+    const { coverage } = await searchTransactions(client, { from: FROM, to: TO }, { notAfter: deadline });
+    expect(seen.every((n) => n === deadline)).toBe(true);
+    expect(coverage.complete).toBe(false);
+    expect(coverage.failedWindows.length).toBe(coverage.windows - 1);
+  });
+
   it("asks for every field at PayPal's largest page size", async () => {
     const { client, calls } = fakeSearch(() => page([]));
     await searchTransactions(client, { from: FROM, to: at("2026-10-05T00:00:00Z") });

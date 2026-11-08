@@ -108,6 +108,17 @@ describe("connecting a shop's own PayPal account", () => {
     expect((await readConnection(db, { shopId, secret: SECRET }))?.refusal).toMatch(/^Connected, but the shop's sales couldn't be read\./);
   });
 
+  it("reads a connected shop's sales against a deadline, so a slow PayPal can't hold the shop's lock for long", async () => {
+    const deadlines: (number | undefined)[] = [];
+    const { env } = platform({ integration: READY });
+    const acting = env.actingFor("SELLERPAYER1");
+    env.actingFor = () => ({ request: (async (m: string, path: string, opts?: { notAfter?: number }) => (path === "/v1/reporting/transactions" && deadlines.push(opts?.notAfter), acting.request(m as never, path, opts as never))) as PayPalClient["request"] });
+    await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+    await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+    expect(deadlines.length).toBeGreaterThan(0);
+    expect(deadlines.every((d) => d === NOW.getTime() + 45_000)).toBe(true);
+  });
+
   it("says nothing was started for a shop that never began connecting", async () => {
     const { env } = platform({ integration: READY });
     expect(await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toEqual({ state: "NOT_STARTED" });
