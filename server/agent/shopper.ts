@@ -72,6 +72,8 @@ export interface ShopperRun {
   blocked: BlockedListing[];
   /** similar: recalls of the same kind of product that don't name this one's maker or model. */
   pick: { listing: BuyableListing; recallsChecked: number; from: string | null; similar: number } | null;
+  /** The models that answered, from Claude's own answers, in the order they first did. */
+  models: string[];
 }
 
 export interface ShopperDeps {
@@ -93,7 +95,8 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, input: {
     idOf.set(listing.id, id);
     return id;
   };
-  const done = (outcome: ShopperRun["outcome"], pick: ShopperRun["pick"] = null): ShopperRun => ({ outcome, steps, blocked: [...blocked.values()], pick });
+  const models: string[] = [];
+  const done = (outcome: ShopperRun["outcome"], pick: ShopperRun["pick"] = null): ShopperRun => ({ outcome, steps, blocked: [...blocked.values()], pick, models });
   const messages: BetaMessageParam[] = [{ role: "user", content: `The buyer asked for: ${input.ask}` }];
 
   const runTool = async (block: Extract<BetaContentBlock, { type: "tool_use" }>): Promise<{ content: string; isError?: boolean; end?: ShopperRun }> => {
@@ -140,6 +143,7 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, input: {
   while (used.steps < MAX_STEPS) {
     used.steps++;
     const response = await askClaude(db, client, { model, system: SYSTEM, tools: SHOPPER_TOOLS, messages, now: input.now, capMicros: SHOPPER_CAP_MICROS, maxTokens: MAX_ANSWER_TOKENS }, nothingSpent());
+    if (typeof response.model === "string" && !models.includes(response.model)) models.push(response.model);
     if (response.stop_reason === "refusal") return done("REFUSED");
     if (response.stop_reason === "max_tokens") return done("NO_PICK");
     messages.push({ role: "assistant", content: response.content });
@@ -165,6 +169,6 @@ export async function runShopper(db: Queryable, client: Anthropic, input: { ask:
   } catch (err) {
     const outcome = err instanceof OverBudget ? "OVER_BUDGET" : "UNAVAILABLE";
     if (outcome === "UNAVAILABLE") console.error("shopper failed:", err instanceof Anthropic.APIError ? `HTTP ${err.status}` : err instanceof Error ? err.name : "unknown error");
-    return { outcome, steps: [], blocked: [], pick: null };
+    return { outcome, steps: [], blocked: [], pick: null, models: [] };
   }
 }

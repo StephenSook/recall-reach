@@ -136,6 +136,11 @@ describe("the shopping agent", () => {
     expect((await run(client)).pick?.listing.priceCents).toBe(2499);
   });
 
+  it("says which model answered, from Claude's own answers", async () => {
+    const { client } = fakeClaude([[search()], [call("finish_without_pick", { why: "NOTHING_CLEARS" })]]);
+    expect((await run(client)).models).toEqual(["claude-sonnet-5-5"]);
+  });
+
   it("offers nothing when it stops", async () => {
     const { client } = fakeClaude([[search()], [call("finish_without_pick", { why: "NOTHING_CLEARS" })]]);
     expect(await run(client)).toMatchObject({ outcome: "NO_PICK", pick: null });
