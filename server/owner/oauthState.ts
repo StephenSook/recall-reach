@@ -1,7 +1,8 @@
 // The state a Log in with PayPal round trip carries. A random value goes to PayPal and comes back in the URL; the same
 // value, what the sign-in is for, and its expiry ride in a signed cookie only this site can make. The return accepts
 // the code only when the two agree, so another site can't start a sign-in that lands in someone's session.
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type { Queryable } from "../db/types";
 import { requireSecret } from "../privacy/secrets";
 
 export const OWNER_STATE_COOKIE = "rr_owner_paypal";
@@ -37,4 +38,15 @@ export function readOwnerState(secret: string, cookie: string | undefined, state
   if (kind === "signin" && shopId === "-") return { kind: "signin" };
   if (kind === "link" && UUID.test(shopId)) return { kind: "link", shopId };
   return null;
+}
+
+/**
+ * Marks a sign-in's state used. False if it already was: a kept cookie sent back again is a replay. One statement, so two
+ * returns racing can't both win. Old marks are cleared here, an hour after use.
+ */
+export async function consumeOwnerState(db: Queryable, state: string, now: Date = new Date()): Promise<boolean> {
+  const hash = createHash("sha256").update(`owner-paypal-state\u0000${state}`).digest("hex");
+  await db.query("delete from owner_signin_states where used_at < $1::timestamptz - interval '1 hour'", [now.toISOString()]);
+  const { rows } = await db.query("insert into owner_signin_states (state_hash, used_at) values ($1, $2) on conflict do nothing returning 1", [hash, now.toISOString()]);
+  return rows.length > 0;
 }

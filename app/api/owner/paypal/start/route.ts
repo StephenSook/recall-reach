@@ -1,4 +1,5 @@
 import { getDb } from "@/server/db/pg";
+import { readCappedBody } from "@/server/http/body";
 import { authorizeUrl, ownerSignInFromEnv } from "@/server/paypal/identity";
 import { ownerSignInAllowed } from "@/server/owner/limit";
 import { OWNER_CODES, type OwnerCode } from "@/server/owner/messages";
@@ -10,11 +11,14 @@ export const dynamic = "force-dynamic";
 /** Starts Log in with PayPal: to link the signed-in shop to the owner's login, or to open the shop that login is linked to. */
 export async function POST(request: Request): Promise<Response> {
   if (!fromThisSite(request)) return refused(403, "wrong origin");
-  const form = await request.formData();
+  // Counted and capped before the body is read: the form is one small field, so nothing bigger or slower is taken in.
+  if (!ownerSignInAllowed(request.headers)) return seeOther(request, "/check?error=OWNER_BUSY");
+  const read = await readCappedBody(request, 2_048, { timeoutMs: 5_000 });
+  if (!read.ok) return refused(413, "form too large");
+  const form = await new Response(read.body as BodyInit, { headers: { "content-type": request.headers.get("content-type") ?? "" } }).formData();
   const link = form.get("intent") === "link";
   // A link starts from the queue, so its answer goes back there; a sign-in starts signed out, so its answer goes to /check.
   const back = (code: OwnerCode) => (link ? withMessage(request, OWNER_CODES[code]) : seeOther(request, `/check?error=${code}`));
-  if (!ownerSignInAllowed(request.headers)) return back("OWNER_BUSY");
   const cfg = ownerSignInFromEnv(baseUrl(request));
   if (!cfg) return back("OWNER_NOT_SET_UP");
   let intent: OwnerIntent = { kind: "signin" };

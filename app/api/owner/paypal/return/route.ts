@@ -5,7 +5,8 @@ import { PayPalApiError } from "@/server/paypal/client";
 import { ownerSignInFromEnv, payerIdFromCode } from "@/server/paypal/identity";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { LINKED, OWNER_CODES, type OwnerCode } from "@/server/owner/messages";
-import { OWNER_STATE_COOKIE, readOwnerState } from "@/server/owner/oauthState";
+import { ownerReturnAllowed } from "@/server/owner/limit";
+import { consumeOwnerState, OWNER_STATE_COOKIE, readOwnerState } from "@/server/owner/oauthState";
 import { linkOwner, markOwnerSignedIn, shopForOwner } from "@/server/owner/ownerLink";
 import { shopDeletesAfter } from "@/server/safetyReceipt/store";
 import { baseUrl, currentSession, refused, secret, seeOther, signIn, withMessage } from "@/server/web/http";
@@ -20,8 +21,10 @@ const WEEK_MS = 7 * 86_400_000;
  * shop session that started it. A sign-in opens the linked shop in a new session, never one the browser brought.
  */
 export async function GET(request: Request): Promise<Response> {
+  if (!ownerReturnAllowed(request.headers)) return seeOther(request, "/check?error=OWNER_BUSY");
   const url = new URL(request.url);
-  const intent = readOwnerState(secret("SESSION_SECRET"), (await cookies()).get(OWNER_STATE_COOKIE)?.value, url.searchParams.get("state") ?? "");
+  const state = url.searchParams.get("state") ?? "";
+  const intent = readOwnerState(secret("SESSION_SECRET"), (await cookies()).get(OWNER_STATE_COOKIE)?.value, state);
   const secure = baseUrl(request).startsWith("https:") ? "; Secure" : "";
   const clear = (response: Response) => {
     response.headers.append("Set-Cookie", `${OWNER_STATE_COOKIE}=; Path=/api/owner/paypal; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
@@ -29,13 +32,14 @@ export async function GET(request: Request): Promise<Response> {
   };
   const back = (code: OwnerCode) => clear(intent?.kind === "link" ? withMessage(request, OWNER_CODES[code]) : seeOther(request, `/check?error=${code}`));
   if (!intent) return back("OWNER_EXPIRED");
+  const db = getDb();
+  if (!(await consumeOwnerState(db, state))) return back("OWNER_EXPIRED");
   const code = url.searchParams.get("code");
   if (url.searchParams.has("error") || !code) return back("OWNER_CANCELLED");
   const cfg = ownerSignInFromEnv(baseUrl(request));
   if (!cfg) return back("OWNER_NOT_SET_UP");
   const recordKey = recordKeyFromEnv();
   if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
-  const db = getDb();
   const now = new Date();
 
   if (intent.kind === "link") {

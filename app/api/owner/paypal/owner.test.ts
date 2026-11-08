@@ -8,10 +8,11 @@ import { sessionCookie } from "@/server/session/session";
 vi.mock("@/server/db/pg", () => ({ getDb: vi.fn() }));
 const jar = vi.hoisted(() => ({ values: new Map<string, string>() }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: (name: string) => (jar.values.has(name) ? { value: jar.values.get(name) } : undefined) }) }));
-const payer = vi.hoisted(() => ({ id: "OWNERPAYER12" as string | Error }));
+const payer = vi.hoisted(() => ({ id: "OWNERPAYER12" as string | Error, asked: 0 }));
 vi.mock("@/server/paypal/identity", async (original) => ({
   ...(await original<typeof import("@/server/paypal/identity")>()),
   payerIdFromCode: async () => {
+    payer.asked += 1;
     if (payer.id instanceof Error) throw payer.id;
     return payer.id;
   },
@@ -43,6 +44,7 @@ describe("Log in with PayPal for a shop owner", () => {
     shopId = await createShop(db, { name: "A SHOP", kind: "REAL" });
     jar.values.clear();
     payer.id = "OWNERPAYER12";
+    payer.asked = 0;
   });
   afterEach(async () => {
     vi.unstubAllEnvs();
@@ -55,12 +57,13 @@ describe("Log in with PayPal for a shop owner", () => {
     form.set("intent", intent);
     return start(new Request(`${BASE}/api/owner/paypal/start`, { method: "POST", headers: { origin, "true-client-ip": `198.51.100.${++ip}` }, body: form }));
   };
+  const comeBack = (query: string) => back(new Request(`${BASE}/api/owner/paypal/return?${query}`, { headers: { "true-client-ip": `198.51.100.${++ip}` } }));
   /** Presses start, then comes back the way PayPal would, carrying the state and the cookie start set. */
   const roundTrip = async (intent: "link" | "signin", tamper: (state: string) => string = (s) => s, extra = "&code=C21AA-code") => {
     const res = await press(intent);
     const state = new URL(res.headers.get("location")!).searchParams.get("state")!;
     jar.values.set("rr_owner_paypal", /rr_owner_paypal=([^;]+)/.exec(res.headers.get("set-cookie")!)![1]);
-    return back(new Request(`${BASE}/api/owner/paypal/return?state=${encodeURIComponent(tamper(state))}${extra}`));
+    return comeBack(`state=${encodeURIComponent(tamper(state))}${extra}`);
   };
   const location = (res: Response) => new URL(res.headers.get("location")!, BASE);
 
@@ -96,7 +99,7 @@ describe("Log in with PayPal for a shop owner", () => {
     const state = location(res).searchParams.get("state")!;
     jar.values.set("rr_owner_paypal", /rr_owner_paypal=([^;]+)/.exec(res.headers.get("set-cookie")!)![1]);
     signedInAs(await createShop(db, { name: "B SHOP", kind: "REAL" }));
-    expect((await back(new Request(`${BASE}/api/owner/paypal/return?state=${state}&code=C21AA-code`))).status).toBe(401);
+    expect((await comeBack(`state=${state}&code=C21AA-code`)).status).toBe(401);
     expect(await shopForOwner(db, { payerId: "OWNERPAYER12", recordKey: key })).toBeNull();
   });
 
@@ -127,6 +130,35 @@ describe("Log in with PayPal for a shop owner", () => {
     expect(issued.split(".")[1]).not.toBe(old.split(".")[1]);
     const { rows } = await db.query<{ owner_signed_in_at: unknown }>("select owner_signed_in_at from shops where id = $1", [shopId]);
     expect(rows[0].owner_signed_in_at).not.toBeNull();
+  });
+
+  it("uses each sign-in's state once: a second return with the same cookie and state is refused without asking PayPal", async () => {
+    const res = await press("signin");
+    const state = location(res).searchParams.get("state")!;
+    jar.values.set("rr_owner_paypal", /rr_owner_paypal=([^;]+)/.exec(res.headers.get("set-cookie")!)![1]);
+    await comeBack(`state=${state}&code=C21AA-code`);
+    expect(payer.asked).toBe(1);
+    expect(location(await comeBack(`state=${state}&code=C21AA-other`)).searchParams.get("error")).toBe("OWNER_EXPIRED");
+    expect(payer.asked).toBe(1);
+  });
+
+  it("limits returns from one visitor before PayPal is asked", async () => {
+    const res = await press("signin");
+    const state = location(res).searchParams.get("state")!;
+    jar.values.set("rr_owner_paypal", /rr_owner_paypal=([^;]+)/.exec(res.headers.get("set-cookie")!)![1]);
+    const from = (n: number) => back(new Request(`${BASE}/api/owner/paypal/return?state=${state}x&code=C21AA-code`, { headers: { "true-client-ip": "203.0.113.77" } })).then(() => n);
+    for (let i = 0; i < 40; i += 1) await from(i);
+    const last = await back(new Request(`${BASE}/api/owner/paypal/return?state=${state}&code=C21AA-code`, { headers: { "true-client-ip": "203.0.113.77" } }));
+    expect(location(last).searchParams.get("error")).toBe("OWNER_BUSY");
+    expect(payer.asked).toBe(0);
+  });
+
+  it("refuses an oversized start before reading it all", async () => {
+    const big = new FormData();
+    big.set("intent", "signin");
+    big.set("pad", "x".repeat(64_000));
+    const res = await start(new Request(`${BASE}/api/owner/paypal/start`, { method: "POST", headers: { origin: BASE, "true-client-ip": "198.51.100.250" }, body: big }));
+    expect(res.status).toBe(413);
   });
 
   it("won't open a shop whose data is about to be deleted", async () => {
