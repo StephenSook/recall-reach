@@ -512,6 +512,23 @@ pre {
   display: block;
   font-size: 14px;
 }
+.numbered-steps {
+  list-style: decimal;
+  padding-inline-start: 40px;
+}
+.numbered-steps li::marker {
+  font-weight: 800;
+}
+.phone-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.phone-codes figcaption {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
 
 /* The table of every candidate */
 .grid-bar {

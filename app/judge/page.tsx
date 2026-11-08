@@ -1,5 +1,9 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { StartDemoButton } from "../StartDemoButton";
+import { LiveNow } from "./LiveNow";
+
+export const dynamic = "force-dynamic";
 
 export default function JudgeDoor() {
   return (
@@ -9,6 +13,9 @@ export default function JudgeDoor() {
       </header>
       <p>Real CPSC recalls and real PayPal sandbox payments, on a demo shop made just for you.</p>
       <StartDemoButton />
+      <Suspense fallback={null}>
+        <LiveNow />
+      </Suspense>
       <p className="note" data-testid="demo-changes">
         What the demo changes: a shop of its own, with its own sandbox sales, notices and refunds, all deleted after 48 hours. It emails nobody. Refunds use PayPal sandbox test money. No real money moves.
       </p>
@@ -38,7 +45,7 @@ export default function JudgeDoor() {
           </tbody>
         </table>
       </div>
-      <ol className="window cleared-list" data-testid="itinerary">
+      <ol className="window cleared-list numbered-steps" data-testid="itinerary">
         <li>
           <strong>Tell a family.</strong> Open the card for recall 27072, press Approve this notice, then open it in mail and follow its link to the family&apos;s page.
           <span className="quiet">Look for CPSC&apos;s own words in the message, and that it opens in your mail, not ours.</span>
@@ -96,8 +103,18 @@ curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%2
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a redirect off this site, not a page */}
         <a href="/get/android">Android build</a>, queue only. Push is iPhone only. Not tested on a device. The repository and this download are public from Nov 11.
       </p>
-      {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
-      <img src="/android-apk-qr.svg" alt="QR code for the Android build's download" width={160} height={160} />
+      <div className="phone-codes" data-testid="phone-codes">
+        <figure>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
+          <img src="/ios-qr.svg" alt="QR code for the iPhone build on TestFlight" width={160} height={160} />
+          <figcaption>iPhone (TestFlight)</figcaption>
+        </figure>
+        <figure>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
+          <img src="/android-apk-qr.svg" alt="QR code for the Android build's download" width={160} height={160} />
+          <figcaption>Android (APK)</figcaption>
+        </figure>
+      </div>
       <p className="note">
         <Link href="/r/sample">What a family sees</Link>, as a sample that stays up. <Link href="/check">Check one item</Link>, your own order file, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/shopper">A recorded shopping run</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/status">Status</Link>. <Link href="/privacy">Privacy</Link>.
       </p>

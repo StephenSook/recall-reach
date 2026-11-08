@@ -16,6 +16,19 @@ describe("the judge's door", () => {
     for (const step of steps) expect(step).toContain("Look for");
   });
 
+  it("numbers the steps the table refers to", () => {
+    expect(html).toContain('class="window cleared-list numbered-steps"');
+    expect(html).toContain("steps 1 to 3");
+  });
+
+  it("shows both phone codes, each labelled", () => {
+    const codes = html.slice(html.indexOf('data-testid="phone-codes"'));
+    expect(codes).toContain('src="/ios-qr.svg"');
+    expect(codes).toContain("iPhone (TestFlight)");
+    expect(codes).toContain('src="/android-apk-qr.svg"');
+    expect(codes).toContain("Android (APK)");
+  });
+
   it("says what the demo changes, and that it emails nobody", () => {
     expect(html).toContain("deleted after 48 hours");
     expect(html).toContain("It emails nobody.");
