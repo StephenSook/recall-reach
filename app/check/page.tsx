@@ -104,14 +104,14 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
         <p className="note">It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on.</p>
         <p className="note">We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.</p>
         <p className="note">
-          We keep only those columns, and buyer emails are encrypted. A refund needs your own PayPal account connected, from your queue. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
+          We keep only those columns, and buyer emails are encrypted. A refund needs your own PayPal account connected, from your queue. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask. Link your PayPal login from your queue to keep it longer: until you delete it, or a year passes with no PayPal sign-in.
         </p>
       </details>
       <h2 className="section-title">No file with you?</h2>
       <p>A Shopify store&apos;s public listings can be checked right now. This checks what&apos;s listed today. Only your order file checks past sales.</p>
       <StoreForm />
       <p className="note">
-        We read your store&apos;s public product feed and keep each title and whether it&apos;s for sale, nothing else. Results show only in this browser, and are deleted after {OWN_FILE_DAYS} days, or sooner if you ask. Listings can&apos;t be refunded, and no message can go out from them.
+        We read your store&apos;s public product feed and keep each title and whether it&apos;s for sale, nothing else. Results show only in this browser, and are deleted after {OWN_FILE_DAYS} days, or sooner if you ask, unless you link your PayPal login from your queue. Listings can&apos;t be refunded, and no message can go out from them.
       </p>
       <p className="note">
         <Link href="/">Back</Link>

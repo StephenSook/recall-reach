@@ -36,7 +36,7 @@ Checking one item at the counter, on a phone:
 | [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/evidence/paypal), [`/evidence/ag-grid`](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Each claim, and the file that does it. A test fails if the code leaves that file |
 | [`/evidence/defects`](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found in our own work, what changed, and how it was checked again |
 | [`/r/sample`](https://recall-reach-web-e022.onrender.com/r/sample) | What a family sees for a real recall, as a labelled sample that stays up |
-| [`/check`](https://recall-reach-web-e022.onrender.com/check) | One item typed in at the counter. A shop's own order file or a Shopify store's public listings, deleted on request or after 7 days |
+| [`/check`](https://recall-reach-web-e022.onrender.com/check) | One item typed in at the counter. A shop's own order file or a Shopify store's public listings, deleted on request or after 7 days, or kept while the owner signs in with PayPal at least once a year |
 | [`/shopper`](https://recall-reach-web-e022.onrender.com/shopper) | A shopping agent that searches public listings through Channel3 and has to check one against CPSC recalls before it may offer it. A person approves on PayPal's page, in the sandbox |
 | [`/status`](https://recall-reach-web-e022.onrender.com/status) | Each outside service's last reading, and what that reading measures |
 | [`/privacy`](https://recall-reach-web-e022.onrender.com/privacy) | What is kept, and text a shop can copy |
@@ -106,8 +106,8 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 - **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles and, on `/shopper`, public listing words. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
 - **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - **The app never emails anyone.** Messages open in the shop's own mail.
-- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days.
-- **Safety receipts let a family opt in at checkout.** A shop's queue has a printable QR and signed link. The family gives the tag words and an email, then bookmarks the delete link shown on screen. Receipts use the existing queue and owner-approved mail flow, with no refund authority. A receipt is deleted when the family or the shop deletes it, or with the shop's data: 7 days after a real shop joined, within 48 hours for a demo shop. The receipt page and the queue show the exact date. Family data stays out of Claude and Channel3.
+- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days. An owner who links a PayPal login keeps the shop and its file until they delete it, or a year passes with no sign-in. Only an HMAC of the PayPal account id is kept.
+- **Safety receipts let a family opt in at checkout.** A shop's queue has a printable QR and signed link. The family gives the tag words and an email, then bookmarks the delete link shown on screen. Receipts use the existing queue and owner-approved mail flow, with no refund authority. A receipt is deleted when the family or the shop deletes it, after at most 3 years, or with the shop's data: 7 days after a real shop joined, or a year after the last PayPal sign-in for a shop whose owner signs in at least once a year, within 48 hours for a demo shop. The receipt page and the queue show the exact date. Family data stays out of Claude and Channel3.
 
 ### Every call to Claude
 
