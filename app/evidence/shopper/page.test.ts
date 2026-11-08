@@ -21,7 +21,7 @@ const RUN = {
     { kind: "check", title: "Wooden high chair", result: "NO_MATCH_FOUND", recalls: [] },
   ],
   blocked: [{ title: "Convertible high chair", priceCents: 9900, recalls: [{ number: "22113", title: "High chairs recalled", url: null }] }],
-  pick: { title: "Wooden high chair", brand: "Plan Toys", priceCents: 14900, recallsChecked: 934, from: "a shop", similar: 2 },
+  pick: { title: "Wooden high chair", brand: "Plan Toys", priceCents: 14900, recallsChecked: 934, from: "2022-01-05", similar: 2 },
   slipId: null,
   offerExpiresAt: "2026-11-08T02:10:00.000Z",
   paidAt: null,
@@ -47,7 +47,7 @@ describe("/evidence/shopper", () => {
     expect(html).toContain('href="/recall/22113"');
     expect(html).toContain("Wooden high chair");
     expect(html).toContain("149.00 USD");
-    expect(html).toContain("934");
+    expect(html).toContain("Checked against 934 CPSC recalls since 2022-01-05.");
   });
 
   it("says when nothing has been recorded yet", async () => {

@@ -99,8 +99,8 @@ export default async function ShopperEvidence() {
           {run.pick ? (
             <p data-testid="run-pick">
               {run.pick.title}
-              {run.pick.brand ? `, by ${run.pick.brand}` : ""}, {money(run.pick.priceCents)}
-              {run.pick.from ? `, from ${run.pick.from}` : ""}. Checked against {run.pick.recallsChecked.toLocaleString("en-US")} recalls.
+              {run.pick.brand ? `, by ${run.pick.brand}` : ""}, {money(run.pick.priceCents)}. Checked against {run.pick.recallsChecked.toLocaleString("en-US")} CPSC recalls
+              {run.pick.from ? ` since ${run.pick.from}` : ""}.
               {run.pick.similar > 0 ? ` ${run.pick.similar} recalls of the same kind of product named neither its maker nor its model.` : ""}
             </p>
           ) : (
