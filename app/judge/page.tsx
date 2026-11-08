@@ -97,7 +97,7 @@ curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%2
       <h2 className="section-title">On a phone</h2>
       <p>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a redirect off this site, not a page */}
-        <a href="/get/ios">iPhone build on TestFlight</a>, a web view of the live queue. Push hasn&apos;t reached a real iPhone yet.
+        <a href="/get/ios">iPhone build on TestFlight</a>, a web view of the live queue. A push reached a real iPhone on Nov 8, 2026, and tapping it opened the card.
       </p>
       <p>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a redirect off this site, not a page */}

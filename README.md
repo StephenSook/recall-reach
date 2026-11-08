@@ -43,7 +43,7 @@ Checking one item at the counter, on a phone:
 
 [Android build](https://recall-reach-web-e022.onrender.com/get/android): queue only, push is iPhone only, not tested on a device.
 
-[iPhone build](https://recall-reach-web-e022.onrender.com/get/ios), on Apple TestFlight (passed Apple's beta review Nov 6, 2026): a web view of the live queue. Push hasn't reached a real iPhone yet.
+[iPhone build](https://recall-reach-web-e022.onrender.com/get/ios), on Apple TestFlight (passed Apple's beta review Nov 6, 2026): a web view of the live queue. A push reached a real iPhone on TestFlight on Nov 8, 2026, and tapping it opened the card.
 
 From a terminal:
 
