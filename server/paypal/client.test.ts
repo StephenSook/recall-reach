@@ -250,6 +250,18 @@ describe("PayPal client", () => {
       expect(Date.now() - started).toBeLessThan(2_000);
     });
 
+    it("stops waiting for a token, or between retries, at a read's abortAfter", async () => {
+      const slowToken: TokenProvider = { get: () => new Promise((r) => setTimeout(() => r("t"), 2_000)), invalidate: () => {} };
+      const waits = createPayPalClient({ tokens: slowToken, fetchImpl: (async () => Response.json({})) as typeof fetch });
+      let started = Date.now();
+      await expect(waits.request("GET", "/v1/reporting/transactions", { notAfter: started + 50, abortAfter: started + 50 })).rejects.toThrow(/too late/);
+      expect(Date.now() - started).toBeLessThan(1_000);
+      const failing = createPayPalClient({ tokens: fakeTokens(), fetchImpl: (async () => Promise.reject(new TypeError("network down"))) as typeof fetch });
+      started = Date.now();
+      await expect(failing.request("GET", "/v1/reporting/transactions", { notAfter: started + 100, abortAfter: started + 100 })).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(400);
+    });
+
     it("sends nothing once that moment has passed", async () => {
       const s = scripted([ok({})]);
       await expect(s.client.request("POST", "/v2/x", { requestId: "r1", notAfter: Date.now() - 1 })).rejects.toThrow(/too late/);

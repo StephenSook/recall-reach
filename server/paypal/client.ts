@@ -103,11 +103,23 @@ export function createPayPalClient(opts: {
 
       let refreshedAfter401 = false;
       let uncertain = false;
+      // A read with abortAfter stops waiting at that moment for anything it waits on: a token, a pause between attempts.
+      // The token's own refresh goes on for whoever else is waiting on it; only this request stops.
+      const byDeadline = <V>(waiting: Promise<V>): Promise<V> => {
+        if (ro.abortAfter === undefined) return waiting;
+        const left = ro.abortAfter - Date.now();
+        if (left <= 0) return Promise.reject(new Error("too late to send this request"));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("too late to send this request")), left);
+        });
+        return Promise.race([waiting, late]).finally(() => clearTimeout(timer));
+      };
       for (let attempt = 1; ; attempt++) {
         const tooLate = () => ro.notAfter !== undefined && Date.now() > ro.notAfter;
         if (tooLate()) throw new Error("too late to send this request");
         try {
-          const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await opts.tokens.get()}` };
+          const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await byDeadline(opts.tokens.get())}` };
           if (tooLate()) throw new Error("too late to send this request");
           if (ro.body !== undefined || ro.rawJson !== undefined) headers["Content-Type"] = "application/json";
           if (ro.requestId) headers["PayPal-Request-Id"] = ro.requestId;
@@ -159,7 +171,7 @@ export function createPayPalClient(opts: {
             throw new Error("PayPal gave no answer");
           }
           uncertain = true;
-          await sleep(500 * 2 ** (attempt - 1));
+          await byDeadline(sleep(500 * 2 ** (attempt - 1)));
         }
       }
     },
