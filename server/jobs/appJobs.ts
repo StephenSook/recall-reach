@@ -5,6 +5,7 @@ import type { Db } from "../db/types";
 import { purgeOldDemoShops, purgeOldOwnShops } from "../import/ownFile";
 import { checkStoredShops, SWEEP_BUDGET_MS, type SweepSummary } from "../match/sweep";
 import { purgePayPalData } from "../privacy/retention";
+import { purgeReceipts } from "../safetyReceipt/store";
 import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
 
 export const POLL_MS = 15 * 60_000;
@@ -79,6 +80,7 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
         purged = await purgePayPalData(db, at);
         await purgeOldOwnShops(db, at);
         await purgeOldDemoShops(db, at);
+        await purgeReceipts(db, at);
         purgeOwed = false;
       } catch (err) {
         purgeError = err;

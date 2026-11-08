@@ -107,6 +107,7 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 - **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - **The app never emails anyone.** Messages open in the shop's own mail.
 - **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days.
+- **Safety receipts let a family opt in at checkout.** A shop's queue has a printable QR and signed link. The family gives the tag words and an email, then bookmarks the delete link shown on screen. Receipts use the existing queue and owner-approved mail flow, with no refund authority. They are deleted by the family, shop, shop deletion or three years, whichever comes first. The current seven-day REAL shop expiry still applies. Demo receipts go with their demo shop within 48 hours. Family data stays out of Claude and Channel3.
 
 ### Every call to Claude
 

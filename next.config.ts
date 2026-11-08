@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     return [
       { source: "/", headers: [{ key: "Link", value: '</.well-known/ai-catalog.json>; rel="ai-catalog"' }] },
       { source: "/r/:token", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/s/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "private, no-store" }] },
+      { source: "/api/safety-receipts/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "private, no-store" }] },
       { source: PAYPAL_RETURN, headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },

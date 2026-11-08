@@ -46,9 +46,12 @@ export function noticeState(n: { opened_at: unknown; sent_at: unknown; responded
 /** An approval reads CPSC's words as they are now, so a recall that changed after the check can't stop a shop for good. */
 async function recheckIfRecallChanged(db: Queryable, input: { shopId: string; matchId: string }): Promise<void> {
   const { rows } = await db.query<Pick<Recall, "title" | "description" | "products" | "retailers"> & { raw_sha256: string; recall_date: string; item_title: string; ordered_on: string | null }>(
-    `select r.raw_sha256, r.title, r.description, r.products, r.retailers, r.recall_date::text as recall_date, l.title as item_title, l.ordered_on::text as ordered_on
-     from recall_matches m join recalls r on r.recall_id = m.recall_id join order_lines l on l.id = m.order_line_id
+    `select r.raw_sha256, r.title, r.description, r.products, r.retailers, r.recall_date::text as recall_date, coalesce(l.title, concat_ws(' ', sr.brand, sr.item, sr.model)) as item_title, l.ordered_on::text as ordered_on
+     from recall_matches m join recalls r on r.recall_id = m.recall_id
+     left join order_lines l on l.id = m.order_line_id
+     left join safety_receipts sr on sr.id = m.safety_receipt_id
      where m.id = $1 and m.shop_id = $2 and m.recall_sha256 is distinct from r.raw_sha256
+       and (m.order_line_id is not null or sr.id is not null)
        -- What already went out stays on record as it was, with what it rested on.
        and not exists (select 1 from notices n where n.match_id = m.id and (n.sent_at is not null or n.responded_at is not null))`,
     [input.matchId, input.shopId],
@@ -70,14 +73,14 @@ export async function prepareNotice(
 ): Promise<{ noticeId: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }> {
   if (!UUID.test(input.matchId)) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
   await recheckIfRecallChanged(db, input);
-  const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null; recall_sha256: string }>(
-    "select verdict, strength, join_state, order_line_id, recall_sha256 from recall_matches where id = $1 and shop_id = $2",
+  const { rows } = await db.query<{ verdict: string; strength: string | null; join_state: string | null; order_line_id: string | null; safety_receipt_id: string | null; recall_sha256: string }>(
+    "select verdict, strength, join_state, order_line_id, safety_receipt_id, recall_sha256 from recall_matches where id = $1 and shop_id = $2",
     [input.matchId, input.shopId],
   );
   const m = rows[0];
   if (!m) throw new NoticeRefused("NO_SUCH_MATCH", "No such match for this shop.");
   if (m.join_state === "AMBIGUOUS_JOIN") throw twoOrders();
-  if (m.verdict === "CLEARED" || !m.order_line_id) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
+  if (m.verdict === "CLEARED" || (!m.order_line_id && !m.safety_receipt_id)) throw new NoticeRefused("NOTHING_TO_SEND", "There is no one to notify for this row.");
   refuseWeakEvidence(m);
   const kind = m.verdict === "MATCH" ? "SAFETY_NOTICE" : "CHECK_REQUEST";
   // With no person approving this one, a sale that no longer reads as a match goes back to asking the owner.
@@ -95,9 +98,9 @@ export async function prepareNotice(
   if (otherWentOut && kind === "CHECK_REQUEST") return { noticeId: other.id, kind: other.kind };
   if (kind === "CHECK_REQUEST") {
     const taken = await db.query(
-      `select 1 from notices where order_line_id = $1 and match_id <> $2
-       union all select 1 from recall_matches where order_line_id = $1 and verdict = 'MATCH' and id <> $2`,
-      [m.order_line_id, input.matchId],
+      `select 1 from notices where (order_line_id = $1 or safety_receipt_id = $3) and match_id <> $2
+       union all select 1 from recall_matches where (order_line_id = $1 or safety_receipt_id = $3) and verdict = 'MATCH' and id <> $2`,
+      [m.order_line_id, input.matchId, m.safety_receipt_id],
     );
     if (taken.rows.length > 0) throw alreadyAsked();
   }
@@ -114,10 +117,10 @@ export async function prepareNotice(
   }
   // The indexes settle a race between two requests: one message of each kind per match, one question per sale.
   const saved = await db.query<{ id: string; kind: "SAFETY_NOTICE" | "CHECK_REQUEST" }>(
-    `insert into notices (shop_id, match_id, kind, order_line_id, written_question) values ($1, $2, $3, $4, $5::jsonb)
+    `insert into notices (shop_id, match_id, kind, order_line_id, written_question, safety_receipt_id) values ($1, $2, $3, $4, $5::jsonb, $6)
      on conflict do nothing
      returning id, kind`,
-    [input.shopId, input.matchId, kind, m.order_line_id, frozen],
+    [input.shopId, input.matchId, kind, m.order_line_id, frozen, m.safety_receipt_id],
   );
   if (saved.rows[0]) return { noticeId: saved.rows[0].id, kind: saved.rows[0].kind };
   const raced = await db.query<{ id: string }>("select id from notices where match_id = $1 and kind = $2", [input.matchId, kind]);
@@ -149,7 +152,7 @@ interface RecallRow {
 
 export interface ComposedForSeller {
   to: string | null;
-  toSource: "Shop record" | "You add the address";
+  toSource: "Shop record" | "Safety receipt" | "You add the address";
   subject: string;
   body: string;
 }
@@ -171,7 +174,8 @@ export async function composeForSeller(
       verdict: string;
       strength: string | null;
       item_title: string;
-      ordered_on: string;
+      ordered_on: string | null;
+      safety_receipt_id: string | null;
       buyer_email_enc: string | null;
       shop_name: string;
       order_line_id: string;
@@ -179,14 +183,15 @@ export async function composeForSeller(
       current_sha: string;
     }
   >(
-    `select m.recall_sha256 as checked_sha, r.raw_sha256 as current_sha, n.kind, n.sent_at, n.responded_at, n.second_prepared_at, n.written_question, m.join_state, m.verdict, m.strength, l.title as item_title, l.ordered_on, l.buyer_email_enc, l.id as order_line_id, s.name as shop_name,
+    `select m.recall_sha256 as checked_sha, r.raw_sha256 as current_sha, n.kind, n.sent_at, n.responded_at, n.second_prepared_at, n.written_question, m.join_state, m.verdict, m.strength, coalesce(l.title, concat_ws(' ', sr.brand, sr.item, sr.model)) as item_title, l.ordered_on, coalesce(l.buyer_email_enc, sr.email_enc) as buyer_email_enc, l.id as order_line_id, sr.id as safety_receipt_id, s.name as shop_name,
             r.recall_number, r.title, r.description, r.url, r.products, r.hazards, r.remedies
      from notices n
      join recall_matches m on m.id = n.match_id
-     join order_lines l on l.id = m.order_line_id
+     left join order_lines l on l.id = m.order_line_id
+     left join safety_receipts sr on sr.id = m.safety_receipt_id
      join shops s on s.id = n.shop_id
      join recalls r on r.recall_id = m.recall_id
-     where n.id = $1 and n.shop_id = $2`,
+     where n.id = $1 and n.shop_id = $2 and (l.id is not null or sr.created_at + interval '3 years' > now())`,
     [input.noticeId, input.shopId],
   );
   const n = rows[0];
@@ -209,6 +214,7 @@ export async function composeForSeller(
     itemTitle: n.item_title,
     shopName: n.shop_name,
     orderDate: n.ordered_on,
+    familyAsked: Boolean(n.safety_receipt_id),
     familyUrl: `${input.baseUrl}/r/${familyTokenFor(input.tokenSecret, input.noticeId)}`,
   };
   let message;
@@ -217,15 +223,15 @@ export async function composeForSeller(
     message = composeCheckRequest({ ...context, question });
   } else {
     // The refund line appears only once PayPal confirmed the refund, never on approval.
-    const refunded = await db.query<{ amount_cents: number; currency: string }>(
+    const refunded = n.order_line_id ? await db.query<{ amount_cents: number; currency: string }>(
       "select amount_cents, currency from refunds where order_line_id = $1 and status = 'refunded' limit 1",
       [n.order_line_id],
-    );
+    ) : { rows: [] };
     const r = refunded.rows[0];
     message = composeSafetyNotice({ ...context, confirmedRefund: r ? refundedAmount(r.amount_cents, r.currency) : undefined });
   }
   const to = n.buyer_email_enc ? input.cipher.open(n.buyer_email_enc) : null;
-  return { to, toSource: to ? "Shop record" : "You add the address", ...message, subject: n.second_prepared_at && !n.responded_at ? `Second notice: ${message.subject}` : message.subject };
+  return { to, toSource: to ? (n.safety_receipt_id ? "Safety receipt" : "Shop record") : "You add the address", ...message, subject: n.second_prepared_at && !n.responded_at ? `Second notice: ${message.subject}` : message.subject };
 }
 
 /** After this long with no answer, the owner can ask for a second notice. A demo shop is deleted long before, and has no shorter clock. */

@@ -18,7 +18,7 @@ export interface CardPush {
   recallNumber: string;
   /** The card to open. Only a match is sure to have its own card: anything else may sit under a stronger one, so it opens the queue. */
   matchId: string | null;
-  kind: "sold" | "listed";
+  kind: "sold" | "listed" | "receipt";
 }
 
 export interface PushMessage {
@@ -33,7 +33,7 @@ export interface PushMessage {
 
 export function pushMessage(card: CardPush, token: string): PushMessage | null {
   if (!RECALL_NUMBER.test(card.recallNumber) || (card.matchId !== null && !UUID.test(card.matchId))) return null;
-  const what = card.kind === "listed" ? "something you listed" : "something you sold";
+  const what = card.kind === "receipt" ? "a safety receipt" : card.kind === "listed" ? "something you listed" : "something you sold";
   return { to: token, title: "Recall Reach", body: `Recall ${card.recallNumber}: ${what} needs a look`, data: { path: card.matchId ? `/queue#sale-${card.matchId}` : "/queue" }, sound: "default", priority: "high", channelId: "cards" };
 }
 
@@ -61,8 +61,8 @@ export async function pushNewCards(db: Queryable, shopId: string, matchIds: stri
     if (matchIds.length === 0) return 0;
     const { rows: phones } = await db.query<{ token: string }>("select token from push_tokens where shop_id = $1", [shopId]);
     if (phones.length === 0) return 0;
-    const { rows: cards } = await db.query<{ id: string; recall_number: string; listed: boolean; matched: boolean }>(
-      `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed, m.verdict = 'MATCH' as matched
+    const { rows: cards } = await db.query<{ id: string; recall_number: string; listed: boolean; receipt: boolean; matched: boolean }>(
+      `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed, m.safety_receipt_id is not null as receipt, m.verdict = 'MATCH' as matched
        from recall_matches m join recalls r on r.recall_id = m.recall_id
        where m.shop_id = $1 and m.id = any($2::uuid[]) and m.verdict <> 'CLEARED' and m.strength in ('CONFIRMED', 'BRAND')
        order by r.recall_number desc, (m.strength = 'CONFIRMED') desc, (m.shop_item_id is null) desc
@@ -70,7 +70,7 @@ export async function pushNewCards(db: Queryable, shopId: string, matchIds: stri
       [shopId, matchIds, MAX_PUSHES],
     );
     if (cards.length === 0) return 0;
-    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: c.matched ? c.id : null, kind: c.listed ? "listed" : "sold" }, p.token) ?? []));
+    const messages = cards.flatMap((c) => phones.flatMap((p) => pushMessage({ recallNumber: c.recall_number, matchId: c.matched ? c.id : null, kind: c.receipt ? "receipt" : c.listed ? "listed" : "sold" }, p.token) ?? []));
     if (messages.length === 0) return 0;
     const res = await fetchImpl(EXPO_PUSH_URL, {
       method: "POST",

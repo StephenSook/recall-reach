@@ -13,6 +13,7 @@ import { joinShop } from "../match/run";
 import type { SellerAnswer } from "../match/sellerAnswers";
 import { BUSINESS_TIME_ZONE_SQL, businessDay } from "../time/businessDay";
 import { refundNote } from "../paypal/refundNote";
+import { FAMILY_ASKED } from "../safetyReceipt/store";
 
 /** What Claude found for this row. Text for a person to read: it changes no verdict, order or action. */
 export interface AgentFinding {
@@ -42,6 +43,8 @@ export interface QueueRow {
   itemTitle: string;
   /** Where the shop's text came from, including whether its date is seeded demo data. */
   source: string;
+  /** Family-given records have no sale date or payment authority. */
+  familyAsked?: boolean;
   orderedOn: string | null;
   verdict: "MATCH" | "SCOPE_GAP" | "CLEARED";
   strength: Strength;
@@ -109,7 +112,7 @@ const VERDICT_ORDER = { MATCH: 0, SCOPE_GAP: 1, CLEARED: 2 } as const;
 
 /** Once a question is approved it is what the family gets. Until then, the one approving it now would freeze. */
 function askedFor(r: Record<string, unknown>): CheckQuestion | null {
-  if (r.verdict !== "SCOPE_GAP" || !r.order_line_id) return null;
+  if (r.verdict !== "SCOPE_GAP" || (!r.order_line_id && !r.safety_receipt_id)) return null;
   const stored: WrittenQuestion | null = r.stored_question
     ? { question: String(r.stored_question), evidence: String(r.stored_evidence), everyRecalledUnit: Boolean(r.stored_every), accepted: r.stored_review === "ACCEPTED", writtenAt: r.stored_at ? new Date(r.stored_at as string).toISOString() : null }
     : null;
@@ -149,14 +152,14 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     [shopId],
   );
   const { rows } = await db.query<Record<string, never>>(
-    `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id,
+    `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id, m.safety_receipt_id,
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
             n.written_question,
             extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
             q.question as stored_question, q.evidence as stored_evidence, q.created_at as stored_at, q.every_recalled_unit and q.scope_confirmed as stored_every, q.review as stored_review,
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
-            coalesce(l.title, i.title) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
+            coalesce(l.title, i.title, concat_ws(' ', sr.brand, sr.item, sr.model)) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
             l.ordered_on, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.family_passed_on, n.second_prepared_at, floor(extract(epoch from now() - n.sent_at) / 86400)::int as days_since_sent, ${currentCheckResultSql("n", "r")} as check_result,
             (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
@@ -166,6 +169,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      join recalls r on r.recall_id = m.recall_id
      left join order_lines l on l.id = m.order_line_id
      left join shop_items i on i.id = m.shop_item_id
+     left join safety_receipts sr on sr.id = m.safety_receipt_id
      left join seller_answers sa on sa.shop_id = m.shop_id and sa.recall_number = r.recall_number and sa.listing_title = coalesce(l.title, i.title)
      left join lateral (
        select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1
@@ -189,14 +193,15 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
   const out = (rows as unknown as Record<string, unknown>[]).map(
     (r): QueueRow => ({
       matchId: String(r.match_id),
-      recordId: String(r.order_line_id ?? r.shop_item_id),
+      recordId: String(r.order_line_id ?? r.shop_item_id ?? r.safety_receipt_id),
       recallNumber: String(r.recall_number),
       recallTitle: String(r.recall_title),
       recallDate: String(r.recall_date),
       recallUrl: String(r.recall_url),
       product: (r.products as { name: string }[])[0]?.name ?? String(r.recall_title),
       itemTitle: String(r.item_title),
-      source: String(r.source),
+      source: r.safety_receipt_id ? FAMILY_ASKED : String(r.source),
+      familyAsked: Boolean(r.safety_receipt_id),
       orderedOn: (r.ordered_on as string | null) ?? null,
       verdict: r.verdict as QueueRow["verdict"],
       salePath: (r.sale_path as QueueRow["salePath"]) ?? null,

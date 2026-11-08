@@ -5,7 +5,10 @@ import { getDb } from "@/server/db/pg";
 import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
-import { currentSession, secret } from "@/server/web/http";
+import { baseUrl, currentSession, secret } from "@/server/web/http";
+import { shopReceiptLink } from "@/server/safetyReceipt/store";
+import { receiptQr } from "@/server/safetyReceipt/qr";
+import { ReceiptCard } from "./ReceiptCard";
 import { trustedMessage } from "@/server/web/queueMessage";
 import { gridRows, unidentifiedRows } from "./gridRows";
 import { BuyButtons } from "./BuyButtons";
@@ -40,7 +43,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
   const productWordsOnly = row.strength === "PRODUCT_WORDS";
   const notifiable = canNotify(row);
   const canApprove = notifiable && needsApproval(row);
-  const canAskClaude = agentReady && !row.agent && row.verdict !== "CLEARED";
+  const canAskClaude = agentReady && !row.familyAsked && !row.agent && row.verdict !== "CLEARED";
   const canBuy = shopKind === "DEMO" && row.isListing && row.stillListed && row.verdict !== "CLEARED";
   // A form's fragment survives the redirect, so on a wide screen this window stays open after an action.
   const here = `#sale-${row.matchId}`;
@@ -59,9 +62,10 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
       <div className="window-body">
         <h3>{row.product}</h3>
         <p className="sale">
-          {row.isListing ? "Listed" : "Sold"}: <strong>{row.itemTitle}</strong>
+          {row.familyAsked ? "Safety receipt" : row.isListing ? "Listed" : "Sold"}: <strong>{row.itemTitle}</strong>
           {row.orderedOn ? <>, {row.orderedOn}</> : null}. Recalled {row.recallDate}. {paymentLine(row)}
         </p>
+        {row.familyAsked ? <p data-testid="family-asked">A family asked to hear about this</p> : null}
         <p className="quiet">{row.reason}</p>
         {row.caughtSeconds !== null ? <p data-testid="caught">Reached your queue {row.caughtSeconds} seconds after PayPal took the payment.</p> : null}
         {row.salePath === "REVIEW" && row.verdict === "MATCH" ? <p>Sold on the recall date. Please review.</p> : null}
@@ -212,15 +216,15 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
                 </>
               ) : null}
             </p>
-            <SellerAnswerForm matchId={row.matchId} answer={row.sellerAnswer} demo={shopKind === "DEMO"} />
-            {notifiable && row.verdict === "MATCH" ? <StandingNotices recallNumber={row.recallNumber} on={standing.includes(row.recallNumber)} here={here} /> : null}
+            {!row.familyAsked ? <SellerAnswerForm matchId={row.matchId} answer={row.sellerAnswer} demo={shopKind === "DEMO"} /> : null}
+            {notifiable && row.verdict === "MATCH" && !row.familyAsked ? <StandingNotices recallNumber={row.recallNumber} on={standing.includes(row.recallNumber)} here={here} /> : null}
           </details>
         ) : null}
 
         {card.also.length > 0 ? (
           <details data-testid="also">
             <summary>
-              {card.also.length} other possible {card.also.length === 1 ? "recall" : "recalls"} for this {row.isListing ? "listing" : "sale"}
+              {card.also.length} other possible {card.also.length === 1 ? "recall" : "recalls"} for this {row.familyAsked ? "receipt" : row.isListing ? "listing" : "sale"}
             </summary>
             <ul>
               {card.also.map((other) => (
@@ -276,13 +280,17 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const connection = linksPayPal ? await readConnection(getDb(), { shopId: session.shopId, secret: secret("SHOP_DATA_KEY") }).catch(() => null) : null;
   const shopName = shop.name;
   const shopKind = shop.kind;
+  const receiptToken = await shopReceiptLink(getDb(), session.shopId, secret("SESSION_SECRET"));
+  const receiptLink = receiptToken ? `${baseUrl()}/s/${receiptToken}` : null;
+  const qr = receiptLink ? await receiptQr(receiptLink) : null;
   const { cards: found, cleared, unrelated } = toCards(rows);
   // A real shop's cards split by what they rest on, with shared words last. A demo shop keeps its one list, so its numbers can't move.
   const real = shopKind === "REAL";
   const cards = real ? [...found.filter((c) => !sitsApart(c)), ...found.filter(sitsApart)] : found;
   const agentReady = agentConfigured();
   const counts = queueCounts({ cards, cleared, unrelated, recallsChecked: coverage?.recallsChecked ?? null });
-  const listed = listings ? listingCounts(cards, listings.total) : null;
+  // A receipt is an opted-in family, so a mixed queue uses the normal notice states and item counts.
+  const listed = listings && !rows.some((r) => r.familyAsked) ? listingCounts(cards, listings.total) : null;
   const split = real ? splitCounts(cards) : null;
   const waiting = real ? cards.filter((c) => saleWaits(c) && !sitsApart(c)).length : counts.waiting;
   const grid = gridRows(rows, cards, { sharedWordsApart: real, listings: Boolean(listed) });
@@ -365,7 +373,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </div>
       )}
       <p className="note">
-        {coverage ? <span data-testid="coverage">{listings ? listingCoverageLine(coverage, listings) : coverageLine(coverage)} </span> : null}
+        {coverage ? <span data-testid="coverage">{listed && listings ? listingCoverageLine(coverage, listings) : coverageLine(coverage)} </span> : null}
         {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
@@ -444,6 +452,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <WarningCards warnings={warnings} demo={shop.kind === "DEMO"} />
       {pastWindow ? <PastWindowPayout product={pastWindow.product} recalledOn={pastWindow.recalledOn} payout={pastWindow.payout} receiver={pastWindow.receiver} /> : null}
       <PayPalCalls calls={calls} />
+      {receiptLink && qr ? <ReceiptCard link={receiptLink} qr={qr} demo={shopKind === "DEMO"} /> : null}
     </main>
   );
 }

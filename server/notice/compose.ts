@@ -10,7 +10,8 @@ export interface NoticeContext {
   recall: Pick<Recall, "recallNumber" | "url" | "products" | "hazards" | "remedies">;
   itemTitle: string;
   shopName: string;
-  orderDate: string;
+  orderDate: string | null;
+  familyAsked?: boolean;
   familyUrl: string;
 }
 
@@ -24,7 +25,9 @@ export function composeSafetyNotice(c: NoticeContext & { confirmedRefund?: strin
   const lines = [
     "Hi,",
     "",
-    `You bought ${c.itemTitle} from ${c.shopName} on ${c.orderDate}. The U.S. Consumer Product Safety Commission (CPSC) has announced a recall of this product.`,
+    c.familyAsked
+      ? `You asked to hear about ${c.itemTitle} at ${c.shopName}. The U.S. Consumer Product Safety Commission (CPSC) has announced a recall of this product.`
+      : `You bought ${c.itemTitle} from ${c.shopName} on ${c.orderDate}. The U.S. Consumer Product Safety Commission (CPSC) has announced a recall of this product.`,
     "",
     "The hazard, in CPSC's words:",
     c.recall.hazards.join("\n\n"),
@@ -38,18 +41,20 @@ export function composeSafetyNotice(c: NoticeContext & { confirmedRefund?: strin
     ...(c.confirmedRefund
       ? [`PayPal confirmed a refund of ${c.confirmedRefund} to your original payment. Please still follow the recall safety steps above.`, ""]
       : []),
-    "We're passing this along because you bought this item from us. This isn't the official recall notice, and it isn't marketing.",
+    c.familyAsked ? "You asked for recall updates. This isn't the official recall notice, and it isn't marketing." : "We're passing this along because you bought this item from us. This isn't the official recall notice, and it isn't marketing.",
     "",
     c.shopName,
   ];
-  return { subject: `Safety recall: ${product} you bought from ${c.shopName} on ${c.orderDate}`, body: lines.join("\n") };
+  return { subject: c.familyAsked ? `Safety recall: ${product}, your safety receipt at ${c.shopName}` : `Safety recall: ${product} you bought from ${c.shopName} on ${c.orderDate}`, body: lines.join("\n") };
 }
 
 export function composeCheckRequest(c: NoticeContext & { question: string }): ComposedMessage {
   const lines = [
     "Hi,",
     "",
-    `You bought ${c.itemTitle} from ${c.shopName} on ${c.orderDate}. A product with a similar name was recalled, and we can't tell from our records whether yours is included.`,
+    c.familyAsked
+      ? `You asked to hear about ${c.itemTitle} at ${c.shopName}. A product with a similar name was recalled, and we can't tell from these words whether yours is included.`
+      : `You bought ${c.itemTitle} from ${c.shopName} on ${c.orderDate}. A product with a similar name was recalled, and we can't tell from our records whether yours is included.`,
     "",
     `Can you check one thing? ${c.question}`,
     `Tap to answer: ${c.familyUrl}`,
@@ -60,7 +65,7 @@ export function composeCheckRequest(c: NoticeContext & { question: string }): Co
     "",
     c.shopName,
   ];
-  return { subject: `Quick safety check on ${c.itemTitle} you bought from ${c.shopName}`, body: lines.join("\n") };
+  return { subject: c.familyAsked ? `Quick safety check on your safety receipt for ${c.itemTitle}` : `Quick safety check on ${c.itemTitle} you bought from ${c.shopName}`, body: lines.join("\n") };
 }
 
 export type CheckQuestion =

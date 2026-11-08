@@ -40,7 +40,7 @@ export interface RunSummary {
 
 interface Candidate {
   recall_id: number;
-  kind: "order_line" | "shop_item";
+  kind: "order_line" | "shop_item" | "safety_receipt";
   id: string;
   title: string;
   description: string;
@@ -66,6 +66,9 @@ const CANDIDATES_SQL = `
     union all
     select 'shop_item', id, title, description, null
     from shop_items where shop_id = $1 and id = any($4::uuid[]) -- sold-out listings too; the queue shows which are still for sale
+    union all
+    select 'safety_receipt', id, concat_ws(' ', brand, item, model), '' as description, null
+    from safety_receipts where shop_id = $1 and id = any($4::uuid[]) and created_at + interval '3 years' > now()
   ),
   recall_text as materialized (
     select recall_id,
@@ -181,9 +184,12 @@ export async function runShopCheck(
   );
   const recallYearsMissing = await missingRecallYears(db, Number(recallsFrom.slice(0, 4)), opts.today);
   const { rows: shopText } = await db.query<{ id: string; text: string }>(
-    `select id, title as text from order_lines where shop_id = $1
-     union all select id, title || ' ' || description from shop_items where shop_id = $1`,
-    [shopId],
+    `select id, text from (
+       select id, title as text from order_lines where shop_id = $1
+       union all select id, title || ' ' || description from shop_items where shop_id = $1
+       union all select id, concat_ws(' ', brand, item, model) from safety_receipts where shop_id = $1 and created_at + interval '3 years' > now()
+     ) records where ($2::uuid is null or id = $2)`,
+    [shopId, opts.onlyRecordId ?? null],
   );
   // Compared with the punctuation out of both sides, as the rules and the public check do: MY-002 is MY002.
   const tokens = Object.fromEntries(shopText.map((r) => [r.id, [...new Set(modelTokens(r.text.toUpperCase()).flatMap(codeForms))].filter((t) => t.length >= 3)]));
@@ -237,9 +243,9 @@ export async function runShopCheck(
       const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
       const join = computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
-        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id, strength)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13, $14)
-         on conflict (shop_id, recall_id, coalesce(order_line_id, shop_item_id)) do update set
+        `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id, strength, safety_receipt_id)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13, $14, $16)
+         on conflict (shop_id, recall_id, coalesce(order_line_id, shop_item_id, safety_receipt_id)) do update set
            recall_sha256 = excluded.recall_sha256, verdict = excluded.verdict, matched = excluded.matched,
            missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path, strength = excluded.strength,
            -- Without a fresh PayPal read, keep what an earlier run established: PayPal's data ages out
@@ -266,6 +272,7 @@ export async function runShopCheck(
           c.kind === "order_line" ? joined.lines[c.id]?.paymentKey ?? null : null,
           v.strength,
           Boolean(opts.onlyRecallIds),
+          c.kind === "safety_receipt" ? c.id : null,
         ],
       );
     }

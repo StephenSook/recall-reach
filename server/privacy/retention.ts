@@ -1,7 +1,7 @@
 import type { Queryable } from "../db/types";
 
 /** Labels every table must carry as its comment, as "data-source: <label>" (see migration 0005). */
-export const DATA_SOURCES = ["cpsc-public", "own", "shop-owned", "paypal", "paypal-hmac", "channel3"] as const;
+export const DATA_SOURCES = ["cpsc-public", "own", "shop-owned", "family-given", "paypal", "paypal-hmac", "channel3"] as const;
 
 /** PayPal Developer Agreement 10.1.3: transaction data is deleted within 48 hours of receipt. */
 export const PAYPAL_RETENTION_HOURS = 48;
