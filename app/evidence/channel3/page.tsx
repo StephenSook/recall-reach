@@ -33,7 +33,7 @@ export default async function Channel3Evidence() {
       <h2 className="section-title">What goes out</h2>
       <p>Only the product name from CPSC&apos;s public record. Nothing from a shop or from PayPal is sent.</p>
       <p className="note">
-        <Link href="/sweep/27072">See one recall</Link>. <Link href="/judge">Back</Link>
+        <Link href="/sweep/27072">See one recall</Link>. <Link href="/evidence/shopper">A recorded run of the shopping agent</Link>. <Link href="/judge">Back</Link>
       </p>
       <div className="provenance">
         <span className="chip chip-real">Real CPSC</span>

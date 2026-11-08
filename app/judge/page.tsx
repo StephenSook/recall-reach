@@ -94,7 +94,7 @@ curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%2
       {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
       <img src="/android-apk-qr.svg" alt="QR code for the Android build's download" width={160} height={160} />
       <p className="note">
-        <Link href="/r/sample">What a family sees</Link>, as a sample that stays up. <Link href="/check">Check one item</Link>, your own order file, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/status">Status</Link>. <Link href="/privacy">Privacy</Link>.
+        <Link href="/r/sample">What a family sees</Link>, as a sample that stays up. <Link href="/check">Check one item</Link>, your own order file, or a Shopify store&apos;s public listings. How it uses <Link href="/evidence/paypal">PayPal</Link> and <Link href="/evidence/ag-grid">AG Grid</Link>. <Link href="/evidence/channel3">Channel3</Link>. <Link href="/evidence/shopper">A recorded shopping run</Link>. <Link href="/evidence/api">For agents and marketplaces</Link>. <Link href="/status">Status</Link>. <Link href="/privacy">Privacy</Link>.
       </p>
     </main>
   );
