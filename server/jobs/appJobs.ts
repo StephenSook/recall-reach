@@ -3,7 +3,8 @@ import { loadMissingYears } from "../cpsc/load";
 import { recordPull, snapshotHash } from "../cpsc/pull";
 import type { Db } from "../db/types";
 import { purgeOldDemoShops, purgeOldOwnShops } from "../import/ownFile";
-import { checkStoredShops, SWEEP_BUDGET_MS, type SweepSummary } from "../match/sweep";
+import { checkStoredShops, SWEEP_BUDGET_MS, type SweepPayPal, type SweepSummary } from "../match/sweep";
+import { platformFromEnv } from "../paypal/platform";
 import { purgePayPalData } from "../privacy/retention";
 import { purgeReceipts } from "../safetyReceipt/store";
 import { cpscPollRange, MAX_CATCHUP_DAYS, type Job } from "./scheduler";
@@ -159,8 +160,12 @@ export function appJobs(db: Db, deps: FetchDeps & { now?: () => Date; refreshRep
     let sweepError: unknown = null;
     if (touchDb) {
       try {
+        const platform = platformFromEnv();
+        const secret = process.env.SHOP_DATA_KEY;
+        const paypal: SweepPayPal | null = platform && secret ? { platform, secret } : null;
         sweep = await checkStoredShops(db, {
           now: at,
+          paypal,
           maxShops: deps.maxShopsPerSweep,
           budgetMs: Math.max(0, Math.min(SWEEP_BUDGET_MS, JOB_BUDGET_MS - (Date.now() - started))),
         });

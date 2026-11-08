@@ -11,6 +11,10 @@ import { createContactCipher } from "../privacy/contactCipher";
 import { registerPushToken } from "../push/push";
 import { runShopCheck } from "./run";
 import { checkStoredShops } from "./sweep";
+import type { PayPalClient } from "../paypal/client";
+import { REFUND_SCOPE, type PlatformEnv } from "../paypal/platform";
+import { createRecordKey } from "../privacy/recordKey";
+import { reserveStatusRead, saveSellerStatus, startConnection, trackingIdFor } from "../shop/paypalConnection";
 
 const fixture: Record<string, unknown>[] = JSON.parse(
   readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8"),
@@ -66,6 +70,43 @@ describe("checking stored shops against new recalls", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await db.close();
+  });
+
+  describe("for a shop connected to its own PayPal account", () => {
+    const SECRET = "s".repeat(64);
+    const key = createRecordKey("test-record-key-secret-0123456789abcdef");
+    const searched: string[] = [];
+    const seller: PayPalClient = {
+      request: (async (_m: string, path: string) => {
+        searched.push(path);
+        if (path === "/v1/customer/disputes") return { status: 200, data: { items: [] } };
+        if (path !== "/v1/reporting/transactions") throw new Error(path);
+        const sale = { transaction_id: "SELLERTXN1", transaction_event_code: "T0005", transaction_status: "S", transaction_initiation_date: "2026-09-15T15:00:00+0000", transaction_amount: { currency_code: "USD", value: "50.00" }, invoice_id: "A shop-1" };
+        return { status: 200, data: { transaction_details: [{ transaction_info: sale, cart_info: { item_details: [{ item_name: "Baby Brezza SuperFast Sterilizer Dryer BRZ0083", item_code: "" }] } }], total_pages: 1 } };
+      }) as PayPalClient["request"],
+    };
+    const platform: PlatformEnv = { clientId: "platform-id", partnerId: "PARTNER12345", client: { request: async () => ({ status: 200, data: {} }) } as unknown as PayPalClient, actingFor: () => seller };
+    beforeEach(async () => {
+      searched.length = 0;
+      await startConnection(db, { shopId, trackingId: trackingIdFor(key, shopId), now: new Date() });
+      await saveSellerStatus(db, { shopId, read: (await reserveStatusRead(db, shopId))!, status: { merchantId: "SELLERPAYER1", paymentsReceivable: true, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE] }, secret: SECRET, recordKey: key, now: new Date() });
+    });
+    const joinOf = async () => (await db.query<{ join_state: string }>("select m.join_state from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27072'", [shopId])).rows[0]?.join_state;
+
+    it("reads its PayPal sales again when a new recall matches one of them, so the sale joins its payment", async () => {
+      await pull(brezza);
+      await checkStoredShops(db, { now: new Date(), paypal: { platform, secret: SECRET } });
+      expect(searched).toContain("/v1/reporting/transactions");
+      expect(await joinOf()).toBe("IDENTIFIED");
+    });
+
+    it("asks PayPal nothing when no new recall matches a sale, or when PayPal isn't set up here", async () => {
+      await checkStoredShops(db, { now: new Date(), paypal: { platform, secret: SECRET } });
+      expect(searched).toEqual([]);
+      await pull(brezza);
+      await checkStoredShops(db, { now: new Date() });
+      expect(searched).toEqual([]);
+    });
   });
 
   it("puts a new recall on a shop that uploaded before it, with nobody pressing anything", async () => {
@@ -232,11 +273,14 @@ describe("checking stored shops against new recalls", () => {
     expect(await sweep({ budgetMs: -1 })).toMatchObject({ shopsChecked: 0, shopsWaiting: 1 });
   });
 
-  it("uses the rules only: no Claude, no PayPal call, no message", () => {
+  it("uses the rules only: no Claude and no message, and reaches PayPal only to read a connected shop's sales again", () => {
     for (const file of ["./sweep.ts", "./run.ts"]) {
       const source = readFileSync(new URL(file, import.meta.url), "utf8");
-      expect(source).not.toMatch(/^import (?!type)[^;]*from "[^"]*(agent|anthropic|paypal|notice)[^"]*"/im);
+      expect(source).not.toMatch(/^import (?!type)[^;]*from "[^"]*(agent|anthropic|notice)[^"]*"/im);
     }
+    expect(readFileSync(new URL("./run.ts", import.meta.url), "utf8")).not.toMatch(/^import (?!type)[^;]*from "[^"]*paypal[^"]*"/im);
+    const paypalImports = [...readFileSync(new URL("./sweep.ts", import.meta.url), "utf8").matchAll(/^import (?!type)[^;]*from "([^"]*paypal[^"]*)"/gim)].map((m) => m[1]).sort();
+    expect(paypalImports).toEqual(["../paypal/callLog", "../shop/paypalConnection"]);
   });
 
   describe("buzzing a phone", () => {
