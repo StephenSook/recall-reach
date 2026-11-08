@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Db, Queryable } from "../db/types";
 import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
+import { DEMO_SHOP_HOURS, OWN_FILE_DAYS } from "../import/ownFile";
 import { businessDay } from "../time/businessDay";
 import { receiptKeyFromToken, receiptTokenFor } from "./token";
 
@@ -27,11 +28,25 @@ export async function shopReceiptLink(db: Queryable, shopId: string, secret: str
   return rows[0] ? receiptTokenFor(secret, rows[0].safety_receipt_key) : null;
 }
 
-export async function receiptShop(db: Queryable, token: string, secret: string): Promise<{ id: string; name: string; kind: string } | null> {
+/**
+ * When the purge takes a shop's data, and its receipts with it: a real shop 7 days after it joined, a demo shop at
+ * DEMO_SHOP_HOURS. The same windows as purgeOldOwnShops and purgeOldDemoShops, so every screen shows the date they act on.
+ */
+export function shopDataDeletedAfter(kind: string, createdAt: Date): Date {
+  return new Date(createdAt.getTime() + (kind === "DEMO" ? DEMO_SHOP_HOURS * 3_600_000 : OWN_FILE_DAYS * 86_400_000));
+}
+
+export async function shopDeletesAfter(db: Queryable, shopId: string): Promise<Date | null> {
+  const { rows } = await db.query<{ kind: string; created_at: Date }>("select kind, created_at from shops where id = $1", [shopId]);
+  return rows[0] ? shopDataDeletedAfter(rows[0].kind, new Date(rows[0].created_at)) : null;
+}
+
+export async function receiptShop(db: Queryable, token: string, secret: string): Promise<{ id: string; name: string; kind: string; deletesAfter: Date } | null> {
   const key = receiptKeyFromToken(secret, token);
   if (!key) return null;
-  const { rows } = await db.query<{ id: string; name: string; kind: string }>("select id, name, kind from shops where safety_receipt_key = $1", [key]);
-  return rows[0] ?? null;
+  const { rows } = await db.query<{ id: string; name: string; kind: string; created_at: Date }>("select id, name, kind, created_at from shops where safety_receipt_key = $1", [key]);
+  const shop = rows[0];
+  return shop ? { id: shop.id, name: shop.name, kind: shop.kind, deletesAfter: shopDataDeletedAfter(shop.kind, new Date(shop.created_at)) } : null;
 }
 
 /** Family input stays local, including its item words. No external clients are called here. */
@@ -68,7 +83,7 @@ export async function deleteShopReceipt(db: Queryable, shopId: string, id: strin
   return rows.length > 0;
 }
 
-/** Hourly, with a one-hour margin so a row cannot outlive three calendar years between runs. */
+/** A ceiling only: today a receipt goes with its shop's data long before this, on the date its page shows. */
 export async function purgeReceipts(db: Queryable, now = new Date()): Promise<number> {
   const { rows } = await db.query("delete from safety_receipts where created_at + interval '3 years' <= $1::timestamptz + interval '1 hour' returning 1", [now.toISOString()]);
   return rows.length;

@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 
-export function ReceiptForm({ token, shopName, demo }: { token: string; shopName: string; demo: boolean }) {
+/** deletesAfter is when this shop's data, and the receipt with it, is deleted, already written for a person to read. */
+export function ReceiptForm({ token, shopName, demo, deletesAfter }: { token: string; shopName: string; demo: boolean; deletesAfter: string }) {
   const [deletePath, setDeletePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -56,9 +57,8 @@ export function ReceiptForm({ token, shopName, demo }: { token: string; shopName
       <details style={{ marginTop: "1.5rem" }}>
         <summary>How your data is kept</summary>
         <p>{demo
-          ? "This demo shop and its receipts are deleted within 48 hours. Use a test email."
-          : "We keep this receipt for up to 3 years, unless you or the shop delete it, or the shop is deleted sooner."}</p>
-        {!demo ? <p>CPSC recalls often come long after a sale. In our CPSC record measurement, the median was 19 months from first sale to recall.</p> : null}
+          ? `This is a demo shop. Its receipts are deleted after ${deletesAfter}, when the demo shop's data is deleted. Use a test email.`
+          : `We keep this receipt until you or the shop delete it. At the latest it is deleted after ${deletesAfter}, when this shop's data is deleted.`}</p>
         <p>Your email is encrypted. Only this shop&apos;s owner sees it when preparing a notice. It is not sent to Claude, Channel3 or any other service by this app.</p>
         <p>The app never emails anyone. The owner approves a notice, opens it in their own mail and sends it.</p>
       </details>

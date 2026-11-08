@@ -6,7 +6,8 @@ import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
 import { loadQueue, tellCpscDraft, toCards, type QueueCard } from "@/server/queue/queue";
 import { baseUrl, currentSession, secret } from "@/server/web/http";
-import { shopReceiptLink } from "@/server/safetyReceipt/store";
+import { shopDeletesAfter, shopReceiptLink } from "@/server/safetyReceipt/store";
+import { ranAt } from "@/app/replay/labels";
 import { receiptQr } from "@/server/safetyReceipt/qr";
 import { ReceiptCard } from "./ReceiptCard";
 import { trustedMessage } from "@/server/web/queueMessage";
@@ -283,6 +284,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const receiptToken = await shopReceiptLink(getDb(), session.shopId, secret("SESSION_SECRET"));
   const receiptLink = receiptToken ? `${baseUrl()}/s/${receiptToken}` : null;
   const qr = receiptLink ? await receiptQr(receiptLink) : null;
+  const receiptsGo = await shopDeletesAfter(getDb(), session.shopId);
   const { cards: found, cleared, unrelated } = toCards(rows);
   // A real shop's cards split by what they rest on, with shared words last. A demo shop keeps its one list, so its numbers can't move.
   const real = shopKind === "REAL";
@@ -452,7 +454,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <WarningCards warnings={warnings} demo={shop.kind === "DEMO"} />
       {pastWindow ? <PastWindowPayout product={pastWindow.product} recalledOn={pastWindow.recalledOn} payout={pastWindow.payout} receiver={pastWindow.receiver} /> : null}
       <PayPalCalls calls={calls} />
-      {receiptLink && qr ? <ReceiptCard link={receiptLink} qr={qr} demo={shopKind === "DEMO"} /> : null}
+      {receiptLink && qr && receiptsGo ? <ReceiptCard link={receiptLink} qr={qr} demo={shopKind === "DEMO"} deletesAfter={ranAt(receiptsGo.toISOString())} /> : null}
     </main>
   );
 }

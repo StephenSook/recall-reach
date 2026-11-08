@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
+import { ranAt } from "@/app/replay/labels";
+import { shopDeletesAfter } from "@/server/safetyReceipt/store";
 import { currentSession } from "@/server/web/http";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,7 @@ export default async function ManageReceipts({ searchParams }: { searchParams: P
   const db = getDb();
   const shop = (await db.query<{ kind: string }>("select kind from shops where id = $1", [session.shopId])).rows[0];
   if (!shop) redirect("/check");
+  const deletesAfter = await shopDeletesAfter(db, session.shopId);
   // No contact details leave this query. They are read only when the owner prepares a notice.
   const { rows } = await db.query<{ id: string; item: string; brand: string | null; model: string | null; created_at: Date }>(
     "select id, item, brand, model, created_at from safety_receipts where shop_id = $1 order by created_at desc, id limit 51 offset $2",
@@ -21,6 +24,7 @@ export default async function ManageReceipts({ searchParams }: { searchParams: P
     <main className="page">
       <header className="page-head"><h1>Safety receipts</h1>{shop.kind === "DEMO" ? <span className="chip">DEMO SHOP</span> : null}</header>
       <p><a href="/queue">Back to queue</a></p>
+      {deletesAfter ? <p data-testid="receipts-go">Receipts here are deleted with this shop&apos;s data after {ranAt(deletesAfter.toISOString())}, or sooner if you or the family delete one.</p> : null}
       {rows.length === 0 ? <p>No receipts here.</p> : rows.slice(0, 50).map((r) => (
         <section className="window" key={r.id}>
           <div className="window-body">

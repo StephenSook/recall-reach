@@ -6,7 +6,7 @@ import { testDb } from "../../test/pglite";
 import { loadMigrations, migrate } from "../db/migrate";
 import { pullRecalls } from "../cpsc/pull";
 import { createShop, storeOrderLines } from "../import/store";
-import { purgeOldDemoShops } from "../import/ownFile";
+import { purgeOldDemoShops, purgeOldOwnShops } from "../import/ownFile";
 import { runShopCheck } from "../match/run";
 import { checkStoredShops } from "../match/sweep";
 import { loadQueue, toCards } from "../queue/queue";
@@ -18,7 +18,7 @@ import { appJobs } from "../jobs/appJobs";
 import { approveRefund } from "../paypal/refunds";
 import type { PayPalClient } from "../paypal/client";
 import { pushNewCards, registerPushToken } from "../push/push";
-import { createReceipt, deleteReceipt, deleteShopReceipt, purgeReceipts, receiptShop, shopReceiptLink } from "./store";
+import { createReceipt, deleteReceipt, deleteShopReceipt, purgeReceipts, receiptShop, shopDeletesAfter, shopReceiptLink } from "./store";
 
 const SECRET = "k".repeat(32);
 const EMAIL = "FAMILY-PRIVATE-SENTINEL@example.test";
@@ -122,6 +122,30 @@ describe("family-given safety receipts", () => {
     const saved = await save();
     await db.query("update safety_receipts set created_at = '2024-02-29T12:00:00Z' where id = $1", [saved.id]);
     expect(await purgeReceipts(db, new Date("2027-02-28T12:00:00Z"))).toBe(1);
+  });
+
+  it("goes with a real shop at its 7-day purge, however new the receipt is", async () => {
+    await db.query("update shops set created_at = $2 where id = $1", [shopId, new Date(NOW.getTime() - 7 * 86_400_000 - 3_600_000).toISOString()]);
+    await save();
+    expect(await purgeOldOwnShops(db, NOW)).toBe(1);
+    expect((await db.query("select * from safety_receipts")).rows).toHaveLength(0);
+  });
+
+  it("shows the moment the purge takes the shop's data, a second either side, for real and demo shops", async () => {
+    const demo = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
+    for (const [id, purge] of [[shopId, purgeOldOwnShops], [demo, purgeOldDemoShops]] as const) {
+      await db.query("update shops set created_at = '2026-11-01T10:00:00Z' where id = $1", [id]);
+      const after = (await shopDeletesAfter(db, id))!;
+      expect(await purge(db, new Date(after.getTime() - 1_000))).toBe(0);
+      expect(await purge(db, new Date(after.getTime() + 1_000))).toBe(1);
+    }
+    expect((await shopDeletesAfter(db, shopId))).toBeNull();
+  });
+
+  it("gives the receipt page that same moment", async () => {
+    const token = (await shopReceiptLink(db, shopId, SECRET))!;
+    const shop = await receiptShop(db, token, SECRET);
+    expect(shop?.deletesAfter).toEqual(await shopDeletesAfter(db, shopId));
   });
 
   it("purges demo receipts with their shop and cascades on a real shop deletion", async () => {
