@@ -52,10 +52,10 @@ describe("owner refunds sent page and CSV", () => {
   it("shows only this shop's rows in both table and attachment", async () => {
     await sentPayout(shopId, 2400);
     const other = await createShop(db, { name: "Other shop", kind: "DEMO" });
-    await sentPayout(other, 1999);
+    await sentPayout(other, 7777);
     const html = await page();
     expect(html).toContain("24.00");
-    expect(html).not.toContain("19.99");
+    expect(html).not.toContain("77.77");
     expect(html).toContain("SUCCESS");
     expect(html).toContain('href="/queue/sent/csv"');
     expect(html).toContain('href="/queue#past-window"');
@@ -67,7 +67,7 @@ describe("owner refunds sent page and CSV", () => {
     const csv = await response.text();
     const rows = await readSentLedger(db, shopId);
     expect(parse(csv)).toEqual([SENT_COLUMNS, ...rows.map(sentCells)]);
-    expect(csv).not.toContain("19.99");
+    expect(csv).not.toContain("77.77");
     expect(csv).not.toContain("PRIVATE-RECEIVER");
     for (const cell of sentCells(rows[0]).slice(0, -1)) {
       expect(html).toContain(renderToStaticMarkup(createElement("span", null, cell)).slice(6, -7));
