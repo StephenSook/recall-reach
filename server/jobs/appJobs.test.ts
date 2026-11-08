@@ -250,13 +250,16 @@ describe("the recall poll job", () => {
       let failWrite = true;
       const flaky: Db = {
         ...db,
-        transaction: (fn) => {
-          if (failWrite) {
-            failWrite = false;
-            throw new Error("write failed");
-          }
-          return db.transaction(fn);
-        },
+        transaction: (fn) => db.transaction((tx) => fn({
+          ...tx,
+          query: (sql, params) => {
+            if (failWrite && /^\s*insert into recalls\b/i.test(sql)) {
+              failWrite = false;
+              throw new Error("write failed");
+            }
+            return tx.query(sql, params);
+          },
+        })),
       };
       const cpsc = cpscAnswering(() => nov5);
       const [poll] = appJobs(flaky, cpsc.deps);

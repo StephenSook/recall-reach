@@ -8,7 +8,7 @@ export default function PayPalEvidence() {
       <header className="page-head">
         <h1>How it uses PayPal</h1>
       </header>
-      <p>Each line is real code, in the file named. A test fails if the code leaves that file.</p>
+      <p>Each line is real code, in the file named. A test fails if the code leaves that file. PayPal sandbox, no real charge. Everything that keeps families safe stays free.</p>
       <ClaimList claims={PAYPAL_CLAIMS} />
       <h2 className="section-title">Where you see each call</h2>
       <p>On a demo shop, the queue and each refund page also list what the app just asked PayPal, under What this app asked PayPal.</p>

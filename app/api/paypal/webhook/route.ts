@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { withCallLog } from "@/server/paypal/callLog";
-import { getDb } from "@/server/db/pg";
+import { getBillingDb, getDb } from "@/server/db/pg";
 import { catchLiveSale } from "@/server/demo/liveCatch";
 import { readCappedBody } from "@/server/http/body";
 import { payPalClientFromEnv } from "@/server/paypal/client";
@@ -8,6 +8,7 @@ import { askPayPalToVerify } from "@/server/paypal/webhookCheck";
 import { platformFromEnv } from "@/server/paypal/platform";
 import { handleWebhookDelivery, MAX_WEBHOOK_BYTES, type PlatformWebhook } from "@/server/paypal/webhookHandler";
 import { confirmRevoked } from "@/server/shop/connectFlow";
+import { syncSubscriptionEvent } from "@/server/shop/subscription";
 import { recordKeyFromEnv, type RecordKey } from "@/server/privacy/recordKey";
 import { secret } from "@/server/web/http";
 
@@ -44,6 +45,9 @@ export async function POST(request: Request): Promise<Response> {
       db: getDb(),
       recordKey,
       onCaptureCompleted: (captureId) => withCallLog(getDb(), null, () => catchLiveSale(getDb(), payPalClientFromEnv(), { captureId, now: new Date() })),
+      onSubscriptionChanged: async (subscriptionId) => {
+        if (recordKey) await withCallLog(getBillingDb(), null, () => syncSubscriptionEvent(getBillingDb(), payPalClientFromEnv(), { subscriptionId, recordKey, secret: secret("SHOP_DATA_KEY") }));
+      },
       checkWithPayPal: (transmission, webhookId, rawBody) => askPayPalToVerify(payPalClientFromEnv(), transmission, webhookId, rawBody),
       platform: platformWebhook(recordKey),
     });

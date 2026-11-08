@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
+vi.mock("@/server/db/pg", () => ({ getDb: () => ({}), getBillingDb: () => ({}) }));
 const handle = vi.hoisted(() => vi.fn());
 const later = vi.hoisted(() => vi.fn());
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: later }));

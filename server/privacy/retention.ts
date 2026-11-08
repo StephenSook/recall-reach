@@ -23,6 +23,7 @@ export const PAYPAL_SOURCED: readonly { table: string; receivedAt: string }[] = 
   { table: "paypal_refund_refs", receivedAt: "received_at" },
   { table: "paypal_calls", receivedAt: "received_at" },
   { table: "paypal_payout_refs", receivedAt: "received_at" },
+  { table: "paypal_subscription_refs", receivedAt: "received_at" },
   // No id here, but the seconds were worked out from PayPal's capture time.
   { table: "live_catch_runs", receivedAt: "caught_at" },
 ];
@@ -44,5 +45,16 @@ export async function purgePayPalData(db: Queryable, now: Date = new Date()): Pr
     [now.toISOString(), PAYPAL_PURGE_CUTOFF_HOURS],
   );
   deleted.payout_statuses = rows.length;
+  // Keep the keyed relationship to prevent another subscription, but forget PayPal's status and start time.
+  const subscriptions = await db.query(
+    `update shop_subscriptions set status = null, started_at = null
+     where shop_id in (
+       select shop_id from shop_subscriptions
+       where (status is not null or started_at is not null) and updated_at < $1::timestamptz - make_interval(hours => $2)
+       for update skip locked
+     ) returning 1`,
+    [now.toISOString(), PAYPAL_PURGE_CUTOFF_HOURS],
+  );
+  deleted.subscription_statuses = subscriptions.rows.length;
   return deleted;
 }

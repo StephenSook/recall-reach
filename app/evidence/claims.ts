@@ -8,6 +8,16 @@ export interface Claim {
 
 export const PAYPAL_CLAIMS: Claim[] = [
   { what: "The shelf has PayPal's v6 button wired to order and capture routes; a real browser run is still needed", file: "app/queue/paypalSdk.ts", find: "createPayPalOneTimePaymentSession" },
+  { what: "Creates the optional shop plan's sandbox product", file: "server/paypal/subscriptions.ts", find: "/v1/catalogs/products" },
+  { what: "Creates a sandbox billing plan at the price in SHOP_PLAN", file: "server/paypal/subscriptions.ts", find: '"POST", "/v1/billing/plans"' },
+  { what: "Creates a shop subscription with an HMAC custom_id", file: "server/paypal/subscriptions.ts", find: '"POST", "/v1/billing/subscriptions"' },
+  { what: "Reads subscription status from PayPal on return and on verified billing events", file: "server/paypal/subscriptions.ts", find: '"GET", `/v1/billing/subscriptions/' },
+  { what: "Cancels a subscription when the shop owner asks", file: "server/paypal/subscriptions.ts", find: '/${pathId(subscriptionId)}/cancel' },
+  { what: "Names BILLING.SUBSCRIPTION.ACTIVATED as an event that triggers a fresh PayPal read", file: "server/shop/subscription.ts", find: "BILLING.SUBSCRIPTION.ACTIVATED" },
+  { what: "Names BILLING.SUBSCRIPTION.CANCELLED as an event that triggers a fresh PayPal read", file: "server/shop/subscription.ts", find: "BILLING.SUBSCRIPTION.CANCELLED" },
+  { what: "Names BILLING.SUBSCRIPTION.SUSPENDED as an event that triggers a fresh PayPal read", file: "server/shop/subscription.ts", find: "BILLING.SUBSCRIPTION.SUSPENDED" },
+  { what: "Names BILLING.SUBSCRIPTION.EXPIRED as an event that triggers a fresh PayPal read", file: "server/shop/subscription.ts", find: "BILLING.SUBSCRIPTION.EXPIRED" },
+  { what: "Routes billing events to the subscription read only after the webhook signature check", file: "server/paypal/webhookHandler.ts", find: "Object.hasOwn(BILLING_EVENTS, event.event_type)" },
   { what: "Reads the shop's sales from Transaction Search, across windows, and reports any window that failed", file: "server/paypal/transactions.ts", find: "/v1/reporting/transactions" },
   { what: "Reads the capture from PayPal again before any refund, and again to reconcile", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
   { what: "Reads PayPal's Disputes API before each refund", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },

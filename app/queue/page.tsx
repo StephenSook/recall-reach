@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Fragment } from "react";
+import { Fragment, Suspense } from "react";
 import { getDb } from "@/server/db/pg";
 import { agentConfigured } from "@/server/agent/questionStore";
 import { centsToValue } from "@/server/paypal/orders";
@@ -31,6 +31,7 @@ import { CheckWithClaude } from "./CheckWithClaude";
 import { PayPalCalls } from "./PayPalCalls";
 import { PayPalConnect } from "./PayPalConnect";
 import { OwnerSignIn } from "./OwnerSignIn";
+import { ShopSubscriptionSection } from "./ShopSubscription";
 import { readOwnerLink } from "@/server/owner/ownerLink";
 import { ownerSignInFromEnv } from "@/server/paypal/identity";
 import { platformFromEnv } from "@/server/paypal/platform";
@@ -387,6 +388,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </p>
       {linksPayPal ? <PayPalConnect connection={connection} setUp={platformFromEnv() !== null} /> : null}
       {shop.kind === "REAL" ? <OwnerSignIn link={ownerLink} setUp={ownerSignInFromEnv(baseUrl()) !== null} lifetime={life} /> : null}
+      {shop.kind === "REAL" ? <Suspense fallback={null}><ShopSubscriptionSection shopId={session.shopId} /></Suspense> : null}
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; } .queue-heading { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; clip-path: none !important; white-space: normal !important; }`}</style>
       </noscript>

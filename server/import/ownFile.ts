@@ -71,15 +71,29 @@ export async function purgeOldDemoShops(db: Queryable, now: Date = new Date()): 
   return rows.length;
 }
 
-export async function purgeOldOwnShops(db: Queryable, now: Date = new Date()): Promise<number> {
+export async function purgeOldOwnShops(db: Db, now: Date = new Date()): Promise<number> {
   // Elapsed hours, not calendar days: a day across a daylight saving change isn't 24 hours in the database's time zone.
   // The same rule as lifetimeOf (server/shop/lifetime.ts), which gives every screen its date: 7 days after joining, or,
   // for a shop whose owner links a PayPal login, until a year passes with no sign-in.
-  const { rows } = await db.query(
-    `delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(hours => $2)
+  return db.transaction(async (tx) => {
+    const candidates = await tx.query<{ id: string }>(
+      `select id from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(hours => $2)
        and (owner_payer_hmac is null or greatest(owner_linked_at, owner_signed_in_at) < $1::timestamptz - make_interval(hours => $3))
-     returning id`,
-    [now.toISOString(), OWN_FILE_DAYS * 24, KEPT_SHOP_DAYS * 24],
-  );
-  return rows.length;
+       for update skip locked`,
+      [now.toISOString(), OWN_FILE_DAYS * 24, KEPT_SHOP_DAYS * 24],
+    );
+    if (!candidates.rows.length) return 0;
+    const ids = candidates.rows.map((r) => r.id);
+    // Deletion cascades into billing. Skip a shop whose subscription is busy, and try it next run.
+    const subscriptions = await tx.query<{ shop_id: string }>(
+      "select shop_id from shop_subscriptions where shop_id = any($1::uuid[]) for update skip locked", [ids],
+    );
+    const { rows } = await tx.query(
+      `delete from shops where id = any($1::uuid[])
+         and (id = any($2::uuid[]) or not exists (select 1 from shop_subscriptions where shop_id = shops.id))
+       returning id`,
+      [ids, subscriptions.rows.map((r) => r.shop_id)],
+    );
+    return rows.length;
+  });
 }

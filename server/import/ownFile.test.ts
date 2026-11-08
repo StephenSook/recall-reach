@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
@@ -33,6 +33,7 @@ describe("a shop checking its own order file", () => {
     await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await db.close();
   });
 
@@ -158,6 +159,50 @@ describe("a shop checking its own order file", () => {
       const { shopId } = await load();
       await age(shopId, 6);
       expect(await purgeOldOwnShops(db, NOW)).toBe(0);
+    });
+
+    it("locks candidates and their subscriptions with SKIP LOCKED in one transaction", async () => {
+      const shopId = await createShop(db, { name: "Old shop", kind: "REAL" });
+      await age(shopId, 8);
+      await db.query("insert into shop_subscriptions (shop_id, plan_id, status) values ($1, 'P-TEST', 'ACTIVE')", [shopId]);
+      const statements: string[] = [];
+      const transaction = db.transaction.bind(db);
+      const run = vi.spyOn(db, "transaction").mockImplementation((fn) => transaction((tx) => {
+        const query = tx.query.bind(tx);
+        vi.spyOn(tx, "query").mockImplementation((sql, params) => { statements.push(sql); return query(sql, params); });
+        return fn(tx);
+      }));
+      expect(await purgeOldOwnShops(db, NOW)).toBe(1);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(statements).toHaveLength(3);
+      expect(statements[0]).toMatch(/select id from shops[^`]+for update skip locked/i);
+      expect(statements[1]).toMatch(/^select shop_id from shop_subscriptions where shop_id = any\(\$1::uuid\[\]\) for update skip locked$/i);
+      expect(statements[2]).toMatch(/delete from shops[^`]+id = any\(\$2::uuid\[\]\) or not exists \(select 1 from shop_subscriptions where shop_id = shops.id\)/i);
+      expect((await db.query("select * from shop_subscriptions")).rows).toEqual([]);
+    });
+
+    it("skips a shop whose subscription is reported locked and deletes the others, then retries it next run", async () => {
+      const busy = await createShop(db, { name: "Busy subscription", kind: "REAL" });
+      const free = await createShop(db, { name: "Free subscription", kind: "REAL" });
+      const none = await createShop(db, { name: "No subscription", kind: "REAL" });
+      for (const id of [busy, free, none]) await age(id, 8);
+      for (const id of [busy, free]) await db.query("insert into shop_subscriptions (shop_id, plan_id, status) values ($1, 'P-TEST', 'ACTIVE')", [id]);
+      // PGlite has one connection. Report the row as skipped to exercise the real delete's exclusion.
+      const transaction = db.transaction.bind(db);
+      const run = vi.spyOn(db, "transaction").mockImplementation((fn) => transaction((tx) => {
+        const query = tx.query.bind(tx);
+        vi.spyOn(tx, "query").mockImplementation(async (sql, params) => {
+          const result = await query(sql, params);
+          return /select shop_id from shop_subscriptions/i.test(sql) ? { rows: result.rows.filter((r) => r.shop_id !== busy) } : result;
+        });
+        return fn(tx);
+      }));
+      expect(await purgeOldOwnShops(db, NOW)).toBe(2);
+      expect((await db.query("select id from shops")).rows).toEqual([{ id: busy }]);
+      expect((await db.query("select shop_id from shop_subscriptions")).rows).toEqual([{ shop_id: busy }]);
+      run.mockRestore();
+      expect(await purgeOldOwnShops(db, NOW)).toBe(1);
+      expect((await db.query("select id from shops")).rows).toEqual([]);
     });
 
     it("deletes a demo shop once its visit is long over, and keeps a recent one", async () => {

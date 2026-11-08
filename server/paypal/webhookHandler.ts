@@ -1,5 +1,6 @@
 import { valueToCents } from "./orders";
 import { recordPayoutItemEvent } from "./payouts";
+import { BILLING_EVENTS } from "../shop/subscription";
 import { createHash } from "node:crypto";
 import type { Queryable } from "../db/types";
 import type { RecordKey } from "../privacy/recordKey";
@@ -74,6 +75,8 @@ export async function handleWebhookDelivery(input: {
   fetchCert?: CertFetcher;
   now?: () => number;
   onCaptureCompleted?: (captureId: string) => Promise<unknown>;
+  /** Demo app only. Reads the current subscription at PayPal so delayed events cannot rewind it. */
+  onSubscriptionChanged?: (subscriptionId: string) => Promise<unknown>;
   /** PayPal's verify-webhook-signature, given the exact bytes. Asked only about a new event our check verified. */
   checkWithPayPal?: (transmission: TransmissionHeaders, webhookId: string, rawBody: Uint8Array) => Promise<PayPalCheck>;
   /** The platform app, which connected shops link to. Its events post to the same URL under its own webhook id. */
@@ -194,6 +197,7 @@ export async function handleWebhookDelivery(input: {
   );
   // A connected shop's capture is that shop's own sale, read through its own connection, never the demo's live catch.
   if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId && !fromPlatform) await input.onCaptureCompleted?.(resourceId);
+  if (!fromPlatform && Object.hasOwn(BILLING_EVENTS, event.event_type) && resourceId) await input.onSubscriptionChanged?.(resourceId);
   // Forgetting a link fails safe, so it doesn't wait on a PayPal read. Only the platform app's own event counts.
   const revokedMerchant = (event.resource as { merchant_id?: unknown } | undefined)?.merchant_id;
   if (fromPlatform && event.event_type === "MERCHANT.PARTNER-CONSENT.REVOKED" && typeof revokedMerchant === "string" && MERCHANT_ID.test(revokedMerchant)) {

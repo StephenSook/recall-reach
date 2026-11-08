@@ -76,6 +76,8 @@ claude mcp add --transport http recall-reach https://recall-reach-web-e022.onren
 
 Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/evidence/paypal) checks these against the code.
 
+Real shops can optionally subscribe to "Recall Reach for shops" through PayPal Subscriptions during the hackathon: PayPal sandbox, no real charge. Families never pay. Everything that keeps families safe stays free: recall checks, notices, safety receipts and refunds. The price is set once in `SHOP_PLAN` in `server/paypal/subscriptions.ts`. Run `pnpm exec node --import tsx scripts/subscription-plan.ts` once with the sandbox app credentials, save its printed `PAYPAL_SUBSCRIPTION_PLAN_ID` in the host environment, and subscribe that app's webhook to `BILLING.SUBSCRIPTION.ACTIVATED`, `.CANCELLED`, `.SUSPENDED` and `.EXPIRED`. Without a plan id the owner sees that subscriptions are not set up. Raw subscription ids (encrypted at rest) and PayPal status facts are purged at 46 hours; after that, cancellation needs the id from the owner's PayPal sandbox account. Deleting the shop, including its automatic deletion after 7 days with no linked PayPal login or a year with no sign-in, does not cancel the subscription at PayPal, so cancel it first. This subscription flow has not been run against PayPal yet.
+
 | PayPal | What it does here | File |
 |---|---|---|
 | `GET /v1/reporting/transactions` (Transaction Search) | Finds a shop's sales near a recall, read again on every run | `server/paypal/transactions.ts` |

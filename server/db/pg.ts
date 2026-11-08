@@ -20,9 +20,11 @@ export const POOL_CONFIG = {
   keepAlive: true,
 } satisfies pg.PoolConfig;
 
+export const BILLING_POOL_MAX = 2;
+
 type Cached = { pool: pg.Pool; db: Db };
 // Kept on globalThis so Next.js dev reloads reuse one pool instead of leaking connections.
-const holder = globalThis as typeof globalThis & { __recallReachDb?: Cached };
+const holder = globalThis as typeof globalThis & { __recallReachDb?: Cached; __recallReachBillingDb?: Cached };
 
 function wrap(client: pg.Pool | pg.PoolClient): Queryable {
   return {
@@ -85,9 +87,57 @@ export function getDb(): Db {
   return db;
 }
 
-/** Closes the pool (scripts and tests). Safe to call when no pool exists. */
+/** Billing has its own clients so a slow PayPal round trip cannot exhaust the safety pool. */
+export function getBillingDb(): Db {
+  if (holder.__recallReachBillingDb) return holder.__recallReachBillingDb.db;
+
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set (see .env.example)");
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    throw new Error("DATABASE_URL is not a valid URL; expected postgres:// or postgresql://");
+  }
+  if (protocol !== "postgres:" && protocol !== "postgresql:") {
+    throw new Error(`DATABASE_URL must be a postgres URL, got ${protocol}//`);
+  }
+
+  const pool = new pg.Pool({ connectionString: url, types: typeOverrides, ...POOL_CONFIG, max: BILLING_POOL_MAX });
+  pool.on("error", (err) => {
+    console.error("postgres billing idle client error:", err.message);
+  });
+
+  const db: Db = {
+    ...wrap(pool),
+    transaction: async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const out = await fn(wrap(client));
+        await client.query("commit");
+        client.release();
+        return out;
+      } catch (err) {
+        try {
+          await client.query("rollback");
+          client.release();
+        } catch (rollbackErr) {
+          client.release(rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr)));
+        }
+        throw err;
+      }
+    },
+  };
+  holder.__recallReachBillingDb = { pool, db };
+  return db;
+}
+
+/** Closes both pools (scripts and tests). Safe to call when no pool exists. */
 export async function closeDb(): Promise<void> {
   const cached = holder.__recallReachDb;
+  const billing = holder.__recallReachBillingDb;
   holder.__recallReachDb = undefined;
-  if (cached) await cached.pool.end();
+  holder.__recallReachBillingDb = undefined;
+  await Promise.all([cached?.pool.end(), billing?.pool.end()]);
 }
