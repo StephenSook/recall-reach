@@ -14,6 +14,9 @@ export default function Privacy() {
       <p data-testid="paypal-link">
         If you connect your PayPal account, the app keeps your PayPal merchant id, encrypted, and what PayPal said about the connection. That is an account link, not sales data, so it is kept like your shop: deleted when you disconnect, when PayPal says you took your consent back, or with your shop. Your sales are still read from PayPal fresh for each check and deleted within 48 hours.
       </p>
+      <p data-testid="owner-link">
+        If you link your PayPal login, the app keeps a keyed hash of your PayPal account id with your shop, so that login opens your shop from another browser. It asks PayPal for nothing else, no name or email, and keeps no PayPal token. It is deleted when you unlink, or with your shop.
+      </p>
       <p data-testid="receipt-lifetime">A safety receipt keeps the family&apos;s item words and encrypted email with the shop that took it, until the family or the shop deletes it or the shop&apos;s data is deleted: 7 days after a real shop joined, within 48 hours for a demo shop. The receipt page shows the exact date. The email is shown only to the owner preparing a notice. Receipt data does not go to Claude or Channel3. The family gets a delete link on screen to bookmark, not by email.</p>
       <p>If you answer &quot;Is this the recalled product?&quot;, the recall number, your own title for the item and your answer are kept with your shop and deleted with it. The public page shows counts only.</p>
       <h2 className="section-title">What goes to a third party</h2>
@@ -24,6 +27,9 @@ export default function Privacy() {
       <h2 className="section-title">For your checkout</h2>
       <p>A box buyers can tick, so future buyers have said yes. For past buyers who never saw it, whether PayPal&apos;s terms allow this email is unclear, and we say so plainly.</p>
       <pre data-testid="opt-in">{OPT_IN}</pre>
+      <p className="note">
+        <a href="/terms">Terms</a>
+      </p>
     </main>
   );
 }

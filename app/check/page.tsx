@@ -9,6 +9,7 @@ import { CheckForm, ItemForm, StoreForm } from "./CheckForm";
 import { type ItemAnswer, readItemAnswer } from "./itemAnswer";
 import { ItemAnswerView } from "./ItemAnswerView";
 import { NARTS_PAGE, nartsLine } from "./nartsList";
+import { OWNER_CODES } from "@/server/owner/messages";
 
 // The route sends a visitor here with a code, and only these sentences are shown.
 const ERRORS: Record<string, string> = {
@@ -25,6 +26,7 @@ const ERRORS: Record<string, string> = {
   EMPTY_FEED: "That store's feed lists nothing to check.",
   BUSY: "Too many checks from here. Try again in an hour.",
   FAILED: "The check could not run. Please try again.",
+  ...OWNER_CODES,
 };
 
 const NOTHING_TYPED = "Type what's on the label, or a model number.";
@@ -89,13 +91,20 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
       <p className="note">
         <a href="/sample-order-file.csv">Try a sample file</a>.
       </p>
+      <form action="/api/owner/paypal/start" method="post" className="actions" data-testid="owner-signin-start">
+        <input type="hidden" name="intent" value="signin" />
+        <button type="submit" className="btn btn-outline">
+          Sign in with PayPal
+        </button>
+      </form>
+      <p className="note">Already have a shop here? Signing in with PayPal opens it, once you&apos;ve linked your PayPal login from your shop&apos;s queue.</p>
       <details className="check-details">
         <summary>What this keeps and checks</summary>
         <p className="note">Our code doesn&apos;t store or log what you type in Check one item. The form puts it in the page address, so the web host&apos;s request logs may include it.</p>
         <p className="note">It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on.</p>
         <p className="note">We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.</p>
         <p className="note">
-          We keep only those columns, and buyer emails are encrypted. No PayPal account is connected, so this can&apos;t refund anything. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
+          We keep only those columns, and buyer emails are encrypted. A refund needs your own PayPal account connected, from your queue. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask.
         </p>
       </details>
       <h2 className="section-title">No file with you?</h2>

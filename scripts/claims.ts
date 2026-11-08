@@ -198,6 +198,18 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    // A feature row until an owner's sign-in is proven on the live site: then it can join Built With by name.
+    name: "An owner signs in with PayPal",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "server/paypal/identity.ts", find: "/v1/identity/oauth2/userinfo" },
+      { file: "app/api/owner/paypal/start/route.ts", call: "authorizeUrl" },
+      { file: "app/api/owner/paypal/return/route.ts", call: "payerIdFromCode" },
+      { file: "app/privacy/page.tsx", find: "If you link your PayPal login" },
+    ],
+  },
+  {
     name: "CPSC Product Safety Warnings",
     status: "claimed",
     evidence: [
