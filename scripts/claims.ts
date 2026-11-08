@@ -184,6 +184,20 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    // A feature row until a refund on a connected shop's behalf is proven live: then it can join Built With by name.
+    name: "A shop connects its own PayPal account",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "server/paypal/platform.ts", find: "/v2/customer/partner-referrals" },
+      { file: "server/paypal/platform.ts", find: '"PayPal-Auth-Assertion"' },
+      { file: "server/shop/connectFlow.ts", call: "createReferral" },
+      { file: "server/paypal/shopClient.ts", call: "actingFor" },
+      { file: "app/api/queue/refunds/execute/route.ts", call: "payPalClientForShop" },
+      { file: "app/privacy/page.tsx", find: "If you connect your PayPal account" },
+    ],
+  },
+  {
     name: "CPSC Product Safety Warnings",
     status: "claimed",
     evidence: [

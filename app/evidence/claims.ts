@@ -10,10 +10,10 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "Reads the shop's sales from Transaction Search, across windows, and reports any window that failed", file: "server/paypal/transactions.ts", find: "/v1/reporting/transactions" },
   { what: "Reads the capture from PayPal again before any refund, and again to reconcile", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
   { what: "Reads PayPal's Disputes API before each refund", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
-  { what: "Sends each refund through PayPal Agent Toolkit, server side", file: "server/paypal/toolkitRefund.ts", find: "refundsThroughToolkit" },
+  { what: "Sends the demo shop's refunds through PayPal Agent Toolkit, server side", file: "server/paypal/toolkitRefund.ts", find: "refundsThroughToolkit" },
   { what: "Sends one request id per refund, so a retry gets the same refund back", file: "server/paypal/client.ts", find: "PayPal-Request-Id" },
   { what: "Reads the refund back from PayPal to reconcile it", file: "server/paypal/refunds.ts", find: "/v2/payments/refunds/" },
-  { what: "That read goes through PayPal's Server SDK, with a real time limit and one layer of retries", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
+  { what: "For the demo shop, that read goes through PayPal's Server SDK, with a real time limit and one layer of retries", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
   { what: "Verifies each webhook's signature and certificate before believing it", file: "server/paypal/webhooks.ts", find: "isTrustedCertUrl" },
   { what: "Puts a sale in the queue when a verified capture webhook arrives", file: "server/demo/liveCatch.ts", find: "catchLiveSale" },
   { what: "A buyer can log in and pay on PayPal's own page, and the order is read back from PayPal before the sale is written", file: "server/demo/liveCatch.ts", find: "finishPayPalBuy" },
@@ -28,8 +28,8 @@ export const PAYPAL_SCREENS: (Claim & { where: string })[] = [
   { what: "POST /v2/checkout/orders", where: "Buy this as a family, Buy with a PayPal sandbox login, and the shopping agent's Approve on PayPal", file: "server/paypal/orders.ts", find: "/v2/checkout/orders" },
   { what: "GET /v2/payments/captures/:id", where: "Review refund, on a sale after the recall", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
   { what: "GET /v1/customer/disputes", where: "Review refund, which won't go on while the buyer has a dispute open", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
-  { what: "POST /v2/payments/captures/:id/refund", where: "The refund button, through PayPal Agent Toolkit", file: "server/paypal/toolkitRefund.ts", find: "REFUND_PATH" },
-  { what: "GET /v2/payments/refunds/:id", where: "Check it against PayPal, through PayPal's Server SDK", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
+  { what: "POST /v2/payments/captures/:id/refund", where: "The refund button, through PayPal Agent Toolkit for the demo shop", file: "server/paypal/toolkitRefund.ts", find: "REFUND_PATH" },
+  { what: "GET /v2/payments/refunds/:id", where: "Check it against PayPal, through PayPal's Server SDK for the demo shop", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
   { what: "Webhook: PAYMENT.CAPTURE.COMPLETED", where: "A new card in the queue, with nothing pressed", file: "server/paypal/webhookHandler.ts", find: "PAYMENT.CAPTURE.COMPLETED" },
 ];
 

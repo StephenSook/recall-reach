@@ -14,7 +14,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 2. **Says when it can't tell.** Most recalls cover certain models, dates or versions, and an order line rarely says which one it was. Those read "Can't tell yet", never a false "not recalled".
 3. **Asks the family what the recall needs.** Claude writes one question resting on words CPSC really wrote, and the check rejects a question whose quote isn't in the record. The owner approves it before it goes out.
 4. **Leaves every message and refund to a person.** The owner approves it, the notice opens in the shop's own mail, and they send it. The family answers on a phone page, and the seller's card changes.
-5. **Refunds only what it should.** A sale after the recall date, within 180 days of the payment, for the exact amount the owner approved. The refund goes through PayPal Agent Toolkit with one request id, and the page reconciles our record against PayPal's refund, PayPal's payment and the webhook.
+5. **Refunds only what it should.** A sale after the recall date, within 180 days of the payment, for the exact amount the owner approved. The demo shop's refund goes through PayPal Agent Toolkit with one request id, and the page reconciles our record against PayPal's refund, PayPal's payment and the webhook.
 
 
 A sale's 180 days, against the recall date and today, on the demo shop:
