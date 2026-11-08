@@ -83,6 +83,8 @@ export function createPayPalClient(opts: {
   tokens: TokenProvider;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Sent on every request, such as PayPal-Auth-Assertion when the platform acts for a connected shop. */
+  headers?: Record<string, string>;
 }): PayPalClient {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -100,7 +102,7 @@ export function createPayPalClient(opts: {
         const tooLate = () => ro.notAfter !== undefined && Date.now() > ro.notAfter;
         if (tooLate()) throw new Error("too late to send this request");
         try {
-          const headers: Record<string, string> = { Authorization: `Bearer ${await opts.tokens.get()}` };
+          const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await opts.tokens.get()}` };
           if (tooLate()) throw new Error("too late to send this request");
           if (ro.body !== undefined || ro.rawJson !== undefined) headers["Content-Type"] = "application/json";
           if (ro.requestId) headers["PayPal-Request-Id"] = ro.requestId;

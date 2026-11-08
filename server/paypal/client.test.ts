@@ -72,6 +72,22 @@ describe("PayPal client", () => {
     expect(s.calls[0].headers.get("content-type")).toBe("application/json");
   });
 
+  it("sends headers the client was made with on every request, such as acting for a connected shop", async () => {
+    const seen: Headers[] = [];
+    const client = createPayPalClient({
+      tokens: fakeTokens(),
+      headers: { "PayPal-Auth-Assertion": "eyJhbGciOiJub25lIn0.eyJpc3MiOiJ4In0." },
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        seen.push(new Headers(init?.headers));
+        return ok({});
+      }) as typeof fetch,
+    });
+    await client.request("GET", "/v2/payments/captures/CAP1");
+    await client.request("POST", "/v2/payments/captures/CAP1/refund", { body: {}, requestId: "r1" });
+    for (const h of seen) expect(h.get("paypal-auth-assertion")).toBe("eyJhbGciOiJub25lIn0.eyJpc3MiOiJ4In0.");
+    expect(seen[1].get("paypal-request-id")).toBe("r1");
+  });
+
   it("refreshes the token once on 401 and retries with the new token", async () => {
     const s = scripted([fail(401), ok({ fine: true })]);
     expect((await s.client.request("GET", "/v2/checkout/orders/O1")).data).toEqual({ fine: true });
