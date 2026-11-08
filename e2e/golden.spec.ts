@@ -144,6 +144,8 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
 
   // PayPal's signed webhook arrives on its own time; reconciliation is complete once it does. No reload: the page sees it by itself.
   await expect(page.getByTestId("webhook")).toContainText("received and verified", { timeout: 170_000 });
+  // PayPal's own check is asked after the reply; first seen SUCCESS on the deployed site Nov 8, 2026, 01:24 UTC.
+  await expect(page.getByTestId("webhook")).toContainText("PayPal's own check: SUCCESS", { timeout: 90_000 });
   await expect(page.getByTestId("refund-event")).toContainText("COMPLETED");
   await expect(page.getByTestId("refund-event")).toContainText("90.00 USD");
   await expect(page.getByTestId("no-exceptions")).toHaveText("All five records agree.");
