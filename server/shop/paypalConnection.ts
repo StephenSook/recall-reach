@@ -37,10 +37,12 @@ export class ConnectionBusy extends Error {
   }
 }
 
-// A link change holds a database connection while it waits on PayPal, and the pool has five. At most this many run at
-// once in this process, so the rest of the site always keeps connections of its own.
+// A link change holds a database connection while it waits on PayPal, and the pool has five. Shops' own changes get at
+// most MAX_LINK_CHANGES at once in this process, and PayPal's revokes a lane of their own that those can't fill, so the
+// rest of the site always keeps two connections and a revoke never queues behind a busy shop.
 export const MAX_LINK_CHANGES = 2;
-let running = 0;
+export const REVOKE_LANES = 1;
+const running = { shop: 0, revoke: 0 };
 
 /**
  * Runs fn alone for this shop's PayPal link, in one transaction holding a per-shop advisory lock, and gives it that
@@ -48,9 +50,10 @@ let running = 0;
  * Nothing waits for it: if the shop's lock is taken, or MAX_LINK_CHANGES are already running, this throws ConnectionBusy
  * straight away, without keeping a connection.
  */
-export async function withConnectionLock<T>(db: Db, shopId: string, fn: (tx: Db) => Promise<T>): Promise<T> {
-  if (running >= MAX_LINK_CHANGES) throw new ConnectionBusy();
-  running += 1;
+export async function withConnectionLock<T>(db: Db, shopId: string, fn: (tx: Db) => Promise<T>, opts: { lane?: "shop" | "revoke" } = {}): Promise<T> {
+  const lane = opts.lane ?? "shop";
+  if (running[lane] >= (lane === "revoke" ? REVOKE_LANES : MAX_LINK_CHANGES)) throw new ConnectionBusy();
+  running[lane] += 1;
   try {
     return await db.transaction(async (tx) => {
       const { rows } = await tx.query<{ locked: boolean }>("select pg_try_advisory_xact_lock(hashtext('shop-paypal-connection'), hashtext($1)) as locked", [shopId]);
@@ -58,7 +61,7 @@ export async function withConnectionLock<T>(db: Db, shopId: string, fn: (tx: Db)
       return fn({ ...tx, transaction: (inner) => inner(tx) });
     });
   } finally {
-    running -= 1;
+    running[lane] -= 1;
   }
 }
 

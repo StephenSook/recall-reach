@@ -3,7 +3,8 @@ import { withCallLog } from "@/server/paypal/callLog";
 import { platformFromEnv } from "@/server/paypal/platform";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { startConnect } from "@/server/shop/connectFlow";
-import { BUSY } from "@/server/shop/connectMessages";
+import { BUSY, TOO_OFTEN } from "@/server/shop/connectMessages";
+import { linkChangeAllowed } from "@/server/shop/linkLimit";
 import { ConnectionBusy } from "@/server/shop/paypalConnection";
 import { baseUrl, currentSession, fromThisSite, refused, withMessage } from "@/server/web/http";
 
@@ -20,6 +21,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!platform) return withMessage(request, "Connecting a PayPal account isn't set up on this site yet.");
   const recordKey = recordKeyFromEnv();
   if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
+  if (!linkChangeAllowed(session.shopId)) return withMessage(request, TOO_OFTEN);
   let started;
   try {
     started = await withCallLog(db, session.shopId, () => startConnect(db, platform, { shopId: session.shopId, recordKey, returnUrl: `${baseUrl(request)}/api/shop/paypal/back`, now: new Date() }));

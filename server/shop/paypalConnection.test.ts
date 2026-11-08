@@ -181,6 +181,20 @@ describe("a shop's PayPal connection", () => {
     await expect(withConnectionLock(db, shopId, async () => "ran")).resolves.toBe("ran");
   });
 
+  it("keeps a lane for revokes that shops' own checks can't fill", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const other = await createShop(db, { name: "B SHOP", kind: "REAL" });
+    const third = await createShop(db, { name: "C SHOP", kind: "REAL" });
+    const checks = [withConnectionLock(db, shopId, async () => gate), withConnectionLock(db, other, async () => undefined)];
+    await expect(withConnectionLock(db, third, async () => undefined)).rejects.toBeInstanceOf(ConnectionBusy);
+    const revoke = withConnectionLock(db, third, async () => "revoked", { lane: "revoke" });
+    await expect(withConnectionLock(db, other, async () => undefined, { lane: "revoke" })).rejects.toBeInstanceOf(ConnectionBusy);
+    open();
+    await Promise.all(checks);
+    await expect(revoke).resolves.toBe("revoked");
+  });
+
   it("is labelled as the shop's own", async () => {
     const { rows } = await db.query<{ c: string }>("select obj_description('shop_paypal_connections'::regclass, 'pg_class') as c");
     expect(rows[0].c).toBe("data-source: shop-owned");

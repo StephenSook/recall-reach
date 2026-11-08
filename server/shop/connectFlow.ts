@@ -94,7 +94,7 @@ export async function confirmRevoked(
         return status.merchantId === input.merchantId ? "kept" : "replaced";
       }
       return (await clearSellerStatus(tx, { shopId: shop.shopId, read, now })) ? "forgotten" : null;
-    });
+    }, { lane: "revoke" });
     if (outcome) counts[outcome] += 1;
   }
   return counts;

@@ -4,6 +4,9 @@ import type { Refreshed } from "./connectFlow";
 /** What a shop sees when its link is already being changed, or the site is already busy with other shops' links. */
 export const BUSY = "A check with PayPal is already running. Try again in a minute.";
 
+/** What a shop sees after many checks or connects in a short time. */
+export const TOO_OFTEN = "You have checked with PayPal many times just now. Try again in a few minutes.";
+
 export function refreshedMessage(r: Refreshed): string {
   if (r.state === "NOT_STARTED") return "Connect your PayPal account first.";
   if (r.state === "WAITING") return "PayPal hasn't finished connecting your account yet. Check again in a minute.";
