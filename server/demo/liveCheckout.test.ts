@@ -201,7 +201,7 @@ describe("buying through PayPal's own approval page", () => {
       const before = await liveLines();
       expect(before).toHaveLength(1);
       await expect(Promise.all([finish(stateOf(started), started.orderId), finish(stateOf(started), started.orderId)])).resolves.toEqual([undefined, undefined]);
-      expect(await liveLines()).toEqual(before);
+      expect(await liveLines()).toEqual([{ ...before[0], capture_started: true, capture_pending: false }]);
       expect(paypal.captures).toHaveLength(1);
     });
 
@@ -266,6 +266,23 @@ describe("buying through PayPal's own approval page", () => {
       expect(await liveLines()).toEqual(before);
     });
 
+    it("keeps a sale captured after a cancellation read PayPal, so its webhook still finds it", async () => {
+      const started = await start();
+      const state = stateOf(started);
+      // The cancel reads the order while it still needs the buyer. The capture lands before the cancel acts on that answer.
+      const stale: PayPalClient = {
+        request: (async (method: Method, path: string, opts?: RequestOptions) => {
+          const answer = JSON.parse(JSON.stringify(await paypal.client.request(method, path, opts)));
+          paypal.approve(started.orderId);
+          await finish(state, started.orderId);
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      expect(await cancelPayPalBuy(db, { shopId, sessionId: SESSION, state, sessionSecret: SESSION_KEY, orderId: started.orderId }, stale)).toBe(false);
+      expect(await liveLines()).toHaveLength(1);
+      expect(await catchLiveSale(db, paypal.client, { captureId: paypal.captures[0].id, now: NOW })).toBe("CAUGHT");
+    });
+
     it("reports whether a signed cancellation actually released its reservation", async () => {
       const started = await start();
       const input = { shopId, sessionId: SESSION, state: stateOf(started), sessionSecret: SESSION_KEY, orderId: started.orderId };
@@ -314,6 +331,9 @@ describe("buying through PayPal's own approval page", () => {
     it("rolls the webhook payment back if clearing pending fails, so cancellation cannot see half a confirmation", async () => {
       const started = await approved();
       await finish(stateOf(started), started.orderId);
+      // As if the buyer's return never confirmed it, so the webhook is the first to.
+      await db.query("delete from paypal_payments where shop_id = $1 and order_id = $2", [shopId, started.orderId]);
+      await db.query("update order_lines set capture_pending = true where shop_id = $1 and live_sale", [shopId]);
       const transaction = db.transaction.bind(db);
       const query = db.query.bind(db);
       const refuseUpdate = (sql: string) => { if (sql.includes("set capture_pending = false")) throw new Error("confirmation failed"); };
@@ -347,7 +367,7 @@ describe("buying through PayPal's own approval page", () => {
       await checkShop();
       paypal.approve(started.orderId);
       await finish(stateOf(started), started.orderId);
-      await checkShop(); // Capture responses alone do not promote a reservation into a matched sale.
+      expect((await liveLines())[0].capture_pending).toBe(false); // PayPal's own order shows the completed capture.
       expect(await catchLiveSale(db, paypal.client, { captureId: paypal.captures[0].id, now: NOW })).toBe("CAUGHT");
       expect((await liveLines())[0].capture_pending).toBe(false);
       expect((await db.query("select 1 from recall_matches where order_line_id = $1", [line.id])).rows.length).toBeGreaterThan(0);
@@ -438,6 +458,43 @@ describe("buying through PayPal's own approval page", () => {
       expect(await catchLiveSale(db, paypal.client, { captureId: paypal.captures[0].id, now: NOW })).toBe("CAUGHT");
       const row = (await loadQueue(db, shopId, "s")).rows.find((r) => r.recallNumber === "27018" && !r.isListing);
       expect(row).toMatchObject({ verdict: "MATCH", strength: "CONFIRMED", joinState: "IDENTIFIED" });
+    });
+
+    describe("with no webhook ever delivered", () => {
+      const held = async () => (await db.query<{ capture_pending: boolean; payments: number }>(
+        "select l.capture_pending, (select count(*)::int from paypal_payments p where p.shop_id = l.shop_id and p.order_number = l.order_number) as payments from order_lines l where l.shop_id = $1 and l.live_sale",
+        [shopId],
+      )).rows;
+
+      it("confirms the sale as soon as PayPal says the capture completed", async () => {
+        const started = await approved();
+        await finish(stateOf(started), started.orderId);
+        expect(await held()).toEqual([{ capture_pending: false, payments: 1 }]);
+      });
+
+      it("confirms on a reload that finds the order already completed", async () => {
+        const started = await approved();
+        await finish(stateOf(started), started.orderId);
+        await db.query("delete from paypal_payments where shop_id = $1 and capture_id like 'CAPTURE-%' and order_id = $2", [shopId, started.orderId]);
+        await db.query("update order_lines set capture_pending = true where shop_id = $1 and live_sale", [shopId]);
+        await finish(stateOf(started), started.orderId);
+        expect(await held()).toEqual([{ capture_pending: false, payments: 1 }]);
+        expect(paypal.captures).toHaveLength(1);
+      });
+
+      it("confirms when the capture's answer was lost but PayPal's order says completed", async () => {
+        paypal = fakePayPal({
+          captureError: (order) => {
+            const unit = order.purchase_units[0];
+            order.status = "COMPLETED";
+            unit.payments = { captures: [{ id: `CAPTURE-${order.id}`, status: "COMPLETED", create_time: "2026-11-06T14:59:48Z", amount: unit.amount }] };
+            return new Error("PayPal gave no answer");
+          },
+        });
+        const started = await approved();
+        await finish(stateOf(started), started.orderId);
+        expect(await held()).toEqual([{ capture_pending: false, payments: 1 }]);
+      });
     });
 
     it("is safe to reload: no second capture, no second sale", async () => {

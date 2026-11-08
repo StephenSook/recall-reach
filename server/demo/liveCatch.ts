@@ -42,14 +42,18 @@ async function withSaleLock<T>(db: Db, shopId: string, run: (tx: Queryable) => P
   });
 }
 
-/** A failed checkout may release only a reservation that no completed payment has confirmed. */
-async function releaseReservation(db: Db, shopId: string, orderNumber: string): Promise<boolean> {
+/**
+ * A failed checkout may release only a reservation that no completed payment has confirmed. Once a capture has begun only
+ * that capture's own run may release it, having seen it fail: anyone else's read of PayPal may be from before it began.
+ */
+async function releaseReservation(db: Db, shopId: string, orderNumber: string, opts: { evenIfCaptureStarted?: boolean } = {}): Promise<boolean> {
   return withSaleLock(db, shopId, async (tx) => {
     const { rows } = await tx.query(
       `delete from order_lines l where l.shop_id = $1 and l.order_number = $2 and l.capture_pending
+       and (not l.capture_started or $3::boolean)
        and not exists (select 1 from paypal_payments p where p.shop_id = l.shop_id and p.order_number = l.order_number)
        returning l.id`,
-      [shopId, orderNumber],
+      [shopId, orderNumber, Boolean(opts.evenIfCaptureStarted)],
     );
     return rows.length > 0;
   });
@@ -220,13 +224,12 @@ export async function cancelPayPalBuy(
   const signed = readState(input.state, input.shopId, input.sessionId, input.sessionSecret);
   if (!signed) throw new LiveSaleRefused();
   if (input.orderId === undefined) return false;
-  if (input.orderId !== undefined) {
-    if (!client || !PAYPAL_ID.test(input.orderId)) throw new LiveSaleRefused();
-    const order = await getOrder(client, input.orderId);
-    if (order.invoiceId !== signed.orderNumber) throw new LiveSaleRefused();
-    if (order.status === "APPROVED" || order.status === "COMPLETED") return false;
-  }
-  return releaseReservation(db, input.shopId, signed.orderNumber);
+  if (!client || !PAYPAL_ID.test(input.orderId)) throw new LiveSaleRefused();
+  const order = await getOrder(client, input.orderId);
+  if (order.invoiceId !== signed.orderNumber) throw new LiveSaleRefused();
+  if (order.status === "APPROVED" || order.status === "COMPLETED") return false;
+  // VOIDED is final: no capture can land after this read, whatever began before it.
+  return releaseReservation(db, input.shopId, signed.orderNumber, { evenIfCaptureStarted: order.status === "VOIDED" });
 }
 
 /**
@@ -257,18 +260,27 @@ export async function finishPayPalBuy(
         input.shopId, signed.orderNumber, createContactCipher(input.secret, input.shopId).seal(input.demoEmail),
       ]);
     }
+    await tx.query("update order_lines set capture_started = true where shop_id = $1 and order_number = $2", [input.shopId, signed.orderNumber]);
   });
-  if (order.status === "COMPLETED") return;
+  // A sale doesn't wait on a webhook that may never come. The capture stands if this fails, and the webhook confirms it too.
+  const confirm = async (completed: OrderFacts | null) => {
+    if (!completed) return;
+    await confirmLiveSale(db, input.shopId, completed).catch((err: unknown) => {
+      console.error("sale confirmation failed:", err instanceof Error ? err.name : "unknown error");
+    });
+  };
+  if (order.status === "COMPLETED") return confirm(order);
   try {
     await captureOrder(client, input.orderId, `capture-${input.orderId}`);
   } catch (err) {
     // The error alone can't say: another return may have captured it, or this try may have. PayPal's order can.
     const after = await getOrder(client, input.orderId).catch(() => null);
-    if (after?.status === "COMPLETED") return;
+    if (after?.status === "COMPLETED") return confirm(after);
     // APPROVED can still complete. An unreadable order also leaves the capture's outcome unknown.
-    if (after && after.status !== "APPROVED") await releaseReservation(db, input.shopId, signed.orderNumber);
+    if (after && after.status !== "APPROVED") await releaseReservation(db, input.shopId, signed.orderNumber, { evenIfCaptureStarted: true });
     throw err;
   }
+  await confirm(await getOrder(client, input.orderId).catch(() => null));
 }
 
 export type CatchResult = "CAUGHT" | "ALREADY" | "NOT_COMPLETED" | "NOT_A_LIVE_SALE";
