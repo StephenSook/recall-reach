@@ -9,10 +9,12 @@ import { getHealth } from "@/server/health";
 import { testDb } from "@/test/pglite";
 import { checkAnswerSchema } from "../sdk/typescript/src/models/check-answer";
 import { healthSchema } from "../sdk/typescript/src/models/health";
+import { publicRecallSchema } from "../sdk/typescript/src/models/public-recall";
 
 let db: Queryable;
 vi.mock("@/server/db/pg", () => ({ getDb: () => db }));
 import { GET } from "@/app/api/check/route";
+import { GET as readRecall } from "@/app/api/recalls/[recallNumber]/route";
 
 const fixtureText = readFileSync(new URL("../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 
@@ -36,6 +38,14 @@ describe("the generated SDK reads the real answers", () => {
     const read = checkAnswerSchema.decode(answer);
     expect(read.results.map((r) => r.recallNumber)).toEqual(answer.results.map((r: { recallNumber: string }) => r.recallNumber));
     expect(read.mentioned.total).toBe(answer.mentioned.total);
+  });
+
+  it("reads one recall by its number", async () => {
+    const res = await readRecall(new Request("http://localhost/api/recalls/27072", { headers: { "true-client-ip": "198.51.100.10" } }), { params: Promise.resolve({ recallNumber: "27072" }) });
+    expect(res.status).toBe(200);
+    const read = publicRecallSchema.decode(await res.json());
+    expect(read.found).toBe(true);
+    expect(read.recallNumber).toBe("27072");
   });
 
   it("refuses an answer missing a field the SDK needs", async () => {

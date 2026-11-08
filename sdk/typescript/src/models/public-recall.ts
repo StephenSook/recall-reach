@@ -4,8 +4,7 @@ import { imageSchema, type Image } from "./image.js";
 import { productSchema, type Product } from "./product.js";
 
 export type PublicRecall = {
-  /** @default "True" */
-  found?: "True";
+  found: boolean;
   recallNumber: string;
   title: string;
   recallDate: string;
@@ -18,7 +17,7 @@ export type PublicRecall = {
 };
 
 export const publicRecallSchema: Schema<PublicRecall> = s.object<PublicRecall>({
-  found: s.defaulted(s.literal("True"), "True"),
+  found: s.boolean(),
   recallNumber: s.string(),
   title: s.string(),
   recallDate: s.dateOnly(),

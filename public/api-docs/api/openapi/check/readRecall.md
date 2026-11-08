@@ -102,8 +102,6 @@ components:
       properties:
         found:
           type: boolean
-          enum:
-            - true
         recallNumber:
           type: string
           examples:

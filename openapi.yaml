@@ -252,7 +252,7 @@ components:
       additionalProperties: false
       required: [found, recallNumber, title, recallDate, url, description, products, hazards, remedies, image]
       properties:
-        found: { type: boolean, enum: [true] }
+        found: { type: boolean }
         recallNumber: { type: string, example: "27072" }
         title: { type: string }
         recallDate: { type: string, format: date }
