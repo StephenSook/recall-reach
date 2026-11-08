@@ -464,6 +464,7 @@ test.describe("a recall's refund windows", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(timeline.locator(".b-sch-event")).toHaveCount(2);
     await expect(page.getByTestId("line-today")).toHaveCount(1);
+    expect(elsewhere).toEqual([]);
 
     await page.getByRole("link", { name: "Back to the queue" }).click();
     await expect(page.getByTestId("match-grid")).toBeVisible();
@@ -481,6 +482,7 @@ test.describe("a recall's refund windows", () => {
     await expect(timeline.locator(".b-sch-event").first()).toContainText("Not a confirmed match");
 
     expect((await page.goto("/queue/recalls/00000"))?.status()).toBe(404);
+    expect(elsewhere).toEqual([]);
   });
 });
 
