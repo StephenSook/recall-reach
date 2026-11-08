@@ -29,6 +29,9 @@ import { WarningCards } from "./WarningCards";
 import { CheckWithClaude } from "./CheckWithClaude";
 import { PayPalCalls } from "./PayPalCalls";
 import { PayPalConnect } from "./PayPalConnect";
+import { OwnerSignIn } from "./OwnerSignIn";
+import { readOwnerLink } from "@/server/owner/ownerLink";
+import { ownerSignInFromEnv } from "@/server/paypal/identity";
 import { platformFromEnv } from "@/server/paypal/platform";
 import { readConnection } from "@/server/shop/paypalConnection";
 import { PushRegister } from "./PushRegister";
@@ -279,6 +282,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   // Only a real shop with an order file links its own PayPal: its file is what the payments join to.
   const linksPayPal = shop.kind === "REAL" && !listings;
   const connection = linksPayPal ? await readConnection(getDb(), { shopId: session.shopId, secret: secret("SHOP_DATA_KEY") }).catch(() => null) : null;
+  const ownerLink = shop.kind === "REAL" ? await readOwnerLink(getDb(), session.shopId).catch(() => null) : null;
   const shopName = shop.name;
   const shopKind = shop.kind;
   const receiptToken = await shopReceiptLink(getDb(), session.shopId, secret("SESSION_SECRET"));
@@ -380,6 +384,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
       {linksPayPal ? <PayPalConnect connection={connection} setUp={platformFromEnv() !== null} /> : null}
+      {shop.kind === "REAL" ? <OwnerSignIn link={ownerLink} setUp={ownerSignInFromEnv(baseUrl()) !== null} /> : null}
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; } .queue-heading { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; clip-path: none !important; white-space: normal !important; }`}</style>
       </noscript>
