@@ -4,6 +4,7 @@ import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
 import { checkListing } from "@/server/match/textCheck";
 import { createSlip, SLIP_LASTS_MS } from "@/server/paypal/shopperOrder";
+import { recordExampleRun } from "@/server/shopper/exampleRuns";
 import { channel3Listings } from "@/server/sweep/channel3";
 import { businessDay } from "@/server/time/businessDay";
 import { fromThisSite, refused } from "@/server/web/http";
@@ -62,6 +63,19 @@ export async function POST(request: Request): Promise<Response> {
   });
   // The offer's ten minutes start when it's made, not when the agent began.
   const slip = run.pick ? await createSlip(db, run.pick.listing, new Date()) : null;
+  // Only a run of one of the page's own examples is kept, for /evidence/shopper. Nothing a visitor typed is recorded.
+  await recordExampleRun(db, {
+    ask,
+    budgetCents: Math.round(budget * 100),
+    ranAt: now,
+    outcome: run.outcome,
+    models: run.models,
+    steps: run.steps,
+    blocked: run.blocked.map((b) => ({ title: b.listing.title, priceCents: b.listing.priceCents, recalls: b.recalls })),
+    pick: run.pick ? { title: run.pick.listing.title, brand: run.pick.listing.brand, priceCents: run.pick.listing.priceCents, recallsChecked: run.pick.recallsChecked, from: run.pick.from, similar: run.pick.similar } : null,
+    slipId: slip?.id ?? null,
+    offerExpiresAt: slip ? new Date(slip.expiresAt) : null,
+  }).catch((err) => console.error("shopper example run not recorded:", err instanceof Error ? err.name : "unknown error"));
   const view: ShopperView = {
     outcome: run.outcome,
     steps: run.steps,

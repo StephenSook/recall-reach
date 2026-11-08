@@ -5,6 +5,7 @@ import type { TextCheckAnswer } from "../match/textCheck";
 import type { BuyableListing } from "../sweep/channel3";
 import { createRecordKey } from "../privacy/recordKey";
 import { PayPalApiError, type PayPalClient } from "./client";
+import { latestExampleRun, recordExampleRun } from "../shopper/exampleRuns";
 import { cartHash, createSlip, finishShopperOrder, readFinishedSlip, SlipRefused, startShopperOrder } from "./shopperOrder";
 
 const NOW = new Date("2026-11-07T15:00:00Z");
@@ -174,6 +175,13 @@ describe("an offer from the shopping agent", () => {
       await finish(id, pp.client);
       expect(pp.posts().map((c) => c.path)).toEqual(["/v2/checkout/orders", "/v2/checkout/orders/ORDER1/capture"]);
       expect(await readFinishedSlip(db, id)).toEqual({ title: "Folding Tub", priceCents: 2499, currency: "USD" });
+    });
+
+    it("marks a recorded example run paid once PayPal's order and capture say COMPLETED", async () => {
+      const { id, pp } = await started();
+      await recordExampleRun(db, { ask: "A baby bath seat", budgetCents: 5000, ranAt: NOW, outcome: "PICKED", models: ["claude-sonnet-5-5"], steps: [], blocked: [], pick: null, slipId: id, offerExpiresAt: null });
+      await finish(id, pp.client);
+      expect((await latestExampleRun(db))?.paidAt).toBe(NOW.toISOString());
     });
 
     it("a reload changes nothing and captures nothing again", async () => {

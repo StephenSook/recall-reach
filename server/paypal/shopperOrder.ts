@@ -7,6 +7,7 @@ import type { RecordKey } from "../privacy/recordKey";
 import type { BuyableListing, ListingSource } from "../sweep/channel3";
 import type { PayPalClient } from "./client";
 import { captureOrder, createPayPalOrder, getOrder } from "./orders";
+import { markExamplePaid } from "../shopper/exampleRuns";
 
 export const SLIP_LASTS_MS = 10 * 60_000;
 const KEEP_SLIPS_HOURS = 48;
@@ -110,6 +111,7 @@ export async function finishShopperOrder(db: Queryable, client: PayPalClient, in
   if (after.capture?.status === "PENDING") throw new SlipRefused("HELD", "PayPal is still holding this order.");
   if (after.capture?.status !== "COMPLETED") throw notPaid();
   await db.query("update shopping_slips set finished_at = coalesce(finished_at, $2) where id = $1", [slip.id, input.now.toISOString()]);
+  await markExamplePaid(db, slip.id, input.now);
 }
 
 export async function readFinishedSlip(db: Queryable, slipId: string): Promise<{ title: string; priceCents: number; currency: string } | null> {
