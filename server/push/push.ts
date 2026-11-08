@@ -65,7 +65,7 @@ export async function pushNewCards(db: Queryable, shopId: string, matchIds: stri
       `select distinct on (r.recall_number) m.id, r.recall_number, m.shop_item_id is not null as listed, m.safety_receipt_id is not null as receipt, m.verdict = 'MATCH' as matched
        from recall_matches m join recalls r on r.recall_id = m.recall_id
        where m.shop_id = $1 and m.id = any($2::uuid[]) and m.verdict <> 'CLEARED' and m.strength in ('CONFIRMED', 'BRAND')
-       order by r.recall_number desc, (m.strength = 'CONFIRMED') desc, (m.shop_item_id is null) desc
+       order by r.recall_number desc, (m.strength = 'CONFIRMED') desc, (m.shop_item_id is null) desc, (m.safety_receipt_id is null) desc, m.id
        limit $3`,
       [shopId, matchIds, MAX_PUSHES],
     );

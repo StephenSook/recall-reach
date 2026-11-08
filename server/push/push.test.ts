@@ -173,6 +173,29 @@ describe("a phone's token", () => {
       expect(matched.data.path).toBe(`/queue#sale-${rows[0].id}`);
     });
 
+    it("calls a recall that names both a sale and a safety receipt something you sold, every time", async () => {
+      await db.query(`insert into safety_receipts (id, shop_id, item, email_enc, delete_token_hash) values ('00000000-0000-4000-8000-0000000000bb', $1, 'x', 'x', 'h')`, [shopId]);
+      await db.query(`insert into order_lines (id, shop_id, order_number, line_no, title, quantity, unit_price_cents, currency, ordered_on, source)
+        values ('00000000-0000-4000-8000-0000000000cc', $1, 'A1', 1, 'x', 1, 100, 'USD', '2026-09-01', 'test')`, [shopId]);
+      const sha = (await db.query<{ raw_sha256: string }>("select raw_sha256 from recalls where recall_id = $1", [recallId])).rows[0].raw_sha256;
+      // The receipt goes in first, so an order that falls back on insertion would pick it.
+      const ids: string[] = [];
+      for (const col of ["safety_receipt_id", "order_line_id"]) {
+        const { rows } = await db.query<{ id: string }>(
+          `insert into recall_matches (shop_id, recall_id, recall_sha256, ${col}, verdict, matched, missing, reason, strength)
+           values ($1, $2, $3, $4, 'MATCH', '[]', '[]', 'r', 'CONFIRMED') returning id`,
+          [shopId, recallId, sha, col === "safety_receipt_id" ? "00000000-0000-4000-8000-0000000000bb" : "00000000-0000-4000-8000-0000000000cc"],
+        );
+        ids.push(rows[0].id);
+      }
+      await registerPushToken(db, shopId, TOKEN);
+      const f = expo();
+      await pushNewCards(db, shopId, ids, f as unknown as typeof fetch);
+      const [message] = JSON.parse(String(f.mock.calls[0][1].body)) as { body: string; data: { path: string } }[];
+      expect(message.body).toBe("Recall 27018: something you sold needs a look");
+      expect(message.data.path).toBe(`/queue#sale-${ids[1]}`);
+    });
+
     it("stays quiet about a card that only shares a word with a recall", async () => {
       await db.query("update recall_matches set strength = 'PRODUCT_WORDS' where id = $1", [matchId]);
       await registerPushToken(db, shopId, TOKEN);
