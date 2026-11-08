@@ -413,6 +413,8 @@ test.describe("a recall's refund windows", () => {
     await startDemoShop(page);
     const elsewhere: string[] = [];
     page.on("request", (r) => {
+      // Only what this page itself asks for. The demo queue's shelf button loads PayPal's own script, which is its job.
+      if (!r.frame().url().includes("/queue/recalls/")) return;
       if (!r.url().startsWith(baseURL ?? "") && !r.url().startsWith("data:")) elsewhere.push(new URL(r.url()).host);
     });
 
