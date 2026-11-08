@@ -4,7 +4,7 @@ import type { ColDef, GridApi, ICellRendererParams, IRowNode } from "ag-grid-com
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
 import { gridTheme } from "@/app/gridSetup";
-import { inTab, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
+import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
 const TABS: { id: GridTab; label: string }[] = [
@@ -27,6 +27,9 @@ function StateCell({ data }: ICellRendererParams<Row>) {
 function PathCell({ data }: ICellRendererParams<Row>) {
   return data?.path ? <span className={chipClass(data.path)}>{data.path}</span> : null;
 }
+function SoldCell({ data }: ICellRendererParams<Row>) {
+  return data ? soldLabel(data) : null;
+}
 function OpenCell({ data }: ICellRendererParams<Row>) {
   return data?.anchor ? <a href={data.anchor}>Open</a> : null;
 }
@@ -37,16 +40,13 @@ const columns: ColDef<Row>[] = [
   { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
   { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: true },
   { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: true },
-  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter" },
+  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell },
   { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: true },
   { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true },
   { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false },
 ];
 
 /** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
-/** What a store's listings have no use for, or no right to say: nothing there was sold, and nothing can be sent. */
-const SALE_COLUMNS = new Set(["path", "soldOn", "noticeState"]);
-
 export default function MatchGrid({ rows, startOn = "needs", listings = false }: { rows: GridRow[]; startOn?: GridTab; listings?: boolean }) {
   const api = useRef<GridApi<Row> | null>(null);
   const tabRef = useRef<GridTab>(startOn);
@@ -56,7 +56,10 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
   const candidates = rows.filter((r) => r.verdict !== "UNIDENTIFIED").length;
   const totals = useMemo(() => [{ product: `${shown} of ${candidates} shown` }], [shown, candidates]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
-  const shownColumns = useMemo(() => (listings ? columns.filter((c) => !SALE_COLUMNS.has(String(c.field))) : columns), [listings]);
+  const shownColumns = useMemo(() => {
+    const hidden = hiddenColumns(rows, listings);
+    return columns.filter((c) => !hidden.has(String(c.field)));
+  }, [rows, listings]);
 
   const choose = (next: GridTab) => {
     tabRef.current = next;

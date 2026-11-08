@@ -30,6 +30,19 @@ export interface GridRow {
   anchor: string | null;
 }
 
+/** What a store's listings have no use for, or no right to say: nothing there was sold, and nothing can be sent. */
+const SALE_COLUMNS = ["path", "soldOn", "noticeState"];
+
+/** The columns a queue leaves out. Message comes back with the first message. */
+export function hiddenColumns(rows: Pick<GridRow, "noticeState">[], listings: boolean): Set<string> {
+  const hidden = new Set(listings ? SALE_COLUMNS : []);
+  if (!rows.some((r) => r.noticeState)) hidden.add("noticeState");
+  return hidden;
+}
+
+/** A row with no sale date is an item on the shelf, not a blank. */
+export const soldLabel = (row: Partial<Pick<GridRow, "soldOn" | "listedOnShelf">>): string | null => row.soldOn ?? (row.listedOnShelf ? "On the shelf" : null);
+
 /** CPSC's words and the sale date. No shop text, and nothing about a buyer. */
 export const TELL_CPSC_COLUMNS = ["recallNumber", "product", "soldOn"] as const satisfies readonly (keyof GridRow)[];
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QueueRow } from "@/server/queue/queue";
 import { toCards } from "@/server/queue/queue";
-import { gridRows, inTab, TELL_CPSC_COLUMNS, unidentifiedRows } from "./gridRows";
+import { gridRows, hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, unidentifiedRows } from "./gridRows";
 
 const base: QueueRow = {
   matchId: "m1",
@@ -34,6 +34,28 @@ const base: QueueRow = {
 const row = (over: Partial<QueueRow>): QueueRow => ({ ...base, ...over });
 const build = (rows: QueueRow[]) => gridRows(rows, toCards(rows).cards);
 const by = (rows: ReturnType<typeof build>, id: string) => rows.find((r) => r.matchId === id)!;
+
+describe("which columns the grid shows", () => {
+  it("hides Message while no row has one", () => expect(hiddenColumns([{ noticeState: null }, { noticeState: null }], false).has("noticeState")).toBe(true));
+  it("shows Message as soon as one row has one", () => expect(hiddenColumns([{ noticeState: null }, { noticeState: "Prepared" }], false).has("noticeState")).toBe(false));
+  it("hides what a store's listings have no use for, whatever else is there", () => {
+    const hidden = hiddenColumns([{ noticeState: "Prepared" }], true);
+    for (const field of ["path", "soldOn", "noticeState"]) expect(hidden.has(field)).toBe(true);
+  });
+  it("hides no sale column on an ordinary queue", () => {
+    const hidden = hiddenColumns([{ noticeState: "Prepared" }], false);
+    expect(hidden.has("path")).toBe(false);
+    expect(hidden.has("soldOn")).toBe(false);
+  });
+});
+
+describe("what the Sold column says", () => {
+  it("gives the date of a sale", () => expect(soldLabel({ soldOn: "2026-09-22", listedOnShelf: false })).toBe("2026-09-22"));
+  it("says an item still listed is on the shelf", () => expect(soldLabel({ soldOn: null, listedOnShelf: true })).toBe("On the shelf"));
+  it("keeps a sale's date even if the item is also listed", () => expect(soldLabel({ soldOn: "2026-09-22", listedOnShelf: true })).toBe("2026-09-22"));
+  it("says nothing for a row with neither", () => expect(soldLabel({ soldOn: null, listedOnShelf: false })).toBeNull());
+  it("says nothing for the totals row", () => expect(soldLabel({})).toBeNull());
+});
 
 describe("which rows can be approved from the grid", () => {
   it("a sale's lead can be", () => {
