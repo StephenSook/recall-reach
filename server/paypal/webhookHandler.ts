@@ -1,9 +1,10 @@
+import { valueToCents } from "./orders";
 import { recordPayoutItemEvent } from "./payouts";
 import { createHash } from "node:crypto";
 import type { Queryable } from "../db/types";
 import type { RecordKey } from "../privacy/recordKey";
 import { PAYPAL_PURGE_CUTOFF_HOURS } from "../privacy/retention";
-import { readTransmissionHeaders, verifyWebhook, type CertFetcher, type WebhookEvent } from "./webhooks";
+import { readTransmissionHeaders, verifyWebhook, type CertFetcher, type TransmissionHeaders, type WebhookEvent } from "./webhooks";
 
 export const MAX_WEBHOOK_BYTES = 1_048_576;
 
@@ -15,6 +16,23 @@ const RESOURCE_TYPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 export interface WebhookResponse {
   status: number;
   body: Record<string, unknown>;
+  /** Asks PayPal's own check about a newly stored event and records its answer. Run it after answering PayPal. */
+  followUp?: () => Promise<void>;
+}
+
+/** PayPal's own answer about a delivery. Never a gate: our certificate check is. */
+export type PayPalCheck = "SUCCESS" | "FAILURE" | "UNAVAILABLE";
+
+/** A refund event's own status and amount, kept only when they read exactly. */
+function refundFacts(event: WebhookEvent): { status: string | null; cents: number | null; currency: string | null } {
+  const none = { status: null, cents: null, currency: null };
+  if (event.event_type !== "PAYMENT.CAPTURE.REFUNDED") return none;
+  const r = event.resource as { status?: unknown; amount?: { value?: unknown; currency_code?: unknown } } | undefined;
+  const status = typeof r?.status === "string" && /^[A-Z_]{1,30}$/.test(r.status) ? r.status : null;
+  const value = r?.amount?.value;
+  const currency = r?.amount?.currency_code;
+  const amount = typeof value === "string" && /^\d{1,9}(\.\d{1,2})?$/.test(value) && typeof currency === "string" && /^[A-Z]{3}$/.test(currency);
+  return { status, cents: amount ? valueToCents(value as string) : null, currency: amount ? (currency as string) : null };
 }
 
 // PayPal's form. Date.parse also takes "1" and "Nov 5 2026 8pm", which either fail in Postgres or get stored as a guess.
@@ -47,6 +65,8 @@ export async function handleWebhookDelivery(input: {
   fetchCert?: CertFetcher;
   now?: () => number;
   onCaptureCompleted?: (captureId: string) => Promise<unknown>;
+  /** PayPal's verify-webhook-signature, given the exact bytes. Asked only about a new event our check verified. */
+  checkWithPayPal?: (transmission: TransmissionHeaders, webhookId: string, rawBody: Uint8Array) => Promise<PayPalCheck>;
 }): Promise<WebhookResponse> {
   if (!input.webhookId || !input.recordKey) {
     console.error("PayPal webhook received but PAYPAL_WEBHOOK_ID or RECORD_HMAC_SECRET is not set");
@@ -120,10 +140,11 @@ export async function handleWebhookDelivery(input: {
   }
   const transmissionNew = claimed.rows.length > 0;
   const resourceId = typeof event.resource?.id === "string" ? event.resource.id : null;
+  const refund = refundFacts(event);
   const { rows } = await input.db.query(
     `insert into paypal_webhook_events
-       (event_id_hmac, event_type, resource_type, resource_id_hmac, event_create_time, verification_method)
-     values ($1, $2, $3, $4, $5::timestamptz, 'self')
+       (event_id_hmac, event_type, resource_type, resource_id_hmac, event_create_time, verification_method, resource_status, resource_amount_cents, resource_currency)
+     values ($1, $2, $3, $4, $5::timestamptz, 'self', $6, $7, $8)
      on conflict (event_id_hmac) do nothing
      returning event_id_hmac`,
     [
@@ -132,6 +153,9 @@ export async function handleWebhookDelivery(input: {
       typeof event.resource_type === "string" && RESOURCE_TYPE.test(event.resource_type) ? event.resource_type : null,
       resourceId ? key("paypal-resource", resourceId) : null,
       eventCreateTime(event),
+      refund.status,
+      refund.cents,
+      refund.currency,
     ],
   );
   const duplicate = rows.length === 0;
@@ -145,5 +169,20 @@ export async function handleWebhookDelivery(input: {
   );
   if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && resourceId) await input.onCaptureCompleted?.(resourceId);
   if (event.event_type?.startsWith("PAYMENT.PAYOUTS-ITEM.") && event.resource) await recordPayoutItemEvent(input.db, key, event.resource as { payout_batch_id?: unknown; transaction_status?: unknown });
-  return { status: 200, body: { received: true, duplicate } };
+  const check = input.checkWithPayPal;
+  const webhookId = input.webhookId;
+  // Asked once, for a new event, after PayPal has its answer. Whatever goes wrong is recorded as no answer, never a pass.
+  const followUp =
+    check && !duplicate
+      ? async () => {
+          let answer: PayPalCheck = "UNAVAILABLE";
+          try {
+            answer = await check(transmission, webhookId, input.rawBody);
+          } catch {
+            answer = "UNAVAILABLE";
+          }
+          await input.db.query("update paypal_webhook_events set paypal_check = $2, paypal_checked_at = now() where event_id_hmac = $1", [eventKey, answer]);
+        }
+      : undefined;
+  return { status: 200, body: { received: true, duplicate }, followUp };
 }

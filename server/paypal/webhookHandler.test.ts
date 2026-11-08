@@ -403,6 +403,86 @@ describe("handleWebhookDelivery", () => {
     }
   });
 
+  describe("PayPal's own check, after ours", () => {
+    type Answer = "SUCCESS" | "FAILURE" | Error;
+    const ask = (answer: Answer) =>
+      vi.fn(async (_t: unknown, _id: string, _raw: Uint8Array) => {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      });
+    const deliverAsking = (raw: Uint8Array, headers: Headers, checkWithPayPal: ReturnType<typeof ask>) =>
+      handleWebhookDelivery({ rawBody: raw, headers, webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, checkWithPayPal });
+    const recorded = async () => (await db.query<{ paypal_check: string | null; paypal_checked_at: unknown }>("select paypal_check, paypal_checked_at from paypal_webhook_events")).rows[0];
+
+    it("asks only once the answer to PayPal is ready, with the exact bytes it sent, and records what PayPal says", async () => {
+      const asked = ask("SUCCESS");
+      const res = await deliverAsking(body, paypalHeaders(body, WEBHOOK_ID), asked);
+      expect(res.status).toBe(200);
+      expect(asked).not.toHaveBeenCalled();
+      expect((await recorded()).paypal_check).toBeNull();
+      await res.followUp?.();
+      expect(asked).toHaveBeenCalledOnce();
+      const [transmission, webhookId, raw] = asked.mock.calls[0];
+      expect(webhookId).toBe(WEBHOOK_ID);
+      expect(Buffer.from(raw).equals(body)).toBe(true);
+      expect(transmission).toMatchObject({ transmissionSig: expect.any(String), certUrl: expect.any(String) });
+      expect(await recorded()).toMatchObject({ paypal_check: "SUCCESS", paypal_checked_at: expect.anything() });
+    });
+
+    it("records a FAILURE, and has already answered 200: our own check is the gate", async () => {
+      const res = await deliverAsking(body, paypalHeaders(body, WEBHOOK_ID), ask("FAILURE"));
+      expect(res.status).toBe(200);
+      await res.followUp?.();
+      expect((await recorded()).paypal_check).toBe("FAILURE");
+    });
+
+    it("records that PayPal couldn't be asked, never a pass", async () => {
+      const res = await deliverAsking(body, paypalHeaders(body, WEBHOOK_ID), ask(new Error("PayPal is down")));
+      await res.followUp?.();
+      expect((await recorded()).paypal_check).toBe("UNAVAILABLE");
+    });
+
+    it("never sends PayPal a delivery our check refused", async () => {
+      const asked = ask("SUCCESS");
+      const res = await deliverAsking(body, paypalHeaders(Buffer.from('{"id":"other"}'), WEBHOOK_ID), asked);
+      expect(res.status).toBe(401);
+      expect(res.followUp).toBeUndefined();
+      expect(asked).not.toHaveBeenCalled();
+    });
+
+    it("asks about an event once, not again when PayPal delivers it again", async () => {
+      await (await deliverAsking(body, paypalHeaders(body, WEBHOOK_ID), ask("SUCCESS"))).followUp?.();
+      const again = await deliverAsking(body, paypalHeaders(body, WEBHOOK_ID, "TRANSMISSION-2"), ask("FAILURE"));
+      expect(again.body).toMatchObject({ duplicate: true });
+      expect(again.followUp).toBeUndefined();
+      expect((await recorded()).paypal_check).toBe("SUCCESS");
+    });
+  });
+
+  describe("a refund event", () => {
+    it("keeps the refund's own status and amount, and nothing else from it", async () => {
+      const refund = {
+        id: "WH-REFUND-2",
+        event_type: "PAYMENT.CAPTURE.REFUNDED",
+        create_time: "2026-11-07T21:00:00Z",
+        resource_type: "refund",
+        resource: { id: "TEST-REFUND-2", status: "COMPLETED", amount: { currency_code: "USD", value: "90.00" }, note_to_payer: "TEST NOTE 27027", payer: { email_address: "test-payer@example.com", merchant_id: "TESTMERCHANT2" } },
+      };
+      const raw = Buffer.from(JSON.stringify(refund));
+      expect((await deliver(raw, paypalHeaders(raw, WEBHOOK_ID))).status).toBe(200);
+      const [row] = await rows();
+      expect(row).toMatchObject({ resource_status: "COMPLETED", resource_amount_cents: 9000, resource_currency: "USD" });
+      for (const value of ["test-payer@example.com", "TESTMERCHANT2", "TEST NOTE 27027", "TEST-REFUND-2", "WH-REFUND-2"]) expect(JSON.stringify(row), value).not.toContain(value);
+    });
+
+    it("keeps nothing it can't read exactly", async () => {
+      const odd = { ...event, id: "WH-REFUND-3", resource: { id: "TEST-REFUND-3", status: "completed; drop table", amount: { currency_code: "usd", value: "1e3" } } };
+      const raw = Buffer.from(JSON.stringify(odd));
+      await deliver(raw, paypalHeaders(raw, WEBHOOK_ID));
+      expect((await rows())[0]).toMatchObject({ resource_status: null, resource_amount_cents: null, resource_currency: null });
+    });
+  });
+
   it("has exactly the reviewed columns in the webhook tables", async () => {
     const { rows: cols } = await db.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns
@@ -417,6 +497,11 @@ describe("handleWebhookDelivery", () => {
       "paypal_webhook_events.event_create_time",
       "paypal_webhook_events.verification_method",
       "paypal_webhook_events.received_at",
+      "paypal_webhook_events.paypal_check",
+      "paypal_webhook_events.paypal_checked_at",
+      "paypal_webhook_events.resource_status",
+      "paypal_webhook_events.resource_amount_cents",
+      "paypal_webhook_events.resource_currency",
       "paypal_webhook_transmissions.transmission_id_hmac",
       "paypal_webhook_transmissions.event_id_hmac",
       "paypal_webhook_transmissions.received_at",
