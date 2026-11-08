@@ -1,0 +1,20 @@
+// The status read behind PayPal's return link and the queue's "Check with PayPal" button.
+import { getDb } from "../db/pg";
+import { withCallLog } from "../paypal/callLog";
+import { platformFromEnv } from "../paypal/platform";
+import { recordKeyFromEnv } from "../privacy/recordKey";
+import { currentSession, refused, secret, withMessage } from "../web/http";
+import { refreshConnection } from "./connectFlow";
+import { refreshedMessage } from "./connectMessages";
+
+export async function refreshAndSay(request: Request): Promise<Response> {
+  const session = await currentSession();
+  if (!session) return refused(401, "sign in as a shop first");
+  const platform = platformFromEnv();
+  if (!platform) return withMessage(request, "Connecting a PayPal account isn't set up on this site yet.");
+  const recordKey = recordKeyFromEnv();
+  if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
+  const db = getDb();
+  const done = await withCallLog(db, session.shopId, () => refreshConnection(db, platform, { shopId: session.shopId, recordKey, secret: secret("SHOP_DATA_KEY"), now: new Date() }));
+  return withMessage(request, refreshedMessage(done));
+}
