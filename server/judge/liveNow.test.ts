@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import { liveNowLine, newestRecall } from "./liveNow";
+import type { Queryable } from "../db/types";
+import { createHeldReading, liveNowLine, readHeld } from "./liveNow";
 
 const NOW = new Date("2026-11-08T21:30:00Z");
 const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
@@ -43,14 +44,60 @@ describe("the judge page's live line", () => {
     });
 
     it("finds none in an empty table", async () => {
-      expect(await newestRecall(db)).toBeNull();
+      expect(await readHeld(db)).toEqual({ newest: null, written: null });
+    });
+
+    it("asks in one statement, so it takes one connection", async () => {
+      const query = vi.spyOn(db, "query");
+      await readHeld(db);
+      expect(query).toHaveBeenCalledTimes(1);
     });
 
     it("finds the latest by CPSC's own date", async () => {
       const fetchImpl = async () => new Response(fixture, { status: 200, headers: { "content-type": "application/json" } });
       await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: fetchImpl as typeof fetch });
       const { rows } = await db.query<{ d: string }>("select max(recall_date)::text as d from recalls");
-      expect(await newestRecall(db)).toMatchObject({ recallDate: rows[0].d });
+      expect((await readHeld(db)).newest).toMatchObject({ recallDate: rows[0].d });
+    });
+
+    it("reports the last good pull and ignores a failed one", async () => {
+      await db.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'ok', '2026-11-08T20:00:00Z'), ('LastPublishDate', '2026-11-06', '2026-11-07', 'failed', '2026-11-08T21:00:00Z')");
+      expect((await readHeld(db)).written).toBe("2026-11-08T20:00:00.000Z");
+    });
+  });
+
+  describe("holding the reading, so visits to the page don't reach the database", () => {
+    const stored = { newest: null, written: null };
+    const fake = (query: () => Promise<{ rows: unknown[] }>) => ({ query: vi.fn(query) }) as unknown as Queryable & { query: ReturnType<typeof vi.fn> };
+    const answers = () => fake(async () => ({ rows: [{ recall_number: null, recall_date: null, written: null }] }));
+
+    it("shares one read among visits at the same moment", async () => {
+      const db = answers();
+      const held = createHeldReading(60_000);
+      await expect(Promise.all([held(db, 0), held(db, 0), held(db, 0)])).resolves.toEqual([stored, stored, stored]);
+      expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps it for the time given, then reads again", async () => {
+      const db = answers();
+      const held = createHeldReading(60_000);
+      await held(db, 0);
+      await held(db, 59_999);
+      expect(db.query).toHaveBeenCalledTimes(1);
+      await held(db, 60_000);
+      expect(db.query).toHaveBeenCalledTimes(2);
+    });
+
+    it("doesn't hold a failure: the next visit tries again", async () => {
+      let fail = true;
+      const db = fake(async () => {
+        if (fail) throw new Error("the database went away");
+        return { rows: [{ recall_number: null, recall_date: null, written: null }] };
+      });
+      const held = createHeldReading(60_000);
+      await expect(held(db, 0)).resolves.toBeNull();
+      fail = false;
+      await expect(held(db, 1)).resolves.toEqual(stored);
     });
   });
 });

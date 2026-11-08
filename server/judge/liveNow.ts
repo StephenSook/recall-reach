@@ -6,15 +6,42 @@ export interface NewestRecall {
   recallDate: string;
 }
 
-export async function newestRecall(db: Queryable): Promise<NewestRecall | null> {
-  const { rows } = await db.query<{ recall_number: string; recall_date: string }>("select recall_number, recall_date::text as recall_date from recalls order by recall_date desc, recall_number desc limit 1");
-  return rows[0] ? { recallNumber: rows[0].recall_number, recallDate: rows[0].recall_date } : null;
+export interface HeldReading {
+  newest: NewestRecall | null;
+  /** The last good pull written. A quiet poll writes nothing, so the running process knows of a later check. */
+  written: string | null;
 }
 
-/** A quiet poll writes nothing, so the running process knows the latest check. After a restart, this is the last one written. */
-export async function lastGoodPull(db: Queryable): Promise<string | null> {
-  const { rows } = await db.query<{ at: Date | null }>("select max(finished_at) as at from cpsc_pulls where range_field = 'LastPublishDate' and status = 'ok'");
-  return rows[0]?.at ? rows[0].at.toISOString() : null;
+/** One statement, so one connection however busy the pool is. */
+export async function readHeld(db: Queryable): Promise<HeldReading> {
+  const { rows } = await db.query<{ recall_number: string | null; recall_date: string | null; written: Date | null }>(
+    `select n.recall_number, n.recall_date::text as recall_date,
+       (select max(finished_at) from cpsc_pulls where range_field = 'LastPublishDate' and status = 'ok') as written
+     from (select 1) one
+     left join lateral (select recall_number, recall_date from recalls order by recall_date desc, recall_number desc limit 1) n on true`,
+  );
+  const row = rows[0];
+  return {
+    newest: row?.recall_number && row.recall_date ? { recallNumber: row.recall_number, recallDate: row.recall_date } : null,
+    written: row?.written ? row.written.toISOString() : null,
+  };
+}
+
+/** The judge page is public and the pool is small: visits share one read, and a failed read isn't kept. */
+export function createHeldReading(keepMs: number) {
+  let held: { at: number; reading: Promise<HeldReading | null> } | null = null;
+  return (db: Queryable, now: number): Promise<HeldReading | null> => {
+    if (held && now - held.at < keepMs) return held.reading;
+    const entry = {
+      at: now,
+      reading: readHeld(db).catch(() => {
+        if (held === entry) held = null;
+        return null;
+      }),
+    };
+    held = entry;
+    return entry.reading;
+  };
 }
 
 function ago(at: string, now: Date): string {
