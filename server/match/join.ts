@@ -117,16 +117,18 @@ export function joinOrderLines(
     // A capture can land after the order month, so a failed next month leaves the answer open too.
     const month = l.orderedOn.slice(0, 7);
     const searchIncomplete = l.orderedOn < historyFrom || failed.has(month) || failed.has(nextMonth(month));
-    if (searchIncomplete) {
+    // Two possible payments in hand stay two whatever a failed search might add: checked before the gap, so outreach waits.
+    const ambiguous = candidates.length > 1 || (candidates.length === 1 && itemClaims.get(candidates[0].key) !== 1);
+    if (ambiguous) {
+      result[l.id] = { state: "AMBIGUOUS_JOIN", paymentKey: null, linkedBy: null };
+    } else if (searchIncomplete) {
       result[l.id] = { state: "HISTORY_UNAVAILABLE", paymentKey: null, linkedBy: null };
-    } else if (candidates.length === 1 && itemClaims.get(candidates[0].key) === 1) {
+    } else if (candidates.length === 1) {
       result[l.id] = {
         state: "IDENTIFIED",
         paymentKey: candidates[0].key,
         linkedBy: bySku(l).length > 0 ? "SKU" : "exact title",
       };
-    } else if (candidates.length > 0) {
-      result[l.id] = { state: "AMBIGUOUS_JOIN", paymentKey: null, linkedBy: null };
     } else {
       result[l.id] = { state: "NO_PAYPAL_RECORD", paymentKey: null, linkedBy: null };
     }

@@ -116,6 +116,25 @@ describe("joinOrderLines", () => {
     expect(r.lines.a.state).toBe("HISTORY_UNAVAILABLE");
   });
 
+  it("keeps a line ambiguous when two payments carry its SKU, even while that month's search failed", () => {
+    const r = run(
+      [line("a", { sku: "S1", orderedOn: "2026-06-15" })],
+      [payment("P1", { items: [{ name: "x", sku: "S1" }], paidOn: "2026-06-15" }), payment("P2", { items: [{ name: "x", sku: "S1" }], paidOn: "2026-06-16" })],
+      ["2026-06"],
+    );
+    expect(r.lines.a).toEqual({ state: "AMBIGUOUS_JOIN", paymentKey: null, linkedBy: null });
+  });
+
+  it("keeps lines ambiguous when two of them claim one payment, even while that month's search failed", () => {
+    const r = run(
+      [line("a", { sku: "S1", orderedOn: "2026-06-15" }), line("b", { sku: "S1", orderedOn: "2026-06-15" })],
+      [payment("P1", { items: [{ name: "x", sku: "S1" }], paidOn: "2026-06-15" })],
+      ["2026-06"],
+    );
+    expect(r.lines.a.state).toBe("AMBIGUOUS_JOIN");
+    expect(r.lines.b.state).toBe("AMBIGUOUS_JOIN");
+  });
+
   it("calls a line ambiguous when its order number lands on a payment whose items do not include it", () => {
     const r = run(
       [line("a", { orderNumber: "#o", sku: "S1", title: "Swing" })],

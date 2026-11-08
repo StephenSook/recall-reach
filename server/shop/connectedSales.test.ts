@@ -7,6 +7,7 @@ import { migrate } from "../db/migrate";
 import { HISTORY_POOL } from "../demo/historyPool";
 import { createShop, storeOrderLines } from "../import/store";
 import { joinShop } from "../match/run";
+import { prepareNotice } from "../notice/store";
 import type { Method, PayPalClient } from "../paypal/client";
 import { createContactCipher } from "../privacy/contactCipher";
 import { checkConnectedShop, readConnectedShopSales } from "./connectedSales";
@@ -111,5 +112,27 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
     const { rows } = await db.query<{ join_state: string | null; paypal_payment_id: string | null }>("select join_state, paypal_payment_id from recall_matches where shop_id = $1 and order_line_id is not null", [shopId]);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.join_state === "AMBIGUOUS_JOIN" && r.paypal_payment_id === null)).toBe(true);
+  });
+
+  it("refuses a notice for a new card two unnumbered payments could match by SKU, while a month's search failed", async () => {
+    const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
+    await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+    // Two payments an earlier read saved with no order number, both listing the line's SKU near its order date.
+    for (const id of ["EARLIER1", "EARLIER2"]) {
+      await db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+         values ($1, $2, null, $2, 'S', '2026-11-05T15:00:00Z', 4200, 'USD', $3::jsonb)`,
+        [shopId, id, JSON.stringify([{ name: "something", sku: sold.lines[0].sku }])],
+      );
+    }
+    const read = await readConnectedShopSales(db, searching(true), { shopId, now: NOW });
+    expect(read.complete).toBe(false);
+    await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
+    const { rows } = await db.query<{ id: string; join_state: string | null; paypal_payment_id: string | null }>("select id, join_state, paypal_payment_id from recall_matches where shop_id = $1 and order_line_id is not null", [shopId]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.join_state === "AMBIGUOUS_JOIN" && r.paypal_payment_id === null)).toBe(true);
+    for (const r of rows) {
+      await expect(prepareNotice(db, { shopId, matchId: r.id })).rejects.toMatchObject({ code: "TWO_POSSIBLE_ORDERS" });
+    }
   });
 });
