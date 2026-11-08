@@ -53,7 +53,8 @@ describe("family-given safety receipts", () => {
       from order_lines l cross join recalls r where r.recall_number = '27072'`, []);
     await db.query(`insert into notices (shop_id, match_id, kind, order_line_id)
       select shop_id, id, 'SAFETY_NOTICE', order_line_id from recall_matches`);
-    expect(await migrate(db)).toEqual(["0066_safety_receipts.sql"]);
+    // 0066 and whatever came after it apply on top of the old schema, with the old rows kept.
+    expect((await migrate(db))[0]).toBe("0066_safety_receipts.sql");
     const queue = await loadQueue(db, shopId, "owner");
     expect(queue.rows[0]).toMatchObject({ familyAsked: false, notice: { kind: "SAFETY_NOTICE" } });
     await save();

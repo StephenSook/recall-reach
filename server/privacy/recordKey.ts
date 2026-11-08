@@ -10,7 +10,7 @@ import { requireSecret } from "./secrets";
 export type RecordKey = (kind: RecordKind, value: string) => string;
 
 /** A fixed list with no separator in it, so a kind and a value can't run together into another kind's key. */
-export type RecordKind = "paypal-event" | "paypal-body" | "paypal-transmission" | "paypal-resource" | "paypal-tracking" | "paypal-merchant";
+export type RecordKind = "paypal-event" | "paypal-body" | "paypal-transmission" | "paypal-resource" | "paypal-tracking" | "paypal-merchant" | "paypal-owner";
 
 export function createRecordKey(secret: string): RecordKey {
   requireSecret(secret, "record key");
