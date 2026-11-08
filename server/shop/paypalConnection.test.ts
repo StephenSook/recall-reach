@@ -15,6 +15,8 @@ import {
   shopsLinkedTo,
   startConnection,
   trackingIdFor,
+  withConnectionLock,
+  ConnectionBusy,
 } from "./paypalConnection";
 
 const key = createRecordKey("test-record-key-secret-0123456789abcdef");
@@ -164,6 +166,19 @@ describe("a shop's PayPal connection", () => {
       await disconnectShop(db, shopId);
       expect(await count()).toBe(0);
     });
+  });
+
+  it("turns a link change away at once, without taking a connection, when two are already running", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const other = await createShop(db, { name: "B SHOP", kind: "REAL" });
+    const first = withConnectionLock(db, shopId, async () => gate);
+    const second = withConnectionLock(db, other, async () => undefined);
+    await expect(withConnectionLock(db, shopId, async () => undefined)).rejects.toBeInstanceOf(ConnectionBusy);
+    open();
+    await first;
+    await second;
+    await expect(withConnectionLock(db, shopId, async () => "ran")).resolves.toBe("ran");
   });
 
   it("is labelled as the shop's own", async () => {

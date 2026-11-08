@@ -1,6 +1,9 @@
 // What the queue says after each step of connecting a shop's PayPal account. Plain words, and PayPal's own when it refused.
 import type { Refreshed } from "./connectFlow";
 
+/** What a shop sees when its link is already being changed, or the site is already busy with other shops' links. */
+export const BUSY = "A check with PayPal is already running. Try again in a minute.";
+
 export function refreshedMessage(r: Refreshed): string {
   if (r.state === "NOT_STARTED") return "Connect your PayPal account first.";
   if (r.state === "WAITING") return "PayPal hasn't finished connecting your account yet. Check again in a minute.";

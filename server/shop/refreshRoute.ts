@@ -5,7 +5,8 @@ import { platformFromEnv } from "../paypal/platform";
 import { recordKeyFromEnv } from "../privacy/recordKey";
 import { currentSession, refused, secret, withMessage } from "../web/http";
 import { refreshConnection } from "./connectFlow";
-import { refreshedMessage } from "./connectMessages";
+import { BUSY, refreshedMessage } from "./connectMessages";
+import { ConnectionBusy } from "./paypalConnection";
 
 export async function refreshAndSay(request: Request): Promise<Response> {
   const session = await currentSession();
@@ -15,6 +16,11 @@ export async function refreshAndSay(request: Request): Promise<Response> {
   const recordKey = recordKeyFromEnv();
   if (!recordKey) throw new Error("RECORD_HMAC_SECRET is not set");
   const db = getDb();
-  const done = await withCallLog(db, session.shopId, () => refreshConnection(db, platform, { shopId: session.shopId, recordKey, secret: secret("SHOP_DATA_KEY"), now: new Date() }));
-  return withMessage(request, refreshedMessage(done));
+  try {
+    const done = await withCallLog(db, session.shopId, () => refreshConnection(db, platform, { shopId: session.shopId, recordKey, secret: secret("SHOP_DATA_KEY"), now: new Date() }));
+    return withMessage(request, refreshedMessage(done));
+  } catch (err) {
+    if (err instanceof ConnectionBusy) return withMessage(request, BUSY);
+    throw err;
+  }
 }

@@ -29,15 +29,37 @@ export interface StatusRead {
   seq: string;
 }
 
+/** Another change to this shop's link is running, or this server already has its share of them running. Try again soon. */
+export class ConnectionBusy extends Error {
+  constructor() {
+    super("A check of this shop's PayPal account is already running.");
+    this.name = "ConnectionBusy";
+  }
+}
+
+// A link change holds a database connection while it waits on PayPal, and the pool has five. At most this many run at
+// once in this process, so the rest of the site always keeps connections of its own.
+export const MAX_LINK_CHANGES = 2;
+let running = 0;
+
 /**
  * Runs fn alone for this shop's PayPal link, in one transaction holding a per-shop advisory lock, and gives it that
  * transaction to work in. The lock lasts until the transaction ends, so a check that waits on PayPal holds it throughout.
+ * Nothing waits for it: if the shop's lock is taken, or MAX_LINK_CHANGES are already running, this throws ConnectionBusy
+ * straight away, without keeping a connection.
  */
 export async function withConnectionLock<T>(db: Db, shopId: string, fn: (tx: Db) => Promise<T>): Promise<T> {
-  return db.transaction(async (tx) => {
-    await tx.query("select pg_advisory_xact_lock(hashtext('shop-paypal-connection'), hashtext($1))", [shopId]);
-    return fn({ ...tx, transaction: (inner) => inner(tx) });
-  });
+  if (running >= MAX_LINK_CHANGES) throw new ConnectionBusy();
+  running += 1;
+  try {
+    return await db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ locked: boolean }>("select pg_try_advisory_xact_lock(hashtext('shop-paypal-connection'), hashtext($1)) as locked", [shopId]);
+      if (rows[0]?.locked !== true) throw new ConnectionBusy();
+      return fn({ ...tx, transaction: (inner) => inner(tx) });
+    });
+  } finally {
+    running -= 1;
+  }
 }
 
 /** The shop's PayPal payments came from the seller it was linked to. When that seller goes or changes, they go too. */
