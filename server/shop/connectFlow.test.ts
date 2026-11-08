@@ -119,6 +119,18 @@ describe("connecting a shop's own PayPal account", () => {
     expect(deadlines.every((d) => d === NOW.getTime() + 45_000)).toBe(true);
   });
 
+  it("records whether each sales read was complete, so a partial one stops refunds even with payments from an earlier full read", async () => {
+    const { env } = platform({ integration: READY });
+    await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+    await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+    expect((await readConnection(db, { shopId, secret: SECRET }))?.salesReadComplete).toBe(true);
+    const failing = platform({ integration: READY });
+    failing.env.actingFor = () => ({ request: (async (_m: string, path: string) => (path === "/v1/reporting/transactions" ? Promise.reject(new Error("too late to send this request")) : { status: 200, data: { items: [] } })) as PayPalClient["request"] });
+    expect(await refreshConnection(db, failing.env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toMatchObject({ state: "CONNECTED", sales: { complete: false } });
+    expect((await readConnection(db, { shopId, secret: SECRET }))?.salesReadComplete).toBe(false);
+    expect((await db.query("select 1 from paypal_payments where shop_id = $1", [shopId])).rows.length).toBeGreaterThan(0);
+  });
+
   it("says nothing was started for a shop that never began connecting", async () => {
     const { env } = platform({ integration: READY });
     expect(await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toEqual({ state: "NOT_STARTED" });
@@ -225,9 +237,11 @@ describe("connecting a shop's own PayPal account", () => {
       await settle();
       expect(r.held).toHaveLength(1);
       r.held[0].release({ merchant_id: "SELLERPAYER1" });
-      expect(await first).toMatchObject({ state: "CONNECTED" });
+      // The second asks PayPal only once the first has let go of the lock. In-process Postgres has one connection, so the
+      // first's recall check, which runs after its lock, finishes once the second is answered.
       await r.asked(2);
       r.held[1].release(NO_SELLER());
+      expect(await first).toMatchObject({ state: "CONNECTED" });
       expect(await second).toEqual({ state: "WAITING" });
       expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
       expect(await payments()).toBe(0);
@@ -240,12 +254,12 @@ describe("connecting a shop's own PayPal account", () => {
       await r.asked(1);
       const second = refresh(r.env);
       r.held[0].release({ merchant_id: "SELLERPAYER1" });
-      // Read from its own answer: in-process Postgres has one connection, and the second check now holds it.
+      // In-process Postgres has one connection: the second holds it once it asks, so it is answered before the first is awaited.
+      await r.asked(2);
+      r.held[1].release({ merchant_id: "SELLERPAYERB" });
       const firstDone = await first;
       expect(firstDone).toMatchObject({ state: "CONNECTED", sales: { complete: true } });
       expect(firstDone.state === "CONNECTED" && "payments" in firstDone.sales && firstDone.sales.payments).toBeGreaterThan(0);
-      await r.asked(2);
-      r.held[1].release({ merchant_id: "SELLERPAYERB" });
       expect(await second).toMatchObject({ state: "CONNECTED", sales: { complete: true, payments: 0 } });
       expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYERB");
       expect(await payments()).toBe(0);

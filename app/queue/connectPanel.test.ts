@@ -19,14 +19,14 @@ describe("the queue's PayPal connection panel", () => {
   });
 
   it("waits on PayPal after the shop starts, and never says connected", () => {
-    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: null, readAt: null, refusal: null, connected: false }, { setUp: true });
+    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: null, readAt: null, refusal: null, connected: false, salesReadComplete: false }, { setUp: true });
     expect(p.actions).toEqual(["check", "connect", "disconnect"]);
     expect(p.lines.join(" ")).toContain("hasn't said your account is connected");
     expect(p.lines.join(" ")).not.toMatch(/\bConnected\./);
   });
 
   it("names each thing PayPal said is missing", () => {
-    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: { ...READY, primaryEmailConfirmed: false, scopes: [] }, readAt: READ, refusal: null, connected: false }, { setUp: true });
+    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: { ...READY, primaryEmailConfirmed: false, scopes: [] }, readAt: READ, refusal: null, connected: false, salesReadComplete: false }, { setUp: true });
     const text = p.lines.join(" ");
     expect(text).toContain("the account's email isn't confirmed");
     expect(text).toContain("refunds weren't granted to this site");
@@ -34,13 +34,13 @@ describe("the queue's PayPal connection panel", () => {
   });
 
   it("says connected only with PayPal's answer behind it, and when it was read", () => {
-    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: READY, readAt: READ, refusal: null, connected: true }, { setUp: true });
+    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: READY, readAt: READ, refusal: null, connected: true, salesReadComplete: false }, { setUp: true });
     expect(p.actions).toEqual(["check", "disconnect"]);
     expect(p.lines[0]).toMatch(/^Connected\. PayPal said, .* ET, that payments can be received, the account's email is confirmed and refunds were granted to this site\.$/);
   });
 
   it("shows PayPal's own words when it refused", () => {
-    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: null, readAt: null, refusal: "PayPal answered HTTP 422, FEATURES_UNAUTHORIZED (PayPal-Debug-Id f1)", connected: false }, { setUp: true });
+    const p = connectPanel({ trackingId: "t", startedAt: STARTED, status: null, readAt: null, refusal: "PayPal answered HTTP 422, FEATURES_UNAUTHORIZED (PayPal-Debug-Id f1)", connected: false, salesReadComplete: false }, { setUp: true });
     expect(p.lines).toContain("PayPal's answer: PayPal answered HTTP 422, FEATURES_UNAUTHORIZED (PayPal-Debug-Id f1)");
   });
 });

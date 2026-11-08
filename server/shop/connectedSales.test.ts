@@ -7,7 +7,7 @@ import { createShop, storeOrderLines } from "../import/store";
 import { joinShop } from "../match/run";
 import type { Method, PayPalClient } from "../paypal/client";
 import { createContactCipher } from "../privacy/contactCipher";
-import { readConnectedShopSales } from "./connectedSales";
+import { checkConnectedShop, readConnectedShopSales } from "./connectedSales";
 
 const NOW = new Date("2026-11-08T03:00:00.000Z");
 const SECRET = "s".repeat(64);
@@ -42,6 +42,7 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
 
   it("joins the shop's file to its PayPal payments by order number, and says PayPal was searched", async () => {
     const read = await readConnectedShopSales(db, searching(), { shopId, now: NOW });
+    await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
     expect(read.complete).toBe(true);
     expect(read.payments).toBeGreaterThan(0);
     const { joined } = await joinShop(db, shopId, { today: "2026-11-08" });
@@ -52,6 +53,7 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
 
   it("says when PayPal couldn't be searched, and claims no search", async () => {
     const read = await readConnectedShopSales(db, searching(true), { shopId, now: NOW });
+    await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
     expect(read.complete).toBe(false);
     const { rows } = await db.query<{ paypal_searched: boolean }>("select paypal_searched from shop_runs where shop_id = $1 order by finished_at desc limit 1", [shopId]);
     expect(rows[0].paypal_searched).toBe(false);

@@ -3,7 +3,7 @@ import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
 import { createRecordKey } from "../privacy/recordKey";
-import { reserveStatusRead, saveSellerStatus, startConnection, trackingIdFor } from "../shop/paypalConnection";
+import { recordSalesRead, reserveStatusRead, saveSellerStatus, startConnection, trackingIdFor } from "../shop/paypalConnection";
 import { REFUND_SCOPE } from "./platform";
 import { payPalClientForShop } from "./shopClient";
 
@@ -42,6 +42,7 @@ describe("which PayPal account a shop's refunds go from", () => {
   const connect = async (status = { merchantId: "SELLERPAYER1", paymentsReceivable: true, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE] }) => {
     await startConnection(db, { shopId, trackingId: trackingIdFor(key, shopId), now: NOW });
     await saveSellerStatus(db, { shopId, read: (await reserveStatusRead(db, shopId))!, status, secret: SECRET, recordKey: key, now: NOW });
+    await recordSalesRead(db, { shopId, complete: true, now: NOW });
   };
 
   it("acts for a connected shop, with PayPal-Auth-Assertion naming its seller on every call", async () => {
@@ -54,15 +55,23 @@ describe("which PayPal account a shop's refunds go from", () => {
   });
 
   it("gives a real shop no PayPal account at all until PayPal says it's connected, never the demo's", async () => {
-    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false });
+    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false, refused: "NOT_CONNECTED" });
     await connect({ merchantId: "SELLERPAYER1", paymentsReceivable: false, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE] });
-    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false });
+    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false, refused: "NOT_CONNECTED" });
+  });
+
+  it("refuses refunds from a connected shop until its latest sales read covered everything", async () => {
+    await connect();
+    await recordSalesRead(db, { shopId, complete: false, now: NOW });
+    expect(await payPalClientForShop(db, shopId, ENV)).toEqual({ client: null, actingForShop: false, refused: "SALES_INCOMPLETE" });
+    await recordSalesRead(db, { shopId, complete: true, now: NOW });
+    expect((await payPalClientForShop(db, shopId, ENV)).actingForShop).toBe(true);
   });
 
   it("gives a real shop no PayPal account when the platform app isn't set up here", async () => {
     await connect();
     const env = { ...ENV, PAYPAL_PLATFORM_CLIENT_ID: undefined } as unknown as NodeJS.ProcessEnv;
-    expect(await payPalClientForShop(db, shopId, env)).toEqual({ client: null, actingForShop: false });
+    expect(await payPalClientForShop(db, shopId, env)).toEqual({ client: null, actingForShop: false, refused: "NOT_CONNECTED" });
   });
 
   it("gives a demo shop the demo's own sandbox account", async () => {

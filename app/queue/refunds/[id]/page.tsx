@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
 import { readCalls, withCallLog } from "@/server/paypal/callLog";
 import { PayPalApiError } from "@/server/paypal/client";
-import { payPalClientForShop } from "@/server/paypal/shopClient";
+import { payPalClientForShop, REFUSED } from "@/server/paypal/shopClient";
 import { centsToValue } from "@/server/paypal/orders";
 import { readRefund, RefundRefused, type Reconciliation } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
@@ -119,7 +119,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   // Outside the try: a missing setting isn't a passing failure, and shouldn't read as one.
   const db = getDb();
   // A shop connected to its own PayPal account is read through it, acting for the shop.
-  const client = (await payPalClientForShop(db, session.shopId)).client;
+  const { client, refused } = await payPalClientForShop(db, session.shopId);
   let rec: Reconciliation | null = null;
   try {
     if (client) rec = await withCallLog(db, session.shopId, () => readRefund(db, client, { shopId: session.shopId, refundId: id, recordKey }));
@@ -140,7 +140,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
         <Records rec={rec} id={id} />
       ) : !client ? (
         <p role="alert" className="alert" data-testid="not-connected">
-          This shop&apos;s PayPal account isn&apos;t connected, so PayPal can&apos;t be asked about this refund. Connect it from your queue.
+          {refused === "SALES_INCOMPLETE" ? REFUSED.SALES_INCOMPLETE : "This shop's PayPal account isn't connected, so PayPal can't be asked about this refund. Connect it from your queue."}
         </p>
       ) : (
         <p role="alert" className="alert" data-testid="read-failed">

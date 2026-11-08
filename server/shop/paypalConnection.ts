@@ -21,6 +21,8 @@ export interface Connection {
   readAt: string | null;
   refusal: string | null;
   connected: boolean;
+  /** The latest sales read covered every window: only then can a refund go from the shop's account. */
+  salesReadComplete: boolean;
 }
 
 /** One read of PayPal's status, reserved just before asking: the attempt it belongs to and its place in line. */
@@ -68,6 +70,12 @@ export async function withConnectionLock<T>(db: Db, shopId: string, fn: (tx: Db)
 /** The shop's PayPal payments came from the seller it was linked to. When that seller goes or changes, they go too. */
 async function dropSellersPayments(db: Queryable, shopId: string): Promise<void> {
   await db.query("delete from paypal_payments where shop_id = $1", [shopId]);
+  await db.query("update shop_paypal_connections set sales_read_complete = false where shop_id = $1", [shopId]);
+}
+
+/** Whether the read of the shop's sales just made covered every window. Call inside withConnectionLock. */
+export async function recordSalesRead(db: Queryable, input: { shopId: string; complete: boolean; now: Date }): Promise<void> {
+  await db.query("update shop_paypal_connections set sales_read_complete = $2, sales_read_at = $3 where shop_id = $1", [input.shopId, input.complete, input.now.toISOString()]);
 }
 
 const savedSeller = async (db: Queryable, shopId: string): Promise<string | null> =>
@@ -147,7 +155,15 @@ export async function readConnection(db: Queryable, input: { shopId: string; sec
         scopes: (r.scopes as string[]) ?? [],
       }
     : null;
-  return { trackingId: String(r.tracking_id), startedAt: iso(r.started_at) as string, status, readAt: iso(r.status_read_at), refusal: (r.refusal as string | null) ?? null, connected: isConnected(status) };
+  return {
+    trackingId: String(r.tracking_id),
+    startedAt: iso(r.started_at) as string,
+    status,
+    readAt: iso(r.status_read_at),
+    refusal: (r.refusal as string | null) ?? null,
+    connected: isConnected(status),
+    salesReadComplete: r.sales_read_complete === true,
+  };
 }
 
 /** The seller's merchant id, only while PayPal's last answer said the shop is connected. */

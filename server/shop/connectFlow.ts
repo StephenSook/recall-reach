@@ -4,7 +4,8 @@ import type { Db } from "../db/types";
 import { PayPalApiError } from "../paypal/client";
 import { createReferral, isConnected, readSellerStatus, type PlatformEnv } from "../paypal/platform";
 import type { RecordKey } from "../privacy/recordKey";
-import { readConnectedShopSales } from "./connectedSales";
+import type { SearchCoverage } from "../paypal/transactions";
+import { checkConnectedShop, readConnectedShopSales } from "./connectedSales";
 import { clearSellerStatus, readConnection, recordConnectRefusal, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor, withConnectionLock } from "./paypalConnection";
 
 /** PayPal's answer as a person can read it: the status, PayPal's issue name and its debug id. */
@@ -38,9 +39,13 @@ export type Refreshed =
   | { state: "REFUSED"; refusal: string }
   | { state: "CONNECTED"; sales: { complete: boolean; payments: number } | { refusal: string } };
 
-/** Reads the seller's status from PayPal, and, once PayPal says connected, the shop's own sales. Runs alone for the shop. */
+/**
+ * Reads the seller's status from PayPal, and, once PayPal says connected, the shop's own sales, alone for the shop. The
+ * recall check that follows runs after the shop's lock is released, so a large file can't keep the lock held.
+ */
 export async function refreshConnection(db: Db, platform: PlatformEnv, input: { shopId: string; recordKey: RecordKey; secret: string; now: Date }): Promise<Refreshed> {
-  return withConnectionLock(db, input.shopId, async (tx): Promise<Refreshed> => {
+  const salesRead: { coverage?: SearchCoverage } = {};
+  const refreshed = await withConnectionLock(db, input.shopId, async (tx): Promise<Refreshed> => {
     const connection = await readConnection(tx, { shopId: input.shopId, secret: input.secret });
     if (!connection) return { state: "NOT_STARTED" };
     // Reserved immediately before asking PayPal, so its place in line is the moment it asked.
@@ -60,8 +65,10 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     // PayPal's answer about the seller stands whatever happens to the sales read: a failure there rolls back to here.
     await tx.query("savepoint seller_saved");
     try {
-      // Still inside the lock: nothing can change the link while the seller's sales are read and joined.
-      return { state: "CONNECTED", sales: await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now, notAfter: input.now.getTime() + SALES_READ_MS }) };
+      // Still inside the lock: nothing can change the link while the seller's sales are read and saved.
+      const sales = await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now, notAfter: input.now.getTime() + SALES_READ_MS });
+      salesRead.coverage = sales.coverage;
+      return { state: "CONNECTED", sales: { complete: sales.complete, payments: sales.payments } };
     } catch (err) {
       await tx.query("rollback to savepoint seller_saved");
       // Connected, but the sales didn't arrive: its refunds stay notice-only, and the page says why. Search failures come
@@ -71,6 +78,15 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
       return { state: "CONNECTED", sales: { refusal } };
     }
   });
+  if (!salesRead.coverage) return refreshed;
+  try {
+    await checkConnectedShop(db, { shopId: input.shopId, now: input.now, coverage: salesRead.coverage });
+  } catch {
+    const refusal = "The sales were read, but checking them against recalls failed here. Check with PayPal again.";
+    await recordConnectRefusal(db, { shopId: input.shopId, refusal: `Connected, but the shop's sales couldn't be checked. ${refusal}` });
+    return { state: "CONNECTED", sales: { refusal } };
+  }
+  return refreshed;
 }
 
 /**

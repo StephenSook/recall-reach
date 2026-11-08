@@ -1,6 +1,6 @@
 import { getDb } from "@/server/db/pg";
 import { withCallLog } from "@/server/paypal/callLog";
-import { NOT_CONNECTED, payPalClientForShop } from "@/server/paypal/shopClient";
+import { payPalClientForShop, REFUSED } from "@/server/paypal/shopClient";
 import { askPayPalAgain, RefundRefused } from "@/server/paypal/refunds";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
 import { currentSession, fromThisSite, refused, seeOther, withMessage } from "@/server/web/http";
@@ -15,8 +15,8 @@ export async function POST(request: Request): Promise<Response> {
   const form = await request.formData();
   const refundId = String(form.get("refundId") ?? "");
   try {
-    const { client } = await payPalClientForShop(getDb(), session.shopId);
-    if (!client) return withMessage(request, NOT_CONNECTED);
+    const { client, refused } = await payPalClientForShop(getDb(), session.shopId);
+    if (!client) return withMessage(request, REFUSED[refused]);
     await withCallLog(getDb(), session.shopId, () => askPayPalAgain(getDb(), client, { shopId: session.shopId, refundId, recordKey }));
     return seeOther(request, `/queue/refunds/${refundId}`);
   } catch (err) {
