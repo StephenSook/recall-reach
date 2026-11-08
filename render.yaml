@@ -24,6 +24,14 @@ services:
         sync: false # sandbox app credentials, set in Render
       - key: PAYPAL_CLIENT_SECRET
         sync: false
+      - key: PAYPAL_PLATFORM_CLIENT_ID
+        sync: false # the sandbox platform app real shops connect to; without these, connecting says it isn't set up
+      - key: PAYPAL_PLATFORM_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_PARTNER_MERCHANT_ID
+        sync: false
+      - key: PAYPAL_PLATFORM_WEBHOOK_ID
+        sync: false
       - key: DEMO_BUYER_EMAIL
         sync: false # a test inbox for the demo notice; the demo works without it
       - key: DEMO_PAYOUT_RECEIVER
