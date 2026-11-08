@@ -56,4 +56,22 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
     const { rows } = await db.query<{ paypal_searched: boolean }>("select paypal_searched from shop_runs where shop_id = $1 order by finished_at desc limit 1", [shopId]);
     expect(rows[0].paypal_searched).toBe(false);
   });
+
+  it("saves and joins nothing from a read that stopped partway, so an unread page can't hide a second payment", async () => {
+    // Page 1 of the first window answers with the shop's own sale; page 2 never comes (the deadline, or PayPal failing).
+    const partial: PayPalClient = {
+      request: (async (_m: Method, path: string, opts?: { query?: Record<string, unknown> }) => {
+        if (path === "/v1/customer/disputes") return { status: 200, data: { items: [] } };
+        const page = Number(opts?.query?.page ?? 1);
+        if (page > 1) throw new Error("too late to send this request");
+        const full = answerSearch(path)!;
+        return { status: 200, data: { ...(full.data as object), total_pages: 2 } };
+      }) as PayPalClient["request"],
+    };
+    const read = await readConnectedShopSales(db, partial, { shopId, now: NOW });
+    expect(read.complete).toBe(false);
+    expect((await db.query("select 1 from paypal_payments where shop_id = $1", [shopId])).rows).toHaveLength(0);
+    const { joined } = await joinShop(db, shopId, { today: "2026-11-08" });
+    expect(Object.values(joined.lines).map((l) => l.state)).not.toContain("IDENTIFIED");
+  });
 });
