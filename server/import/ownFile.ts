@@ -12,6 +12,8 @@ export const MAX_FILE_BYTES = 5_000_000;
 /** Each line is compared with every recall, so this keeps one file from holding up the shared service. */
 export const MAX_LINES = 1000;
 export const OWN_FILE_DAYS = 7;
+/** A shop whose owner signs in with PayPal is kept until it asks, or until this many days pass with no sign-in. */
+export const KEPT_SHOP_DAYS = 365;
 const MAX_NAME = 80;
 
 export type OwnFileCode = "NO_NAME" | "NOT_READABLE" | "EMPTY" | "TOO_MANY";
@@ -70,8 +72,14 @@ export async function purgeOldDemoShops(db: Queryable, now: Date = new Date()): 
 }
 
 export async function purgeOldOwnShops(db: Queryable, now: Date = new Date()): Promise<number> {
-  // Elapsed hours, not calendar days: a day across a daylight saving change isn't 24 hours in the database's time zone, and
-  // the date every screen shows (shopDataDeletedAfter) is exactly OWN_FILE_DAYS * 24 hours after the shop joined.
-  const { rows } = await db.query("delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(hours => $2) returning id", [now.toISOString(), OWN_FILE_DAYS * 24]);
+  // Elapsed hours, not calendar days: a day across a daylight saving change isn't 24 hours in the database's time zone.
+  // The same rule as lifetimeOf (server/shop/lifetime.ts), which gives every screen its date: 7 days after joining, or,
+  // for a shop whose owner links a PayPal login, until a year passes with no sign-in.
+  const { rows } = await db.query(
+    `delete from shops where kind = 'REAL' and created_at < $1::timestamptz - make_interval(hours => $2)
+       and (owner_payer_hmac is null or greatest(owner_linked_at, owner_signed_in_at) < $1::timestamptz - make_interval(hours => $3))
+     returning id`,
+    [now.toISOString(), OWN_FILE_DAYS * 24, KEPT_SHOP_DAYS * 24],
+  );
   return rows.length;
 }
