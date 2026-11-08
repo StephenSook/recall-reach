@@ -1702,16 +1702,18 @@ describe("refunds", () => {
   });
 
   describe("reconciling", () => {
+    const refundEvent = (e: { status: string; cents: number; check: "SUCCESS" | "FAILURE" | "UNAVAILABLE" | null; receivedAt?: Date }) =>
+      db.query(
+        `insert into paypal_webhook_events (event_id_hmac, event_type, resource_type, resource_id_hmac, verification_method, resource_status, resource_amount_cents, resource_currency, paypal_check, received_at)
+         values ('e', 'PAYMENT.CAPTURE.REFUNDED', 'refund', $1, 'self', $2, $3, 'USD', $4, $5)`,
+        [key("paypal-resource", "REF-1"), e.status, e.cents, e.check, (e.receivedAt ?? NOW).toISOString()],
+      );
     it("shows capture, refund, webhook and ledger side by side, with no exceptions when they agree", async () => {
       const m = await setUp();
       const a = await approve(m.id);
       const pp = fakePayPal();
       const r = await execute(a.approvalId, pp.client);
-      await db.query(
-        `insert into paypal_webhook_events (event_id_hmac, event_type, resource_type, resource_id_hmac, verification_method)
-         values ('e', 'PAYMENT.CAPTURE.REFUNDED', 'refund', $1, 'self')`,
-        [key("paypal-resource", "REF-1")],
-      );
+      await refundEvent({ status: "COMPLETED", cents: 9000, check: "SUCCESS" });
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
       expect(rec).toEqual({
         matchId: m.id,
@@ -1721,7 +1723,7 @@ describe("refunds", () => {
         ledger: { status: "refunded", amountCents: 9000, currency: "USD" },
         capture: { status: "REFUNDED", amountCents: 9000, currency: "USD" },
         refund: { status: "COMPLETED", amountCents: 9000, currency: "USD" },
-        webhook: { seen: true },
+        webhook: { seen: true, paypalCheck: "SUCCESS", event: { status: "COMPLETED", amountCents: 9000, currency: "USD" } },
         exceptions: [],
       });
     });
@@ -1732,8 +1734,52 @@ describe("refunds", () => {
       const pp = fakePayPal();
       const r = await execute(a.approvalId, pp.client);
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
-      expect(rec.webhook.seen).toBe(false);
+      expect(rec.webhook).toEqual({ seen: false, paypalCheck: null, event: null });
       expect(rec.exceptions).toEqual(["PayPal's webhook has not arrived yet."]);
+    });
+
+    describe("the refund event and PayPal's own check", () => {
+      const refunded = async () => {
+        const m = await setUp();
+        const a = await approve(m.id);
+        const pp = fakePayPal();
+        const r = await execute(a.approvalId, pp.client);
+        return () => reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: NOW });
+      };
+
+      it("names an event whose amount isn't the refund's", async () => {
+        const read = await refunded();
+        await refundEvent({ status: "COMPLETED", cents: 8000, check: "SUCCESS" });
+        expect((await read()).exceptions).toEqual(["PayPal's refund event gives another amount than PayPal's refund."]);
+      });
+
+      it("names an event whose status isn't the refund's", async () => {
+        const read = await refunded();
+        await refundEvent({ status: "PENDING", cents: 9000, check: "SUCCESS" });
+        expect((await read()).exceptions).toEqual(["PayPal's refund event says PENDING, and PayPal's refund reads COMPLETED."]);
+      });
+
+      it("names a FAILURE from PayPal's own check, though our check let the delivery in", async () => {
+        const read = await refunded();
+        await refundEvent({ status: "COMPLETED", cents: 9000, check: "FAILURE" });
+        expect((await read()).exceptions).toEqual(["PayPal's own check didn't confirm this webhook. Our check did, so it was kept."]);
+      });
+
+      it("shows PayPal couldn't be asked without calling it a pass or an exception", async () => {
+        const read = await refunded();
+        await refundEvent({ status: "COMPLETED", cents: 9000, check: "UNAVAILABLE" });
+        const rec = await read();
+        expect(rec.webhook.paypalCheck).toBe("UNAVAILABLE");
+        expect(rec.exceptions).toEqual([]);
+      });
+
+      it("says it's still asking PayPal for a minute, then that PayPal couldn't be asked", async () => {
+        const read = await refunded();
+        await refundEvent({ status: "COMPLETED", cents: 9000, check: null, receivedAt: new Date(NOW.getTime() - 20_000) });
+        expect((await read()).webhook.paypalCheck).toBe("ASKING");
+        await db.query("update paypal_webhook_events set received_at = $1", [new Date(NOW.getTime() - 120_000).toISOString()]);
+        expect((await read()).webhook.paypalCheck).toBe("UNAVAILABLE");
+      });
     });
 
     it("says PayPal hasn't finished a refund PayPal says is pending, and doesn't blame the webhook", async () => {

@@ -655,9 +655,16 @@ export interface Reconciliation {
   ledger: { status: string; amountCents: number; currency: string };
   capture: { status: string; amountCents: number; currency: string } | null;
   refund: { status: string; amountCents: number; currency: string } | null;
-  webhook: { seen: boolean };
+  /**
+   * PayPal's refund event. paypalCheck is PayPal's own answer about the delivery, asked after ours passed: ASKING for
+   * its first minute, then UNAVAILABLE if no answer was recorded. event is the refund's status and amount as the event said.
+   */
+  webhook: { seen: boolean; paypalCheck: "SUCCESS" | "FAILURE" | "UNAVAILABLE" | "ASKING" | null; event: { status: string | null; amountCents: number | null; currency: string | null } | null };
   exceptions: string[];
 }
+
+/** How long PayPal's own check may still be on its way before no answer counts as none. */
+const PAYPAL_CHECK_GRACE_MS = 60_000;
 
 interface ReconcileInput {
   shopId: string;
@@ -712,9 +719,19 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     refund = { status: r.status, amountCents: valueToCents(r.amount.value), currency: r.amount.currency_code };
   }
 
-  const webhookSeen = row.refund_ref_hmac
-    ? (await db.query("select 1 from paypal_webhook_events where resource_id_hmac = $1", [row.refund_ref_hmac])).rows.length > 0
-    : false;
+  const event = row.refund_ref_hmac
+    ? (
+        await db.query<{ paypal_check: "SUCCESS" | "FAILURE" | "UNAVAILABLE" | null; received_at: Date; resource_status: string | null; resource_amount_cents: number | null; resource_currency: string | null }>(
+          "select paypal_check, received_at, resource_status, resource_amount_cents, resource_currency from paypal_webhook_events where resource_id_hmac = $1 order by received_at desc limit 1",
+          [row.refund_ref_hmac],
+        )
+      ).rows[0] ?? null
+    : null;
+  const webhookSeen = event !== null;
+  const paypalCheck: Reconciliation["webhook"]["paypalCheck"] = !event
+    ? null
+    : (event.paypal_check ?? (now.getTime() - new Date(event.received_at).getTime() < PAYPAL_CHECK_GRACE_MS ? "ASKING" : "UNAVAILABLE"));
+  const eventFacts = event ? { status: event.resource_status, amountCents: event.resource_amount_cents, currency: event.resource_currency } : null;
 
   // Our ledger follows PayPal's own answer about the refund.
   let status = row.status;
@@ -755,6 +772,13 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   if (status === "refunded" && captureFacts && captureFacts.status !== "REFUNDED" && captureFacts.status !== "PARTIALLY_REFUNDED") {
     exceptions.push("The ledger says refunded, but PayPal's payment does not show a refund.");
   }
+  if (refund && eventFacts?.status && eventFacts.status !== refund.status) {
+    exceptions.push(`PayPal's refund event says ${eventFacts.status}, and PayPal's refund reads ${refund.status}.`);
+  }
+  if (refund && eventFacts?.amountCents != null && (eventFacts.amountCents !== refund.amountCents || eventFacts.currency !== refund.currency)) {
+    exceptions.push("PayPal's refund event gives another amount than PayPal's refund.");
+  }
+  if (paypalCheck === "FAILURE") exceptions.push("PayPal's own check didn't confirm this webhook. Our check did, so it was kept.");
   if (refund?.status === "PENDING") exceptions.push("PayPal hasn't finished this refund yet.");
   else if (!webhookSeen && status !== "failed" && status !== "reserved") exceptions.push("PayPal's webhook has not arrived yet.");
 
@@ -766,7 +790,7 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     ledger: { status, amountCents: row.amount_cents, currency: row.currency },
     capture: captureFacts ? { status: captureFacts.status, amountCents: captureFacts.amountCents, currency: captureFacts.currency } : null,
     refund,
-    webhook: { seen: webhookSeen },
+    webhook: { seen: webhookSeen, paypalCheck, event: eventFacts },
     exceptions,
   };
 }

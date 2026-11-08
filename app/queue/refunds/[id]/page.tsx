@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
 
 const money = (x: { amountCents: number; currency: string } | null) => (x ? `${centsToValue(x.amountCents)} ${x.currency}` : "not held here");
 
+/** PayPal's own check, in words. Only SUCCESS reads as a pass. */
+const PAYPAL_CHECK: Record<string, string> = { SUCCESS: "SUCCESS", FAILURE: "FAILURE", UNAVAILABLE: "couldn't ask PayPal", ASKING: "asking PayPal now" };
+
 function Records({ rec, id }: { rec: Reconciliation; id: string }) {
   return (
     <>
@@ -41,9 +44,14 @@ function Records({ rec, id }: { rec: Reconciliation; id: string }) {
             <td>{rec.capture?.status ?? "not held here"}</td>
             <td>{money(rec.capture)}</td>
           </tr>
+          <tr data-testid="refund-event">
+            <td>PayPal&apos;s refund event</td>
+            <td>{rec.webhook.event?.status ?? (rec.webhook.seen ? "received" : "not yet")}</td>
+            <td>{rec.webhook.event?.amountCents != null && rec.webhook.event.currency ? money({ amountCents: rec.webhook.event.amountCents, currency: rec.webhook.event.currency }) : ""}</td>
+          </tr>
           <tr data-testid="webhook">
-            <td>PayPal webhook</td>
-            <td>{rec.webhook.seen ? "received and verified" : "not yet"}</td>
+            <td>PayPal webhook check</td>
+            <td>{rec.webhook.seen ? `received and verified by our check. PayPal's own check: ${PAYPAL_CHECK[rec.webhook.paypalCheck ?? "ASKING"]}` : "not yet"}</td>
             <td />
           </tr>
         </tbody>
@@ -56,7 +64,7 @@ function Records({ rec, id }: { rec: Reconciliation; id: string }) {
           ))}
         </ul>
       ) : (
-        <p data-testid="no-exceptions" className="alert">All four records agree.</p>
+        <p data-testid="no-exceptions" className="alert">All five records agree.</p>
       )}
       {rec.newerAnswer ? (
         <form action="/api/queue/refunds/update" method="post" data-testid="newer-answer">
@@ -110,7 +118,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
   }
   const calls = await readCalls(db, session.shopId).catch(() => []);
   // One page whichever happened, so LookAgain stays mounted and its time limit holds.
-  const looking = !rec || (!rec.webhook.seen && rec.ledger.status !== "failed");
+  const looking = !rec || (!rec.webhook.seen && rec.ledger.status !== "failed") || rec.webhook.paypalCheck === "ASKING";
   return (
     <main className="page">
       <header className="page-head">

@@ -35,10 +35,11 @@ const record = (over: object = {}) => ({
   ledger: { status: "refunded", amountCents: 9000, currency: "USD" },
   capture: { status: "REFUNDED", amountCents: 9000, currency: "USD" },
   refund: { status: "COMPLETED", amountCents: 9000, currency: "USD" },
-  webhook: { seen: false },
+  webhook: { seen: false, paypalCheck: null, event: null },
   exceptions: [],
   ...over,
 });
+const arrived = (paypalCheck: string, event = { status: "COMPLETED", amountCents: 9000, currency: "USD" }) => ({ webhook: { seen: true, paypalCheck, event } });
 
 describe("the refund page", () => {
   const logged = vi.fn();
@@ -90,10 +91,27 @@ describe("the refund page", () => {
   it("looks again only while the webhook hasn't come", async () => {
     readRefund.mockResolvedValue(record());
     expect(await render()).toContain('data-testid="looking-again"');
-    readRefund.mockResolvedValue(record({ webhook: { seen: true } }));
+    readRefund.mockResolvedValue(record(arrived("SUCCESS")));
     expect(await render()).not.toContain('data-testid="looking-again"');
+    readRefund.mockResolvedValue(record(arrived("ASKING")));
+    expect(await render()).toContain('data-testid="looking-again"');
     readRefund.mockResolvedValue(record({ ledger: { status: "failed", amountCents: 9000, currency: "USD" } }));
     expect(await render()).not.toContain('data-testid="looking-again"');
+  });
+
+  it("lines up five records: the refund event's own status and amount, and both checks of its webhook", async () => {
+    readRefund.mockResolvedValue(record(arrived("SUCCESS")));
+    const html = await render();
+    expect(html).toMatch(/data-testid="refund-event"[\s\S]*?COMPLETED[\s\S]*?90\.00 USD/);
+    expect(html).toContain("received and verified by our check. PayPal&#x27;s own check: SUCCESS");
+    expect(html).toContain("All five records agree.");
+  });
+
+  it("never reads a PayPal check it couldn't make as a pass", async () => {
+    readRefund.mockResolvedValue(record(arrived("UNAVAILABLE")));
+    expect(await render()).toContain("PayPal&#x27;s own check: couldn&#x27;t ask PayPal");
+    readRefund.mockResolvedValue(record(arrived("ASKING")));
+    expect(await render()).toContain("PayPal&#x27;s own check: asking PayPal now");
   });
 
   it("with a dispute on the payment, never tells the owner to refund it by hand", async () => {

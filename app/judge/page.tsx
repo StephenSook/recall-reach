@@ -45,7 +45,7 @@ export default function JudgeDoor() {
         </li>
         <li>
           <strong>Refund a sale made after a recall.</strong> On the card for recall 27027, press Review refund, then the refund button, then Check it against PayPal.
-          <span className="quiet">Look for four records side by side, and whether they agree. If PayPal hasn&apos;t finished the refund, the page says so.</span>
+          <span className="quiet">Look for five records side by side, and whether they agree, with PayPal&apos;s own check of its webhook beside ours. If PayPal hasn&apos;t finished the refund, the page says so.</span>
         </li>
         <li>
           <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue. PayPal can take a minute or two. With a PayPal sandbox buyer login, Buy with a PayPal sandbox login does the same on PayPal&apos;s own page.
