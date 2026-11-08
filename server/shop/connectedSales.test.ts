@@ -95,4 +95,21 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.map((r) => r.join_state)).not.toContain("IDENTIFIED");
   });
+
+  it("keeps a new card's known two possible orders after a partial read, so no notice goes before that's resolved", async () => {
+    const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
+    await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+    for (const id of ["EARLIER1", "EARLIER2"]) {
+      await db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+         values ($1, $2, $3, $2, 'S', '2026-11-05T15:00:00Z', 4200, 'USD', '[]'::jsonb)`,
+        [shopId, id, sold.orderNumber],
+      );
+    }
+    const read = await readConnectedShopSales(db, searching(true), { shopId, now: NOW });
+    await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
+    const { rows } = await db.query<{ join_state: string | null; paypal_payment_id: string | null }>("select join_state, paypal_payment_id from recall_matches where shop_id = $1 and order_line_id is not null", [shopId]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.join_state === "AMBIGUOUS_JOIN" && r.paypal_payment_id === null)).toBe(true);
+  });
 });

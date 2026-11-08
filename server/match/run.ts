@@ -246,8 +246,9 @@ export async function runShopCheck(
       counts[v.verdict]++;
       const path: SalePath | null = c.ordered_on ? salePath(c.ordered_on, recall.recall_date) : null;
       const computed = c.kind === "order_line" ? joined.lines[c.id]?.state ?? null : null;
+      // Unproven stored payments still prove ambiguity: two candidates are two candidates. They just can't prove one.
       const unproven = Boolean(opts.storedPaymentsUnproven) && computed !== null;
-      const join = unproven || (computed === "NO_PAYPAL_RECORD" && !paypalSearched) ? "HISTORY_UNAVAILABLE" : computed;
+      const join = unproven ? (computed === "AMBIGUOUS_JOIN" ? "AMBIGUOUS_JOIN" : "HISTORY_UNAVAILABLE") : computed === "NO_PAYPAL_RECORD" && !paypalSearched ? "HISTORY_UNAVAILABLE" : computed;
       await tx.query(
         `insert into recall_matches (shop_id, recall_id, recall_sha256, order_line_id, shop_item_id, verdict, matched, missing, reason, sale_path, join_state, paypal_payment_id, strength, safety_receipt_id)
          values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $13, $14, $16)
