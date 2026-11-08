@@ -1,4 +1,4 @@
-// The APIMatic-generated SDK in sdk/typescript, against the deployed site. Three calls, each checked. Reads only.
+// The APIMatic-generated SDK in sdk/typescript, against the deployed site. Four calls, each checked. Reads only.
 //   pnpm exec tsx scripts/sdk-live.ts
 import { RecallReachPublicApiClient } from "../sdk/typescript/src/index";
 
@@ -12,6 +12,9 @@ async function main(): Promise<number> {
   const named = [...maker.results, ...maker.mentioned.recalls].map((r) => r.recallNumber);
   console.log(`checkRecall Bodum: ${named.slice(0, 3).join(", ")}`);
   if (!named.includes("27055")) failed.push("Bodum should name recall 27055");
+  const recall = await client.check.readRecall({ recallNumber: "27072" });
+  console.log(`readRecall 27072: found ${recall.found}, ${recall.recallDate}`);
+  if (recall.found !== true || recall.recallNumber !== "27072") failed.push("readRecall should find recall 27072");
   const health = await client.status.health();
   console.log(`health: ok ${health.ok}, PayPal ${health.paypal?.environment}`);
   if (health.paypal?.environment !== "sandbox") failed.push("health should say sandbox");
