@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { DoorNoticeLink } from "./door/DoorNoticeLink";
 
 interface Composed {
   to: string | null;
@@ -48,6 +49,7 @@ export function NoticeActions({ noticeId }: { noticeId: string }) {
         )}
       </p>
       <div className="actions">
+        {!composed.to ? <DoorNoticeLink noticeId={noticeId} /> : null}
         <a
           className="btn"
           href={href}

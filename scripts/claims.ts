@@ -16,6 +16,17 @@ export type Claim =
 
 export const CLAIMS: Claim[] = [
   {
+    name: "Door notices for confirmed sales without email",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/queue/door/[id]/page.tsx", call: "currentSession" },
+      { file: "app/queue/door/[id]/page.tsx", call: "readDoorNotice" },
+      { file: "app/api/queue/notices/[id]/door/route.ts", call: "recordDoorPrint" },
+      { file: "server/notice/door.ts", find: "on conflict \\(notice_id, action_id\\) do nothing" },
+    ],
+  },
+  {
     name: "PayPal Transaction Search",
     status: "claimed",
     evidence: [

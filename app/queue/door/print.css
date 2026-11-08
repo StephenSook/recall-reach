@@ -1,0 +1,21 @@
+.door-page { padding: 24px; }
+.door-controls { max-width: 7.5in; margin: 0 auto 24px; }
+.door-notice { max-width: 7.5in; margin: auto; padding: 24px; background: white; color: black; font-family: Arial, sans-serif; font-size: 16pt; line-height: 1.4; }
+.door-notice h1 { font-size: 28pt; line-height: 1.15; font-weight: bold; margin-bottom: 16pt; }
+.door-notice h2 { font-size: 18pt; font-weight: bold; margin-top: 16pt; }
+.door-notice p { margin-bottom: 12pt; }
+.door-notice a { color: black; overflow-wrap: anywhere; }
+.door-words { white-space: pre-wrap; }
+.door-recall-link { display: flex; align-items: center; gap: 16pt; margin-bottom: 12pt; break-inside: avoid; }
+.door-qr { display: block; width: 240px; height: 240px; flex-shrink: 0; background: white; }
+.door-url { display: block; flex: 1; min-width: 0; font-size: 20pt; font-weight: bold; }
+@media print {
+  @page { size: letter; margin: 0.5in; }
+  body { background: white !important; }
+  body > :not(.door-page), .door-controls { display: none !important; }
+  .door-page { display: block !important; padding: 0; }
+  .door-page > :not(.door-notice) { display: none !important; }
+  .door-notice { max-width: none; padding: 0; box-shadow: none; }
+  .door-qr { width: 2in; height: 2in; }
+  .door-notice h1, .door-notice h2 { break-after: avoid; }
+}
