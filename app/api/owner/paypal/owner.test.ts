@@ -164,7 +164,8 @@ describe("Log in with PayPal for a shop owner", () => {
   it("won't open a shop whose data is about to be deleted", async () => {
     signedInAs(shopId);
     await roundTrip("link");
-    await db.query("update shops set created_at = now() - interval '7 days' + interval '30 seconds' where id = $1", [shopId]);
+    // Linked shops are kept a year past the last sign-in, so this one's last was almost a year ago.
+    await db.query("update shops set created_at = now() - interval '400 days', owner_linked_at = now() - interval '8760 hours' + interval '30 seconds' where id = $1", [shopId]);
     jar.values.delete("rr_session");
     expect(location(await roundTrip("signin")).searchParams.get("error")).toBe("OWNER_SHOP_GONE");
   });

@@ -15,4 +15,5 @@ export const LINKED = {
   ALREADY_LINKED: "That PayPal login already opens this shop.",
   LINKED_ELSEWHERE: "That PayPal login already opens another shop here. Unlink it there first.",
   NOT_A_REAL_SHOP: "A demo shop can't be linked to a PayPal login.",
+  RACED: "Another PayPal login was linked to this shop at the same moment, and that one stands. Check the queue, then try again if you need to.",
 } as const;

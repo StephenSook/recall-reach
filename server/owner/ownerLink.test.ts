@@ -52,6 +52,13 @@ describe("a shop owner's PayPal login", () => {
     expect(await shopForOwner(db, { payerId: "NEWOWNER1234", recordKey: key })).toBe(shopId);
   });
 
+  it("lets only one of two logins linking the same shop at once win, and tells the other", async () => {
+    const results = await Promise.all([link(shopId, "OWNERPAYER12"), link(shopId, "SECONDOWNER9")]);
+    expect([...results].sort()).toEqual(["LINKED", "RACED"]);
+    const winner = results[0] === "LINKED" ? "OWNERPAYER12" : "SECONDOWNER9";
+    expect(await shopForOwner(db, { payerId: winner, recordKey: key })).toBe(shopId);
+  });
+
   it("never links a demo shop", async () => {
     const demo = await createShop(db, { name: "DEMO SHOP", kind: "DEMO" });
     expect(await link(demo, "OWNERPAYER12")).toBe("NOT_A_REAL_SHOP");

@@ -3,7 +3,8 @@
 import type { Queryable } from "../db/types";
 import type { RecordKey } from "../privacy/recordKey";
 
-export type LinkResult = "LINKED" | "ALREADY_LINKED" | "LINKED_ELSEWHERE" | "NOT_A_REAL_SHOP";
+/** RACED: another login was linked to this shop in the same moment, and that one stands. */
+export type LinkResult = "LINKED" | "ALREADY_LINKED" | "LINKED_ELSEWHERE" | "NOT_A_REAL_SHOP" | "RACED";
 
 export interface OwnerLink {
   linkedAt: string;
@@ -27,14 +28,22 @@ export async function linkOwner(db: Queryable, input: { shopId: string; payerId:
   }
   const taken = await db.query("select 1 from shops where owner_payer_hmac = $1 and id <> $2", [owner, input.shopId]);
   if (taken.rows.length > 0) return "LINKED_ELSEWHERE";
+  // Written only over the owner this call read, so two logins linking the same shop at once can't both win.
+  let updated;
   try {
-    await db.query(`update shops set owner_payer_hmac = $2, owner_linked_at = $4, owner_signed_in_at = null, owner_is_seller = ${IS_SELLER} where id = $1`, [input.shopId, owner, seller, input.now.toISOString()]);
+    updated = await db.query(
+      `update shops set owner_payer_hmac = $2, owner_linked_at = $4, owner_signed_in_at = null, owner_is_seller = ${IS_SELLER}
+       where id = $1 and owner_payer_hmac is not distinct from $5 returning id`,
+      [input.shopId, owner, seller, input.now.toISOString(), rows[0].owner_payer_hmac],
+    );
   } catch (err) {
     // Another shop took this login between the check and the write: the unique index settles it.
     if ((err as { code?: unknown }).code === "23505") return "LINKED_ELSEWHERE";
     throw err;
   }
-  return "LINKED";
+  if (updated.rows.length > 0) return "LINKED";
+  const now = await db.query<{ owner_payer_hmac: string | null }>("select owner_payer_hmac from shops where id = $1", [input.shopId]);
+  return now.rows[0]?.owner_payer_hmac === owner ? "ALREADY_LINKED" : "RACED";
 }
 
 /** The real shop this PayPal login opens, if any. */
