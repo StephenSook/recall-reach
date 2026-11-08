@@ -7,7 +7,7 @@ import { payPalClientFromEnv } from "@/server/paypal/client";
 import { askPayPalToVerify } from "@/server/paypal/webhookCheck";
 import { platformFromEnv } from "@/server/paypal/platform";
 import { handleWebhookDelivery, MAX_WEBHOOK_BYTES, type PlatformWebhook } from "@/server/paypal/webhookHandler";
-import { forgetMerchant } from "@/server/shop/paypalConnection";
+import { confirmRevoked } from "@/server/shop/connectFlow";
 import { recordKeyFromEnv, type RecordKey } from "@/server/privacy/recordKey";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,11 @@ function platformWebhook(recordKey: RecordKey | null): PlatformWebhook | undefin
   return {
     webhookId,
     checkWithPayPal: platform ? (transmission, id, rawBody) => askPayPalToVerify(platform.client, transmission, id, rawBody) : undefined,
+    // Acted on only once PayPal's own status agrees. Without the platform app nothing uses a link, so it waits for one.
     onConsentRevoked: async (merchantId) => {
-      if (recordKey) await forgetMerchant(getDb(), recordKey("paypal-merchant", merchantId));
+      if (!recordKey || !platform) return console.warn("PayPal consent revoked, but the platform app isn't set up to confirm it");
+      const { forgotten, kept } = await withCallLog(getDb(), null, () => confirmRevoked(getDb(), platform, { merchantId, recordKey }));
+      console.info(`PayPal consent revoked: forgotten=${forgotten} kept=${kept}`);
     },
   };
 }

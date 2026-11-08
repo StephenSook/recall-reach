@@ -74,8 +74,11 @@ export interface SellerStatus {
   scopes: string[];
 }
 
-/** Null while PayPal knows no seller for this tracking id: the shop hasn't finished signing up. */
-export async function readSellerStatus(client: PayPalClient, input: { partnerId: string; trackingId: string }): Promise<SellerStatus | null> {
+/**
+ * Null while PayPal knows no seller for this tracking id: the shop hasn't finished signing up. Scopes count only when the
+ * seller granted them to this platform's own app (platformClientId): another app's grant authorizes nothing here.
+ */
+export async function readSellerStatus(client: PayPalClient, input: { partnerId: string; trackingId: string; platformClientId: string }): Promise<SellerStatus | null> {
   let merchantId: unknown;
   try {
     ({ data: { merchant_id: merchantId } } = await client.request<{ merchant_id?: unknown }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations`, { query: { tracking_id: input.trackingId } }));
@@ -88,9 +91,11 @@ export async function readSellerStatus(client: PayPalClient, input: { partnerId:
   const { data } = await client.request<{
     payments_receivable?: unknown;
     primary_email_confirmed?: unknown;
-    oauth_integrations?: { oauth_third_party?: { scopes?: unknown[] }[] }[];
+    oauth_integrations?: { oauth_third_party?: { partner_client_id?: unknown; scopes?: unknown[] }[] }[];
   }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations/${merchantId}`);
-  const scopes = (data.oauth_integrations ?? []).flatMap((i) => (i.oauth_third_party ?? []).flatMap((t) => (t.scopes ?? []).filter((s): s is string => typeof s === "string")));
+  const scopes = (data.oauth_integrations ?? []).flatMap((i) =>
+    (i.oauth_third_party ?? []).filter((t) => t.partner_client_id === input.platformClientId).flatMap((t) => (t.scopes ?? []).filter((s): s is string => typeof s === "string")),
+  );
   return { merchantId, paymentsReceivable: data.payments_receivable === true, primaryEmailConfirmed: data.primary_email_confirmed === true, scopes };
 }
 

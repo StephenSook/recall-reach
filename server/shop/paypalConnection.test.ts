@@ -4,7 +4,7 @@ import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
 import { REFUND_SCOPE } from "../paypal/platform";
 import { createRecordKey } from "../privacy/recordKey";
-import { connectedMerchant, disconnectShop, forgetMerchant, readConnection, recordConnectRefusal, saveSellerStatus, startConnection, trackingIdFor } from "./paypalConnection";
+import { connectedMerchant, disconnectShop, readConnection, recordConnectRefusal, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor } from "./paypalConnection";
 
 const key = createRecordKey("test-record-key-secret-0123456789abcdef");
 const SECRET = "s".repeat(64);
@@ -59,7 +59,7 @@ describe("a shop's PayPal connection", () => {
     expect((await readConnection(db, { shopId, secret: SECRET }))?.refusal).toBe("PayPal answered HTTP 422, FEATURES_UNAUTHORIZED (PayPal-Debug-Id f1)");
   });
 
-  it("is gone when the shop disconnects, when PayPal says the seller took consent back, and with the shop", async () => {
+  it("is gone when the shop disconnects, and with the shop", async () => {
     const connect = async () => {
       await startConnection(db, { shopId, trackingId: trackingIdFor(key, shopId), now: NOW });
       await saveSellerStatus(db, { shopId, status: READY, secret: SECRET, recordKey: key, now: NOW });
@@ -68,11 +68,15 @@ describe("a shop's PayPal connection", () => {
     await disconnectShop(db, shopId);
     expect(await readConnection(db, { shopId, secret: SECRET })).toBeNull();
     await connect();
-    await forgetMerchant(db, key("paypal-merchant", "SELLERPAYER1"));
-    expect(await readConnection(db, { shopId, secret: SECRET })).toBeNull();
-    await connect();
     await db.query("delete from shops where id = $1", [shopId]);
     expect((await db.query("select 1 from shop_paypal_connections")).rows).toHaveLength(0);
+  });
+
+  it("finds the shops linked to a seller by the HMAC of its merchant id only", async () => {
+    await startConnection(db, { shopId, trackingId: trackingIdFor(key, shopId), now: NOW });
+    await saveSellerStatus(db, { shopId, status: READY, secret: SECRET, recordKey: key, now: NOW });
+    expect(await shopsLinkedTo(db, key("paypal-merchant", "SELLERPAYER1"))).toEqual([{ shopId, trackingId: trackingIdFor(key, shopId) }]);
+    expect(await shopsLinkedTo(db, key("paypal-merchant", "OTHERSELLER9"))).toEqual([]);
   });
 
   it("is labelled as the shop's own", async () => {

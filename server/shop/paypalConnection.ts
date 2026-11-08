@@ -35,6 +35,16 @@ export async function saveSellerStatus(db: Queryable, input: { shopId: string; s
   );
 }
 
+/** PayPal no longer knows the seller: what was saved stops counting, so nothing reads as connected or refunds from it. */
+export async function clearSellerStatus(db: Queryable, input: { shopId: string; now: Date }): Promise<void> {
+  await db.query(
+    `update shop_paypal_connections set merchant_id_sealed = null, merchant_id_hmac = null, payments_receivable = null, primary_email_confirmed = null,
+       scopes = '{}', status_read_at = $2
+     where shop_id = $1`,
+    [input.shopId, input.now.toISOString()],
+  );
+}
+
 export async function recordConnectRefusal(db: Queryable, input: { shopId: string; refusal: string }): Promise<void> {
   await db.query("update shop_paypal_connections set refusal = $2 where shop_id = $1", [input.shopId, input.refusal.slice(0, 500)]);
 }
@@ -66,7 +76,8 @@ export async function disconnectShop(db: Queryable, shopId: string): Promise<voi
   await db.query("delete from shop_paypal_connections where shop_id = $1", [shopId]);
 }
 
-/** PayPal said the seller took its consent back. */
-export async function forgetMerchant(db: Queryable, merchantIdHmac: string): Promise<void> {
-  await db.query("delete from shop_paypal_connections where merchant_id_hmac = $1", [merchantIdHmac]);
+/** The shops linked to one PayPal seller, found by the HMAC of its merchant id. */
+export async function shopsLinkedTo(db: Queryable, merchantIdHmac: string): Promise<{ shopId: string; trackingId: string }[]> {
+  const { rows } = await db.query<{ shop_id: string; tracking_id: string }>("select shop_id, tracking_id from shop_paypal_connections where merchant_id_hmac = $1", [merchantIdHmac]);
+  return rows.map((r) => ({ shopId: r.shop_id, trackingId: r.tracking_id }));
 }

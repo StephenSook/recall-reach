@@ -58,16 +58,29 @@ describe("a seller's status", () => {
       "GET /v1/customer/partners/PARTNER1/merchant-integrations": { merchant_id: "SELLERPAYER1", tracking_id: "shop-hmac-1" },
       "GET /v1/customer/partners/PARTNER1/merchant-integrations/SELLERPAYER1": integration,
     });
-    const status = await readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "shop-hmac-1" });
+    const status = await readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "shop-hmac-1", platformClientId: "P" });
     expect(request.mock.calls[0][2]).toMatchObject({ query: { tracking_id: "shop-hmac-1" } });
     expect(status).toEqual({ merchantId: "SELLERPAYER1", paymentsReceivable: true, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE, "https://uri.paypal.com/services/payments/realtimepayment"] });
     expect(isConnected(status)).toBe(true);
   });
 
+  it("counts only what the seller granted this platform's own app, never another app's grant", async () => {
+    const { client } = fakeClient({
+      "GET /v1/customer/partners/PARTNER1/merchant-integrations": { merchant_id: "SELLERPAYER1" },
+      "GET /v1/customer/partners/PARTNER1/merchant-integrations/SELLERPAYER1": {
+        ...integration,
+        oauth_integrations: [{ integration_type: "OAUTH_THIRD_PARTY", oauth_third_party: [{ partner_client_id: "OTHER-APP", scopes: [REFUND_SCOPE] }, { partner_client_id: "P", scopes: [] }] }],
+      },
+    });
+    const status = await readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "shop-hmac-1", platformClientId: "P" });
+    expect(status?.scopes).toEqual([]);
+    expect(isConnected(status)).toBe(false);
+  });
+
   it("is nothing yet when PayPal knows no seller for the tracking id", async () => {
     const notYet = new PayPalApiError(404, "GET", "/v1/customer/partners/{id}/merchant-integrations", "RESOURCE_NOT_FOUND", "dbg1");
     const { client } = fakeClient({ "GET /v1/customer/partners/PARTNER1/merchant-integrations": notYet });
-    expect(await readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "t" })).toBeNull();
+    expect(await readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "t", platformClientId: "P" })).toBeNull();
   });
 
   it("isn't connected unless payments are receivable, the email is confirmed and refunds were granted", () => {
@@ -80,6 +93,6 @@ describe("a seller's status", () => {
 
   it("refuses a merchant id that isn't PayPal's form, so nothing odd lands in a path", async () => {
     const { client } = fakeClient({ "GET /v1/customer/partners/PARTNER1/merchant-integrations": { merchant_id: "../../x" } });
-    await expect(readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "t" })).rejects.toThrow(/merchant id/);
+    await expect(readSellerStatus(client, { partnerId: "PARTNER1", trackingId: "t", platformClientId: "P" })).rejects.toThrow(/merchant id/);
   });
 });

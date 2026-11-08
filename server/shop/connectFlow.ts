@@ -5,7 +5,7 @@ import { PayPalApiError } from "../paypal/client";
 import { createReferral, isConnected, readSellerStatus, type PlatformEnv } from "../paypal/platform";
 import type { RecordKey } from "../privacy/recordKey";
 import { readConnectedShopSales } from "./connectedSales";
-import { readConnection, recordConnectRefusal, saveSellerStatus, startConnection, trackingIdFor } from "./paypalConnection";
+import { clearSellerStatus, disconnectShop, readConnection, recordConnectRefusal, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor } from "./paypalConnection";
 
 /** PayPal's answer as a person can read it: the status, PayPal's issue name and its debug id. */
 export function refusalText(err: unknown): string {
@@ -33,13 +33,16 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
   if (!connection) return { state: "NOT_STARTED" };
   let status;
   try {
-    status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId });
+    status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId });
   } catch (err) {
     const refusal = refusalText(err);
     await recordConnectRefusal(db, { shopId: input.shopId, refusal });
     return { state: "REFUSED", refusal };
   }
-  if (!status) return { state: "WAITING" };
+  if (!status) {
+    if (connection.status) await clearSellerStatus(db, { shopId: input.shopId, now: input.now });
+    return { state: "WAITING" };
+  }
   await saveSellerStatus(db, { shopId: input.shopId, status, secret: input.secret, recordKey: input.recordKey, now: input.now });
   if (!isConnected(status)) return { state: "WAITING" };
   try {
@@ -50,4 +53,24 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     await recordConnectRefusal(db, { shopId: input.shopId, refusal: `Connected, but the shop's sales couldn't be read. ${refusal}` });
     return { state: "CONNECTED", sales: { refusal } };
   }
+}
+
+/**
+ * PayPal's webhook said a seller took its consent back. A webhook's body is covered only by a CRC, so this acts only on
+ * PayPal's own status, read again: a link is forgotten once PayPal no longer shows it connected. If PayPal can't be read,
+ * this throws, the delivery fails and PayPal sends it again, and the link stays.
+ */
+export async function confirmRevoked(db: Db, platform: PlatformEnv, input: { merchantId: string; recordKey: RecordKey }): Promise<{ forgotten: number; kept: number }> {
+  let forgotten = 0;
+  let kept = 0;
+  for (const shop of await shopsLinkedTo(db, input.recordKey("paypal-merchant", input.merchantId))) {
+    const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
+    if (status && status.merchantId === input.merchantId && isConnected(status)) {
+      kept += 1;
+      continue;
+    }
+    await disconnectShop(db, shop.shopId);
+    forgotten += 1;
+  }
+  return { forgotten, kept };
 }
