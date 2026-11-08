@@ -3,9 +3,9 @@ export const OWNER_CODES = {
   OWNER_NOT_SET_UP: "Signing in with PayPal isn't set up on this site yet.",
   OWNER_NOT_LINKED: "That PayPal login doesn't open a shop here. Open your shop from the browser you used, then link your PayPal login from your queue.",
   OWNER_SHOP_GONE: "That shop has been deleted, so there's nothing to open.",
-  OWNER_EXPIRED: "That sign-in took too long or didn't start here. Try again.",
+  OWNER_EXPIRED: "That sign-in took too long, was already used, or didn't start here. Press the PayPal button again.",
   OWNER_CANCELLED: "You left PayPal's page without signing in.",
-  OWNER_FAILED: "PayPal didn't confirm the sign-in. Try again in a minute.",
+  OWNER_FAILED: "PayPal didn't confirm the sign-in. Press the PayPal button again in a minute.",
   OWNER_BUSY: "Too many sign-ins from here. Try again in a few minutes.",
 } as const;
 export type OwnerCode = keyof typeof OWNER_CODES;
