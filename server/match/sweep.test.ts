@@ -6,7 +6,7 @@ import { migrate } from "../db/migrate";
 import type { Db, Queryable } from "../db/types";
 import type { ImportedOrderLine } from "../import/shopExport";
 import { createShop, storeOrderLines } from "../import/store";
-import { prepareNotice } from "../notice/store";
+import { composeForSeller, prepareNotice } from "../notice/store";
 import { createContactCipher } from "../privacy/contactCipher";
 import { registerPushToken } from "../push/push";
 import { runShopCheck } from "./run";
@@ -184,6 +184,65 @@ describe("checking stored shops against new recalls", () => {
     expect(await brezzaRows(shopId)).toEqual(row);
     expect((await db.query("select reason from recall_matches where id = $1", [matchId])).rows).toEqual([{ reason: "settled by a person" }]);
     expect(await notice()).toEqual(held);
+  });
+
+  describe("an existing card, when a later check finds what it can see of PayPal has two possible payments", () => {
+    const addPayment = (id: string) =>
+      db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+         values ($1, $2, 'A shop-1', $2, 'S', '2026-09-15T15:00:00Z', 5000, 'USD', '[]'::jsonb)`,
+        [shopId, id],
+      );
+    const card = async () =>
+      (
+        await db.query<{ id: string; join_state: string; paypal_payment_id: string | null; verdict: string; reason: string; checked_at: unknown }>(
+          "select m.id, m.join_state, m.paypal_payment_id, m.verdict, m.reason, m.checked_at from recall_matches m join recalls r using (recall_id) where m.shop_id = $1 and r.recall_number = '27072'",
+          [shopId],
+        )
+      ).rows[0];
+    const identified = async () => {
+      await addPayment("P1");
+      await pull(brezza);
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      const before = await card();
+      expect(before).toMatchObject({ verdict: "MATCH", join_state: "IDENTIFIED" });
+      expect(before.paypal_payment_id).not.toBeNull();
+      return before;
+    };
+
+    it("says two possible orders from a check of that recall, keeps the rest of the card, and refuses both notice steps", async () => {
+      const before = await identified();
+      const { noticeId } = await prepareNotice(db, { shopId, matchId: before.id });
+      await addPayment("P2");
+      await db.query("update shops set recalls_checked_through = now() - interval '1 year' where id = $1", [shopId]);
+
+      expect(await sweep()).toMatchObject({ shopsChecked: 1, shopsFailed: 0 });
+
+      expect(await card()).toEqual({ ...before, join_state: "AMBIGUOUS_JOIN", paypal_payment_id: null });
+      await expect(prepareNotice(db, { shopId, matchId: before.id })).rejects.toMatchObject({ code: "TWO_POSSIBLE_ORDERS" });
+      await expect(composeForSeller(db, { shopId, noticeId, baseUrl: "https://example.test", tokenSecret: "k".repeat(32), cipher: createContactCipher("k".repeat(32), shopId) })).rejects.toMatchObject({ code: "TWO_POSSIBLE_ORDERS" });
+    });
+
+    it("reaches a card on the same line from a recall this check isn't about", async () => {
+      const before = await identified();
+      await addPayment("P2");
+      await db.query("update recalls set first_seen_at = now() - interval '1 hour'");
+      await db.query("update shops set recalls_checked_through = now() - interval '30 minutes' where id = $1", [shopId]);
+      await db.query("update recalls set first_seen_at = now() where recall_number = $1", [others[0].RecallNumber]);
+
+      expect(await sweep()).toMatchObject({ shopsChecked: 1, shopsFailed: 0 });
+
+      expect(await card()).toEqual({ ...before, join_state: "AMBIGUOUS_JOIN", paypal_payment_id: null });
+    });
+
+    it("leaves a card with one possible payment exactly as it was", async () => {
+      const before = await identified();
+      await db.query("update shops set recalls_checked_through = now() - interval '1 year' where id = $1", [shopId]);
+
+      expect(await sweep()).toMatchObject({ shopsChecked: 1, shopsFailed: 0 });
+
+      expect(await card()).toEqual(before);
+    });
   });
 
   it("a marker never moves back", async () => {

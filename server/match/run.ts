@@ -257,10 +257,9 @@ export async function runShopCheck(
            missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path, strength = excluded.strength,
            -- Without a fresh PayPal read, keep what an earlier run established: PayPal's data ages out
            -- after 46 hours, and that must not turn an IDENTIFIED or AMBIGUOUS_JOIN into something else.
-           -- Two possible payments are the exception: they are in hand, so outreach waits whatever came before.
-           join_state = case when $12::boolean or excluded.join_state = 'AMBIGUOUS_JOIN' then excluded.join_state
+           join_state = case when $12::boolean then excluded.join_state
                              else coalesce(recall_matches.join_state, excluded.join_state) end,
-           paypal_payment_id = case when $12::boolean or excluded.join_state = 'AMBIGUOUS_JOIN' then excluded.paypal_payment_id
+           paypal_payment_id = case when $12::boolean then excluded.paypal_payment_id
                                     else coalesce(recall_matches.paypal_payment_id, excluded.paypal_payment_id) end,
            checked_at = now()
          where not $15::boolean`,
@@ -284,6 +283,13 @@ export async function runShopCheck(
         ],
       );
     }
+    // The one thing no kind of check leaves as it was: two possible payments are in hand, so outreach waits, on every card
+    // for that line, whatever the card said before and whichever recall this check was about.
+    await tx.query(
+      `update recall_matches set join_state = 'AMBIGUOUS_JOIN', paypal_payment_id = null
+       where shop_id = $1 and order_line_id = any($2::uuid[]) and join_state is distinct from 'AMBIGUOUS_JOIN'`,
+      [shopId, Object.entries(joined.lines).filter(([, j]) => j.state === "AMBIGUOUS_JOIN").map(([id]) => id)],
+    );
     const dates = lines.map((l) => l.ordered_on).sort();
     // PayPal's search runs on UTC. A seller reads dates on the US calendar, like every other date on the page.
     const searchedFrom = opts.search ? businessDay(new Date(opts.search.from)) : (dates[0] ?? null);
