@@ -25,23 +25,30 @@ export async function startConnection(db: Queryable, input: { shopId: string; tr
   );
 }
 
+// Each status write carries the moment its PayPal read was asked, and is applied only if no later read has been. So two
+// checks racing can't leave an older answer standing over a newer one.
+const NOT_OLDER = "(status_read_at is null or status_read_at <= $2::timestamptz)";
+
 export async function saveSellerStatus(db: Queryable, input: { shopId: string; status: SellerStatus; secret: string; recordKey: RecordKey; now: Date }): Promise<void> {
   const sealed = createContactCipher(input.secret, input.shopId).seal(input.status.merchantId);
   await db.query(
-    `update shop_paypal_connections set merchant_id_sealed = $2, merchant_id_hmac = $3, payments_receivable = $4, primary_email_confirmed = $5,
-       scopes = $6, status_read_at = $7, refusal = null
-     where shop_id = $1`,
-    [input.shopId, sealed, input.recordKey("paypal-merchant", input.status.merchantId), input.status.paymentsReceivable, input.status.primaryEmailConfirmed, input.status.scopes, input.now.toISOString()],
+    `update shop_paypal_connections set merchant_id_sealed = $3, merchant_id_hmac = $4, payments_receivable = $5, primary_email_confirmed = $6,
+       scopes = $7, status_read_at = $2, refusal = null
+     where shop_id = $1 and ${NOT_OLDER}`,
+    [input.shopId, input.now.toISOString(), sealed, input.recordKey("paypal-merchant", input.status.merchantId), input.status.paymentsReceivable, input.status.primaryEmailConfirmed, input.status.scopes],
   );
 }
 
-/** PayPal no longer knows the seller: what was saved stops counting, so nothing reads as connected or refunds from it. */
-export async function clearSellerStatus(db: Queryable, input: { shopId: string; now: Date }): Promise<void> {
+/**
+ * PayPal no longer shows the saved seller: what was saved stops counting, so nothing reads as connected or refunds from it.
+ * With merchantIdHmac, only while the row still names that seller.
+ */
+export async function clearSellerStatus(db: Queryable, input: { shopId: string; now: Date; merchantIdHmac?: string }): Promise<void> {
   await db.query(
     `update shop_paypal_connections set merchant_id_sealed = null, merchant_id_hmac = null, payments_receivable = null, primary_email_confirmed = null,
        scopes = '{}', status_read_at = $2
-     where shop_id = $1`,
-    [input.shopId, input.now.toISOString()],
+     where shop_id = $1 and ${NOT_OLDER} and ($3::text is null or merchant_id_hmac = $3)`,
+    [input.shopId, input.now.toISOString(), input.merchantIdHmac ?? null],
   );
 }
 
@@ -72,8 +79,9 @@ export async function connectedMerchant(db: Queryable, input: { shopId: string; 
   return c?.connected && c.status ? c.status.merchantId : null;
 }
 
-export async function disconnectShop(db: Queryable, shopId: string): Promise<void> {
-  await db.query("delete from shop_paypal_connections where shop_id = $1", [shopId]);
+/** With merchantIdHmac, only while the row still names that seller, so a decision about one seller can't remove another. */
+export async function disconnectShop(db: Queryable, shopId: string, opts: { merchantIdHmac?: string } = {}): Promise<void> {
+  await db.query("delete from shop_paypal_connections where shop_id = $1 and ($2::text is null or merchant_id_hmac = $2)", [shopId, opts.merchantIdHmac ?? null]);
 }
 
 /** The shops linked to one PayPal seller, found by the HMAC of its merchant id. */

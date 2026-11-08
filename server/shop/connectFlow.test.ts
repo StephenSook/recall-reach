@@ -26,7 +26,7 @@ function platform(answers: { referral?: unknown; status?: unknown; integration?:
         if (answers.status instanceof Error) throw answers.status;
         return { status: 200, data: answers.status ?? { merchant_id: "SELLERPAYER1" } };
       }
-      if (path === "/v1/customer/partners/PARTNER12345/merchant-integrations/SELLERPAYER1") return { status: 200, data: answers.integration };
+      if (path.startsWith("/v1/customer/partners/PARTNER12345/merchant-integrations/")) return { status: 200, data: answers.integration };
       throw new Error(`unexpected ${method} ${path}`);
     }),
   } as unknown as PayPalClient;
@@ -114,20 +114,20 @@ describe("connecting a shop's own PayPal account", () => {
     it("forgets the link once PayPal's own status no longer shows refunds granted", async () => {
       await connected();
       const revoked = platform({ integration: { ...READY, oauth_integrations: [] } });
-      expect(await confirmRevoked(db, revoked.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0 });
+      expect(await confirmRevoked(db, revoked.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0, cleared: 0 });
       expect(await readConnection(db, { shopId, secret: SECRET })).toBeNull();
     });
 
     it("forgets the link when PayPal knows no seller for the shop any more", async () => {
       await connected();
       const gone = platform({ status: new PayPalApiError(404, "GET", "/v1/customer/partners/{id}/merchant-integrations", "RESOURCE_NOT_FOUND", "d") });
-      expect(await confirmRevoked(db, gone.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0 });
+      expect(await confirmRevoked(db, gone.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0, cleared: 0 });
     });
 
     it("keeps the link while PayPal's own status still says connected, so the event alone can't undo it", async () => {
       await connected();
       const still = platform({ integration: READY });
-      expect(await confirmRevoked(db, still.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 0, kept: 1 });
+      expect(await confirmRevoked(db, still.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 0, kept: 1, cleared: 0 });
       expect((await readConnection(db, { shopId, secret: SECRET }))?.connected).toBe(true);
     });
 
@@ -138,10 +138,17 @@ describe("connecting a shop's own PayPal account", () => {
       expect((await readConnection(db, { shopId, secret: SECRET }))?.connected).toBe(true);
     });
 
+    it("clears, never deletes, a link PayPal now shows connected as a different seller", async () => {
+      await connected();
+      const moved = platform({ status: { merchant_id: "SELLERPAYERB" }, integration: READY });
+      expect(await confirmRevoked(db, moved.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 0, kept: 0, cleared: 1 });
+      expect(await readConnection(db, { shopId, secret: SECRET })).toMatchObject({ connected: false, status: null });
+    });
+
     it("touches no shop for a merchant it never linked", async () => {
       await connected();
       const { env } = platform({ integration: READY });
-      expect(await confirmRevoked(db, env, { merchantId: "OTHERSELLER9", recordKey: key })).toEqual({ forgotten: 0, kept: 0 });
+      expect(await confirmRevoked(db, env, { merchantId: "OTHERSELLER9", recordKey: key })).toEqual({ forgotten: 0, kept: 0, cleared: 0 });
     });
   });
 });

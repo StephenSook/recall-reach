@@ -40,7 +40,8 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     return { state: "REFUSED", refusal };
   }
   if (!status) {
-    if (connection.status) await clearSellerStatus(db, { shopId: input.shopId, now: input.now });
+    // Applied whatever this request saw before asking: the write's own ordering decides whether it is the newest answer.
+    await clearSellerStatus(db, { shopId: input.shopId, now: input.now });
     return { state: "WAITING" };
   }
   await saveSellerStatus(db, { shopId: input.shopId, status, secret: input.secret, recordKey: input.recordKey, now: input.now });
@@ -60,17 +61,30 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
  * PayPal's own status, read again: a link is forgotten once PayPal no longer shows it connected. If PayPal can't be read,
  * this throws, the delivery fails and PayPal sends it again, and the link stays.
  */
-export async function confirmRevoked(db: Db, platform: PlatformEnv, input: { merchantId: string; recordKey: RecordKey }): Promise<{ forgotten: number; kept: number }> {
+export async function confirmRevoked(
+  db: Db,
+  platform: PlatformEnv,
+  input: { merchantId: string; recordKey: RecordKey; now?: Date },
+): Promise<{ forgotten: number; kept: number; cleared: number }> {
+  const merchantIdHmac = input.recordKey("paypal-merchant", input.merchantId);
   let forgotten = 0;
   let kept = 0;
-  for (const shop of await shopsLinkedTo(db, input.recordKey("paypal-merchant", input.merchantId))) {
+  let cleared = 0;
+  for (const shop of await shopsLinkedTo(db, merchantIdHmac)) {
+    const asked = input.now ?? new Date();
     const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
-    if (status && status.merchantId === input.merchantId && isConnected(status)) {
-      kept += 1;
+    if (status && isConnected(status)) {
+      if (status.merchantId === input.merchantId) {
+        kept += 1;
+        continue;
+      }
+      // The shop is connected as another seller now. The old one stops counting; the shop's next check saves the new one.
+      await clearSellerStatus(db, { shopId: shop.shopId, now: asked, merchantIdHmac });
+      cleared += 1;
       continue;
     }
-    await disconnectShop(db, shop.shopId);
+    await disconnectShop(db, shop.shopId, { merchantIdHmac });
     forgotten += 1;
   }
-  return { forgotten, kept };
+  return { forgotten, kept, cleared };
 }
