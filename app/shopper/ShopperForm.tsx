@@ -2,12 +2,10 @@
 
 import { useState } from "react";
 import type { ShopperView } from "@/app/api/shopper/run/route";
+import { SHOPPER_EXAMPLES } from "@/server/shopper/examples";
 
-const CHIPS = [
-  { ask: "A baby bath seat", budget: 50 },
-  { ask: "A bottle sterilizer and dryer", budget: 150 },
-  { ask: "A high chair", budget: 200 },
-];
+// The same list the server records runs of, so a recorded example always matches a chip.
+const CHIPS = SHOPPER_EXAMPLES;
 
 const money = (cents: number) => `${(cents / 100).toFixed(2)} USD`;
 
