@@ -43,6 +43,8 @@ Checking one item at the counter, on a phone:
 
 [Android build](https://github.com/StephenSook/recall-reach/releases/download/android-1.0.0/recall-reach-android-1.0.0.apk): queue only, push is iPhone only, not tested on a device.
 
+[iPhone build](https://recall-reach-web-e022.onrender.com/get/ios), on Apple TestFlight (passed Apple's beta review Nov 6, 2026): a web view of the live queue. Push hasn't reached a real iPhone yet.
+
 From a terminal:
 
 ```bash

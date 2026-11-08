@@ -16,6 +16,15 @@ export type Claim =
 
 export const CLAIMS: Claim[] = [
   {
+    name: "iPhone build on Apple TestFlight",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "mobile/app.json", find: "com\\.stephensookra\\.recallreach" },
+      { file: "app/get/[platform]/route.ts", find: "testflight\\.apple\\.com/join/" },
+    ],
+  },
+  {
     name: "Door notices for confirmed sales without email",
     status: "claimed",
     feature: true,
@@ -363,7 +372,6 @@ export const CLAIMS: Claim[] = [
 
   { name: "Trained scorer", status: "cut", why: "The matcher is rules. No model was trained.", mentions: ["trained scorer", "train_scorer"] },
   { name: "Hybrid search", status: "cut", why: "Trigrams and model numbers. No embeddings.", mentions: ["hybrid search", "embedding"] },
-  { name: "Mobile app", status: "cut", why: "Skipped. The family page and /check work at phone width.", mentions: ["testflight", "mobile app"] },
 ];
 
 export interface Files {

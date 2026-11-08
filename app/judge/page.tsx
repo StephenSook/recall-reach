@@ -89,6 +89,10 @@ curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%2
       <p>Two read-only tools, no key: check_recall and get_recall.</p>
       <h2 className="section-title">On a phone</h2>
       <p>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a redirect off this site, not a page */}
+        <a href="/get/ios">iPhone build on TestFlight</a>, a web view of the live queue. Push hasn&apos;t reached a real iPhone yet.
+      </p>
+      <p>
         <a href="https://github.com/StephenSook/recall-reach/releases/download/android-1.0.0/recall-reach-android-1.0.0.apk">Android build</a>, queue only. Push is iPhone only. Not tested on a device. The repository and this download are public from Nov 11.
       </p>
       {/* eslint-disable-next-line @next/next/no-img-element -- a small static code, with nothing for the image pipeline to do */}
