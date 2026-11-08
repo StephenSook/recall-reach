@@ -257,9 +257,10 @@ export async function runShopCheck(
            missing = excluded.missing, reason = excluded.reason, sale_path = excluded.sale_path, strength = excluded.strength,
            -- Without a fresh PayPal read, keep what an earlier run established: PayPal's data ages out
            -- after 46 hours, and that must not turn an IDENTIFIED or AMBIGUOUS_JOIN into something else.
-           join_state = case when $12::boolean then excluded.join_state
+           -- Two possible payments are the exception: they are in hand, so outreach waits whatever came before.
+           join_state = case when $12::boolean or excluded.join_state = 'AMBIGUOUS_JOIN' then excluded.join_state
                              else coalesce(recall_matches.join_state, excluded.join_state) end,
-           paypal_payment_id = case when $12::boolean then excluded.paypal_payment_id
+           paypal_payment_id = case when $12::boolean or excluded.join_state = 'AMBIGUOUS_JOIN' then excluded.paypal_payment_id
                                     else coalesce(recall_matches.paypal_payment_id, excluded.paypal_payment_id) end,
            checked_at = now()
          where not $15::boolean`,

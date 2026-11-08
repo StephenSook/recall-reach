@@ -135,4 +135,60 @@ describe("a connected shop's own sales, read from its own PayPal account", () =>
       await expect(prepareNotice(db, { shopId, matchId: r.id })).rejects.toMatchObject({ code: "TWO_POSSIBLE_ORDERS" });
     }
   });
+
+  describe("a card that already exists, when a later read that stopped partway finds two possible payments", () => {
+    const loadRecalls = async () => {
+      const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
+      await pullRecalls(db, { field: "RecallDate", start: "2026-10-01", end: "2026-11-05" }, { fetchImpl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+    };
+    const cards = async () =>
+      (await db.query<{ id: string; join_state: string | null; paypal_payment_id: string | null }>("select id, join_state, paypal_payment_id from recall_matches where shop_id = $1 and order_line_id is not null", [shopId])).rows;
+    const failedRead = async () => {
+      const read = await readConnectedShopSales(db, searching(true), { shopId, now: NOW });
+      expect(read.complete).toBe(false);
+      await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
+    };
+    const expectRefused = async () => {
+      const rows = await cards();
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.join_state === "AMBIGUOUS_JOIN" && r.paypal_payment_id === null)).toBe(true);
+      for (const r of rows) {
+        await expect(prepareNotice(db, { shopId, matchId: r.id })).rejects.toMatchObject({ code: "TWO_POSSIBLE_ORDERS" });
+      }
+    };
+
+    it("turns history unavailable into two possible orders, and refuses the notice", async () => {
+      await loadRecalls();
+      await failedRead();
+      const before = await cards();
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.every((r) => r.join_state === "HISTORY_UNAVAILABLE")).toBe(true);
+      for (const id of ["EARLIER1", "EARLIER2"]) {
+        await db.query(
+          `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+           values ($1, $2, null, $2, 'S', '2026-11-05T15:00:00Z', 4200, 'USD', $3::jsonb)`,
+          [shopId, id, JSON.stringify([{ name: "something", sku: sold.lines[0].sku }])],
+        );
+      }
+      await failedRead();
+      await expectRefused();
+    });
+
+    it("turns one identified payment into two possible orders, drops the payment, and refuses the notice", async () => {
+      await loadRecalls();
+      const read = await readConnectedShopSales(db, searching(), { shopId, now: NOW });
+      expect(read.complete).toBe(true);
+      await checkConnectedShop(db, { shopId, now: NOW, coverage: read.coverage });
+      const before = await cards();
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.every((r) => r.join_state === "IDENTIFIED" && r.paypal_payment_id !== null)).toBe(true);
+      await db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+         values ($1, 'LATER1', $2, 'LATER1', 'S', '2026-11-05T15:00:00Z', 4200, 'USD', '[]'::jsonb)`,
+        [shopId, sold.orderNumber],
+      );
+      await failedRead();
+      await expectRefused();
+    });
+  });
 });
