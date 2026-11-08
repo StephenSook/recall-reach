@@ -45,6 +45,8 @@ export type Method = "GET" | "POST" | "PATCH";
 
 export interface RequestOptions {
   body?: unknown;
+  /** A JSON body sent as these exact characters, for text PayPal signed. Used instead of body, never with it. */
+  rawJson?: string;
   /** Sent as PayPal-Request-Id; also makes the request safe to retry. */
   requestId?: string;
   /** The last moment, by Date.now(), that an attempt may begin. Used where a late request could do harm. */
@@ -100,7 +102,7 @@ export function createPayPalClient(opts: {
         try {
           const headers: Record<string, string> = { Authorization: `Bearer ${await opts.tokens.get()}` };
           if (tooLate()) throw new Error("too late to send this request");
-          if (ro.body !== undefined) headers["Content-Type"] = "application/json";
+          if (ro.body !== undefined || ro.rawJson !== undefined) headers["Content-Type"] = "application/json";
           if (ro.requestId) headers["PayPal-Request-Id"] = ro.requestId;
 
           const askedAt = Date.now();
@@ -109,7 +111,7 @@ export function createPayPalClient(opts: {
             res = await fetchImpl(url.toString(), {
               method,
               headers,
-              body: ro.body === undefined ? undefined : JSON.stringify(ro.body),
+              body: ro.rawJson ?? (ro.body === undefined ? undefined : JSON.stringify(ro.body)),
               signal: AbortSignal.timeout(60_000),
               cache: "no-store",
             });

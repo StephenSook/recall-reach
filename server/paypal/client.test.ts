@@ -64,6 +64,14 @@ describe("PayPal client", () => {
     expect(s.calls[0].body).toBe(JSON.stringify({ note_to_payer: "n" }));
   });
 
+  it("sends a body given as text exactly as given, so bytes PayPal signed aren't rewritten", async () => {
+    const s = scripted([ok({ verification_status: "SUCCESS" })]);
+    const raw = '{"webhook_event":{"id":"WH-1",  "note":"caf\u00e9 \\u00e9"}}';
+    await s.client.request("POST", "/v1/notifications/verify-webhook-signature", { rawJson: raw });
+    expect(s.calls[0].body).toBe(raw);
+    expect(s.calls[0].headers.get("content-type")).toBe("application/json");
+  });
+
   it("refreshes the token once on 401 and retries with the new token", async () => {
     const s = scripted([fail(401), ok({ fine: true })]);
     expect((await s.client.request("GET", "/v2/checkout/orders/O1")).data).toEqual({ fine: true });
