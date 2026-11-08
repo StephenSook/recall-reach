@@ -1,6 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TextCheckAnswer, TextCheckResult } from "@/server/match/textCheck";
 import { readItemAnswer } from "./itemAnswer";
+import { ItemAnswerView } from "./ItemAnswerView";
 
 const result = (over: Partial<TextCheckResult> = {}): TextCheckResult => ({
   recallNumber: "27072",
@@ -32,6 +35,23 @@ const said = (given: TextCheckAnswer) => readItemAnswer(given);
 
 describe("what one typed item's check says", () => {
   describe("when a recall names it", () => {
+    it("carries the model the recall names, and still says to compare it", () => {
+      const read = said(answer({ results: [match({ modelNamed: "BRZ0083" })] }));
+      expect(read.matches[0].modelNamed).toBe("BRZ0083");
+      expect(read.says).toContain("read it and compare the model");
+    });
+
+    it("carries no model on a match from the title alone", () => {
+      expect(said(answer({ results: [match({ modelNamed: null })] })).matches[0].modelNamed).toBeUndefined();
+      expect(said(answer({ results: [match()] })).matches[0].modelNamed).toBeUndefined();
+    });
+
+    it("shows the line only where a model is named", () => {
+      const html = (modelNamed: string | null) => renderToStaticMarkup(createElement(ItemAnswerView, { answer: said(answer({ results: [match({ modelNamed })] })), checked: "Baby Brezza" }));
+      expect(html("BRZ0083")).toContain("Model BRZ0083 is named in this recall.");
+      expect(html(null)).not.toContain("is named in this recall");
+    });
+
     it("says it matches, and that this doesn't say this one is recalled", () => {
       const answered = said(answer({ results: [match()] }));
       expect(answered.kind).toBe("MATCH");

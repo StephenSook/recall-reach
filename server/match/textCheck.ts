@@ -4,7 +4,7 @@ import { missingRecallYears } from "../cpsc/load";
 import { cpscPhoto } from "../cpsc/photo";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
-import { editDistance, modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
+import { editDistance, modelsShown, modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
 import type { Recall } from "../cpsc/schema";
 
 export const MAX_TITLE = 200;
@@ -31,6 +31,8 @@ export type TextCheckResult = {
   sharesWords: boolean;
   reason: string;
   missing: string[];
+  /** Only when the caller asks. The model typed in the model field, as this recall lists it, on a match. Never from the title alone. */
+  modelNamed?: string | null;
 };
 
 export interface TextCheckAnswer {
@@ -144,7 +146,7 @@ export async function checkText(
   db: Queryable,
   input: TextCheck,
   today: string,
-  opts: { maxCandidates?: number; maxResults?: number; mentions?: boolean } = {},
+  opts: { maxCandidates?: number; maxResults?: number; mentions?: boolean; withTypedModel?: boolean } = {},
 ): Promise<TextCheckAnswer> {
   const text = `${input.title} ${input.model}`.trim();
   // A number typed alone counts as the model, whichever field it went in.
@@ -222,6 +224,7 @@ export async function checkText(
       sharesWords: hasWords.has(recall.recall_number),
       reason: verdict.reason,
       missing: verdict.missing,
+      ...(opts.withTypedModel ? { modelNamed: verdict.verdict === "MATCH" && input.model.trim() ? (modelsShown(`${recall.title} ${recall.description}`, input.model)[0] ?? null) : null } : {}),
     })),
     more: Math.max(0, found.length - limit),
     cleared: judged.filter((j) => j.verdict.verdict === "CLEARED").length,

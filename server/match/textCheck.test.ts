@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
-import { checkListing, readListingCheck } from "./textCheck";
+import { checkListing, checkText, readListingCheck } from "./textCheck";
 
 const fixture = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-07";
@@ -25,6 +25,30 @@ describe("checking a store listing before it can be offered", () => {
     return { ...answer, checked: { ...answer.checked, yearsMissing: [] } };
   };
   const verdict = async (listing: { title: string; brand: string | null }) => readListingCheck(await checked(listing), listing);
+
+  describe("the model the owner typed", () => {
+    it("names it in the recall's own spelling when the recall lists it", async () => {
+      const { results } = await checkText(db, { title: "Baby Brezza sterilizer", model: "brz-0083" }, TODAY, { withTypedModel: true });
+      expect(results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH", modelNamed: "BRZ0083" });
+    });
+
+    it("says nothing for a match that came from the title alone", async () => {
+      const { results } = await checkText(db, { title: "Baby Brezza BRZ0083", model: "" }, TODAY, { withTypedModel: true });
+      expect(results[0]).toMatchObject({ recallNumber: "27072", verdict: "MATCH", modelNamed: null });
+    });
+
+    it("says nothing when the typed model isn't one the recall lists", async () => {
+      const { results } = await checkText(db, { title: "Baby Brezza SuperFast sterilizer dryer BRZ0083", model: "ZZ9999" }, TODAY, { withTypedModel: true });
+      const row = results.find((r) => r.recallNumber === "27072");
+      expect(row).toBeDefined();
+      expect(row?.modelNamed).toBeNull();
+    });
+
+    it("leaves the public answer's shape alone unless asked", async () => {
+      const { results } = await checkText(db, { title: "Baby Brezza sterilizer", model: "BRZ0083" }, TODAY);
+      expect(results[0]).not.toHaveProperty("modelNamed");
+    });
+  });
 
   it("reads the whole listing, so a model far along a long title still names the recall", async () => {
     const title = `Sterilizer ${"very long words ".repeat(30)} BRZ0083`;

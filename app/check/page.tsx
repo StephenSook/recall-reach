@@ -42,7 +42,7 @@ async function checkItem(title: string, model: string): Promise<{ answer: ItemAn
   if (!publicCheckAllowed(await headers())) return { refused: ERRORS.BUSY };
   try {
     const checked = `${input.title} ${input.model}`.trim();
-    return { answer: readItemAnswer(await checkText(getDb(), input, businessDay(), { maxResults: MAX_SHOWN })), checked };
+    return { answer: readItemAnswer(await checkText(getDb(), input, businessDay(), { maxResults: MAX_SHOWN, withTypedModel: true })), checked };
   } catch (err) {
     // The name only: a database error can quote the text it was given.
     console.error("one item check failed:", err instanceof Error ? err.name : "unknown error");

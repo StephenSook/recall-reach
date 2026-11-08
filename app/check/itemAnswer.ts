@@ -5,6 +5,8 @@ export interface RecallToRead {
   recallNumber: string;
   title: string;
   missing: string | null;
+  /** The typed model, as this recall lists it. Only on a match found through the model field. */
+  modelNamed?: string | null;
 }
 
 export interface ItemAnswer {
@@ -30,7 +32,7 @@ function clipped(text: string): string {
   return `${text.slice(0, cut > 0 ? cut : MISSING_LENGTH)}, and more${text.endsWith(")") ? ")" : ""}`;
 }
 
-const toRow = (r: TextCheckResult): RecallToRead => ({ recallNumber: r.recallNumber, title: r.title, missing: r.missing[0] ? clipped(r.missing[0]) : null });
+const toRow = (r: TextCheckResult): RecallToRead => ({ recallNumber: r.recallNumber, title: r.title, missing: r.missing[0] ? clipped(r.missing[0]) : null, modelNamed: r.modelNamed ?? undefined });
 const further = (count: number) => (count > 0 ? `${count} more came up. Add the maker or model to narrow it.` : null);
 const yearList = (years: number[]) => (years.length > 1 ? `${years.slice(0, -1).join(", ")} and ${years.at(-1)}` : String(years[0]));
 const readThese = (count: number) => `Read ${count === 1 ? "this recall" : "these recalls"} and compare what you have.`;

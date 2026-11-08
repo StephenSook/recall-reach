@@ -10,6 +10,7 @@ function RecallLinks({ recalls }: { recalls: RecallToRead[] }) {
           <Link href={`/recall/${encodeURIComponent(r.recallNumber)}`}>
             <strong>{r.recallNumber}</strong> {r.title}
           </Link>
+          {r.modelNamed ? <small>Model {r.modelNamed} is named in this recall.</small> : null}
           {r.missing ? <small>Missing: {r.missing}</small> : null}
         </li>
       ))}
