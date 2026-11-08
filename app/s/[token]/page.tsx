@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
 export default async function SafetyReceiptPage({ params }: { params: Promise<{ token: string }> }) {
   const shop = await receiptShop(getDb(), (await params).token, secret("SESSION_SECRET"));
   if (!shop) notFound();
-  return <ReceiptForm token={(await params).token} shopName={shop.name} demo={shop.kind === "DEMO"} deletesAfter={ranAt(shop.deletesAfter.toISOString())} />;
+  return <ReceiptForm token={(await params).token} shopName={shop.name} demo={shop.kind === "DEMO"} kept={shop.keptByOwner} deletesAfter={ranAt(shop.deletesAfter.toISOString())} />;
 }
