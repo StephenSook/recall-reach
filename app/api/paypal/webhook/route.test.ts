@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/db/pg", () => ({ getDb: () => ({}) }));
 const handle = vi.hoisted(() => vi.fn());
+const later = vi.hoisted(() => vi.fn());
+vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: later }));
 vi.mock("@/server/paypal/webhookHandler", async (original) => ({
   ...(await original<typeof import("@/server/paypal/webhookHandler")>()),
   handleWebhookDelivery: handle,
@@ -27,6 +29,25 @@ describe("POST /api/paypal/webhook", () => {
     const res = await post();
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "signature not verified" });
+  });
+
+  it("asks PayPal's own check only after answering, and hands the handler a way to ask it", async () => {
+    const followUp = vi.fn(async () => {});
+    handle.mockResolvedValue({ status: 200, body: { received: true, duplicate: false }, followUp });
+    later.mockReset();
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true, duplicate: false });
+    expect(followUp).not.toHaveBeenCalled();
+    expect(later).toHaveBeenCalledWith(followUp);
+    expect(handle.mock.calls[0][0].checkWithPayPal).toEqual(expect.any(Function));
+  });
+
+  it("schedules nothing when the handler has nothing to ask", async () => {
+    handle.mockResolvedValue({ status: 401, body: { error: "signature not verified" } });
+    later.mockReset();
+    await post();
+    expect(later).not.toHaveBeenCalled();
   });
 
   it("gives the handler the exact bytes it was sent, unparsed", async () => {
