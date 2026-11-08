@@ -283,6 +283,39 @@ describe("buying through PayPal's own approval page", () => {
       expect(await catchLiveSale(db, paypal.client, { captureId: paypal.captures[0].id, now: NOW })).toBe("CAUGHT");
     });
 
+    it("keeps a line whose capture is still in flight when a cancellation that read PayPal earlier acts", async () => {
+      const started = await start();
+      const state = stateOf(started);
+      const real = paypal.client.request.bind(paypal.client) as PayPalClient["request"];
+      let captureBegan!: () => void;
+      const begun = new Promise<void>((resolve) => { captureBegan = resolve; });
+      let letCaptureFinish!: () => void;
+      const held = new Promise<void>((resolve) => { letCaptureFinish = resolve; });
+      vi.spyOn(paypal.client, "request").mockImplementation((async (method: Method, path: string, opts?: RequestOptions) => {
+        if (path.endsWith("/capture")) {
+          captureBegan();
+          await held;
+        }
+        return real(method, path, opts);
+      }) as PayPalClient["request"]);
+      // No payment row exists yet, and capture_pending is still true: only the marker stands between this cancel and the line.
+      let finishing!: Promise<void>;
+      const stale: PayPalClient = {
+        request: (async (method: Method, path: string, opts?: RequestOptions) => {
+          const answer = JSON.parse(JSON.stringify(await real(method, path, opts)));
+          paypal.approve(started.orderId);
+          finishing = finish(state, started.orderId);
+          await begun;
+          return answer;
+        }) as PayPalClient["request"],
+      };
+      expect(await cancelPayPalBuy(db, { shopId, sessionId: SESSION, state, sessionSecret: SESSION_KEY, orderId: started.orderId }, stale)).toBe(false);
+      expect(await liveLines()).toEqual([expect.objectContaining({ capture_started: true, capture_pending: true })]);
+      letCaptureFinish();
+      await finishing;
+      expect(await liveLines()).toEqual([expect.objectContaining({ capture_pending: false })]);
+    });
+
     it("reports whether a signed cancellation actually released its reservation", async () => {
       const started = await start();
       const input = { shopId, sessionId: SESSION, state: stateOf(started), sessionSecret: SESSION_KEY, orderId: started.orderId };
