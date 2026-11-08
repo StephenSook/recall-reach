@@ -17,8 +17,12 @@ export function DoorNotice({ notice, noticeId, publicUrl, qr }: { notice: Notice
     actionId.current ??= crypto.randomUUID();
     try {
       const res = await fetch(`/api/queue/notices/${noticeId}/door`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actionId: actionId.current }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actionId: actionId.current, version: notice.version }),
       });
+      if (res.status === 404) {
+        setError("This notice changed or can't be printed now. Refresh the page.");
+        return;
+      }
       if (!res.ok) throw new Error("The print action could not be recorded. Try again.");
       actionId.current = null;
       window.print();

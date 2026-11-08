@@ -8,6 +8,7 @@ import { doorLedgerSale, doorLedgerShop } from "@/test/doorLedger";
 import { migrate } from "@/server/db/migrate";
 import { createShop } from "@/server/import/store";
 import { prepareNotice } from "@/server/notice/store";
+import { readDoorNotice } from "@/server/notice/door";
 import { receiptQr } from "@/server/safetyReceipt/qr";
 
 const state = vi.hoisted(() => ({ db: null as Db | null, session: null as ShopSession | null, getDb: vi.fn() }));
@@ -29,8 +30,9 @@ describe("owner door notice page and print route", () => {
   const context = () => ({ params: Promise.resolve({ id: noticeId }) });
   const page = async () => renderToStaticMarkup(createElement("div", null, await DoorNoticePage(context())));
   const get = () => GET(new Request("https://example.test/api/queue/notices/door"), context());
-  const post = (actionId: string, origin: string | null = "https://example.test") => POST(new Request("https://example.test/api/queue/notices/door", {
-    method: "POST", headers: { ...(origin ? { origin } : {}), "content-type": "application/json" }, body: JSON.stringify({ actionId }),
+  let version: string;
+  const post = (actionId: string, origin: string | null = "https://example.test", shown: unknown = version) => POST(new Request("https://example.test/api/queue/notices/door", {
+    method: "POST", headers: { ...(origin ? { origin } : {}), "content-type": "application/json" }, body: JSON.stringify({ actionId, version: shown }),
   }), context());
   beforeEach(async () => {
     vi.stubEnv("RENDER_EXTERNAL_URL", "https://example.test");
@@ -39,6 +41,7 @@ describe("owner door notice page and print route", () => {
     shopId = await doorLedgerShop(db);
     const { matchId } = await doorLedgerSale(db, shopId);
     ({ noticeId } = await prepareNotice(db, { shopId, matchId }));
+    ({ version } = await readDoorNotice(db, { shopId, noticeId }));
     state.db = db;
     state.session = { shopId, sessionId: "owner-session" };
     state.getDb.mockClear();
@@ -100,8 +103,14 @@ describe("owner door notice page and print route", () => {
     expect(state.getDb).not.toHaveBeenCalled();
   });
 
-  it("refuses malformed JSON and invalid action ids", async () => {
+  it("refuses a print of words that are no longer the ones on the record, and says it's gone rather than failed", async () => {
+    expect((await post(crypto.randomUUID(), undefined, "words-from-an-old-page")).status).toBe(404);
+    expect((await db.query("select 1 from notice_door_prints")).rows).toHaveLength(0);
+  });
+
+  it("refuses malformed JSON, invalid action ids and a missing version", async () => {
     expect((await post("bad")).status).toBe(400);
+    expect((await post(crypto.randomUUID(), undefined, null)).status).toBe(400);
     const res = await POST(new Request("https://example.test/door", { method: "POST", headers: { origin: "https://example.test" }, body: "{" }), context());
     expect(res.status).toBe(400);
   });

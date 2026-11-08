@@ -15,6 +15,7 @@ describe("door notices", () => {
   let shopId: string;
   let noticeId: string;
   let matchId: string;
+  const shown = async () => (await readDoorNotice(db, { shopId, noticeId })).version;
   beforeEach(async () => {
     db = await testDb();
     await migrate(db);
@@ -76,7 +77,7 @@ describe("door notices", () => {
   });
 
   it("records who and when once per action, and allows a separate print action", async () => {
-    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID() };
+    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: await shown() };
     const [first, repeat] = await Promise.all([recordDoorPrint(db, action), recordDoorPrint(db, action)]);
     expect(repeat).toBe(first);
     expect(await readDoorNotice(db, { shopId, noticeId })).toMatchObject({ printedAt: first });
@@ -88,7 +89,7 @@ describe("door notices", () => {
 
   it("refuses print writes for another shop, bad ids, and changed evidence", async () => {
     const other = await createShop(db, { name: "Other shop", kind: "REAL" });
-    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID() };
+    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: await shown() };
     await expect(recordDoorPrint(db, { ...action, shopId: other })).rejects.toMatchObject({ code: "NO_SUCH_NOTICE" });
     await expect(recordDoorPrint(db, { ...action, actionId: "bad" })).rejects.toMatchObject({ code: "NO_ANSWER" });
     await db.query("update recall_matches set verdict = 'CLEARED' where id = $1", [matchId]);
@@ -96,8 +97,37 @@ describe("door notices", () => {
     expect((await db.query("select 1 from notice_door_prints")).rows).toHaveLength(0);
   });
 
+  it("refuses a new print of a notice that already went out once CPSC changed the recall", async () => {
+    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: await shown() };
+    await db.query("update notices set sent_at = now() where id = $1", [noticeId]);
+    await db.query("update recall_matches set recall_sha256 = 'old' where id = $1", [matchId]);
+    await expect(readDoorNotice(db, { shopId, noticeId })).rejects.toMatchObject({ code: "NO_SUCH_NOTICE" });
+    await expect(recordDoorPrint(db, action)).rejects.toMatchObject({ code: "NO_SUCH_NOTICE" });
+    expect((await db.query("select 1 from notice_door_prints")).rows).toHaveLength(0);
+  });
+
+  it.each([
+    ["two possible orders", "update recall_matches set join_state = 'AMBIGUOUS_JOIN' where id = $1"],
+    ["weaker evidence", "update recall_matches set strength = 'PRODUCT_WORDS' where id = $1"],
+    ["a recall CPSC changed", "update recall_matches set recall_sha256 = 'old' where id = $1"],
+  ])("refuses a retried print action once the card has %s, though the first try was recorded", async (_name, change) => {
+    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: await shown() };
+    await recordDoorPrint(db, action);
+    await db.query(change, [matchId]);
+    await expect(recordDoorPrint(db, action)).rejects.toMatchObject({ code: "NO_SUCH_NOTICE" });
+  });
+
+  it("refuses a print of words that are no longer CPSC's, even when the card was rechecked", async () => {
+    const onScreen = await shown();
+    await db.query("update recalls set raw_sha256 = 'newer-words'");
+    await db.query("update recall_matches set recall_sha256 = 'newer-words' where id = $1", [matchId]);
+    expect(await shown()).toBe("newer-words");
+    await expect(recordDoorPrint(db, { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: onScreen })).rejects.toMatchObject({ code: "NO_SUCH_NOTICE" });
+    expect((await db.query("select 1 from notice_door_prints")).rows).toHaveLength(0);
+  });
+
   it("deletes the print history with the notice or the shop", async () => {
-    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID() };
+    const action = { shopId, noticeId, sessionId: "owner-session", actionId: crypto.randomUUID(), version: await shown() };
     await recordDoorPrint(db, action);
     await db.query("delete from notices where id = $1", [noticeId]);
     expect((await db.query("select 1 from notice_door_prints")).rows).toHaveLength(0);
