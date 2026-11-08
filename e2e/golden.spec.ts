@@ -415,7 +415,8 @@ test.describe("a recall's refund windows", () => {
     page.on("request", (r) => {
       // Only once this page is showing, frames included. The demo queue's shelf button loads PayPal's own script, which is its job.
       if (!page.url().includes("/queue/recalls/")) return;
-      if (!r.url().startsWith(baseURL ?? "") && !r.url().startsWith("data:")) elsewhere.push(new URL(r.url()).host);
+      if (r.url().startsWith("data:") || new URL(r.url()).origin === new URL(baseURL ?? "").origin) return;
+      elsewhere.push(new URL(r.url()).host);
     });
 
     const card = page.locator('article[data-recall="27027"]').first();
@@ -440,19 +441,24 @@ test.describe("a recall's refund windows", () => {
     expect(bar?.width ?? 0).toBeGreaterThan(300);
     await expect(page.getByTestId("timeline-list").locator("li")).toHaveCount(2);
     expect(elsewhere).toEqual([]);
-    // The check has to be able to see one: an off-site script and an off-site frame, added here, are counted.
-    await page.evaluate(() => {
+    // The check has to be able to see one: an off-site script, a frame and a host that only starts like this one, added here, are counted.
+    const lookalike = `${new URL(baseURL ?? "").host}.example.invalid`;
+    await page.evaluate((host) => {
       const script = document.createElement("script");
       script.src = "https://script.example.invalid/x.js";
       script.id = "control-script";
       document.head.append(script);
+      const near = document.createElement("script");
+      near.src = `https://${host}/x.js`;
+      near.id = "control-near";
+      document.head.append(near);
       const frame = document.createElement("iframe");
       frame.src = "https://frame.example.invalid/";
       frame.id = "control-frame";
       document.body.append(frame);
-    });
-    await expect.poll(() => [...elsewhere].sort()).toEqual(["frame.example.invalid", "script.example.invalid"]);
-    await page.evaluate(() => { document.getElementById("control-script")?.remove(); document.getElementById("control-frame")?.remove(); });
+    }, lookalike);
+    await expect.poll(() => [...elsewhere].sort()).toEqual(["frame.example.invalid", lookalike, "script.example.invalid"].sort());
+    await page.evaluate(() => { for (const id of ["control-script", "control-near", "control-frame"]) document.getElementById(id)?.remove(); });
     elsewhere.length = 0;
 
     await page.setViewportSize({ width: 390, height: 844 });
