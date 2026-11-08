@@ -5,7 +5,7 @@ import { PayPalApiError } from "../paypal/client";
 import { createReferral, isConnected, readSellerStatus, type PlatformEnv } from "../paypal/platform";
 import type { RecordKey } from "../privacy/recordKey";
 import { readConnectedShopSales } from "./connectedSales";
-import { clearSellerStatus, forgetAfterRead, readConnection, recordConnectRefusal, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor } from "./paypalConnection";
+import { clearSellerStatus, readConnection, recordConnectRefusal, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor, withConnectionLock } from "./paypalConnection";
 
 /** PayPal's answer as a person can read it: the status, PayPal's issue name and its debug id. */
 export function refusalText(err: unknown): string {
@@ -15,14 +15,16 @@ export function refusalText(err: unknown): string {
 
 export async function startConnect(db: Db, platform: PlatformEnv, input: { shopId: string; recordKey: RecordKey; returnUrl: string; now: Date }): Promise<{ actionUrl: string } | { refusal: string }> {
   const trackingId = trackingIdFor(input.recordKey, input.shopId);
-  await startConnection(db, { shopId: input.shopId, trackingId, now: input.now });
-  try {
-    return await createReferral(platform.client, { trackingId, returnUrl: input.returnUrl });
-  } catch (err) {
-    const refusal = refusalText(err);
-    await recordConnectRefusal(db, { shopId: input.shopId, refusal });
-    return { refusal };
-  }
+  return withConnectionLock(db, input.shopId, async (tx) => {
+    await startConnection(tx, { shopId: input.shopId, trackingId, now: input.now });
+    try {
+      return await createReferral(platform.client, { trackingId, returnUrl: input.returnUrl });
+    } catch (err) {
+      const refusal = refusalText(err);
+      await recordConnectRefusal(tx, { shopId: input.shopId, refusal });
+      return { refusal };
+    }
+  });
 }
 
 export type Refreshed =
@@ -33,63 +35,63 @@ export type Refreshed =
   | { state: "REFUSED"; refusal: string }
   | { state: "CONNECTED"; sales: { complete: boolean; payments: number } | { refusal: string } };
 
-/** Reads the seller's status from PayPal, and, once PayPal says connected, the shop's own sales. */
+/** Reads the seller's status from PayPal, and, once PayPal says connected, the shop's own sales. Runs alone for the shop. */
 export async function refreshConnection(db: Db, platform: PlatformEnv, input: { shopId: string; recordKey: RecordKey; secret: string; now: Date }): Promise<Refreshed> {
-  const connection = await readConnection(db, { shopId: input.shopId, secret: input.secret });
-  if (!connection) return { state: "NOT_STARTED" };
-  // Reserved immediately before asking PayPal, so its place in line is the moment it asked.
-  const read = await reserveStatusRead(db, input.shopId);
-  if (!read) return { state: "NOT_STARTED" };
-  let status;
-  try {
-    status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId });
-  } catch (err) {
-    const refusal = refusalText(err);
-    await recordConnectRefusal(db, { shopId: input.shopId, refusal });
-    return { state: "REFUSED", refusal };
-  }
-  if (!status) return (await clearSellerStatus(db, { shopId: input.shopId, read, now: input.now })) ? { state: "WAITING" } : { state: "SUPERSEDED" };
-  if (!(await saveSellerStatus(db, { shopId: input.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now: input.now }))) return { state: "SUPERSEDED" };
-  if (!isConnected(status)) return { state: "WAITING" };
-  try {
-    return { state: "CONNECTED", sales: await readConnectedShopSales(db, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now }) };
-  } catch (err) {
-    // Connected, but PayPal wouldn't give the shop's sales: its refunds stay notice-only, and the page says why.
-    const refusal = refusalText(err);
-    await recordConnectRefusal(db, { shopId: input.shopId, refusal: `Connected, but the shop's sales couldn't be read. ${refusal}` });
-    return { state: "CONNECTED", sales: { refusal } };
-  }
+  return withConnectionLock(db, input.shopId, async (tx): Promise<Refreshed> => {
+    const connection = await readConnection(tx, { shopId: input.shopId, secret: input.secret });
+    if (!connection) return { state: "NOT_STARTED" };
+    // Reserved immediately before asking PayPal, so its place in line is the moment it asked.
+    const read = await reserveStatusRead(tx, input.shopId);
+    if (!read) return { state: "NOT_STARTED" };
+    let status;
+    try {
+      status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId });
+    } catch (err) {
+      const refusal = refusalText(err);
+      await recordConnectRefusal(tx, { shopId: input.shopId, refusal });
+      return { state: "REFUSED", refusal };
+    }
+    if (!status) return (await clearSellerStatus(tx, { shopId: input.shopId, read, now: input.now })) ? { state: "WAITING" } : { state: "SUPERSEDED" };
+    if (!(await saveSellerStatus(tx, { shopId: input.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now: input.now }))) return { state: "SUPERSEDED" };
+    if (!isConnected(status)) return { state: "WAITING" };
+    try {
+      // Still inside the lock: nothing can change the link while the seller's sales are read and joined.
+      return { state: "CONNECTED", sales: await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now }) };
+    } catch (err) {
+      // Connected, but PayPal wouldn't give the shop's sales: its refunds stay notice-only, and the page says why.
+      const refusal = refusalText(err);
+      await recordConnectRefusal(tx, { shopId: input.shopId, refusal: `Connected, but the shop's sales couldn't be read. ${refusal}` });
+      return { state: "CONNECTED", sales: { refusal } };
+    }
+  });
 }
 
 /**
  * PayPal's webhook said a seller took its consent back. A webhook's body is covered only by a CRC, so this acts only on
- * PayPal's own status, read again: a link is forgotten once PayPal no longer shows it connected. If PayPal can't be read,
- * this throws, the delivery fails and PayPal sends it again, and the link stays. Each change is fenced like a refresh's,
- * so a check that lands after this one asked always wins.
+ * PayPal's own status for each shop linked to that seller, read again under that shop's lock, and applies whatever PayPal
+ * answers now: still connected (kept), connected as another seller (replaced, the new one saved), or not (forgotten: the
+ * seller and its payments go, the row stays for the next check). If PayPal can't be read, this throws, nothing changes,
+ * the delivery fails and PayPal sends it again.
  */
 export async function confirmRevoked(
   db: Db,
   platform: PlatformEnv,
-  input: { merchantId: string; recordKey: RecordKey; now?: Date },
-): Promise<{ forgotten: number; kept: number; cleared: number }> {
-  const merchantIdHmac = input.recordKey("paypal-merchant", input.merchantId);
-  let forgotten = 0;
-  let kept = 0;
-  let cleared = 0;
-  for (const shop of await shopsLinkedTo(db, merchantIdHmac)) {
-    const read = await reserveStatusRead(db, shop.shopId);
-    if (!read) continue;
-    const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
-    if (status && isConnected(status)) {
-      if (status.merchantId === input.merchantId) {
-        kept += 1;
-        continue;
+  input: { merchantId: string; recordKey: RecordKey; secret: string; now?: Date },
+): Promise<{ forgotten: number; kept: number; replaced: number }> {
+  const counts = { forgotten: 0, kept: 0, replaced: 0 };
+  for (const shop of await shopsLinkedTo(db, input.recordKey("paypal-merchant", input.merchantId))) {
+    const outcome = await withConnectionLock(db, shop.shopId, async (tx): Promise<keyof typeof counts | null> => {
+      const read = await reserveStatusRead(tx, shop.shopId);
+      if (!read) return null;
+      const now = input.now ?? new Date();
+      const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
+      if (status && isConnected(status)) {
+        if (!(await saveSellerStatus(tx, { shopId: shop.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now }))) return null;
+        return status.merchantId === input.merchantId ? "kept" : "replaced";
       }
-      // The shop is connected as another seller now. The old one stops counting; the shop's next check saves the new one.
-      if (await clearSellerStatus(db, { shopId: shop.shopId, read, now: input.now ?? new Date(), merchantIdHmac })) cleared += 1;
-      continue;
-    }
-    if (await forgetAfterRead(db, { shopId: shop.shopId, read, merchantIdHmac })) forgotten += 1;
+      return (await clearSellerStatus(tx, { shopId: shop.shopId, read, now })) ? "forgotten" : null;
+    });
+    if (outcome) counts[outcome] += 1;
   }
-  return { forgotten, kept, cleared };
+  return counts;
 }

@@ -8,7 +8,6 @@ import {
   clearSellerStatus,
   connectedMerchant,
   disconnectShop,
-  forgetAfterRead,
   readConnection,
   recordConnectRefusal,
   reserveStatusRead,
@@ -126,22 +125,44 @@ describe("a shop's PayPal connection", () => {
       expect(await connected()).toBe(false);
     });
 
-    it("forgets after a read only while it's the same attempt and seller, and no later read has landed", async () => {
-      const seller = key("paypal-merchant", "SELLERPAYER1");
+  });
+
+  describe("the payments read through a seller", () => {
+    const pay = (order: string) =>
+      db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency, items)
+         values ($1, $2, null, $2, 'COMPLETED', now(), 100, 'USD', '[]'::jsonb)`,
+        [shopId, order],
+      );
+    const count = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from paypal_payments where shop_id = $1", [shopId])).rows[0].n);
+
+    it("stay while the same seller is saved again, and go when another seller takes its place", async () => {
       await start();
       await save();
-      const revoke = await reserve();
+      await pay("TX-A1");
       await save();
-      expect(await forgetAfterRead(db, { shopId, read: revoke, merchantIdHmac: seller })).toBe(false);
-      expect(await connected()).toBe(true);
+      expect(await count()).toBe(1);
+      await save({ ...READY, merchantId: "SELLERPAYERB" });
+      expect(await count()).toBe(0);
+    });
 
-      const wrongSeller = await reserve();
-      expect(await forgetAfterRead(db, { shopId, read: wrongSeller, merchantIdHmac: key("paypal-merchant", "OTHERSELLER9") })).toBe(false);
-      expect(await clearSellerStatus(db, { shopId, read: await reserve(), now: NOW, merchantIdHmac: key("paypal-merchant", "OTHERSELLER9") })).toBe(false);
+    it("go when PayPal no longer shows the seller, while the row stays for the next check to land on", async () => {
+      await start();
+      await save();
+      await pay("TX-A1");
+      expect(await clearSellerStatus(db, { shopId, read: await reserve(), now: NOW })).toBe(true);
+      expect(await count()).toBe(0);
+      expect(await readConnection(db, { shopId, secret: SECRET })).toMatchObject({ connected: false, status: null });
+      expect(await save()).toBe(true);
       expect(await connected()).toBe(true);
+    });
 
-      expect(await forgetAfterRead(db, { shopId, read: await reserve(), merchantIdHmac: seller })).toBe(true);
-      expect(await readConnection(db, { shopId, secret: SECRET })).toBeNull();
+    it("go when the shop disconnects", async () => {
+      await start();
+      await save();
+      await pay("TX-A1");
+      await disconnectShop(db, shopId);
+      expect(await count()).toBe(0);
     });
   });
 

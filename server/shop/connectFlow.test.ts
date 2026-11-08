@@ -103,58 +103,65 @@ describe("connecting a shop's own PayPal account", () => {
     expect(await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toEqual({ state: "NOT_STARTED" });
   });
 
+  const payments = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from paypal_payments where shop_id = $1", [shopId])).rows[0].n);
+
   describe("when PayPal's webhook says a seller took its consent back", () => {
     const connected = async () => {
       const { env } = platform({ integration: READY });
       await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
       await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
       expect((await readConnection(db, { shopId, secret: SECRET }))?.connected).toBe(true);
+      expect(await payments()).toBeGreaterThan(0);
     };
+    const revoke = (env: PlatformEnv, merchantId = "SELLERPAYER1") => confirmRevoked(db, env, { merchantId, recordKey: key, secret: SECRET });
 
-    it("forgets the link once PayPal's own status no longer shows refunds granted", async () => {
+    it("forgets the seller and its payments once PayPal's own status no longer shows refunds granted, keeping the row", async () => {
       await connected();
       const revoked = platform({ integration: { ...READY, oauth_integrations: [] } });
-      expect(await confirmRevoked(db, revoked.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0, cleared: 0 });
-      expect(await readConnection(db, { shopId, secret: SECRET })).toBeNull();
+      expect(await revoke(revoked.env)).toEqual({ forgotten: 1, kept: 0, replaced: 0 });
+      expect(await readConnection(db, { shopId, secret: SECRET })).toMatchObject({ connected: false, status: null });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+      expect(await payments()).toBe(0);
     });
 
-    it("forgets the link when PayPal knows no seller for the shop any more", async () => {
+    it("forgets the seller when PayPal knows no seller for the shop any more", async () => {
       await connected();
       const gone = platform({ status: new PayPalApiError(404, "GET", "/v1/customer/partners/{id}/merchant-integrations", "RESOURCE_NOT_FOUND", "d") });
-      expect(await confirmRevoked(db, gone.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 1, kept: 0, cleared: 0 });
+      expect(await revoke(gone.env)).toEqual({ forgotten: 1, kept: 0, replaced: 0 });
     });
 
     it("keeps the link while PayPal's own status still says connected, so the event alone can't undo it", async () => {
       await connected();
       const still = platform({ integration: READY });
-      expect(await confirmRevoked(db, still.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 0, kept: 1, cleared: 0 });
+      expect(await revoke(still.env)).toEqual({ forgotten: 0, kept: 1, replaced: 0 });
       expect((await readConnection(db, { shopId, secret: SECRET }))?.connected).toBe(true);
     });
 
-    it("keeps the link and fails, so PayPal sends the event again, when PayPal can't be read", async () => {
+    it("changes nothing and fails, so PayPal sends the event again, when PayPal can't be read", async () => {
       await connected();
       const down = platform({ status: new PayPalApiError(503, "GET", "/v1/customer/partners/{id}/merchant-integrations", "SERVICE_UNAVAILABLE", "d") });
-      await expect(confirmRevoked(db, down.env, { merchantId: "SELLERPAYER1", recordKey: key })).rejects.toThrow();
+      await expect(revoke(down.env)).rejects.toThrow();
       expect((await readConnection(db, { shopId, secret: SECRET }))?.connected).toBe(true);
     });
 
-    it("clears, never deletes, a link PayPal now shows connected as a different seller", async () => {
+    it("adopts the seller PayPal now shows for the shop, and drops the old seller's payments", async () => {
       await connected();
       const moved = platform({ status: { merchant_id: "SELLERPAYERB" }, integration: READY });
-      expect(await confirmRevoked(db, moved.env, { merchantId: "SELLERPAYER1", recordKey: key })).toEqual({ forgotten: 0, kept: 0, cleared: 1 });
-      expect(await readConnection(db, { shopId, secret: SECRET })).toMatchObject({ connected: false, status: null });
+      expect(await revoke(moved.env)).toEqual({ forgotten: 0, kept: 0, replaced: 1 });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYERB");
+      expect(await payments()).toBe(0);
     });
 
     it("touches no shop for a merchant it never linked", async () => {
       await connected();
       const { env } = platform({ integration: READY });
-      expect(await confirmRevoked(db, env, { merchantId: "OTHERSELLER9", recordKey: key })).toEqual({ forgotten: 0, kept: 0, cleared: 0 });
+      expect(await revoke(env, "OTHERSELLER9")).toEqual({ forgotten: 0, kept: 0, replaced: 0 });
     });
   });
 
-  describe("when checks overlap and PayPal answers out of order", () => {
+  describe("when checks overlap", () => {
     const NO_SELLER = () => new PayPalApiError(404, "GET", "/v1/customer/partners/{id}/merchant-integrations", "RESOURCE_NOT_FOUND", "d");
-    // Each lookup by tracking id waits for an answer the test releases, so the test sets the order PayPal answers in.
+    // Each lookup by tracking id waits for an answer the test releases. Seller B's account has no sales.
     function racing() {
       const held: { release: (a: unknown) => void }[] = [];
       const waiters: (() => void)[] = [];
@@ -173,8 +180,11 @@ describe("connecting a shop's own PayPal account", () => {
           throw new Error(`unexpected ${path}`);
         }),
       } as unknown as PayPalClient;
-      const acting: PayPalClient = { request: (async (_m: string, path: string) => answerSearch(path) ?? Promise.reject(new Error(path))) as PayPalClient["request"] };
-      const env: PlatformEnv = { clientId: "platform-id", partnerId: "PARTNER12345", client, actingFor: () => acting };
+      const sellerA: PayPalClient = { request: (async (_m: string, path: string) => answerSearch(path) ?? Promise.reject(new Error(path))) as PayPalClient["request"] };
+      const sellerB: PayPalClient = {
+        request: (async (_m: string, path: string) => (path === "/v1/reporting/transactions" ? { status: 200, data: { transaction_details: [], total_pages: 1 } } : answerSearch(path) ?? Promise.reject(new Error(path)))) as PayPalClient["request"],
+      };
+      const env: PlatformEnv = { clientId: "platform-id", partnerId: "PARTNER12345", client, actingFor: (m) => (m === "SELLERPAYER1" ? sellerA : sellerB) };
       /** Resolves once n lookups have asked PayPal. */
       const asked = async (n: number) => {
         while (held.length < n) await new Promise<void>((r) => waiters.push(r));
@@ -182,61 +192,92 @@ describe("connecting a shop's own PayPal account", () => {
       return { env, held, asked };
     }
     const refresh = (env: PlatformEnv) => refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+    const settle = () => new Promise((r) => setTimeout(r, 50));
+    const begin = async (r: ReturnType<typeof racing>) => startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
 
-    it("keeps the no-seller answer asked last, though the connected answer asked first lands after it", async () => {
+    it("runs them one at a time: the second doesn't ask PayPal until the first has finished, and the one asked last stands", async () => {
       const r = racing();
-      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      await begin(r);
       const first = refresh(r.env);
       await r.asked(1);
       const second = refresh(r.env);
+      await settle();
+      expect(r.held).toHaveLength(1);
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      expect(await first).toMatchObject({ state: "CONNECTED" });
       await r.asked(2);
       r.held[1].release(NO_SELLER());
       expect(await second).toEqual({ state: "WAITING" });
-      r.held[0].release({ merchant_id: "SELLERPAYER1" });
-      expect(await first).toEqual({ state: "SUPERSEDED" });
       expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+      expect(await payments()).toBe(0);
     });
 
-    it("keeps the connected answer asked last, though the no-seller answer asked first lands after it", async () => {
+    it("finishes a seller's sales read before another check can change the seller, and drops them when it does", async () => {
       const r = racing();
-      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      await begin(r);
       const first = refresh(r.env);
       await r.asked(1);
       const second = refresh(r.env);
-      await r.asked(2);
-      r.held[1].release({ merchant_id: "SELLERPAYER1" });
-      expect(await second).toMatchObject({ state: "CONNECTED" });
-      r.held[0].release(NO_SELLER());
-      expect(await first).toEqual({ state: "SUPERSEDED" });
-      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
-    });
-
-    it("writes nothing from a check that was out when the shop started connecting again", async () => {
-      const r = racing();
-      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
-      const stale = refresh(r.env);
-      await r.asked(1);
-      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
       r.held[0].release({ merchant_id: "SELLERPAYER1" });
-      expect(await stale).toEqual({ state: "SUPERSEDED" });
-      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+      // Read from its own answer: in-process Postgres has one connection, and the second check now holds it.
+      const firstDone = await first;
+      expect(firstDone).toMatchObject({ state: "CONNECTED", sales: { complete: true } });
+      expect(firstDone.state === "CONNECTED" && "payments" in firstDone.sales && firstDone.sales.payments).toBeGreaterThan(0);
+      await r.asked(2);
+      r.held[1].release({ merchant_id: "SELLERPAYERB" });
+      expect(await second).toMatchObject({ state: "CONNECTED", sales: { complete: true, payments: 0 } });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYERB");
+      expect(await payments()).toBe(0);
     });
 
-    it("leaves a link a later check confirmed, when the revoke's no-seller answer lands after it", async () => {
+    it("lets a later check recover a link a revoke forgot, without connecting again", async () => {
       const r = racing();
-      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      await begin(r);
       const setUp = refresh(r.env);
       await r.asked(1);
       r.held[0].release({ merchant_id: "SELLERPAYER1" });
       await setUp;
-      const revoke = confirmRevoked(db, r.env, { merchantId: "SELLERPAYER1", recordKey: key });
+      const revoke = confirmRevoked(db, r.env, { merchantId: "SELLERPAYER1", recordKey: key, secret: SECRET });
       await r.asked(2);
       const later = refresh(r.env);
+      await settle();
+      expect(r.held).toHaveLength(2);
+      r.held[1].release(NO_SELLER());
+      expect(await revoke).toEqual({ forgotten: 1, kept: 0, replaced: 0 });
       await r.asked(3);
       r.held[2].release({ merchant_id: "SELLERPAYER1" });
       expect(await later).toMatchObject({ state: "CONNECTED" });
-      r.held[1].release(NO_SELLER());
-      expect(await revoke).toEqual({ forgotten: 0, kept: 0, cleared: 0 });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
+    });
+
+    it("applies two revokes in the order they asked, so the newer no-seller answer stands over an older kept", async () => {
+      const r = racing();
+      await begin(r);
+      const setUp = refresh(r.env);
+      await r.asked(1);
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      await setUp;
+      const older = confirmRevoked(db, r.env, { merchantId: "SELLERPAYER1", recordKey: key, secret: SECRET });
+      await r.asked(2);
+      const newer = confirmRevoked(db, r.env, { merchantId: "SELLERPAYER1", recordKey: key, secret: SECRET });
+      r.held[1].release({ merchant_id: "SELLERPAYER1" });
+      expect(await older).toEqual({ forgotten: 0, kept: 1, replaced: 0 });
+      await r.asked(3);
+      r.held[2].release(NO_SELLER());
+      expect(await newer).toEqual({ forgotten: 1, kept: 0, replaced: 0 });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+    });
+
+    it("lets a reconnect wait for a check that is out, then fences anything older", async () => {
+      const r = racing();
+      await begin(r);
+      const out = refresh(r.env);
+      await r.asked(1);
+      const again = begin(r);
+      await settle();
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      expect(await out).toMatchObject({ state: "CONNECTED" });
+      expect(await again).toEqual({ actionUrl: ACTION });
       expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
     });
   });
