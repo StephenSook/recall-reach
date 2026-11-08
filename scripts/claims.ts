@@ -62,6 +62,16 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    // Proven on the live site Nov 8, 2026: one sandbox subscription approved, ACTIVE, and its webhook verified.
+    name: "PayPal Subscriptions",
+    status: "claimed",
+    evidence: [
+      { file: "server/paypal/subscriptions.ts", find: '"POST", "/v1/billing/subscriptions"' },
+      { file: "server/paypal/subscriptions.ts", find: '"GET", `/v1/billing/subscriptions/' },
+      { file: "app/api/shop/subscription/start/route.ts", call: "startShopSubscription" },
+    ],
+  },
+  {
     name: "PayPal Transaction Search",
     status: "claimed",
     evidence: [
@@ -230,10 +240,9 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
-    // A feature row until a refund on a connected shop's behalf is proven live: then it can join Built With by name.
-    name: "A shop connects its own PayPal account",
+    // Proven on the live site Nov 8, 2026, on one seller, our own sandbox account: connected, read, and refunded from it.
+    name: "PayPal Partner Referrals",
     status: "claimed",
-    feature: true,
     evidence: [
       { file: "server/paypal/platform.ts", find: "/v2/customer/partner-referrals" },
       { file: "server/paypal/platform.ts", find: '"PayPal-Auth-Assertion"' },
@@ -244,10 +253,9 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
-    // A feature row until an owner's sign-in is proven on the live site: then it can join Built With by name.
-    name: "An owner signs in with PayPal",
+    // Proven on the live site Nov 8, 2026: a fresh browser, PayPal's page, and back to the owner's shop.
+    name: "Log in with PayPal",
     status: "claimed",
-    feature: true,
     evidence: [
       { file: "server/paypal/identity.ts", find: "/v1/identity/oauth2/userinfo" },
       { file: "app/api/owner/paypal/start/route.ts", call: "authorizeUrl" },
