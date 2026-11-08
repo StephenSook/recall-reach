@@ -8,6 +8,10 @@
     {
       "key": "baseUrl",
       "value": "https://recall-reach-web-e022.onrender.com"
+    },
+    {
+      "key": "recallNumber",
+      "value": "27072"
     }
   ],
   "item": [
@@ -217,6 +221,38 @@
             "exec": [
               "pm.test(\"answers 400\", () => pm.response.to.have.status(400));",
               "pm.test(\"it says what it wants\", () => pm.expect(pm.response.json().error).to.include(\"title\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "One recall by its number",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/recalls/{{recallNumber}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "recalls",
+            "{{recallNumber}}"
+          ]
+        },
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"answers 200\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test(\"it is recall 27072, as CPSC published it\", () => { pm.expect(body.found).to.eql(true); pm.expect(body.recallNumber).to.eql(\"27072\"); pm.expect(body.url).to.include(\"cpsc.gov\"); });",
+              "pm.test(\"it carries CPSC's hazard and remedy words\", () => { pm.expect(body.hazards).to.be.an(\"array\").that.is.not.empty; pm.expect(body.remedies).to.be.an(\"array\").that.is.not.empty; });"
             ]
           }
         }

@@ -10,7 +10,7 @@ import { testDb } from "../test/pglite";
 import { pullRecalls } from "./cpsc/pull";
 import { migrate } from "./db/migrate";
 import { getHealth } from "./health";
-import { checkText } from "./match/textCheck";
+import { checkText, readPublicRecall } from "./match/textCheck";
 import type { Method, PayPalClient } from "./paypal/client";
 import { latestRecallDay, loadReplay, proveReplay, runReplay } from "./replay/replay";
 
@@ -104,6 +104,17 @@ describe("openapi.yaml", () => {
       expect(hit.results.length).toBeGreaterThan(0);
       expect(misfits(schemaFor("/api/check"), hit)).toEqual([]);
       expect(misfits(schemaFor("/api/check"), await checkText(db, { title: "zzqx vvbn", model: "" }, "2026-11-06"))).toEqual([]);
+    });
+
+    it("/api/recalls/{recallNumber}, with and without a photo", async () => {
+      const recall = await readPublicRecall(db, "27072");
+      expect(recall.found).toBe(true);
+      expect(recall.image).not.toBeNull();
+      expect(misfits(schemaFor("/api/recalls/{recallNumber}"), recall)).toEqual([]);
+      await db.query("update recalls set images = '[]'::jsonb where recall_number = '27072'");
+      const withoutPhoto = await readPublicRecall(db, "27072");
+      expect(withoutPhoto.image).toBeNull();
+      expect(misfits(schemaFor("/api/recalls/{recallNumber}"), withoutPhoto)).toEqual([]);
     });
 
     it("says so when it couldn't judge everything near, and judges model hits first, so one can't be crowded out", async () => {

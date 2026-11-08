@@ -60,6 +60,51 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /api/recalls/{recallNumber}:
+    get:
+      tags: [Check]
+      operationId: readRecall
+      summary: Read one CPSC recall by its number
+      description: >-
+        The same public record get_recall returns. No key, no cookie, and no shop or buyer data.
+        Shares /api/check's limit of 60 checks an hour per visitor. Responses use no-store and allow any origin.
+      parameters:
+        - name: recallNumber
+          in: path
+          required: true
+          description: The recall number, as /api/check gives it.
+          schema: { type: string, minLength: 1, maxLength: 16, pattern: '^[A-Za-z0-9-]{1,16}$' }
+          example: "27072"
+      responses:
+        "200":
+          description: CPSC's public record, including its photo if one is held.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicRecall" }
+        "400":
+          description: That isn't a recall number.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: No such recall is held here. This does not mean a product is safe.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: Too many checks. Try again in an hour.
+          headers:
+            Retry-After:
+              description: Seconds before trying again.
+              schema: { type: integer, enum: [3600] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: The recall could not be read just now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /api/mcp:
     post:
       tags: [Check]
@@ -202,6 +247,36 @@ paths:
           description: It answers.
 components:
   schemas:
+    PublicRecall:
+      type: object
+      additionalProperties: false
+      required: [found, recallNumber, title, recallDate, url, description, products, hazards, remedies, image]
+      properties:
+        found: { type: boolean, enum: [true] }
+        recallNumber: { type: string, example: "27072" }
+        title: { type: string }
+        recallDate: { type: string, format: date }
+        url: { type: string }
+        description: { type: string }
+        products:
+          type: array
+          items:
+            type: object
+            required: [name, model, type, units]
+            properties:
+              name: { type: string }
+              model: { type: string }
+              type: { type: string, nullable: true }
+              units: { type: string, nullable: true }
+        hazards: { type: array, items: { type: string } }
+        remedies: { type: array, items: { type: string } }
+        image:
+          type: object
+          nullable: true
+          required: [url, caption]
+          properties:
+            url: { type: string }
+            caption: { type: string }
     ReplayRun:
       type: object
       required: [runId, ms, createdAt, counts, search, recallYearsMissing, rows]
