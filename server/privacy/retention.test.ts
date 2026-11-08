@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
+import { createShop } from "../import/store";
 import { HEARTBEAT_TICKS, POLL_MS } from "../jobs/appJobs";
 import {
   DATA_SOURCES,
@@ -56,9 +57,26 @@ describe("PayPal data retention (Developer Agreement 10.1.3: 48 hours)", () => {
        values ('old', 'T', 'self', $1), ('past-cutoff', 'T', 'self', $2), ('new', 'T', 'self', $3)`,
       [hoursAgo(49), hoursAgo(46.1), hoursAgo(45.9)],
     );
-    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_calls: 0, paypal_payout_refs: 0, paypal_refund_refs: 0, live_catch_runs: 0 });
+    expect(await purgePayPalData(db, now)).toEqual({ paypal_webhook_events: 2, paypal_payments: 0, paypal_calls: 0, paypal_payout_refs: 0, paypal_refund_refs: 0, live_catch_runs: 0, payout_statuses: 0 });
     const kept = await db.query<{ event_id_hmac: string }>("select event_id_hmac from paypal_webhook_events");
     expect(kept.rows.map((r) => r.event_id_hmac)).toEqual(["new"]);
+  });
+
+  it("clears PayPal's status word from a payout at the cutoff, and keeps the shop's own record of it", async () => {
+    const now = new Date("2026-11-08T12:00:00Z");
+    const ago = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+    const shopId = await createShop(db, { name: "A shop", kind: "REAL" });
+    await db.query(
+      `insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, paypal_status, expires_at, updated_at)
+       values ($1, 's', 'past-cutoff', 'x', 2400, 'USD', 'paid', 'SUCCESS', $4, $2), ($1, 's', 'newer', 'x', 2400, 'USD', 'paid', 'SUCCESS', $4, $3)`,
+      [shopId, ago(46.1), ago(45.9), ago(-1)],
+    );
+    expect((await purgePayPalData(db, now)).payout_statuses).toBe(1);
+    const { rows } = await db.query<{ sample_key: string; status: string; paypal_status: string | null }>("select sample_key, status, paypal_status from payouts order by sample_key");
+    expect(rows).toEqual([
+      { sample_key: "newer", status: "paid", paypal_status: "SUCCESS" },
+      { sample_key: "past-cutoff", status: "paid", paypal_status: null },
+    ]);
   });
 
   it("takes a live catch's seconds too: they were worked out from PayPal's capture time", async () => {

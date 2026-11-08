@@ -40,8 +40,8 @@ describe("refunds sent ledger", () => {
 
   async function payout(shop = shopId, status = "paid", sampleKey: string = PAST_WINDOW_SAMPLE.key) {
     const { rows } = await db.query<{ id: string }>(
-      `insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, paypal_status, expires_at, created_at)
-       values ($1, 'owner-session', $2, 'PRIVATE-RECEIVER', 2400, 'USD', $3, 'SUCCESS', now() + interval '1 hour', '2026-11-07T12:00:00Z') returning id`,
+      `insert into payouts (shop_id, session_id, sample_key, receiver_enc, amount_cents, currency, status, paypal_status, expires_at, created_at, updated_at)
+       values ($1, 'owner-session', $2, 'PRIVATE-RECEIVER', 2400, 'USD', $3, 'SUCCESS', now() + interval '1 hour', '2026-11-07T12:00:00Z', '2026-11-07T12:00:00Z') returning id`,
       [shop, sampleKey, status],
     );
     await db.query("insert into paypal_payout_refs (payout_row_id, batch_id, received_at) values ($1, 'TEST-BATCH-PRIVATE-ENDS', '2026-11-07T12:00:00Z')", [rows[0].id]);
@@ -90,7 +90,7 @@ describe("refunds sent ledger", () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.paypalId === "Not held here")).toBe(true);
     expect(rows.find((r) => r.kind === "Refund")?.paypalStatus).toBe("Not held here (our record: refunded)");
-    expect(rows.find((r) => r.kind === "Payout")?.paypalStatus).toBe("SUCCESS");
+    expect(rows.find((r) => r.kind === "Payout")?.paypalStatus).toBe("Not held here (our record: paid)");
   });
 
   it("omits approvals, reservations and refunds explicitly recorded as never sent", async () => {

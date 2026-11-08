@@ -37,5 +37,12 @@ export async function purgePayPalData(db: Queryable, now: Date = new Date()): Pr
     );
     deleted[table] = rows.length;
   }
+  // The one PayPal value on a row of our own: the shop's record of the payout stays, PayPal's status word goes.
+  const { rows } = await db.query(
+    `update payouts set paypal_status = null
+     where paypal_status is not null and updated_at < $1::timestamptz - make_interval(hours => $2) returning 1`,
+    [now.toISOString(), PAYPAL_PURGE_CUTOFF_HOURS],
+  );
+  deleted.payout_statuses = rows.length;
   return deleted;
 }
