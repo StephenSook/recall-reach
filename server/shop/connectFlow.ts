@@ -54,12 +54,16 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     if (!status) return (await clearSellerStatus(tx, { shopId: input.shopId, read, now: input.now })) ? { state: "WAITING" } : { state: "SUPERSEDED" };
     if (!(await saveSellerStatus(tx, { shopId: input.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now: input.now }))) return { state: "SUPERSEDED" };
     if (!isConnected(status)) return { state: "WAITING" };
+    // PayPal's answer about the seller stands whatever happens to the sales read: a failure there rolls back to here.
+    await tx.query("savepoint seller_saved");
     try {
       // Still inside the lock: nothing can change the link while the seller's sales are read and joined.
       return { state: "CONNECTED", sales: await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now }) };
     } catch (err) {
-      // Connected, but PayPal wouldn't give the shop's sales: its refunds stay notice-only, and the page says why.
-      const refusal = refusalText(err);
+      await tx.query("rollback to savepoint seller_saved");
+      // Connected, but the sales didn't arrive: its refunds stay notice-only, and the page says why. Search failures come
+      // back as failed windows, not throws, so anything else here is this site failing to save them, and says so.
+      const refusal = err instanceof PayPalApiError ? refusalText(err) : "The sales PayPal returned couldn't be saved here.";
       await recordConnectRefusal(tx, { shopId: input.shopId, refusal: `Connected, but the shop's sales couldn't be read. ${refusal}` });
       return { state: "CONNECTED", sales: { refusal } };
     }

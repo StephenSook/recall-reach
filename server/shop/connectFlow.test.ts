@@ -98,6 +98,16 @@ describe("connecting a shop's own PayPal account", () => {
     expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
   });
 
+  it("keeps PayPal's newer seller when saving that seller's sales fails, and says why", async () => {
+    const { env } = platform({ integration: READY });
+    await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+    await db.query("alter table paypal_payments add constraint no_rows_here check (false)");
+    const done = await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+    expect(done).toEqual({ state: "CONNECTED", sales: { refusal: "The sales PayPal returned couldn't be saved here." } });
+    expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
+    expect((await readConnection(db, { shopId, secret: SECRET }))?.refusal).toMatch(/^Connected, but the shop's sales couldn't be read\./);
+  });
+
   it("says nothing was started for a shop that never began connecting", async () => {
     const { env } = platform({ integration: READY });
     expect(await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW })).toEqual({ state: "NOT_STARTED" });
