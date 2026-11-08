@@ -17,7 +17,8 @@ describe("receipt deletion routes", () => {
   let shopId: string;
   let saved: { id: string; deleteToken: string };
   const key = "k".repeat(32);
-  const request = (origin = "http://localhost:3000") => new Request("http://localhost:3000/api/safety-receipts/delete", { method: "POST", headers: { origin } });
+  const request = (origin = "http://localhost:3000", site?: string) =>
+    new Request("http://localhost:3000/api/safety-receipts/delete", { method: "POST", headers: site ? { origin, "sec-fetch-site": site } : { origin } });
   beforeEach(async () => {
     vi.stubEnv("SESSION_SECRET", key);
     vi.stubEnv("RENDER_EXTERNAL_URL", "");
@@ -40,6 +41,20 @@ describe("receipt deletion routes", () => {
 
   it("refuses foreign-origin deletes even with a valid deletion token", async () => {
     expect((await familyDelete(request("https://another.test"), { params: Promise.resolve({ token: saved.deleteToken }) })).status).toBe(403);
+    expect((await db.query("select * from safety_receipts")).rows).toHaveLength(1);
+  });
+
+  // The delete page sends no referrer, so a browser's form post from it carries "Origin: null", with Sec-Fetch-Site saying
+  // where it really came from. Measured in Chromium on the built site: the family's delete button got 403 before this.
+  it("deletes from the site's own no-referrer page, whose form post says Origin: null", async () => {
+    expect((await familyDelete(request("null", "same-origin"), { params: Promise.resolve({ token: saved.deleteToken }) })).status).toBe(303);
+    expect((await db.query("select * from safety_receipts")).rows).toHaveLength(0);
+  });
+
+  it("still refuses an Origin: null post that came from another site, or says nothing of where it came from", async () => {
+    for (const site of ["cross-site", "same-site", undefined]) {
+      expect((await familyDelete(request("null", site), { params: Promise.resolve({ token: saved.deleteToken }) })).status).toBe(403);
+    }
     expect((await db.query("select * from safety_receipts")).rows).toHaveLength(1);
   });
 
