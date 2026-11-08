@@ -24,6 +24,9 @@ import { StandingNotices } from "./StandingNotices";
 import { WarningCards } from "./WarningCards";
 import { CheckWithClaude } from "./CheckWithClaude";
 import { PayPalCalls } from "./PayPalCalls";
+import { PayPalConnect } from "./PayPalConnect";
+import { platformFromEnv } from "@/server/paypal/platform";
+import { readConnection } from "@/server/shop/paypalConnection";
 import { PushRegister } from "./PushRegister";
 import { SellerAnswerForm } from "./SellerAnswerForm";
 import { RefundForm } from "./RefundForm";
@@ -268,6 +271,9 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const warnings = await readWarningsFor(getDb(), session.shopId).catch(() => []);
   const standing = await standingRecalls(getDb(), session.shopId).catch(() => []);
   const pastWindow = shop.kind === "DEMO" ? await pastWindowFor(session.shopId) : null;
+  // Only a real shop with an order file links its own PayPal: its file is what the payments join to.
+  const linksPayPal = shop.kind === "REAL" && !listings;
+  const connection = linksPayPal ? await readConnection(getDb(), { shopId: session.shopId, secret: secret("SHOP_DATA_KEY") }).catch(() => null) : null;
   const shopName = shop.name;
   const shopKind = shop.kind;
   const { cards: found, cleared, unrelated } = toCards(rows);
@@ -363,6 +369,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         {shopKind === "DEMO" ? "Dates marked seeded are demo data. " : null}
         {agentReady ? null : <span data-testid="agent-unavailable">Claude check unavailable.</span>}
       </p>
+      {linksPayPal ? <PayPalConnect connection={connection} setUp={platformFromEnv() !== null} /> : null}
       <noscript>
         <style>{`.cards > .window, .narrow-only { display: block !important; } .cards-hint { display: none !important; } .queue-heading { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; clip-path: none !important; white-space: normal !important; }`}</style>
       </noscript>
