@@ -214,11 +214,11 @@ try {
 
 `result.payload` is the same payload union a thrown `ApiError` carries on `err.payload`, and `result.message`, `result.method` and `result.uri` are that error's own members, so the **Error arms** bullet on an operation's page enumerates the payload either way, and the `catch` above it is for the rest of the family. `result.method` and `result.uri` are named on this map alone.
 
-Of **8 operations**, **7** declare typed error bodies and **1** rejects with the base `ApiError`, whose payload is always the `"undeclared"` arm.
+Of **9 operations**, **8** declare typed error bodies and **1** rejects with the base `ApiError`, whose payload is always the `"undeclared"` arm.
 
 ---
 
-## Operations, by resource (3 groups, 8 operations)
+## Operations, by resource (3 groups, 9 operations)
 
 Each page below carries one block per operation, with bullets in the fixed order **Server**, **Signature**, **Wire**, **Auth**, **Request body**, **SDK-sent**, **Returns**, **Error**, **Error arms**, then a **Fields** table mapping every request field to the channel it travels on, and a **Type sources** table naming the declaring file and schema value of every type the operation mentions. With `api-reference.md` documenting operations only, that table is the route from an operation to the file declaring what it takes.
 
@@ -226,7 +226,7 @@ Each page below carries one block per operation, with bullets in the fixed order
 
 | Applies to every operation | Stated where | A block departs from it only by |
 | --- | --- | --- |
-| **Call shape `op(request, options?)`**, one flat request object first, the per-call options second. When the request type has no required field the request is `request?:` and may be omitted, `client.check.checkRecall()` sends what `client.check.checkRecall({})` sends; 1 of the 8 operations is in that case. There is no positional overload. What the second argument carries is a `signal`, a `retry` override and a log level; a per-call base URL, header or auth override does not exist | here, Getting a client | never, it always holds |
+| **Call shape `op(request, options?)`**, one flat request object first, the per-call options second. When the request type has no required field the request is `request?:` and may be omitted, `client.check.checkRecall()` sends what `client.check.checkRecall({})` sends; 1 of the 9 operations is in that case. There is no positional overload. What the second argument carries is a `signal`, a `retry` override and a log level; a per-call base URL, header or auth override does not exist | here, Getting a client | never, it always holds |
 | **The request object is flat and channel-blind.** A field named `body` *is* the whole request body; every other field is fanned out to path, query, header or form by the SDK. Nothing in the object is nested by channel | here | never, the **Fields** table `Channel` column always resolves it |
 | **Throw-based, returning `ApiPromise<T, E>`.** `await` it for `T`; call `.asApiResult()` on the returned value for the non-throwing `ApiResult<T, E>`. No operation is result-only | here, Error-handling model | the operation is paged, it returns a `Pageable<TPage, TItem, E>`: a loop over it throws `E` at the first error status, and `.asApiResult()` on the returned value is the form whose `.pages()` yields one `ApiResult<TPage, E>` per page |
 | **`E` is the base `ApiError`** and the payload is always the `"undeclared"` arm | Error-handling model | the spec declared error bodies, the **Error** bullet names a subclass and an **Error arms** bullet gives each arm's tag, status and body |
@@ -254,7 +254,7 @@ Each page below carries one block per operation, with bullets in the fixed order
 
 | Resource (`client.X`) | Ops | Operations | Page |
 | --- | --- | --- | --- |
-| `check` | 3 | `checkRecall` · `mcp` · `mcpNoStream` | [map/operations/check.md](map/operations/check.md) |
+| `check` | 4 | `checkRecall` · `mcp` · `mcpNoStream` · `readRecall` | [map/operations/check.md](map/operations/check.md) |
 | `evidence` | 3 | `newestRecallDay` · `readReplay` · `recountReplay` | [map/operations/evidence.md](map/operations/evidence.md) |
 | `status` | 2 | `health` · `live` | [map/operations/status.md](map/operations/status.md) |
 
@@ -266,9 +266,9 @@ Each page below carries one block per operation, with bullets in the fixed order
 
 | Group | Count | Directory |
 | --- | --- | --- |
-| Objects (plain `type`, no class) | 25 | `src/models/` |
-| Enums (open; const companion plus schema) | 3 | `src/models/` |
-| Typed error classes (`ApiError` subclass, one per typed operation) | 7 | `src/resources/`, in the declaring module's namespace |
+| Objects (plain `type`, no class) | 28 | `src/models/` |
+| Enums (open; const companion plus schema) | 4 | `src/models/` |
+| Typed error classes (`ApiError` subclass, one per typed operation) | 8 | `src/resources/`, in the declaring module's namespace |
 
 Conventions: every model is a plain `type`, not a class, build one with an object literal; there is no constructor and no builder. `f: T` is required, `f?: T` is optional (omit the key), and `f: T | null` is a **required, nullable** field where `null` is a value distinct from an omitted key. Optional properties are declared `f?: T`, not `f?: T | undefined`, so under `exactOptionalPropertyTypes` you must **omit or spread** an absent field rather than assign `undefined` to it. A schema value is directly usable both ways: `Schema<T, W = Encoded<T>>` is `{ decode(v: unknown): T; encode(v: unknown): W }`, and `Encoded<T>` is the wire projection, a `Date` becomes `string | number`, a `Uint8Array` becomes a base64 `string`, recursing through arrays and objects. `EnumSchema<T>` adds `readonly values: readonly T[]`, so an enum's known set is testable at run time. Enums are **not** TypeScript `enum`s and are open: a `const` companion plus a union that includes `(string & {})` or `(number & {})`, so **any** value of the base type is assignable and the schema validates the base type only, never membership, read the member names and the values they send off the companion, and use `.values` to test membership yourself. A discriminated union is narrowed with an exhaustive `switch` on its tag, with no fallback arm and no type guard to import; one without a discriminant is narrowed on the shape of its arms, which its declaration spells out. A property default is filled by the SDK on **encode as well as decode**, so omitting one still sends it, read it off the `defaulted(…)` entry in the schema, or off the property's `@default`. A numeric property is a `number` whatever its format, and its schema follows the type. `type: integer` with no format, `int32` or `int64` rejects a fraction and any value outside the safe-integer range; `type: number` with no format, `float`, `double` or `bigdecimal` rejects a non-finite value. A property's wire name is its `_keysMap` entry in the schema and may differ from the TypeScript name, read it there rather than deriving it. A named spec schema whose resolved form is a bare container, or which is used only as a form-encoded body, gets no model file and no exported name: the first is written inline at each use site, the second is flattened onto the operation's request type, one field per property, so read that field list from the request type.
 

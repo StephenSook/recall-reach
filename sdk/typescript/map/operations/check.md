@@ -2,7 +2,7 @@
 
 # Check, operations
 
-Accessor: `client.check` · Source: `src/resources/check.ts` · 3 operations · Request and error types: namespace `Check`
+Accessor: `client.check` · Source: `src/resources/check.ts` · 4 operations · Request and error types: namespace `Check`
 
 **Type sources**: every type an operation names, with the file that declares it and the schema value exported beside it. Import every name from `recall-reach-public-api`; the `Source` path is where to **read** the shape, never what to import. `ApiError`, the runtime error family and the file vocabulary are excluded, see sdk-map.md.
 
@@ -62,5 +62,26 @@ Accessor: `client.check` · Source: `src/resources/check.ts` · 3 operations · 
 
 | Type | Schema value | Source |
 | --- | --- | --- |
+| `Problem` | `problemSchema` | `src/models/problem.ts` |
+
+### readRecall
+
+- **Signature**: `readRecall(request: Check.ReadRecallRequest, options?: RequestOptions): ApiPromise<PublicRecall, Check.ReadRecallError>`
+- **Wire**: `GET /api/recalls/{recallNumber}`
+- **Auth**: none, public; no credential is sent
+- **Request body**: none, no `Content-Type` header is sent
+- **Returns**: `PublicRecall`
+- **Error**: `RecallReachPublicApiError` with `kind: "api"`, an instance of `Check.ReadRecallError`, **typed arms**, narrowed on `err.payload.kind`
+- **Error arms**: `"problem"` [400] `Problem` · `"problem2"` [404] `Problem` · `"problem3"` [429] `Problem` · `"problem4"` [503] `Problem` · `"undeclared"` [any other] `rawBody: ArrayBuffer`
+
+**Fields**, `Check.ReadRecallRequest` (1):
+
+| Field | Channel | Type | Req |
+| --- | --- | --- | --- |
+| `recallNumber` | `path` | `string` | yes |
+
+| Type | Schema value | Source |
+| --- | --- | --- |
+| `PublicRecall` | `publicRecallSchema` | `src/models/public-recall.ts` |
 | `Problem` | `problemSchema` | `src/models/problem.ts` |
 

@@ -13,6 +13,9 @@
     <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/checkRecall</loc>
   </url>
   <url>
+    <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/readRecall</loc>
+  </url>
+  <url>
     <loc>https://recall-reach-web-e022.onrender.com/api-docs/api/openapi/check/mcpNoStream</loc>
   </url>
   <url>

@@ -5,6 +5,7 @@
   - API Reference
     - Check
       - [Check a product title or model against CPSC recalls](/api-docs/api/openapi/check/checkRecall): Runs the rules a shop's sales get on the text you send. Our code doesn't store or log it. It travels in the page address, so the web host's request logs may include it. At least one of title and model is needed. Limited to 60 checks an hour per visitor.
+      - [Read one CPSC recall by its number](/api-docs/api/openapi/check/readRecall): The same public record get_recall returns. No key, no cookie, and no shop or buyer data. Shares /api/check's limit of 60 checks an hour per visitor. Responses use no-store and allow any origin.
       - [Not offered. Every answer comes back on its own POST.](/api-docs/api/openapi/check/mcpNoStream): The server is stateless and opens no event stream, so a GET is refused with 405.
       - [The same check as an MCP tool over Streamable HTTP](/api-docs/api/openapi/check/mcp): Two read-only tools: check_recall(title, model), and get_recall(recallNumber), which gives one recall's CPSC text. Stateless: each request stands alone. Send JSON-RPC 2.0, with Accept application/json, text/event-stream. It shares the limit of /api/check.
     - Evidence

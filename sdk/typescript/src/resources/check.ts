@@ -9,6 +9,7 @@ import * as s from "../core/validation/index.js";
 import { apiMcpRequestSchema, type ApiMcpRequest } from "../models/api-mcp-request.js";
 import { checkAnswerSchema, type CheckAnswer } from "../models/check-answer.js";
 import { problemSchema, type Problem } from "../models/problem.js";
+import { publicRecallSchema, type PublicRecall } from "../models/public-recall.js";
 import type { Servers } from "../servers.js";
 
 export class Check {
@@ -28,8 +29,8 @@ export class Check {
    * travels in the page address, so the web host's request logs may include it. At least one of
    * title and model is needed. Limited to 60 checks an hour per visitor.
    *
-   * @returns The recalls this text comes near, closest first. An empty list means nothing came
-   * near.
+   * @returns The recalls this text comes near, closest first. An empty list isn't the same as
+   * nothing near: read mentioned too.
    *
    * @throws {@link Check.CheckRecallError} when the API answers with an error status, narrow on
    * `err.payload.kind`
@@ -133,6 +134,45 @@ export class Check {
       options,
     );
   }
+
+  /**
+   * Read one CPSC recall by its number
+   *
+   * @remarks
+   * The same public record get_recall returns. No key, no cookie, and no shop or buyer data. Shares
+   * /api/check's limit of 60 checks an hour per visitor. Responses use no-store and allow any
+   * origin.
+   *
+   * @returns CPSC's public record, including its photo if one is held.
+   *
+   * @throws {@link Check.ReadRecallError} when the API answers with an error status, narrow on
+   * `err.payload.kind`
+   *
+   * @throws {@link RecallReachPublicApiError} when no usable response was produced: a connection
+   * failure, a timeout, a body that would not decode, a value that would not encode, or a
+   * credential that could not be obtained
+   */
+  readRecall(
+    request: Check.ReadRecallRequest,
+    options?: RequestOptions,
+  ): ApiPromise<PublicRecall, Check.ReadRecallError> {
+    return this.#rawClient.execute(
+      {
+        method: "GET",
+        urlTemplate: this.#servers.default("/api/recalls/{recallNumber}"),
+        auth: noneAuth,
+        pathParams: [{ name: "recallNumber", value: request.recallNumber, schema: s.string() }],
+        query: [],
+        headers: [],
+        body: { kind: "empty" },
+      },
+      {
+        success: { kind: "json", schema: publicRecallSchema },
+        errorFactory: Check.ReadRecallError,
+      },
+      options,
+    );
+  }
 }
 
 export namespace Check {
@@ -174,6 +214,27 @@ export namespace Check {
 
     static readonly errors: ErrorDecoders<McpNoStreamError> = [
       { on: 405, kind: "problem", decode: { kind: "json", schema: problemSchema } },
+    ];
+  }
+
+  export type ReadRecallRequest = {
+    /** The recall number, as /api/check gives it. */
+    recallNumber: string;
+  };
+
+  export class ReadRecallError extends ApiError {
+    declare readonly payload:
+      | Declared<"problem", Problem>
+      | Declared<"problem2", Problem>
+      | Declared<"problem3", Problem>
+      | Declared<"problem4", Problem>
+      | Undeclared;
+
+    static readonly errors: ErrorDecoders<ReadRecallError> = [
+      { on: 400, kind: "problem", decode: { kind: "json", schema: problemSchema } },
+      { on: 404, kind: "problem2", decode: { kind: "json", schema: problemSchema } },
+      { on: 429, kind: "problem3", decode: { kind: "json", schema: problemSchema } },
+      { on: 503, kind: "problem4", decode: { kind: "json", schema: problemSchema } },
     ];
   }
 }

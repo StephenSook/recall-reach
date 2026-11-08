@@ -265,6 +265,94 @@ if (result.ok) {
 
 </details>
 
+<details>
+<summary><code>readRecall(request: Check.ReadRecallRequest, options?: RequestOptions): ApiPromise&lt;PublicRecall, Check.ReadRecallError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+The same public record get_recall returns. No key, no cookie, and no shop or buyer data. Shares /api/check's limit of 60 checks an hour per visitor. Responses use no-store and allow any origin.
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.check.readRecall({ recallNumber: "27072" });
+  // TODO: Handle 'response' of type PublicRecall
+} catch (err) {
+  // TODO: Handle 'err' of type Check.ReadRecallError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.check.readRecall({ recallNumber: "27072" }).asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type PublicRecall
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>recallNumber</code> | <code>string</code> | The recall number, as /api/check gives it. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.check.readRecall(request)`
+
+- **OnSuccess**: <code>[PublicRecall](src/models/public-recall.ts)</code>
+- **OnError**: throws <code>[Check.ReadRecallError](src/resources/check.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.check.readRecall(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;PublicRecall, Check.ReadRecallError&gt;</code>, with `result.value` of type <code>[PublicRecall](src/models/public-recall.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[RecallReachPublicApiError](src/core/errors.ts)</code> on any operational failure, a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
 ## Evidence
 
 > Source: [Evidence](src/resources/evidence.ts)
