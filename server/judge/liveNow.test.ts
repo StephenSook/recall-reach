@@ -88,6 +88,16 @@ describe("the judge page's live line", () => {
       expect(db.query).toHaveBeenCalledTimes(2);
     });
 
+    it("reads again as soon as a newer poll ran, so a fresh check time can't sit beside an older recall", async () => {
+      const db = answers();
+      const held = createHeldReading(60_000);
+      await held(db, 0, "2026-11-08T21:00:00.000Z");
+      await held(db, 1000, "2026-11-08T21:00:00.000Z");
+      expect(db.query).toHaveBeenCalledTimes(1);
+      await held(db, 2000, "2026-11-08T21:15:00.000Z");
+      expect(db.query).toHaveBeenCalledTimes(2);
+    });
+
     it("doesn't hold a failure: the next visit tries again", async () => {
       let fail = true;
       const db = fake(async () => {

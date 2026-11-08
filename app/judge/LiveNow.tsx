@@ -11,9 +11,9 @@ async function readLine(): Promise<string | null> {
     const late = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), MOST_WAITED_MS);
     });
-    const held = await Promise.race([heldReading(getDb(), Date.now()), late]).finally(() => clearTimeout(timer));
-    if (!held) return null;
     const poll = recallPollStatus();
+    const held = await Promise.race([heldReading(getDb(), Date.now(), poll.lastPollAt), late]).finally(() => clearTimeout(timer));
+    if (!held) return null;
     return liveNowLine({ checkedAt: poll.lastPollOk && poll.lastPollAt ? poll.lastPollAt : held.written, newest: held.newest, now: new Date() });
   } catch {
     return null;

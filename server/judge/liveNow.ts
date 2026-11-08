@@ -27,13 +27,17 @@ export async function readHeld(db: Queryable): Promise<HeldReading> {
   };
 }
 
-/** The judge page is public and the pool is small: visits share one read, and a failed read isn't kept. */
+/**
+ * The judge page is public and the pool is small: visits share one read, and a failed read isn't kept. A newer poll reads
+ * again, so a fresh check time never sits beside an older recall.
+ */
 export function createHeldReading(keepMs: number) {
-  let held: { at: number; reading: Promise<HeldReading | null> } | null = null;
-  return (db: Queryable, now: number): Promise<HeldReading | null> => {
-    if (held && now - held.at < keepMs) return held.reading;
+  let held: { at: number; poll: string | null; reading: Promise<HeldReading | null> } | null = null;
+  return (db: Queryable, now: number, poll: string | null = null): Promise<HeldReading | null> => {
+    if (held && now - held.at < keepMs && held.poll === poll) return held.reading;
     const entry = {
       at: now,
+      poll,
       reading: readHeld(db).catch(() => {
         if (held === entry) held = null;
         return null;
