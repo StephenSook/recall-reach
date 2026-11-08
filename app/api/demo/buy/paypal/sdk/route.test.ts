@@ -99,6 +99,16 @@ describe("the v6 shelf checkout routes", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
+  it("refuses an oversized body on both routes before reading it or calling PayPal", async () => {
+    const oversized = (path: string) => new Request(`${SITE}${path}`, {
+      method: "POST", headers: { origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: `state=${"x".repeat(5000)}`,
+    });
+    expect((await create(oversized("/api/demo/buy/paypal/sdk"))).status).toBe(413);
+    expect((await capture(oversized("/api/demo/buy/paypal/sdk/capture"))).status).toBe(413);
+    expect(client.request).not.toHaveBeenCalled();
+    expect(await liveLines()).toEqual([]);
+  });
+
   it("sends the hosted path's exact order fields, apart from each sale's fresh number and signed state", async () => {
     const old = await hosted(request("/api/demo/buy/paypal", { shopItemId: itemId }));
     expect(old.status).toBe(303);
