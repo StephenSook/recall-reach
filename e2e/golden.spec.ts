@@ -162,6 +162,17 @@ test("a real recall reaches the queue, the family is told, and one eligible sale
 
   // A second approval for the same sale is refused: nothing can refund it twice.
   await expect(recall(page, "27027").getByRole("button", { name: "Review refund" })).toHaveCount(0);
+
+  // The owner's ledger has the refund, with PayPal's id masked, and the CSV carries the same row.
+  await page.goto("/queue/sent");
+  const sent = page.getByRole("row").filter({ hasText: "90.00" });
+  await expect(sent).toContainText("Refund");
+  await expect(sent).toContainText("27027");
+  await expect(sent).toContainText("COMPLETED");
+  await expect(sent).toContainText(/[A-Z0-9]{4}\.\.\.[A-Z0-9]{4}/);
+  const csv = await page.request.get("/queue/sent/csv");
+  expect(csv.status()).toBe(200);
+  expect(await csv.text()).toContain('"90.00"');
 });
 
 test("a scope gap is settled by a check request that asks what this recall needs", async ({ page, browser }) => {
