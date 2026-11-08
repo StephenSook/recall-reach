@@ -107,6 +107,21 @@ describe("the refund page", () => {
     expect(html).toContain("All five records agree.");
   });
 
+  it("says all five agree only when PayPal's check passed and the event can be compared", async () => {
+    readRefund.mockResolvedValue(record(arrived("ASKING")));
+    let html = await render();
+    expect(html).not.toContain("All five records agree.");
+    expect(html).toContain("Four records agree. PayPal&#x27;s own check of the webhook is still being asked.");
+    readRefund.mockResolvedValue(record(arrived("UNAVAILABLE")));
+    html = await render();
+    expect(html).not.toContain("All five records agree.");
+    expect(html).toContain("Four records agree. PayPal&#x27;s own check of the webhook couldn&#x27;t be asked, so it isn&#x27;t counted.");
+    readRefund.mockResolvedValue(record(arrived("SUCCESS", { status: null, amountCents: null, currency: null } as never)));
+    html = await render();
+    expect(html).not.toContain("All five records agree.");
+    expect(html).toContain("Four records agree. PayPal&#x27;s refund event gave no status or amount to compare.");
+  });
+
   it("never reads a PayPal check it couldn't make as a pass", async () => {
     readRefund.mockResolvedValue(record(arrived("UNAVAILABLE")));
     expect(await render()).toContain("PayPal&#x27;s own check: couldn&#x27;t ask PayPal");

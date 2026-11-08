@@ -13,6 +13,16 @@ export const dynamic = "force-dynamic";
 
 const money = (x: { amountCents: number; currency: string } | null) => (x ? `${centsToValue(x.amountCents)} ${x.currency}` : "not held here");
 
+/** With no exception: five agree only when PayPal's own check passed and its event can be compared. Otherwise it says what's missing. */
+function agreement(rec: Reconciliation): string {
+  const w = rec.webhook;
+  if (!w.seen) return "The records agree. There's no refund event for this one.";
+  if (w.paypalCheck === "ASKING" || w.paypalCheck === null) return "Four records agree. PayPal's own check of the webhook is still being asked.";
+  if (w.paypalCheck !== "SUCCESS") return "Four records agree. PayPal's own check of the webhook couldn't be asked, so it isn't counted.";
+  if (!w.event?.status || w.event.amountCents == null) return "Four records agree. PayPal's refund event gave no status or amount to compare.";
+  return "All five records agree.";
+}
+
 /** PayPal's own check, in words. Only SUCCESS reads as a pass. */
 const PAYPAL_CHECK: Record<string, string> = { SUCCESS: "SUCCESS", FAILURE: "FAILURE", UNAVAILABLE: "couldn't ask PayPal", ASKING: "asking PayPal now" };
 
@@ -64,7 +74,7 @@ function Records({ rec, id }: { rec: Reconciliation; id: string }) {
           ))}
         </ul>
       ) : (
-        <p data-testid="no-exceptions" className="alert">All five records agree.</p>
+        <p data-testid="no-exceptions" className="alert">{agreement(rec)}</p>
       )}
       {rec.newerAnswer ? (
         <form action="/api/queue/refunds/update" method="post" data-testid="newer-answer">
