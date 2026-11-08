@@ -1,5 +1,5 @@
 -- A shop's link to its own PayPal account, made through Partner Referrals. An account link, not transaction data, so it's
--- kept like the shop (7 days for a demo shop, until a real shop disconnects or is deleted) and goes on disconnect. The
+-- kept like the shop: it goes with the shop (a demo shop within 48 hours, a real one after 7 days) and on disconnect. The
 -- seller's merchant id is encrypted with the shop's own key; its HMAC finds the row when PayPal says consent was revoked.
 create table shop_paypal_connections (
   shop_id                  uuid primary key references shops (id) on delete cascade,
