@@ -21,7 +21,7 @@ describe("the queue's PayPal sign-in panel", () => {
 
   it("says when a linked shop is due to go, and what unlinking would bring back", () => {
     const text = ownerPanel({ linkedAt: "2026-11-08T12:00:00.000Z", signedInAt: null, isSeller: null }, { setUp: true, lifetime: KEPT, now: new Date("2026-11-09T12:00:00Z") }).lines.join(" ");
-    expect(text).toContain("kept until you delete it, or a year passes with no PayPal sign-in");
+    expect(text).toContain("kept until you delete it, or a year passes with no PayPal sign-in or link");
     expect(text).toMatch(/due to be deleted after Nov 8, 2027/);
     expect(text).toMatch(/If you unlink, its data is deleted after Nov 15, 2026/);
     const late = ownerPanel({ linkedAt: "2026-11-08T12:00:00.000Z", signedInAt: null, isSeller: null }, { setUp: true, lifetime: KEPT, now: new Date("2026-12-01T12:00:00Z") }).lines.join(" ");

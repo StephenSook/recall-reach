@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
-// Each way back from PayPal carries PayPal's ids in its address: a sandbox order's ids, a connecting seller's merchant id,
-// or an owner's one-time sign-in code. They stay out of referrers, and out of Next's request log, which only the dev
+// Each way back from PayPal carries PayPal's ids in its address: a sandbox order's ids (the demo's and the shopping
+// agent's, which repeats its order id on to /shopper/done), a connecting seller's merchant id, or an owner's sign-in code. They stay out of referrers, and out of Next's request log, which only the dev
 // server writes. The host's own access log is outside this app; what limits it there is that the sign-in code works
 // once and its state is used up on the first return.
-const PAYPAL_RETURNS = ["/api/demo/buy/paypal/return", "/api/shop/paypal/back", "/api/owner/paypal/return"];
+const PAYPAL_RETURNS = ["/api/demo/buy/paypal/return", "/api/shop/paypal/back", "/api/owner/paypal/return", "/api/shopper/return", "/shopper/done"];
 
 const nextConfig: NextConfig = {
   async headers() {

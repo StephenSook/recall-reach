@@ -11,7 +11,7 @@ export const OWNER_CODES = {
 export type OwnerCode = keyof typeof OWNER_CODES;
 
 export const LINKED = {
-  LINKED: "Linked. Your shop is now kept until you delete it, or a year passes with no PayPal sign-in. Next time, Sign in with PayPal on the Check page opens it.",
+  LINKED: "Linked. Your shop is now kept until you delete it, or a year passes with no PayPal sign-in or link. Next time, Sign in with PayPal on the Check page opens it.",
   ALREADY_LINKED: "That PayPal login already opens this shop.",
   LINKED_ELSEWHERE: "That PayPal login already opens another shop here. Unlink it there first.",
   NOT_A_REAL_SHOP: "A demo shop can't be linked to a PayPal login.",

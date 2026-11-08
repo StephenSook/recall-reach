@@ -8,7 +8,7 @@ export function ownerPanel(link: OwnerLink | null, opts: { setUp: boolean; lifet
   if (!link) {
     return {
       lines: [
-        "Link your PayPal login, so Sign in with PayPal on the Check page opens this shop from any browser. Linking also keeps this shop, its order file and its receipts past 7 days: until you delete them, or a year passes with no PayPal sign-in. Only a keyed hash of your PayPal account id is kept.",
+        "Link your PayPal login, so Sign in with PayPal on the Check page opens this shop from any browser. Linking also keeps this shop, its order file and its receipts past 7 days: until you delete them, or a year passes with no PayPal sign-in or link. Only a keyed hash of your PayPal account id is kept.",
       ],
       action: "link",
     };
@@ -17,7 +17,7 @@ export function ownerPanel(link: OwnerLink | null, opts: { setUp: boolean; lifet
   const life = opts.lifetime;
   const kept = life?.keptByOwner
     ? [
-        `Your shop is kept until you delete it, or a year passes with no PayPal sign-in. It's due to be deleted after ${ranAt(life.deletesAfter.toISOString())}.`,
+        `Your shop is kept until you delete it, or a year passes with no PayPal sign-in or link. It's due to be deleted after ${ranAt(life.deletesAfter.toISOString())}.`,
         // Unlinking brings back the 7-day rule, which for an older shop has already passed: the hourly purge takes it next.
         life.unkeptDeletesAfter.getTime() > (opts.now ?? new Date()).getTime()
           ? `If you unlink, its data is deleted after ${ranAt(life.unkeptDeletesAfter.toISOString())}.`

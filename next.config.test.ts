@@ -22,6 +22,8 @@ describe("response headers", () => {
     ["/api/demo/buy/paypal/return", "?state=s&token=ORDER1&PayerID=PAYER1"],
     ["/api/shop/paypal/back", "?merchantId=T&merchantIdInPayPal=SELLERPAYER1&permissionsGranted=true"],
     ["/api/owner/paypal/return", "?code=C21AA-code&state=S"],
+    ["/api/shopper/return", "?slip=S&token=ORDER1&PayerID=PAYER1"],
+    ["/shopper/done", "?slip=S&token=ORDER1&held=1"],
   ])("keeps PayPal's ids on the way back from %s out of referrers and request logs", async (path, query) => {
     const rules = await nextConfig.headers!();
     const back = rules.find((r) => r.source === path);

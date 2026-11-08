@@ -104,7 +104,7 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
         <p className="note">It&apos;s built for Shopify&apos;s order export columns. Any other CSV needs order_number, title, quantity, unit_price, currency and ordered_on.</p>
         <p className="note">We check CPSC recalls from 2022 on. A shop is checked when a recall first appears. Later edits to that recall don&apos;t re-run it.</p>
         <p className="note">
-          We keep only those columns, and buyer emails are encrypted. A refund needs your own PayPal account connected, from your queue. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask. Link your PayPal login from your queue to keep it longer: until you delete it, or a year passes with no PayPal sign-in.
+          We keep only those columns, and buyer emails are encrypted. A refund needs your own PayPal account connected, from your queue. If you press Check with Claude, the item&apos;s title and SKU go to Anthropic, never a buyer&apos;s details. Everything is deleted after {OWN_FILE_DAYS} days, or sooner if you ask. Link your PayPal login from your queue to keep it longer: until you delete it, or a year passes with no PayPal sign-in or link.
         </p>
       </details>
       <h2 className="section-title">No file with you?</h2>

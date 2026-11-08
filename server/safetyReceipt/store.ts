@@ -79,7 +79,7 @@ export async function deleteShopReceipt(db: Queryable, shopId: string, id: strin
   return rows.length > 0;
 }
 
-/** A ceiling only: today a receipt goes with its shop's data long before this, on the date its page shows. */
+/** The 3-year ceiling. Only a shop whose owner keeps signing in with PayPal lasts that long; elsewhere receipts go with the shop's data first. */
 export async function purgeReceipts(db: Queryable, now = new Date()): Promise<number> {
   const { rows } = await db.query("delete from safety_receipts where created_at + interval '3 years' <= $1::timestamptz + interval '1 hour' returning 1", [now.toISOString()]);
   return rows.length;
