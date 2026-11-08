@@ -307,6 +307,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       <PushRegister />
       <header className="page-head">
         <h1>{shopName}</h1>
+        <Link href="/queue/sent">Refunds sent</Link>
         <span className="quiet">{listed ? `${listed.needCheck} ${counted(listed.needCheck, "needs a check", "need a check")}` : `${waiting} ${counted(waiting, "item waits", "items wait")} for you`}</span>
       </header>
       {listed ? (

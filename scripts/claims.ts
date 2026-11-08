@@ -27,6 +27,17 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "Owner refund and payout ledger with CSV",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/queue/sent/page.tsx", call: "currentSession" },
+      { file: "app/queue/sent/page.tsx", call: "readSentLedger" },
+      { file: "app/queue/sent/csv/route.ts", call: "currentSession" },
+      { file: "app/queue/sent/csv/route.ts", call: "sentLedgerCsv" },
+    ],
+  },
+  {
     name: "PayPal Transaction Search",
     status: "claimed",
     evidence: [
