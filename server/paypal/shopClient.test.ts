@@ -3,7 +3,7 @@ import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
 import { createRecordKey } from "../privacy/recordKey";
-import { saveSellerStatus, startConnection, trackingIdFor } from "../shop/paypalConnection";
+import { reserveStatusRead, saveSellerStatus, startConnection, trackingIdFor } from "../shop/paypalConnection";
 import { REFUND_SCOPE } from "./platform";
 import { payPalClientForShop } from "./shopClient";
 
@@ -41,7 +41,7 @@ describe("which PayPal account a shop's refunds go from", () => {
 
   const connect = async (status = { merchantId: "SELLERPAYER1", paymentsReceivable: true, primaryEmailConfirmed: true, scopes: [REFUND_SCOPE] }) => {
     await startConnection(db, { shopId, trackingId: trackingIdFor(key, shopId), now: NOW });
-    await saveSellerStatus(db, { shopId, status, secret: SECRET, recordKey: key, now: NOW });
+    await saveSellerStatus(db, { shopId, read: (await reserveStatusRead(db, shopId))!, status, secret: SECRET, recordKey: key, now: NOW });
   };
 
   it("acts for a connected shop, with PayPal-Auth-Assertion naming its seller on every call", async () => {

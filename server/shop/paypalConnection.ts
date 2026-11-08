@@ -1,5 +1,10 @@
 // A shop's connection to its own PayPal account: started by a Partner Referral, connected only when PayPal's status says
 // so. The seller's merchant id is sealed with the shop's key and never leaves the server.
+//
+// Checks with PayPal can overlap and their answers can arrive in any order. So each connection attempt has its own
+// random id, and each read of PayPal's status reserves a number from a database sequence just before it asks PayPal.
+// A write or delete that follows a read applies only to the attempt it was asked for, and only if no read reserved after
+// it has landed. Whatever order the answers come back in, the last one asked is the one that stands.
 import type { Queryable } from "../db/types";
 import { isConnected, type SellerStatus } from "../paypal/platform";
 import { createContactCipher } from "../privacy/contactCipher";
@@ -17,39 +22,57 @@ export interface Connection {
   connected: boolean;
 }
 
+/** One read of PayPal's status, reserved just before asking: the attempt it belongs to and its place in line. */
+export interface StatusRead {
+  attempt: string;
+  seq: string;
+}
+
+/** Starts, or starts again, a connection attempt. A new attempt fences off every read still out for an older one. */
 export async function startConnection(db: Queryable, input: { shopId: string; trackingId: string; now: Date }): Promise<void> {
   await db.query(
     `insert into shop_paypal_connections (shop_id, tracking_id, started_at) values ($1, $2, $3)
-     on conflict (shop_id) do update set started_at = excluded.started_at, refusal = null`,
+     on conflict (shop_id) do update set started_at = excluded.started_at, refusal = null, attempt = gen_random_uuid()`,
     [input.shopId, input.trackingId, input.now.toISOString()],
   );
 }
 
-// Each status write carries the moment its PayPal read was asked, and is applied only if no later read has been. So two
-// checks racing can't leave an older answer standing over a newer one.
-const NOT_OLDER = "(status_read_at is null or status_read_at <= $2::timestamptz)";
-
-export async function saveSellerStatus(db: Queryable, input: { shopId: string; status: SellerStatus; secret: string; recordKey: RecordKey; now: Date }): Promise<void> {
-  const sealed = createContactCipher(input.secret, input.shopId).seal(input.status.merchantId);
-  await db.query(
-    `update shop_paypal_connections set merchant_id_sealed = $3, merchant_id_hmac = $4, payments_receivable = $5, primary_email_confirmed = $6,
-       scopes = $7, status_read_at = $2, refusal = null
-     where shop_id = $1 and ${NOT_OLDER}`,
-    [input.shopId, input.now.toISOString(), sealed, input.recordKey("paypal-merchant", input.status.merchantId), input.status.paymentsReceivable, input.status.primaryEmailConfirmed, input.status.scopes],
+/** Reserves a read for the shop's current attempt. Call it immediately before asking PayPal. Null if nothing was started. */
+export async function reserveStatusRead(db: Queryable, shopId: string): Promise<StatusRead | null> {
+  const { rows } = await db.query<{ attempt: string; seq: string }>(
+    "select attempt::text as attempt, nextval('shop_paypal_status_reads')::text as seq from shop_paypal_connections where shop_id = $1",
+    [shopId],
   );
+  return rows[0] ? { attempt: rows[0].attempt, seq: rows[0].seq } : null;
+}
+
+// The fence every write and delete after a read carries: $2 is the attempt, $3 the read's place in line.
+const FENCED = "attempt = $2::uuid and read_seq < $3::bigint";
+
+/** Saves PayPal's answer. False when the attempt changed or a later read already landed: then this answer is out of date. */
+export async function saveSellerStatus(db: Queryable, input: { shopId: string; read: StatusRead; status: SellerStatus; secret: string; recordKey: RecordKey; now: Date }): Promise<boolean> {
+  const sealed = createContactCipher(input.secret, input.shopId).seal(input.status.merchantId);
+  const { rows } = await db.query(
+    `update shop_paypal_connections set merchant_id_sealed = $4, merchant_id_hmac = $5, payments_receivable = $6, primary_email_confirmed = $7,
+       scopes = $8, status_read_at = $9, read_seq = $3::bigint, refusal = null
+     where shop_id = $1 and ${FENCED} returning 1`,
+    [input.shopId, input.read.attempt, input.read.seq, sealed, input.recordKey("paypal-merchant", input.status.merchantId), input.status.paymentsReceivable, input.status.primaryEmailConfirmed, input.status.scopes, input.now.toISOString()],
+  );
+  return rows.length > 0;
 }
 
 /**
  * PayPal no longer shows the saved seller: what was saved stops counting, so nothing reads as connected or refunds from it.
  * With merchantIdHmac, only while the row still names that seller.
  */
-export async function clearSellerStatus(db: Queryable, input: { shopId: string; now: Date; merchantIdHmac?: string }): Promise<void> {
-  await db.query(
+export async function clearSellerStatus(db: Queryable, input: { shopId: string; read: StatusRead; now: Date; merchantIdHmac?: string }): Promise<boolean> {
+  const { rows } = await db.query(
     `update shop_paypal_connections set merchant_id_sealed = null, merchant_id_hmac = null, payments_receivable = null, primary_email_confirmed = null,
-       scopes = '{}', status_read_at = $2
-     where shop_id = $1 and ${NOT_OLDER} and ($3::text is null or merchant_id_hmac = $3)`,
-    [input.shopId, input.now.toISOString(), input.merchantIdHmac ?? null],
+       scopes = '{}', status_read_at = $4, read_seq = $3::bigint
+     where shop_id = $1 and ${FENCED} and ($5::text is null or merchant_id_hmac = $5) returning 1`,
+    [input.shopId, input.read.attempt, input.read.seq, input.now.toISOString(), input.merchantIdHmac ?? null],
   );
+  return rows.length > 0;
 }
 
 export async function recordConnectRefusal(db: Queryable, input: { shopId: string; refusal: string }): Promise<void> {
@@ -79,9 +102,15 @@ export async function connectedMerchant(db: Queryable, input: { shopId: string; 
   return c?.connected && c.status ? c.status.merchantId : null;
 }
 
-/** With merchantIdHmac, only while the row still names that seller, so a decision about one seller can't remove another. */
-export async function disconnectShop(db: Queryable, shopId: string, opts: { merchantIdHmac?: string } = {}): Promise<void> {
-  await db.query("delete from shop_paypal_connections where shop_id = $1 and ($2::text is null or merchant_id_hmac = $2)", [shopId, opts.merchantIdHmac ?? null]);
+/** The shop asked to disconnect: the link goes, whatever is in flight. */
+export async function disconnectShop(db: Queryable, shopId: string): Promise<void> {
+  await db.query("delete from shop_paypal_connections where shop_id = $1", [shopId]);
+}
+
+/** A read found the seller gone: the link goes, but only if it is still the same attempt and seller, and no later read landed. */
+export async function forgetAfterRead(db: Queryable, input: { shopId: string; read: StatusRead; merchantIdHmac: string }): Promise<boolean> {
+  const { rows } = await db.query(`delete from shop_paypal_connections where shop_id = $1 and ${FENCED} and merchant_id_hmac = $4 returning 1`, [input.shopId, input.read.attempt, input.read.seq, input.merchantIdHmac]);
+  return rows.length > 0;
 }
 
 /** The shops linked to one PayPal seller, found by the HMAC of its merchant id. */

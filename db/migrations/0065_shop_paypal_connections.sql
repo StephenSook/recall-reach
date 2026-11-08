@@ -11,7 +11,12 @@ create table shop_paypal_connections (
   primary_email_confirmed  boolean,
   scopes                   text[] not null default '{}',
   status_read_at           timestamptz,
-  refusal                  text -- PayPal's own answer when it refused, with its debug id
+  refusal                  text, -- PayPal's own answer when it refused, with its debug id
+  -- Fences for overlapping checks: a new attempt id on every (re)connect, and the number of the last read that landed.
+  attempt                  uuid not null default gen_random_uuid(),
+  read_seq                 bigint not null default 0
 );
+-- Each read of PayPal's status takes the next number before it asks, so the last one asked is the one that stands.
+create sequence shop_paypal_status_reads;
 create index shop_paypal_connections_merchant_idx on shop_paypal_connections (merchant_id_hmac);
 comment on table shop_paypal_connections is 'data-source: shop-owned';

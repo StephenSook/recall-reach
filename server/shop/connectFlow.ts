@@ -5,7 +5,7 @@ import { PayPalApiError } from "../paypal/client";
 import { createReferral, isConnected, readSellerStatus, type PlatformEnv } from "../paypal/platform";
 import type { RecordKey } from "../privacy/recordKey";
 import { readConnectedShopSales } from "./connectedSales";
-import { clearSellerStatus, disconnectShop, readConnection, recordConnectRefusal, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor } from "./paypalConnection";
+import { clearSellerStatus, forgetAfterRead, readConnection, recordConnectRefusal, reserveStatusRead, saveSellerStatus, shopsLinkedTo, startConnection, trackingIdFor } from "./paypalConnection";
 
 /** PayPal's answer as a person can read it: the status, PayPal's issue name and its debug id. */
 export function refusalText(err: unknown): string {
@@ -25,12 +25,21 @@ export async function startConnect(db: Db, platform: PlatformEnv, input: { shopI
   }
 }
 
-export type Refreshed = { state: "NOT_STARTED" } | { state: "WAITING" } | { state: "REFUSED"; refusal: string } | { state: "CONNECTED"; sales: { complete: boolean; payments: number } | { refusal: string } };
+export type Refreshed =
+  | { state: "NOT_STARTED" }
+  | { state: "WAITING" }
+  /** A check asked after this one has already landed, or the shop started connecting again: this answer is out of date. */
+  | { state: "SUPERSEDED" }
+  | { state: "REFUSED"; refusal: string }
+  | { state: "CONNECTED"; sales: { complete: boolean; payments: number } | { refusal: string } };
 
 /** Reads the seller's status from PayPal, and, once PayPal says connected, the shop's own sales. */
 export async function refreshConnection(db: Db, platform: PlatformEnv, input: { shopId: string; recordKey: RecordKey; secret: string; now: Date }): Promise<Refreshed> {
   const connection = await readConnection(db, { shopId: input.shopId, secret: input.secret });
   if (!connection) return { state: "NOT_STARTED" };
+  // Reserved immediately before asking PayPal, so its place in line is the moment it asked.
+  const read = await reserveStatusRead(db, input.shopId);
+  if (!read) return { state: "NOT_STARTED" };
   let status;
   try {
     status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId });
@@ -39,12 +48,8 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     await recordConnectRefusal(db, { shopId: input.shopId, refusal });
     return { state: "REFUSED", refusal };
   }
-  if (!status) {
-    // Applied whatever this request saw before asking: the write's own ordering decides whether it is the newest answer.
-    await clearSellerStatus(db, { shopId: input.shopId, now: input.now });
-    return { state: "WAITING" };
-  }
-  await saveSellerStatus(db, { shopId: input.shopId, status, secret: input.secret, recordKey: input.recordKey, now: input.now });
+  if (!status) return (await clearSellerStatus(db, { shopId: input.shopId, read, now: input.now })) ? { state: "WAITING" } : { state: "SUPERSEDED" };
+  if (!(await saveSellerStatus(db, { shopId: input.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now: input.now }))) return { state: "SUPERSEDED" };
   if (!isConnected(status)) return { state: "WAITING" };
   try {
     return { state: "CONNECTED", sales: await readConnectedShopSales(db, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now }) };
@@ -59,7 +64,8 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
 /**
  * PayPal's webhook said a seller took its consent back. A webhook's body is covered only by a CRC, so this acts only on
  * PayPal's own status, read again: a link is forgotten once PayPal no longer shows it connected. If PayPal can't be read,
- * this throws, the delivery fails and PayPal sends it again, and the link stays.
+ * this throws, the delivery fails and PayPal sends it again, and the link stays. Each change is fenced like a refresh's,
+ * so a check that lands after this one asked always wins.
  */
 export async function confirmRevoked(
   db: Db,
@@ -71,7 +77,8 @@ export async function confirmRevoked(
   let kept = 0;
   let cleared = 0;
   for (const shop of await shopsLinkedTo(db, merchantIdHmac)) {
-    const asked = input.now ?? new Date();
+    const read = await reserveStatusRead(db, shop.shopId);
+    if (!read) continue;
     const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
     if (status && isConnected(status)) {
       if (status.merchantId === input.merchantId) {
@@ -79,12 +86,10 @@ export async function confirmRevoked(
         continue;
       }
       // The shop is connected as another seller now. The old one stops counting; the shop's next check saves the new one.
-      await clearSellerStatus(db, { shopId: shop.shopId, now: asked, merchantIdHmac });
-      cleared += 1;
+      if (await clearSellerStatus(db, { shopId: shop.shopId, read, now: input.now ?? new Date(), merchantIdHmac })) cleared += 1;
       continue;
     }
-    await disconnectShop(db, shop.shopId, { merchantIdHmac });
-    forgotten += 1;
+    if (await forgetAfterRead(db, { shopId: shop.shopId, read, merchantIdHmac })) forgotten += 1;
   }
   return { forgotten, kept, cleared };
 }

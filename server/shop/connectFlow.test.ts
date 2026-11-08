@@ -151,4 +151,93 @@ describe("connecting a shop's own PayPal account", () => {
       expect(await confirmRevoked(db, env, { merchantId: "OTHERSELLER9", recordKey: key })).toEqual({ forgotten: 0, kept: 0, cleared: 0 });
     });
   });
+
+  describe("when checks overlap and PayPal answers out of order", () => {
+    const NO_SELLER = () => new PayPalApiError(404, "GET", "/v1/customer/partners/{id}/merchant-integrations", "RESOURCE_NOT_FOUND", "d");
+    // Each lookup by tracking id waits for an answer the test releases, so the test sets the order PayPal answers in.
+    function racing() {
+      const held: { release: (a: unknown) => void }[] = [];
+      const waiters: (() => void)[] = [];
+      const client = {
+        request: vi.fn(async (_m: string, path: string) => {
+          if (path === "/v2/customer/partner-referrals") return { status: 201, data: { links: [{ rel: "action_url", href: ACTION }] } };
+          if (path === "/v1/customer/partners/PARTNER12345/merchant-integrations") {
+            const answer = await new Promise<unknown>((release) => {
+              held.push({ release });
+              waiters.splice(0).forEach((w) => w());
+            });
+            if (answer instanceof Error) throw answer;
+            return { status: 200, data: answer };
+          }
+          if (path.startsWith("/v1/customer/partners/PARTNER12345/merchant-integrations/")) return { status: 200, data: READY };
+          throw new Error(`unexpected ${path}`);
+        }),
+      } as unknown as PayPalClient;
+      const acting: PayPalClient = { request: (async (_m: string, path: string) => answerSearch(path) ?? Promise.reject(new Error(path))) as PayPalClient["request"] };
+      const env: PlatformEnv = { clientId: "platform-id", partnerId: "PARTNER12345", client, actingFor: () => acting };
+      /** Resolves once n lookups have asked PayPal. */
+      const asked = async (n: number) => {
+        while (held.length < n) await new Promise<void>((r) => waiters.push(r));
+      };
+      return { env, held, asked };
+    }
+    const refresh = (env: PlatformEnv) => refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
+
+    it("keeps the no-seller answer asked last, though the connected answer asked first lands after it", async () => {
+      const r = racing();
+      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      const first = refresh(r.env);
+      await r.asked(1);
+      const second = refresh(r.env);
+      await r.asked(2);
+      r.held[1].release(NO_SELLER());
+      expect(await second).toEqual({ state: "WAITING" });
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      expect(await first).toEqual({ state: "SUPERSEDED" });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+    });
+
+    it("keeps the connected answer asked last, though the no-seller answer asked first lands after it", async () => {
+      const r = racing();
+      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      const first = refresh(r.env);
+      await r.asked(1);
+      const second = refresh(r.env);
+      await r.asked(2);
+      r.held[1].release({ merchant_id: "SELLERPAYER1" });
+      expect(await second).toMatchObject({ state: "CONNECTED" });
+      r.held[0].release(NO_SELLER());
+      expect(await first).toEqual({ state: "SUPERSEDED" });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
+    });
+
+    it("writes nothing from a check that was out when the shop started connecting again", async () => {
+      const r = racing();
+      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      const stale = refresh(r.env);
+      await r.asked(1);
+      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      expect(await stale).toEqual({ state: "SUPERSEDED" });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBeNull();
+    });
+
+    it("leaves a link a later check confirmed, when the revoke's no-seller answer lands after it", async () => {
+      const r = racing();
+      await startConnect(db, r.env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+      const setUp = refresh(r.env);
+      await r.asked(1);
+      r.held[0].release({ merchant_id: "SELLERPAYER1" });
+      await setUp;
+      const revoke = confirmRevoked(db, r.env, { merchantId: "SELLERPAYER1", recordKey: key });
+      await r.asked(2);
+      const later = refresh(r.env);
+      await r.asked(3);
+      r.held[2].release({ merchant_id: "SELLERPAYER1" });
+      expect(await later).toMatchObject({ state: "CONNECTED" });
+      r.held[1].release(NO_SELLER());
+      expect(await revoke).toEqual({ forgotten: 0, kept: 0, cleared: 0 });
+      expect(await connectedMerchant(db, { shopId, secret: SECRET })).toBe("SELLERPAYER1");
+    });
+  });
 });
