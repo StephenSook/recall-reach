@@ -238,6 +238,18 @@ describe("PayPal client", () => {
       vi.restoreAllMocks();
     });
 
+    it("cuts a read that is still in flight at its abortAfter, instead of waiting out the 60 s timeout", async () => {
+      const client = createPayPalClient({
+        tokens: fakeTokens(),
+        fetchImpl: ((_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted"))))) as typeof fetch,
+      });
+      const started = Date.now();
+      const deadline = started + 80;
+      await expect(client.request("GET", "/v1/reporting/transactions", { notAfter: deadline, abortAfter: deadline })).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
     it("sends nothing once that moment has passed", async () => {
       const s = scripted([ok({})]);
       await expect(s.client.request("POST", "/v2/x", { requestId: "r1", notAfter: Date.now() - 1 })).rejects.toThrow(/too late/);

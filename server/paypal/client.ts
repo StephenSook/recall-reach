@@ -51,6 +51,11 @@ export interface RequestOptions {
   requestId?: string;
   /** The last moment, by Date.now(), that an attempt may begin. Used where a late request could do harm. */
   notAfter?: number;
+  /**
+   * The moment, by Date.now(), an attempt still in flight is cut. For reads only: a cut write leaves PayPal's answer
+   * unknown, so writes keep notAfter alone and wait out their attempt.
+   */
+  abortAfter?: number;
   query?: Record<string, string | number>;
 }
 
@@ -114,7 +119,7 @@ export function createPayPalClient(opts: {
               method,
               headers,
               body: ro.rawJson ?? (ro.body === undefined ? undefined : JSON.stringify(ro.body)),
-              signal: AbortSignal.timeout(60_000),
+              signal: ro.abortAfter === undefined ? AbortSignal.timeout(60_000) : AbortSignal.any([AbortSignal.timeout(60_000), AbortSignal.timeout(Math.max(1, ro.abortAfter - Date.now()))]),
               cache: "no-store",
             });
           } catch (err) {

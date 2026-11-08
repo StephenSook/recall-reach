@@ -51,9 +51,11 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     // Reserved immediately before asking PayPal, so its place in line is the moment it asked.
     const read = await reserveStatusRead(tx, input.shopId);
     if (!read) return { state: "NOT_STARTED" };
+    // One deadline for everything asked of PayPal while this holds the shop's lock: the status reads and the sales read.
+    const notAfter = Date.now() + SALES_READ_MS;
     let status;
     try {
-      status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId });
+      status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: connection.trackingId, platformClientId: platform.clientId, notAfter });
     } catch (err) {
       const refusal = refusalText(err);
       await recordConnectRefusal(tx, { shopId: input.shopId, refusal });
@@ -66,7 +68,7 @@ export async function refreshConnection(db: Db, platform: PlatformEnv, input: { 
     await tx.query("savepoint seller_saved");
     try {
       // Still inside the lock: nothing can change the link while the seller's sales are read and saved.
-      const sales = await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now, notAfter: input.now.getTime() + SALES_READ_MS });
+      const sales = await readConnectedShopSales(tx, platform.actingFor(status.merchantId), { shopId: input.shopId, now: input.now, notAfter });
       salesRead.coverage = sales.coverage;
       return { state: "CONNECTED", sales: { complete: sales.complete, payments: sales.payments } };
     } catch (err) {
@@ -109,7 +111,7 @@ export async function confirmRevoked(
       const read = await reserveStatusRead(tx, shop.shopId);
       if (!read) return null;
       const now = input.now ?? new Date();
-      const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId });
+      const status = await readSellerStatus(platform.client, { partnerId: platform.partnerId, trackingId: shop.trackingId, platformClientId: platform.clientId, notAfter: Date.now() + SALES_READ_MS });
       if (status && isConnected(status)) {
         if (!(await saveSellerStatus(tx, { shopId: shop.shopId, read, status, secret: input.secret, recordKey: input.recordKey, now }))) return null;
         return status.merchantId === input.merchantId ? "kept" : "replaced";

@@ -125,9 +125,13 @@ describe("connecting a shop's own PayPal account", () => {
     const acting = env.actingFor("SELLERPAYER1");
     env.actingFor = () => ({ request: (async (m: string, path: string, opts?: { notAfter?: number }) => (path === "/v1/reporting/transactions" && deadlines.push(opts?.notAfter), acting.request(m as never, path, opts as never))) as PayPalClient["request"] });
     await startConnect(db, env, { shopId, recordKey: key, returnUrl: "https://example.test/back", now: NOW });
+    const before = Date.now();
     await refreshConnection(db, env, { shopId, recordKey: key, secret: SECRET, now: NOW });
     expect(deadlines.length).toBeGreaterThan(0);
-    expect(deadlines.every((d) => d === NOW.getTime() + 45_000)).toBe(true);
+    // By the real clock, the one the client compares against, and the same deadline for every read.
+    expect(new Set(deadlines).size).toBe(1);
+    expect(deadlines[0]! - before).toBeGreaterThanOrEqual(45_000 - 5);
+    expect(deadlines[0]! - before).toBeLessThanOrEqual(45_000 + 5_000);
   });
 
   it("records whether each sales read was complete, so a partial one stops refunds even with payments from an earlier full read", async () => {

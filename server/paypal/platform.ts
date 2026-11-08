@@ -78,10 +78,12 @@ export interface SellerStatus {
  * Null while PayPal knows no seller for this tracking id: the shop hasn't finished signing up. Scopes count only when the
  * seller granted them to this platform's own app (platformClientId): another app's grant authorizes nothing here.
  */
-export async function readSellerStatus(client: PayPalClient, input: { partnerId: string; trackingId: string; platformClientId: string }): Promise<SellerStatus | null> {
+export async function readSellerStatus(client: PayPalClient, input: { partnerId: string; trackingId: string; platformClientId: string; notAfter?: number }): Promise<SellerStatus | null> {
+  // Both reads stop at the caller's deadline: no attempt starts after it, and one in flight is cut at it.
+  const deadline = input.notAfter === undefined ? {} : { notAfter: input.notAfter, abortAfter: input.notAfter };
   let merchantId: unknown;
   try {
-    ({ data: { merchant_id: merchantId } } = await client.request<{ merchant_id?: unknown }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations`, { query: { tracking_id: input.trackingId } }));
+    ({ data: { merchant_id: merchantId } } = await client.request<{ merchant_id?: unknown }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations`, { query: { tracking_id: input.trackingId }, ...deadline }));
   } catch (err) {
     if (err instanceof PayPalApiError && err.status === 404) return null;
     throw err;
@@ -92,7 +94,7 @@ export async function readSellerStatus(client: PayPalClient, input: { partnerId:
     payments_receivable?: unknown;
     primary_email_confirmed?: unknown;
     oauth_integrations?: { oauth_third_party?: { partner_client_id?: unknown; scopes?: unknown[] }[] }[];
-  }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations/${merchantId}`);
+  }>("GET", `/v1/customer/partners/${input.partnerId}/merchant-integrations/${merchantId}`, deadline);
   const scopes = (data.oauth_integrations ?? []).flatMap((i) =>
     (i.oauth_third_party ?? []).filter((t) => t.partner_client_id === input.platformClientId).flatMap((t) => (t.scopes ?? []).filter((s): s is string => typeof s === "string")),
   );
