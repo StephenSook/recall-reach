@@ -33,7 +33,7 @@ describe("GET /api/health", () => {
 
   it("answers 200 when only CPSC is failing, with ok false and CPSC named in the body", async () => {
     await healthy();
-    await real.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at, error) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'failed', now(), 'CPSC request failed: HTTP 503')");
+    await real.query("insert into cpsc_pulls (range_field, range_start, range_end, status, finished_at, error) values ('LastPublishDate', '2026-11-05', '2026-11-06', 'failed', now() + interval '1 second', 'CPSC request failed: HTTP 503')");
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: false, degraded: { source: "CPSC" } });
