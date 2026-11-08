@@ -65,7 +65,7 @@ export async function readItem(db: Queryable, shopId: string, record: ShopRecord
   const table = record.kind === "order_line" ? "order_lines" : "shop_items";
   const description = record.kind === "order_line" ? "''" : "description";
   const { rows } = await db.query<{ title: string; sku: string | null; description: string }>(
-    `select title, sku, ${description} as description from ${table} where id = $1 and shop_id = $2`,
+    `select title, sku, ${description} as description from ${table} where id = $1 and shop_id = $2${record.kind === "order_line" ? " and not capture_pending" : ""}`,
     [record.id, shopId],
   );
   const item = rows[0];
@@ -99,7 +99,7 @@ export async function searchItems(db: Queryable, shopId: string, query: string):
   const { rows } = await db.query<ShopRecord & { title: string; sku: string | null }>(
     `select distinct on (score, title) kind, id, title, sku from (
        select 'order_line' as kind, id, title, sku, word_similarity($2, title || ' ' || coalesce(sku, '')) as score
-       from order_lines where shop_id = $1
+       from order_lines where shop_id = $1 and not capture_pending
        union all
        select 'shop_item', id, title, sku, word_similarity($2, title || ' ' || coalesce(sku, '') || ' ' || description)
        from shop_items where shop_id = $1

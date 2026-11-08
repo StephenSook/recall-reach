@@ -16,8 +16,8 @@ export class StandingRefused extends Error {
   }
 }
 
-const MATCHES = `select m.id from recall_matches m
-  where m.shop_id = $1 and m.recall_id = $2 and m.verdict = 'MATCH' and m.order_line_id is not null`;
+const MATCHES = `select m.id from recall_matches m join order_lines l on l.id = m.order_line_id
+  where m.shop_id = $1 and m.recall_id = $2 and m.verdict = 'MATCH' and not l.capture_pending`;
 
 /** Prepares what isn't prepared yet. One that can't be, such as two orders that could be one, stays on the owner's card. */
 async function prepareFor(db: Queryable, shopId: string, recallId: number): Promise<void> {

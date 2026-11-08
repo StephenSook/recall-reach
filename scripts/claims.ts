@@ -38,6 +38,21 @@ export const CLAIMS: Claim[] = [
     ],
   },
   {
+    name: "PayPal JS SDK v6 shelf button",
+    status: "claimed",
+    feature: true,
+    evidence: [
+      { file: "app/queue/BuyButtons.tsx", call: "PayPalButton" },
+      { file: "app/queue/paypalSdk.ts", call: "createInstance" },
+      { file: "app/queue/PayPalButton.tsx", call: "findEligibleMethods" },
+      { file: "app/queue/paypalSdk.ts", call: "createPayPalOneTimePaymentSession" },
+      { file: "app/queue/paypalSdk.ts", call: "start" },
+      { file: "app/queue/paypalSdk.ts", find: "/api/demo/buy/paypal/sdk/capture" },
+      { file: "app/api/demo/buy/paypal/sdk/route.ts", call: "startPayPalBuy" },
+      { file: "app/api/demo/buy/paypal/sdk/capture/route.ts", call: "finishPayPalBuy" },
+    ],
+  },
+  {
     name: "PayPal Transaction Search",
     status: "claimed",
     evidence: [

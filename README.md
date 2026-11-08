@@ -85,6 +85,8 @@ Sandbox only. [`/evidence/paypal`](https://recall-reach-web-e022.onrender.com/ev
 
 ## Who can move money
 
+The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypal/sdk` and `/api/demo/buy/paypal/sdk/capture` through the same order and capture helpers as the PayPal-login path. It appears only after the sandbox SDK loads and reports PayPal eligible. This path still needs a real browser check for the popup, approval, capture and webhook update. The two existing buy buttons remain available.
+
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |

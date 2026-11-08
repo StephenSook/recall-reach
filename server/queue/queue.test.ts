@@ -90,6 +90,19 @@ describe("loadQueue", () => {
     expect((await row("27072")).strength).toBe("PRODUCT_WORDS");
   });
 
+  it("hides an already matched sale while capture is pending, keeping the listings visible", async () => {
+    const before = (await loadQueue(db, shopId, "session-1")).rows;
+    const sale = before.find((r) => !r.isListing)!;
+    expect(sale).toBeDefined();
+    expect(before.some((r) => r.isListing)).toBe(true);
+    await db.query("update order_lines set capture_pending = true where id = $1", [sale.recordId]);
+    const pending = (await loadQueue(db, shopId, "session-1")).rows;
+    expect(pending.some((r) => r.recordId === sale.recordId)).toBe(false);
+    expect(pending.filter((r) => r.isListing)).toEqual(before.filter((r) => r.isListing));
+    await db.query("update order_lines set capture_pending = false where id = $1", [sale.recordId]);
+    expect((await loadQueue(db, shopId, "session-1")).rows.some((r) => r.recordId === sale.recordId)).toBe(true);
+  });
+
   it("orders what needs a person first: matches, then gaps, then cleared", async () => {
     const q = await loadQueue(db, shopId, "session-1");
     const order = q.rows.map((r) => r.verdict);

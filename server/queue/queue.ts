@@ -186,7 +186,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      left join lateral (
        select * from refunds y where y.order_line_id = m.order_line_id order by y.created_at desc limit 1
      ) rf on m.order_line_id is not null
-     where m.shop_id = $1`,
+     where m.shop_id = $1 and (m.order_line_id is null or not l.capture_pending)`,
     [shopId, sessionId, QUESTION_VERSION],
   );
 

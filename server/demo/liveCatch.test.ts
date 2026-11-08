@@ -6,7 +6,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
 import { modelTokens } from "../match/verdict";
-import type { Method, PayPalClient, RequestOptions } from "../paypal/client";
+import { PayPalApiError, type Method, type PayPalClient, type RequestOptions } from "../paypal/client";
 import { registerPushToken } from "../push/push";
 import { loadQueue } from "../queue/queue";
 import { buyAsFamily, catchLiveSale, LiveSaleRefused } from "./liveCatch";
@@ -29,7 +29,7 @@ function fakePayPal(over: { captureStatus?: string; failCreate?: boolean } = {})
       const found = answerSearch(path);
       if (found) return found;
       if (method === "POST") {
-        if (over.failCreate) throw new Error("PayPal said no");
+        if (over.failCreate) throw new PayPalApiError(422, method, path, "CARD_DECLINED");
         const id = `ORDER${next}`;
         const unit = (opts.body as { purchase_units: { amount: unknown; items?: { name: string }[] }[] }).purchase_units[0];
         const capture = {
@@ -67,6 +67,7 @@ describe("a sale as it happens", () => {
     shelfItem = (await db.query<{ id: string }>("select id from shop_items where shop_id = $1 and listed", [shopId])).rows[0].id;
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await db.close();
   });
 
@@ -109,6 +110,52 @@ describe("a sale as it happens", () => {
       paypal = fakePayPal({ failCreate: true });
       await expect(buy()).rejects.toThrow();
       expect(await line()).toBeUndefined();
+    });
+
+    it("confirms a completed card payment even when its webhook never arrives", async () => {
+      const { orderNumber } = await buy();
+      expect(await line()).toMatchObject({ capture_pending: false });
+      expect((await db.query("select capture_status from paypal_payments where shop_id = $1 and order_number = $2", [shopId, orderNumber])).rows).toEqual([{ capture_status: "COMPLETED" }]);
+    });
+
+    it("keeps a sale and its caught card when the webhook beats a failed card response", async () => {
+      const request = paypal.client.request.bind(paypal.client);
+      vi.spyOn(paypal.client, "request").mockImplementation(async (method, path, options) => {
+        const result = await request(method, path, options);
+        if (method === "POST") {
+          expect(await catchIt()).toBe("CAUGHT");
+          throw new PayPalApiError(422, method, path, "CARD_DECLINED");
+        }
+        return result;
+      });
+      await expect(buy()).rejects.toThrow();
+      const saved = await line();
+      expect(saved).toMatchObject({ capture_pending: false });
+      expect(await queueRow(saved.id)).toMatchObject({ verdict: "MATCH", joinState: "IDENTIFIED" });
+      expect((await db.query("select 1 from paypal_payments where shop_id = $1 and order_number = $2", [shopId, saved.order_number])).rows).toHaveLength(1);
+    });
+
+    it.each(["network", "retried refusal", "unreadable response"])("keeps the reservation after a card %s leaves the capture unknown", async (kind) => {
+      vi.spyOn(paypal.client, "request").mockImplementationOnce(async () => {
+        if (kind === "retried refusal") {
+          const err = new PayPalApiError(422, "POST", "/v2/checkout/orders", "CARD_DECLINED");
+          err.uncertain = true;
+          throw err;
+        }
+        throw new Error(kind === "network" ? "PayPal gave no answer" : "PayPal's answer could not be read");
+      });
+      await expect(buy()).rejects.toThrow();
+      expect(await line()).toMatchObject({ capture_pending: true });
+    });
+
+    it("keeps a captured card reservation when only the order re-read fails", async () => {
+      const request = paypal.client.request.bind(paypal.client);
+      vi.spyOn(paypal.client, "request").mockImplementation(async (method, path, options) => {
+        if (method === "GET") throw new PayPalApiError(404, method, path, "NOT_FOUND");
+        return request(method, path, options);
+      });
+      await expect(buy()).rejects.toThrow();
+      expect(await line()).toMatchObject({ capture_pending: true });
     });
 
     it("only works on a demo shop", async () => {

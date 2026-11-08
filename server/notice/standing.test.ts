@@ -79,6 +79,23 @@ describe("what a shop can turn on for one recall, and the second notice", () => 
       expect(await noticesFor("27072")).toHaveLength(2);
     });
 
+    it.each(["turn on", "refresh"])("does not prepare an already matched pending sale on standing %s", async (action) => {
+      await addSales(line({}));
+      if (action === "refresh") await turnOnStanding(db, { shopId, recallNumber: "27072", typed: "27072" });
+      await storeOrderLines(db, shopId, [line({ orderNumber: "#PENDING" })], cipher(), "test");
+      await runShopCheck(db, shopId, { today: TODAY, paypalSearched: true });
+      await db.query("update order_lines set capture_pending = true where shop_id = $1 and order_number = '#PENDING'", [shopId]);
+      if (action === "turn on") {
+        await turnOnStanding(db, { shopId, recallNumber: "27072", typed: "27072" });
+      } else {
+        await prepareStandingNotices(db, shopId);
+      }
+      expect(await noticesFor("27072")).toHaveLength(1);
+      await db.query("update order_lines set capture_pending = false where shop_id = $1 and order_number = '#PENDING'", [shopId]);
+      await prepareStandingNotices(db, shopId);
+      expect(await noticesFor("27072")).toHaveLength(2);
+    });
+
     it("leaves a sale it can't tell about to ask the owner, even on the same recall", async () => {
       await addSales(line({}), line({ orderNumber: "#N4", title: "Baby Brezza SuperFast Sterilizer Dryer" }));
       await turnOnStanding(db, { shopId, recallNumber: "27072", typed: "27072" });

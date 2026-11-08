@@ -47,11 +47,12 @@ describe("the PayPal buy routes", () => {
     expect(res.headers.get("location")).toBe(`${SITE}/`);
   });
 
-  it("says a cancel sold nothing", async () => {
+  it("refuses an unsigned cancellation", async () => {
     signedIn();
     const res = await back("cancelled=1&token=ORDER1");
     expect(res.status).toBe(303);
-    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain("You cancelled at PayPal. Nothing was sold.");
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain("That item can't be bought here.");
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it("refuses a state it didn't sign, before reaching the database or PayPal", async () => {

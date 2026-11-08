@@ -7,6 +7,7 @@ export interface Claim {
 }
 
 export const PAYPAL_CLAIMS: Claim[] = [
+  { what: "The shelf has PayPal's v6 button wired to order and capture routes; a real browser run is still needed", file: "app/queue/paypalSdk.ts", find: "createPayPalOneTimePaymentSession" },
   { what: "Reads the shop's sales from Transaction Search, across windows, and reports any window that failed", file: "server/paypal/transactions.ts", find: "/v1/reporting/transactions" },
   { what: "Reads the capture from PayPal again before any refund, and again to reconcile", file: "server/paypal/refunds.ts", find: "/v2/payments/captures/" },
   { what: "Reads PayPal's Disputes API before each refund", file: "server/paypal/disputes.ts", find: "/v1/customer/disputes" },
@@ -16,7 +17,7 @@ export const PAYPAL_CLAIMS: Claim[] = [
   { what: "For the demo shop, that read goes through PayPal's Server SDK, with a real time limit and one layer of retries", file: "server/paypal/sdkRefundRead.ts", find: "getRefund" },
   { what: "Verifies each webhook's signature and certificate before believing it", file: "server/paypal/webhooks.ts", find: "isTrustedCertUrl" },
   { what: "Puts a sale in the queue when a verified capture webhook arrives", file: "server/demo/liveCatch.ts", find: "catchLiveSale" },
-  { what: "A buyer can log in and pay on PayPal's own page, and the order is read back from PayPal before the sale is written", file: "server/demo/liveCatch.ts", find: "finishPayPalBuy" },
+  { what: "A buyer can log in and pay on PayPal's own page, and the order is read back from PayPal and must match before it is captured", file: "server/demo/liveCatch.ts", find: "finishPayPalBuy" },
   { what: "Is built to follow the 48-hour deletion rule, and purges hourly at 46 hours", file: "server/privacy/retention.ts", find: "PAYPAL_PURGE_CUTOFF_HOURS = 46" },
   { what: "The lasting ledger holds a PayPal id only as a keyed hash (HMAC). Raw ids sit only in tables purged at 46 hours", file: "server/privacy/recordKey.ts", find: "createRecordKey" },
   { what: "Sandbox only: webhook certificates are accepted from PayPal's sandbox hosts, and the API base is the sandbox", file: "server/paypal/client.ts", find: "PAYPAL_SANDBOX_BASE" },

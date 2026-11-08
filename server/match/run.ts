@@ -62,7 +62,7 @@ export const ITEMS_PER_STATEMENT = 250;
 const CANDIDATES_SQL = `
   with items as (
     select 'order_line' as kind, id, title, '' as description, ordered_on::text as ordered_on
-    from order_lines where shop_id = $1 and id = any($4::uuid[])
+    from order_lines where shop_id = $1 and not capture_pending and id = any($4::uuid[])
     union all
     select 'shop_item', id, title, description, null
     from shop_items where shop_id = $1 and id = any($4::uuid[]) -- sold-out listings too; the queue shows which are still for sale
@@ -133,7 +133,7 @@ export async function joinShop(
   opts: { today: string; failedMonths?: string[] },
 ): Promise<{ joined: JoinResult; lines: { ordered_on: string }[]; captureIds: Map<string, string | null> }> {
   const { rows: lines } = await db.query<{ id: string; order_number: string; title: string; sku: string | null; ordered_on: string }>(
-    "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1",
+    "select id, order_number, title, sku, ordered_on from order_lines where shop_id = $1 and not capture_pending",
     [shopId],
   );
   const { rows: payments } = await db.query<{
@@ -190,7 +190,7 @@ export async function runShopCheck(
   const recallYearsMissing = await missingRecallYears(db, Number(recallsFrom.slice(0, 4)), opts.today);
   const { rows: shopText } = await db.query<{ id: string; text: string }>(
     `select id, text from (
-       select id, title as text from order_lines where shop_id = $1
+       select id, title as text from order_lines where shop_id = $1 and not capture_pending
        union all select id, title || ' ' || description from shop_items where shop_id = $1
        union all select id, concat_ws(' ', brand, item, model) from safety_receipts where shop_id = $1 and created_at + interval '3 years' > now()
      ) records where ($2::uuid is null or id = $2)`,

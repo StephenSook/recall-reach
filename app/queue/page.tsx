@@ -92,7 +92,7 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
 
         {canApprove || canAskClaude || canBuy ? (
           <div className="actions">
-            {canBuy ? <BuyButtons shopItemId={row.recordId} waiting={saleOnItsWay} /> : null}
+            {canBuy ? <BuyButtons shopItemId={row.recordId} waiting={saleOnItsWay} paypalClientId={process.env.PAYPAL_CLIENT_ID ?? ""} /> : null}
             {canApprove ? (
               <form action={`/api/queue/notices${here}`} method="post">
                 <input type="hidden" name="matchId" value={row.matchId} />
