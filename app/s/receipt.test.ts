@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ReceiptForm } from "./ReceiptForm";
-import { ReceiptCard } from "../queue/ReceiptCard";
+import { ReceiptCard, shortReceiptLink } from "../queue/ReceiptCard";
 import { receiptQr } from "@/server/safetyReceipt/qr";
 
 describe("safety receipt screens", () => {
@@ -63,5 +63,22 @@ describe("safety receipt screens", () => {
     expect(page).toContain("DEMO SHOP");
     expect(page).toContain("Print");
     expect(page).not.toMatch(/[\u2013\u2014\u2018\u2019\u201c\u201d]/);
+  });
+});
+
+describe("the receipt link on the owner's card", () => {
+  const link = `https://recall-reach-web-e022.onrender.com/s/${"a".repeat(80)}`;
+  const page = () => renderToStaticMarkup(createElement(ReceiptCard, { link, qr: "data:image/svg+xml;base64,AA", demo: false, kept: false, deletesAfter: "Nov 15, 2026" }));
+
+  it("shortens what's shown and keeps the whole address in the link", () => {
+    expect(shortReceiptLink(link)).toBe("recall-reach-web-e022.onrender.com/s/...");
+    expect(page()).toContain(`href="${link}"`);
+    expect(page()).toContain('<span class="receipt-short">recall-reach-web-e022.onrender.com/s/...</span>');
+  });
+
+  it("keeps the whole address for print, where the link is what's handed over", () => {
+    expect(page()).toContain(`<span class="receipt-full">${link}</span>`);
+    expect(page()).toMatch(/\.receipt-full \{ display: none; \}/);
+    expect(page()).toMatch(/@media print[\s\S]*\.receipt-short \{ display: none; \}[\s\S]*\.receipt-full \{ display: inline; \}/);
   });
 });
