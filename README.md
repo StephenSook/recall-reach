@@ -8,6 +8,29 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet.
 
+## How this meets the judging criteria
+
+| Criterion | Open this | What it shows | In the code |
+|---|---|---|---|
+| Technological Implementation | [/evidence/paypal](https://recall-reach-web-e022.onrender.com/evidence/paypal) | Sandbox refunds through PayPal Agent Toolkit and verified capture webhooks. | [server/paypal/toolkitRefund.ts](server/paypal/toolkitRefund.ts), [server/paypal/webhookHandler.ts](server/paypal/webhookHandler.ts) |
+| Technological Implementation | [/studio](https://recall-reach-web-e022.onrender.com/studio) | AG Studio agents on Claude, with a recall-checking tool. | [app/studio/StudioDashboard.tsx](app/studio/StudioDashboard.tsx), [app/studio/recallTool.ts](app/studio/recallTool.ts) |
+| Technological Implementation | [/evidence/api](https://recall-reach-web-e022.onrender.com/evidence/api) | Our MCP server's two tools, check_recall and get_recall, with the calls to try. | [app/api/mcp/route.ts](app/api/mcp/route.ts) |
+| Technological Implementation | [/judge](https://recall-reach-web-e022.onrender.com/judge) | PayPal's own refusal: its sandbox test header on an already refunded sale returns REFUND_TIME_LIMIT_EXCEEDED, and no money can move. | [server/paypal/judgeRefusal.ts](server/paypal/judgeRefusal.ts), [app/api/judge/late-refund/route.ts](app/api/judge/late-refund/route.ts) |
+| Design | [/check](https://recall-reach-web-e022.onrender.com/check) | Check an item at the counter or upload the shop's own order file. | [app/check/CheckForm.tsx](app/check/CheckForm.tsx), [server/web/ownCheck.ts](server/web/ownCheck.ts) |
+| Design | [/r/sample](https://recall-reach-web-e022.onrender.com/r/sample) | A labelled sample of the family's phone page. | [app/r/sample/page.tsx](app/r/sample/page.tsx), [app/r/FamilyNotice.tsx](app/r/FamilyNotice.tsx) |
+| Potential Impact | [/eval](https://recall-reach-web-e022.onrender.com/eval) | Held-out results beside a word-match baseline, with limits on what they prove. | [app/eval/page.tsx](app/eval/page.tsx), [server/eval/measure.ts](server/eval/measure.ts) |
+| Potential Impact | [/replay](https://recall-reach-web-e022.onrender.com/replay) | Real CPSC recalls checked against the demo shop, with a recount. | [app/replay/page.tsx](app/replay/page.tsx), [server/replay/replay.ts](server/replay/replay.ts) |
+| Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | A shopping agent checks listings against recalls before offering one. | [server/agent/shopper.ts](server/agent/shopper.ts), [app/shopper/ShopperForm.tsx](app/shopper/ShopperForm.tsx) |
+| Innovation/Idea | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop from step 1. The queue starts from the shop's own sale, Claude's questions rest on CPSC's words, and the owner approves before sending. | [server/agent/recallQuestion.ts](server/agent/recallQuestion.ts), [server/notice/compose.ts](server/notice/compose.ts) |
+| Presentation | [/judge](https://recall-reach-web-e022.onrender.com/judge) | A guide through notices, refunds and a sale reaching the demo queue. | [app/judge/page.tsx](app/judge/page.tsx) |
+| Presentation | [/evidence/defects](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found, what changed, and how we checked again. | [app/evidence/defects/page.tsx](app/evidence/defects/page.tsx), [app/evidence/defects/defects.ts](app/evidence/defects/defects.ts) |
+| AG Grid | [/evidence/ag-grid](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Queue filters, row groups, exports and charts. | [app/queue/MatchGrid.tsx](app/queue/MatchGrid.tsx) |
+| APIMatic | [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md) | The PayPal Server SDK Context Plugin moved our refund read-back onto the SDK's getRefund. APIMatic's CLI generated our TypeScript SDK and the docs at /api-docs. | [server/paypal/sdkRefundRead.ts](server/paypal/sdkRefundRead.ts), [scripts/sdk.test.ts](scripts/sdk.test.ts) |
+| Bryntum | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop, then open a recall from the queue: each sale's 180-day refund window against the recall date and today. | [app/queue/recalls/RefundTimeline.tsx](app/queue/recalls/RefundTimeline.tsx), [app/queue/recalls/timeline.ts](app/queue/recalls/timeline.ts) |
+| Channel3 | [/evidence/channel3](https://recall-reach-web-e022.onrender.com/evidence/channel3) | Public product names searched through Channel3's MCP, with cached candidates to review. | [server/sweep/channel3.ts](server/sweep/channel3.ts), [server/sweep/sweep.ts](server/sweep/sweep.ts) |
+| Postman | [postman/recall-reach.postman_collection.json](postman/recall-reach.postman_collection.json) | Public API requests with answer checks, run by Newman against the live site. | [scripts/postman.test.ts](scripts/postman.test.ts), [.github/workflows/newman.yml](.github/workflows/newman.yml) |
+| Render | [render.yaml](render.yaml) | The web service and Replay refresh workflow. | [workflows/replayTask.ts](workflows/replayTask.ts), [scripts/startReplayTask.ts](scripts/startReplayTask.ts) |
+
 ## What it does
 
 1. **Checks past sales against real recalls.** It pulls recalls from CPSC every 15 minutes and checks each shop's order lines against them with rules, in the app. A shop that uploaded before a recall came in gets that recall on its next visit from the same browser.
