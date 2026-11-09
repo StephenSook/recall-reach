@@ -5,7 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
 import { licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
-import { excelColumns, grouped, refundTotal, saleLabel, saleSum, usd } from "./gridFeatures";
+import { copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
@@ -56,15 +56,12 @@ function saleTotal({ rowNode }: IAggFuncParams<Row>) {
   return { value: sum.usd, unpriced: sum.unpriced, toString: () => saleLabel(sum), toNumber: () => sum.usd };
 }
 
-const saleWords = (value: unknown) => (value !== null && typeof value === "object" ? String(value) : usd(value as number | null | undefined));
-
-/** A payment nobody could identify is PayPal's record, not the shop's, so no way out of this table carries it. */
+/** A payment nobody could identify is PayPal's record, not the shop's, so no file made from this table carries it. */
 const keepsOutUnidentified = (p: ShouldRowBeSkippedParams<Row>) => p.node.data?.verdict === "UNIDENTIFIED";
 // AG Grid's type says string, and Excel only gets a number cell from a number, so a number goes through as one.
-const numberForExport = (p: ProcessCellForExportParams<Row>): string => {
-  const value: unknown = p.value;
-  return (value !== null && typeof value === "object" && "toNumber" in value ? (value as { toNumber: () => number }).toNumber() : value) as string;
-};
+const cellForExport = (p: ProcessCellForExportParams<Row>): string =>
+  (p.column.getColId() === "saleUsd" ? saleForExport(p.value, p.node?.data) : p.value) as string;
+const cellForClipboard = (p: ProcessCellForExportParams<Row>): string => copiedCell(p.value, p.node?.data) as string;
 // The right-click menu has its own export entries, which would skip the rule above.
 const MENU_ITEMS: DefaultMenuItem[] = ["copy", "copyWithHeaders", "separator", "chartRange"];
 
@@ -77,7 +74,7 @@ const columns: ColDef<Row>[] = [
   { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: "excluded" },
-  { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleWords(p.value), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: "series" },
+  { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleCellWords(p.value, p.data), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: "series" },
   { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
   { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false, suppressColumnsToolPanel: true },
@@ -128,7 +125,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
       fileName: "recall-queue.xlsx",
       columnKeys: excelColumns((grid.getAllDisplayedColumns() ?? []).map((c) => c.getColId())),
       shouldRowBeSkipped: keepsOutUnidentified,
-      processCellCallback: numberForExport,
+      processCellCallback: cellForExport,
     });
   };
 
@@ -196,6 +193,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         enableCharts
         suppressAggFuncInHeader
         getContextMenuItems={() => MENU_ITEMS}
+        processCellForClipboard={cellForClipboard}
         defaultExcelExportParams={EXPORT_RULES}
         defaultCsvExportParams={EXPORT_RULES}
         cellSelection

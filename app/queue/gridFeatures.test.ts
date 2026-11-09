@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excelColumns, grouped, refundTotal, saleLabel, saleSum, usd } from "./gridFeatures";
+import { copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 
 describe("grouping the table", () => {
   const cols = [{ field: "recallNumber", enableRowGroup: true }, { field: "state", enableRowGroup: true }, { field: "product" }];
@@ -84,5 +84,64 @@ describe("dollars", () => {
 describe("what the Excel file holds", () => {
   it("is what's on screen for the owner's own sales, with no link column", () => {
     expect(excelColumns(["recallNumber", "open", "ag-Grid-SelectionColumn", "saleUsd"])).toEqual(["recallNumber", "saleUsd"]);
+  });
+});
+
+describe("the sale column", () => {
+  const total = (usdValue: number, unpriced: number) => ({ value: usdValue, unpriced, toString: () => saleLabel({ usd: usdValue, unpriced }), toNumber: () => usdValue });
+  const sold = { soldOn: "2026-11-01" };
+
+  it("shows a group's total in words", () => {
+    expect(saleCellWords(total(20, 1), undefined)).toBe("$20.00 + 1 not in USD");
+  });
+
+  it("shows dollars on a sale", () => {
+    expect(saleCellWords(18.5, sold)).toBe("$18.50");
+  });
+
+  it("says when a sale isn't priced in dollars, rather than leaving it blank", () => {
+    expect(saleCellWords(null, sold)).toBe("Not in USD");
+  });
+
+  it("leaves a listing nobody bought blank", () => {
+    expect(saleCellWords(null, { soldOn: null })).toBe("");
+  });
+
+  it("exports a complete group total as a number", () => {
+    expect(saleForExport(total(20, 0), undefined)).toBe(20);
+  });
+
+  it("keeps the warning on a group total that left a sale out", () => {
+    expect(saleForExport(total(20, 1), undefined)).toBe("$20.00 + 1 not in USD");
+  });
+
+  it("keeps the warning on a group with nothing in dollars", () => {
+    expect(saleForExport(total(0, 2), undefined)).toBe("$0.00 + 2 not in USD");
+  });
+
+  it("exports a sale in dollars as a number", () => {
+    expect(saleForExport(18.5, sold)).toBe(18.5);
+  });
+
+  it("marks a sale not in dollars in the file too", () => {
+    expect(saleForExport(null, sold)).toBe("Not in USD");
+  });
+
+  it("passes other cells through", () => {
+    expect(saleForExport("Matched", sold)).toBe("Matched");
+  });
+});
+
+describe("copying from the table", () => {
+  it("copies an ordinary cell", () => {
+    expect(copiedCell("27072", { verdict: "MATCH" })).toBe("27072");
+  });
+
+  it("copies nothing from a payment nobody could identify", () => {
+    expect(copiedCell("A PayPal payment of 18.00 USD", { verdict: "UNIDENTIFIED" })).toBe("");
+  });
+
+  it("copies a group row's value", () => {
+    expect(copiedCell("Matched", undefined)).toBe("Matched");
   });
 });

@@ -61,5 +61,26 @@ export const usd = (value: number | null | undefined) => (value === null || valu
 
 export const saleLabel = (sum: SaleSum) => (sum.unpriced > 0 ? `${usd(sum.usd)} + ${sum.unpriced} not in USD` : usd(sum.usd));
 
+const NOT_IN_USD = "Not in USD";
+type SaleRow = { soldOn?: string | null } | undefined;
+const isTotal = (value: unknown): value is { unpriced: number; toString(): string; toNumber(): number } => value !== null && typeof value === "object" && "toNumber" in value;
+
+/** What the Sale column says: a group's total in words, dollars on a sale, and never a blank where a price was left out. */
+export function saleCellWords(value: unknown, row: SaleRow): string {
+  if (isTotal(value)) return value.toString();
+  if (value === null || value === undefined) return row?.soldOn ? NOT_IN_USD : "";
+  return usd(value as number);
+}
+
+/** The same for Excel. Numbers stay numbers so they add up, and a total that left a sale out keeps saying so. */
+export function saleForExport(value: unknown, row: SaleRow): unknown {
+  if (isTotal(value)) return value.unpriced > 0 ? value.toString() : value.toNumber();
+  if ((value === null || value === undefined) && row?.soldOn) return NOT_IN_USD;
+  return value;
+}
+
+/** A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave by copying either. */
+export const copiedCell = (value: unknown, row: { verdict?: string } | undefined): unknown => (row?.verdict === "UNIDENTIFIED" ? "" : value);
+
 const NOT_EXPORTED = new Set(["open", "ag-Grid-SelectionColumn"]);
 export const excelColumns = (columnIds: string[]) => columnIds.filter((id) => !NOT_EXPORTED.has(id));
