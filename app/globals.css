@@ -462,6 +462,27 @@ pre {
 .refund-timeline .timeline-check {
   color: var(--color-ink);
 }
+/* A follow-up shares its sale's row, wide enough to read at a year's scale. Its left edge is its date. */
+.refund-timeline .b-sch-event-wrap:has(.timeline-follow) {
+  z-index: 6;
+  min-width: 136px;
+}
+.refund-timeline .b-sch-event.timeline-follow {
+  padding-inline: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-ink) !important;
+  border-radius: var(--radius-chip);
+}
+.refund-timeline .b-sch-event.timeline-follow-proposed {
+  background: var(--color-paper) !important;
+  border: 2px dashed var(--color-cobalt) !important;
+}
+.refund-timeline .b-sch-event.timeline-follow-confirmed {
+  background: var(--color-lavender) !important;
+  border: 2px solid var(--color-cobalt) !important;
+}
 .timeline-line {
   position: absolute;
   z-index: 5;
@@ -678,6 +699,31 @@ pre {
   margin-inline-start: auto;
   padding-inline-end: 4px;
   font-size: 14px;
+}
+.follow-ups {
+  margin-block: 16px;
+}
+.follow-ups h2 {
+  font-size: var(--text-heading);
+  font-weight: 700;
+}
+.follow-ups ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.follow-ups li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding-block: 8px;
+  border-top: 1px solid var(--color-rule);
+}
+.follow-ups li > .follow-why {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-body);
 }
 
 /* One item, typed at the counter */

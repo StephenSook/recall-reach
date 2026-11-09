@@ -1,0 +1,91 @@
+// Planning follow-ups on the refund-window chart, in a real browser. PayPal is faked, and the advice is seeded, so no model is
+// asked: what's tested here is everything around it. server/agent/followUpAdvice.test.ts covers what Claude is sent.
+import { expect, test } from "@playwright/test";
+import pg from "pg";
+
+const REASON = "This hazard can seriously injure a child quickly, so reach this family within three days.";
+const SHOTS = process.env.FOLLOW_UP_SHOTS;
+
+test("an owner plans a follow-up, confirms it, and it's still there after a reload", async ({ page }) => {
+  // Tall enough for the whole page: a full-page capture resizes the window, and the chart redraws its bars for that.
+  if (SHOTS) await page.setViewportSize({ width: 1280, height: 1400 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Try it as a demo shop" }).click();
+  await expect(page).toHaveURL(/\/queue$/, { timeout: 60_000 });
+
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  let recallNumber = "";
+  try {
+    // A sale the demo shop made of a confirmed match, whose family hasn't answered.
+    const found = await db.query<{ n: string }>(
+      `select r.recall_number as n from recall_matches m join recalls r using (recall_id) join shops s on s.id = m.shop_id
+       where s.kind = 'DEMO' and m.verdict = 'MATCH' and m.strength = 'CONFIRMED' and m.order_line_id is not null and m.sale_path = 'REFUND_ELIGIBLE' and m.join_state = 'IDENTIFIED'
+       order by s.created_at desc limit 1`,
+    );
+    recallNumber = found.rows[0].n;
+    await db.query(
+      `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
+       select raw_sha256, '1', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
+       on conflict do nothing`,
+      [REASON, recallNumber],
+    );
+  } finally {
+    await db.end();
+  }
+
+  const href = `/queue/recalls/${recallNumber}`;
+  await page.goto(href);
+  const panel = page.getByTestId("follow-ups");
+  await expect(panel).toContainText("It never sees your sales.");
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+
+  const proposals = page.getByTestId("follow-up-proposals");
+  await expect(proposals).toContainText(REASON, { timeout: 30_000 });
+  await expect(proposals).toContainText("Follow up by");
+  await expect(page.locator(".timeline-follow-proposed").first()).toBeVisible();
+  // The sale's own bars stay on the chart once it redraws with the follow-ups: a redraw once cleared them.
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".b-sch-event-wrap:has(.timeline-refund)").first()).toHaveCSS("opacity", "1");
+  await expect(page.locator(".b-sch-event-wrap:has(.timeline-follow-proposed)").first()).toHaveCSS("opacity", "1");
+  expect((await page.locator(".timeline-follow-proposed").first().boundingBox())?.width ?? 0).toBeGreaterThan(100);
+  if (SHOTS) {
+    // The chart fades its bars in.
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${SHOTS}/follow-proposed.png`, fullPage: false });
+  }
+
+  await proposals.getByRole("button", { name: "Confirm" }).first().click();
+  const confirmed = page.getByTestId("follow-ups-confirmed");
+  await expect(confirmed).toContainText(REASON);
+  await expect(page.locator(".timeline-follow-confirmed").first()).toBeVisible();
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".b-sch-event-wrap:has(.timeline-refund)").first()).toHaveCSS("opacity", "1");
+
+  // A date the window can't take is refused by the server, and the saved date stands.
+  const day = confirmed.locator('input[type="date"]').first();
+  const before = await day.inputValue();
+  const refused = page.waitForResponse((r) => r.request().method() === "PUT");
+  await day.fill("2020-01-01");
+  expect((await refused).status()).toBe(422);
+  await expect(page.getByTestId("follow-up-message")).toContainText("gone");
+
+  await page.reload();
+  await expect(page.getByTestId("follow-ups-confirmed")).toContainText(REASON);
+  expect(await page.getByTestId("follow-ups-confirmed").locator('input[type="date"]').first().inputValue()).toBe(before);
+  await expect(page.locator(".timeline-follow-confirmed").first()).toBeVisible();
+  if (SHOTS) {
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${SHOTS}/follow-confirmed.png`, fullPage: false });
+  }
+
+  // The queue card shows it. It's a reminder there: nothing was sent.
+  await page.goto("/queue");
+  await expect(page.getByTestId("follow-up-by").first()).toContainText("Follow up by");
+
+  await page.goto(href);
+  await page.getByTestId("follow-ups-confirmed").getByRole("button", { name: "Dismiss" }).first().click();
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+});

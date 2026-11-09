@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { businessDay } from "@/server/time/businessDay";
+import { dayLabel } from "./recalls/followUps";
 import { redirect } from "next/navigation";
 import { Fragment, Suspense } from "react";
 import { getDb } from "@/server/db/pg";
@@ -108,6 +109,8 @@ function Card({ card, shopName, shopKind, agentReady, saleOnItsWay, answered, st
             ) : null}
           </div>
         ) : null}
+
+        {row.followUpBy ? <p data-testid="follow-up-by">Follow up by {dayLabel(row.followUpBy)}.</p> : null}
 
         {row.notice ? (
           <section className="state-line" data-notice={row.notice.id}>

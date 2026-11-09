@@ -90,6 +90,13 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     expect(lastReply(requests[1])[0]).toMatchObject({ type: "tool_result", is_error: true });
   });
 
+  it("sends back a quote too long to read on a row", async () => {
+    await db.query("update recalls set hazards = $1::jsonb where recall_number = $2", [JSON.stringify(["word ".repeat(60).trim()]), RECALL]);
+    const { client, requests } = fakeClaude([[good({ hazard_quote: "word ".repeat(60).trim() })], [good({ hazard_quote: "word word word" })]]);
+    expect((await advise(client)).status).toBe("ADVISED");
+    expect(JSON.stringify(lastReply(requests[1]))).toMatch(/fewer words/i);
+  });
+
   it("wants the words from the hazard, not from elsewhere in the recall", async () => {
     const { client, requests } = fakeClaude([[good({ hazard_quote: description })], [good()]]);
     expect((await advise(client)).status).toBe("ADVISED");

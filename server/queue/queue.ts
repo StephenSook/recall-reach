@@ -74,6 +74,8 @@ export interface QueueRow {
   recallChanged: boolean;
   /** What the seller said when asked if this is the recalled product. It changes nothing else on the card. */
   sellerAnswer: SellerAnswer | null;
+  /** The day the owner confirmed to follow up by. It's a reminder here and sends nothing. */
+  followUpBy?: string | null;
   /** Seconds from PayPal's capture to this queue, while the payment is held. PayPal's time itself never reaches the page. */
   caughtSeconds: number | null;
   /** note is what goes to PayPal with the refund, made by the code that sends it, so the screen shows what is sent. */
@@ -159,7 +161,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
     [shopId],
   );
   const { rows } = await db.query<Record<string, never>>(
-    `select m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id, m.safety_receipt_id,
+    `select fu.due_on::text as follow_up_by, m.id as match_id, m.verdict, m.strength, m.sale_path, m.join_state, m.matched, m.missing, m.reason, m.order_line_id, m.shop_item_id, m.safety_receipt_id,
             r.recall_number, r.title as recall_title, r.recall_date, r.url as recall_url, r.products, r.description, r.hazards, r.remedies, r.raw_sha256,
             n.written_question,
             extract(epoch from m.caught_at - pp.captured_at) as caught_seconds,
@@ -177,6 +179,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      left join order_lines l on l.id = m.order_line_id
      left join shop_items i on i.id = m.shop_item_id
      left join safety_receipts sr on sr.id = m.safety_receipt_id
+     left join follow_ups fu on fu.match_id = m.id
      left join seller_answers sa on sa.shop_id = m.shop_id and sa.recall_number = r.recall_number and sa.listing_title = coalesce(l.title, i.title)
      left join lateral (
        select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1
@@ -240,6 +243,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       question: askedFor(r),
       agent: null,
       sellerAnswer: (r.seller_answer as SellerAnswer | null) ?? null,
+      followUpBy: (r.follow_up_by as string | null) ?? null,
       recallChanged: r.checked_sha !== r.raw_sha256,
       caughtSeconds: r.caught_seconds === null || r.caught_seconds === undefined ? null : Math.max(0, Math.round(Number(r.caught_seconds))),
       approval: r.approval_id

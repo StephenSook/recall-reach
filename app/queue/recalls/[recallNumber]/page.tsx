@@ -1,9 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/server/db/pg";
+import { followUpsFor } from "@/server/queue/followUps";
 import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { currentSession } from "@/server/web/http";
-import { RefundTimelineLoader } from "../RefundTimelineLoader";
+import { RefundWindows } from "../RefundWindows";
 import { timelineFor } from "../timeline";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,8 @@ export default async function RecallTimelinePage({ params }: { params: Promise<{
   if (!shop) redirect("/");
   const timeline = timelineFor(rows, recallNumber, businessDay());
   if (!timeline) notFound();
+  const onThisTimeline = new Set(timeline.sales.map((s) => s.id));
+  const saved = (await followUpsFor(getDb(), session.shopId)).filter((f) => onThisTimeline.has(f.matchId));
   return (
     <main className="page">
       <header className="page-head">
@@ -23,7 +26,7 @@ export default async function RecallTimelinePage({ params }: { params: Promise<{
         <span className="quiet id">CPSC recall {recallNumber}</span>
       </header>
       <p>{timeline.recallTitle}</p>
-      <RefundTimelineLoader timeline={timeline} />
+      <RefundWindows timeline={timeline} saved={saved} />
       <ul className="window cleared-list" data-testid="timeline-list">
         {timeline.sales.map((s) => (
           <li key={s.id}>

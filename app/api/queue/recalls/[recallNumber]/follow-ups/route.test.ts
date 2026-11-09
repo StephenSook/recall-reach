@@ -44,6 +44,19 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
   });
 
   describe("planning", () => {
+    beforeEach(() => {
+      stored.mockResolvedValue(null);
+    });
+
+    it("reuses advice already written for this CPSC text, and needs no call to Claude", async () => {
+      stored.mockResolvedValue(ADVICE);
+      client.mockReturnValue(null);
+      const res = await propose();
+      expect(res.status).toBe(200);
+      expect((await res.json()).reason).toBe(ADVICE.reason);
+      expect(advise).not.toHaveBeenCalled();
+    });
+
     it("returns Claude's advice and the date code set for each sale", async () => {
       const res = await propose();
       expect(res.status).toBe(200);

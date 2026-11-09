@@ -65,17 +65,21 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
   try {
     const timeline = await timelineOf(session.shopId, session.sessionId, recallNumber);
     if (!timeline) return refused(404, "This shop has no sale of that recall.");
-    const client = agentClientFromEnv();
-    if (!client) return refused(503, ADVICE_REFUSED.UNAVAILABLE[1]);
-    if (!perShop(session.shopId)) return refused(429, "Too many plans. Try again in a while.");
-    const result = await adviseFollowUp(getDb(), client, { recallNumber, now: new Date(), capMicros: OWN_SHOP_CAP_MICROS });
-    if (result.status !== "ADVISED") {
-      const [status, why] = ADVICE_REFUSED[result.status];
-      return refused(status, why);
+    let advice = await storedAdvice(getDb(), recallNumber);
+    if (!advice) {
+      const client = agentClientFromEnv();
+      if (!client) return refused(503, ADVICE_REFUSED.UNAVAILABLE[1]);
+      if (!perShop(session.shopId)) return refused(429, "Too many plans. Try again in a while.");
+      const result = await adviseFollowUp(getDb(), client, { recallNumber, now: new Date(), capMicros: OWN_SHOP_CAP_MICROS });
+      if (result.status !== "ADVISED") {
+        const [status, why] = ADVICE_REFUSED[result.status];
+        return refused(status, why);
+      }
+      advice = result.advice;
     }
     const done = new Set((await followUpsFor(getDb(), session.shopId)).map((f) => f.matchId));
-    const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id)), result.advice.withinDays, timeline.today);
-    return Response.json({ reason: result.advice.reason, hazardQuote: result.advice.hazardQuote, withinDays: result.advice.withinDays, proposals, closingSoon }, { headers: { "cache-control": "no-store" } });
+    const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id)), advice.withinDays, timeline.today);
+    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, proposals, closingSoon }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("plan", err);
   }

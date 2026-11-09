@@ -5,7 +5,8 @@ import "@bryntum/core-community/fontawesome/css/solid.css";
 import "@bryntum/scheduler-community/scheduler.css";
 import "@bryntum/scheduler-community/svalbard.css";
 import { BryntumScheduler } from "@bryntum/scheduler-react-community";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { checkFollowUpDate, dayLabel, followUpLines, type FollowUpView } from "./followUps";
 import type { Timeline, TimelineSale } from "./timeline";
 
 const ROW_HEIGHT = 64;
@@ -19,6 +20,12 @@ const COLOR: Record<TimelineSale["tone"], string> = {
 };
 
 const localDay = (day: string) => new Date(`${day}T00:00:00`);
+const dayAfter = (day: string) => new Date(localDay(day).getTime() + 86_400_000);
+const dayOf = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const FOLLOW_PREFIX = "follow-";
+// Outside the component, and memoized below: the chart re-reads any prop that's a new object, and that clears its bars.
+const TIME_RESOLUTION = { unit: "day", increment: 1 } as const;
+const COLUMNS = [{ text: "Sale", field: "name", width: 320, editor: false, sortable: false }];
 
 function dateLine(kind: "recall" | "today", label: string, day: string): HTMLElement {
   const line = document.createElement("div");
@@ -30,9 +37,14 @@ function dateLine(kind: "recall" | "today", label: string, day: string): HTMLEle
   return line;
 }
 
-export default function RefundTimeline({ timeline }: { timeline: Timeline }) {
+export default function RefundTimeline({ timeline, followUps = [], onMove }: { timeline: Timeline; followUps?: FollowUpView[]; onMove?: (saleId: string, due: string) => void }) {
   const [scheduler, setScheduler] = useState<BryntumScheduler | null>(null);
   const { recallDate, today } = timeline;
+  // The chart's features are set up once, so they read the current follow-ups through this.
+  const current = useRef({ followUps, timeline, onMove });
+  useEffect(() => {
+    current.current = { followUps, timeline, onMove };
+  });
 
   // Lines down the whole chart for the recall date and today. The free tier has no time ranges. These are added by hand
   // rather than by React, because the chart's own element goes when the chart does.
@@ -58,36 +70,92 @@ export default function RefundTimeline({ timeline }: { timeline: Timeline }) {
     };
   }, [scheduler, recallDate, today]);
 
-  const resources = [{ id: DATES_ROW, name: "Dates" }, ...timeline.sales.map((s) => ({ id: s.id, name: s.title }))];
-  const events = timeline.sales.map((s) => ({
-    id: `sale-${s.id}`,
-    resourceId: s.id,
-    name: s.meaning,
-    startDate: localDay(s.orderedOn),
-    endDate: localDay(s.windowEnds),
-    eventColor: COLOR[s.tone],
-    cls: `timeline-${s.tone}`,
-  }));
+  const resources = useMemo(() => [{ id: DATES_ROW, name: "Dates" }, ...timeline.sales.map((s) => ({ id: s.id, name: s.title }))], [timeline.sales]);
+  // Only the sales go in as a prop. Replacing the whole set after the first draw leaves the bars faded out, so follow-ups are
+  // added to the chart's own store below.
+  const events = useMemo(
+    () =>
+      timeline.sales.map((s) => ({
+        id: `sale-${s.id}`,
+        resourceId: s.id,
+        name: s.meaning,
+        startDate: localDay(s.orderedOn),
+        endDate: localDay(s.windowEnds),
+        eventColor: COLOR[s.tone],
+        cls: `timeline-${s.tone}`,
+        draggable: false,
+        resizable: false,
+      })),
+    [timeline.sales],
+  );
+  useEffect(() => {
+    const store = scheduler?.instance?.eventStore;
+    if (!store) return;
+    const wanted = new Map(
+      followUps.map((f) => [
+        `${FOLLOW_PREFIX}${f.saleId}`,
+        { resourceId: f.saleId, name: `Follow up ${dayLabel(f.due)}`, startDate: localDay(f.due), endDate: dayAfter(f.due), cls: `timeline-follow timeline-follow-${f.state}`, draggable: f.state === "confirmed", resizable: false },
+      ]),
+    );
+    for (const record of [...store.records]) {
+      if (String(record.id).startsWith(FOLLOW_PREFIX) && !wanted.has(String(record.id))) store.remove(record);
+    }
+    for (const [id, data] of wanted) {
+      const existing = store.getById(id);
+      if (existing) existing.set(data);
+      else store.add({ id, ...data });
+    }
+  }, [scheduler, followUps]);
+  const anyConfirmed = followUps.some((f) => f.state === "confirmed");
+  const { dragFeature, tooltipFeature, onDrop } = useMemo(() => {
+    const inFollowUp = (id: unknown) => current.current.followUps.find((f) => `${FOLLOW_PREFIX}${f.saleId}` === String(id));
+    return {
+      dragFeature: {
+        constrainDragToResource: true,
+        validatorFn: ({ eventRecords, startDate }: { eventRecords: { id: unknown }[]; startDate: Date }) => {
+          const follow = inFollowUp(eventRecords[0]?.id);
+          const sale = current.current.timeline.sales.find((s) => s.id === follow?.saleId);
+          return Boolean(follow && sale) && checkFollowUpDate(sale as TimelineSale, dayOf(startDate), current.current.timeline.today) === "OK";
+        },
+      },
+      tooltipFeature: {
+        template: ({ eventRecord }: { eventRecord: { id: unknown; name: string } }) => {
+          const follow = inFollowUp(eventRecord.id);
+          // As text, never HTML: these words are Claude's and CPSC's.
+          const lines = follow ? [eventRecord.name, ...followUpLines(follow)] : [eventRecord.name];
+          return { tag: "div", children: lines.map((text) => ({ tag: "div", text })) };
+        },
+      },
+      onDrop: ({ eventRecords }: { eventRecords: { id: unknown; startDate: unknown }[] }) => {
+        const follow = inFollowUp(eventRecords[0]?.id);
+        const start = eventRecords[0]?.startDate;
+        if (follow && start instanceof Date) current.current.onMove?.(follow.saleId, dayOf(start));
+      },
+    };
+  }, []);
   return (
-    // Read-only, and the list under it says the same in words, so that's what a screen reader or keyboard gets. Bryntum's
-    // own markup puts buttons inside a grid role, which a screen reader can't make sense of.
-    <div className="refund-timeline" data-testid="refund-timeline" inert style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
+    // Read-only until there's a follow-up to hover or drag. The list under it says the same in words and has every action,
+    // so that's what a screen reader or keyboard gets: Bryntum's own markup puts buttons inside a grid role.
+    <div className="refund-timeline" data-testid="refund-timeline" inert={followUps.length === 0} style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
       <BryntumScheduler
         ref={setScheduler}
-        readOnly
+        readOnly={!anyConfirmed}
+        eventLayout="pack"
+        timeResolution={TIME_RESOLUTION}
         startDate={localDay(timeline.from)}
         endDate={localDay(timeline.to)}
         viewPreset="monthAndYear"
         forceFit={timeline.fits}
         rowHeight={ROW_HEIGHT}
-        barMargin={10}
-        columns={[{ text: "Sale", field: "name", width: 320, editor: false, sortable: false }]}
+        barMargin={6}
+        columns={COLUMNS}
         resources={resources}
         events={events}
         eventStyle="filled"
         cellEditFeature={false}
-        eventDragFeature={false}
-        eventDragCreateFeature={false}
+        eventDragFeature={dragFeature}
+        onEventDrop={onDrop}
+        eventTooltipFeature={tooltipFeature}
         eventEditFeature={false}
         eventMenuFeature={false}
         eventResizeFeature={false}

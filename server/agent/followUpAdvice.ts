@@ -15,13 +15,14 @@ export const FOLLOW_UP_VERSION = "1";
 
 const MAX_STEPS = 3;
 const MAX_REASON_LENGTH = 160;
+const MAX_QUOTE_LENGTH = 160;
 
 const SYSTEM = `You help a resale shop decide how soon to follow up with a family who bought a recalled product and hasn't answered. You read only CPSC's public text about the recall. You know nothing about the shop, the sale or the family.
 
 Give:
 - within_days: a whole number of days from today, from 1 to 30. Use fewer days for a hazard that can kill or seriously injure a child quickly and without warning, such as drowning, suffocation, strangulation or entrapment. Use more for a hazard that gives warning or causes minor injury.
 - reason: one short plain sentence saying why that many days, naming the hazard in CPSC's terms. Don't say the product is safe or unsafe. Use straight quotes and no dashes.
-- hazard_quote: the words in CPSC's hazards field that the reason rests on, copied exactly.
+- hazard_quote: the few words in CPSC's hazards field that the reason rests on, copied exactly. Keep it to a phrase.
 
 Record your answer with record_follow_up.`;
 
@@ -62,6 +63,7 @@ function answerProblem(answer: Answer, hazards: string[]): OurText | null {
   if (SECOND_SENTENCE.test(reason)) return ourText("The reason has to be one sentence.");
   if (CALLS_IT_SAFE.test(reason)) return ourText("Don't say the product is safe or unsafe. Say why this many days.");
   if (NOT_PLAIN.test(reason)) return ourText("Use straight quotes and no dashes.");
+  if (answer.hazard_quote.trim().length > MAX_QUOTE_LENGTH) return ourText("Quote fewer words: only the ones the reason rests on.");
   if (!quoted(hazards, answer.hazard_quote)) return ourText("hazard_quote is not in CPSC's hazards field. Copy the exact words from it.");
   return null;
 }

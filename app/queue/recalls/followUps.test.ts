@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFollowUpDate, placeFollowUps } from "./followUps";
+import { checkFollowUpDate, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, placeFollowUps } from "./followUps";
 import type { TimelineSale } from "./timeline";
 
 const TODAY = "2026-11-09";
@@ -65,5 +65,36 @@ describe("checking a date the owner confirms or drags to", () => {
 
   it.each(["", "soon", "2026-13-40", "2026-02-30", "2026-11-14T00:00:00Z", "11/14/2026"])("refuses %j, which isn't a calendar day", (day) => {
     expect(checkFollowUpDate(open, day, TODAY)).toBe("NOT_A_DATE");
+  });
+});
+
+describe("what a follow-up says", () => {
+  const f = { reason: "Entrapment can injure a child quickly.", hazardQuote: "entrapment hazard", movedEarlier: false };
+
+  it("gives the reason and CPSC's own words", () => {
+    expect(followUpLines(f)).toEqual(["Entrapment can injure a child quickly.", 'CPSC: "entrapment hazard"']);
+  });
+
+  it("says when the window moved the date", () => {
+    expect(followUpLines({ ...f, movedEarlier: true }).at(-1)).toBe(MOVED_NOTE);
+  });
+
+  it("writes a day the way the owner reads it, whatever the viewer's time zone", () => {
+    expect(dayLabel("2026-11-20")).toBe("Nov 20");
+  });
+
+  it.each([
+    [1, "1 sale: window closes too soon, refund now."],
+    [2, "2 sales: window closes too soon, refund now."],
+  ])("counts %i", (count, line) => {
+    expect(closingSoonLine(count)).toBe(line);
+  });
+
+  it("stops the date picker a week before an open window ends", () => {
+    expect(latestDay(sale({ windowEnds: "2026-11-20" }))).toBe("2026-11-13");
+  });
+
+  it("leaves it open for a sale with no refund window", () => {
+    expect(latestDay(sale({ tone: "notice" }))).toBeUndefined();
   });
 });

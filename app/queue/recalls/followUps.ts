@@ -51,3 +51,28 @@ export function checkFollowUpDate(sale: TimelineSale, day: string, today: string
   if (hasOpenWindow(sale) && day > lastFollowUpDay(sale.windowEnds)) return "TOO_LATE";
   return "OK";
 }
+
+/** One follow-up, as the timeline and the list under it show it. */
+export interface FollowUpView {
+  saleId: string;
+  due: string;
+  state: "proposed" | "confirmed";
+  reason: string;
+  hazardQuote: string;
+  movedEarlier: boolean;
+}
+
+const LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+export const dayLabel = (day: string) => LABEL.format(new Date(`${day}T00:00:00Z`));
+
+export const MOVED_NOTE = "Moved earlier to stay inside the refund window.";
+
+/** What a follow-up says, in the order it's read: why, in CPSC's words, and whether the window moved it. */
+export function followUpLines(f: Pick<FollowUpView, "reason" | "hazardQuote" | "movedEarlier">): string[] {
+  return [f.reason, `CPSC: "${f.hazardQuote}"`, ...(f.movedEarlier ? [MOVED_NOTE] : [])];
+}
+
+export const closingSoonLine = (count: number) => (count === 1 ? "1 sale: window closes too soon, refund now." : `${count} sales: window closes too soon, refund now.`);
+
+/** The last day the date picker offers. A sale with no refund open has no window to stay inside. */
+export const latestDay = (sale: TimelineSale) => (hasOpenWindow(sale) ? lastFollowUpDay(sale.windowEnds) : undefined);
