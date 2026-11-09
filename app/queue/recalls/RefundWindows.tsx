@@ -95,8 +95,9 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
     return true;
   };
 
+  // Every dismissal reaches the server, even when this page knows of no save to cancel: one may be under way from before a
+  // reload, and the dismissal must take its place in line after it.
   const dismissProposal = (saleId: string) => {
-    if (!unsure.current.has(saleId)) return dropProposal(saleId);
     void change(async () => {
       const { ok, data } = await changeOnServer("DELETE", saleId, {});
       if (!ok) {

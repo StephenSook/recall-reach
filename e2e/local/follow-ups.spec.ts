@@ -66,6 +66,13 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
   await expect(proposals).toContainText(REASON, { timeout: 30_000 });
 
+  // Dismissing a proposal reaches the server too, so a save from before a reload can't land after it. Planning brings it back.
+  const dismissed = page.waitForResponse((r) => r.request().method() === "DELETE");
+  await proposals.getByRole("button", { name: "Dismiss" }).first().click();
+  expect((await dismissed).status()).toBe(200);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(proposals).toContainText(REASON, { timeout: 30_000 });
+
   await proposals.getByRole("button", { name: "Confirm" }).first().click();
   const confirmed = page.getByTestId("follow-ups-confirmed");
   await expect(confirmed).toContainText(REASON);

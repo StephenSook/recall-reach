@@ -2,7 +2,7 @@ import { agentClientFromEnv, OWN_SHOP_CAP_MICROS } from "@/server/agent/claude";
 import { adviseFollowUp, storedAdvice } from "@/server/agent/followUpAdvice";
 import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
-import { dropFollowUp, followUpsFor, saleIdsOnText, saveFollowUp } from "@/server/queue/followUps";
+import { dropFollowUp, followUpsFor, nextArrival, saleIdsOnText, saveFollowUp } from "@/server/queue/followUps";
 import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { createRateLimiter } from "@/server/web/rateLimit";
@@ -104,7 +104,12 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
 // Confirm, or move a confirmed one. The date is checked here against the shop's own sale, and the reason is read here too.
 export async function PUT(request: Request, { params }: Context): Promise<Response> {
   // Taken first: the order changes reach the server is the order they count in.
-  const receivedAt = new Date();
+  let arrival: string;
+  try {
+    arrival = await nextArrival(getDb());
+  } catch (err) {
+    return failed("save", err);
+  }
   const session = await currentSession();
   if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
   const { recallNumber } = await params;
@@ -131,7 +136,7 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
     if (due > addDays(timeline.today, advice.mostDays)) return refused(422, `Pick a day within ${advice.mostDays} days, given this hazard.`);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
     const movedEarlier = placed?.due === due && placed.movedEarlier;
-    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot, attempt, supersedes, receivedAt });
+    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot, attempt, supersedes, arrival });
     if (saved === "cancelled") return outOfDate(409, "This change was cancelled before it saved.", session.shopId, timeline.sales);
     // The sale was just found on this shop's timeline, so a refusal here means CPSC changed the recall a moment ago.
     if (!saved) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
@@ -142,7 +147,12 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
 }
 
 export async function DELETE(request: Request, { params }: Context): Promise<Response> {
-  const receivedAt = new Date();
+  let arrival: string;
+  try {
+    arrival = await nextArrival(getDb());
+  } catch (err) {
+    return failed("dismiss", err);
+  }
   const session = await currentSession();
   if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
   const body = await readJson(request);
@@ -152,7 +162,7 @@ export async function DELETE(request: Request, { params }: Context): Promise<Res
   const supersedes = body?.supersedes ?? [];
   if (!isId(attempt) || !isIds(supersedes)) return refused(400, "not a follow-up");
   try {
-    const dropped = await dropFollowUp(getDb(), session.shopId, saleId, { attempt, supersedes, receivedAt });
+    const dropped = await dropFollowUp(getDb(), session.shopId, saleId, { attempt, supersedes, arrival });
     if (dropped === "cancelled") {
       // A newer change to this reminder landed first. Hand back what's saved, so the page shows it.
       const timeline = await timelineOf(session.shopId, session.sessionId, (await params).recallNumber);

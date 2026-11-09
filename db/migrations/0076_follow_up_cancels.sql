@@ -7,11 +7,14 @@ create table follow_up_cancels (
 );
 comment on table follow_up_cancels is 'data-source: shop-owned';
 
--- When the server received the newest change to each sale's reminder. A change received earlier that lands later is
--- refused, so the order the owner acted in holds even when the page has forgotten what to cancel, as after a reload.
+-- Each change to a reminder takes a number from this as the server receives it: unique and in order, so two can't tie.
+create sequence follow_up_arrivals;
+
+-- The newest change each sale's reminder has taken. A change that arrived earlier but lands later is refused, so the order
+-- the owner acted in holds even when the page has forgotten what to cancel, as after a reload.
 create table follow_up_fences (
-  match_id     uuid primary key references recall_matches (id) on delete cascade,
-  shop_id      uuid not null references shops (id) on delete cascade,
-  received_at  timestamptz not null
+  match_id  uuid primary key references recall_matches (id) on delete cascade,
+  shop_id   uuid not null references shops (id) on delete cascade,
+  arrival   bigint not null
 );
 comment on table follow_up_fences is 'data-source: shop-owned';

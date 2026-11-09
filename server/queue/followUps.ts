@@ -43,27 +43,34 @@ const CANCELS_KEPT = "1 day";
  * the server received before one that has already landed is refused, so the owner's order holds after a reload too.
  * False when the sale isn't this shop's; "cancelled" when a later change already cancelled this one.
  */
-async function claimTurn(tx: Queryable, shopId: string, matchId: string, attempt: string, supersedes: readonly string[], receivedAt: Date): Promise<true | false | "cancelled"> {
+/** This change's place in line, taken as the server receives it. A database sequence, so no two changes share one. */
+export async function nextArrival(db: Queryable): Promise<string> {
+  const { rows } = await db.query<{ n: string }>("select nextval('follow_up_arrivals')::text as n");
+  return rows[0].n;
+}
+
+async function claimTurn(tx: Queryable, shopId: string, matchId: string, attempt: string, supersedes: readonly string[], arrival: string | undefined): Promise<true | false | "cancelled"> {
   const { rows: mine } = await tx.query("select 1 from recall_matches where id = $1 and shop_id = $2 for update", [matchId, shopId]);
   if (mine.length === 0) return false;
   for (const earlier of supersedes) await tx.query("insert into follow_up_cancels (attempt, shop_id) values ($1, $2) on conflict do nothing", [earlier, shopId]);
   const { rows: cancelled } = await tx.query("select 1 from follow_up_cancels where attempt = $1 and shop_id = $2", [attempt, shopId]);
   if (cancelled.length > 0) return "cancelled";
+  const place = arrival ?? (await nextArrival(tx));
   // A change the server received after this one has already landed: this one is out of date.
-  const { rows: newer } = await tx.query("select 1 from follow_up_fences where match_id = $1 and received_at > $2", [matchId, receivedAt]);
+  const { rows: newer } = await tx.query("select 1 from follow_up_fences where match_id = $1 and arrival > $2::bigint", [matchId, place]);
   if (newer.length > 0) return "cancelled";
   await tx.query(
-    `insert into follow_up_fences (match_id, shop_id, received_at) values ($1, $2, $3)
-     on conflict (match_id) do update set received_at = excluded.received_at`,
-    [matchId, shopId, receivedAt],
+    `insert into follow_up_fences (match_id, shop_id, arrival) values ($1, $2, $3::bigint)
+     on conflict (match_id) do update set arrival = excluded.arrival`,
+    [matchId, shopId, place],
   );
   return true;
 }
 
 /** False when the match isn't this shop's, or CPSC has changed the recall since this advice was read: it saves only against the text it came from. */
-export async function saveFollowUp(db: Db, input: { shopId: string; attempt: string; supersedes?: readonly string[]; receivedAt?: Date } & SavedFollowUp): Promise<boolean | "cancelled"> {
+export async function saveFollowUp(db: Db, input: { shopId: string; attempt: string; supersedes?: readonly string[]; arrival?: string } & SavedFollowUp): Promise<boolean | "cancelled"> {
   return db.transaction(async (tx) => {
-    const ready = await claimTurn(tx, input.shopId, input.matchId, input.attempt, input.supersedes ?? [], input.receivedAt ?? new Date());
+    const ready = await claimTurn(tx, input.shopId, input.matchId, input.attempt, input.supersedes ?? [], input.arrival);
     if (ready !== true) return ready;
     const { rows } = await tx.query(
       `insert into follow_ups (match_id, shop_id, due_on, reason, hazard_quote, moved_earlier, recall_sha256)
@@ -77,9 +84,9 @@ export async function saveFollowUp(db: Db, input: { shopId: string; attempt: str
 }
 
 /** Removes the reminder. Like a save, it carries its own id and cancels the earlier changes the page never heard back from. */
-export async function dropFollowUp(db: Db, shopId: string, matchId: string, change: { attempt: string; supersedes?: readonly string[]; receivedAt?: Date }): Promise<boolean | "cancelled"> {
+export async function dropFollowUp(db: Db, shopId: string, matchId: string, change: { attempt: string; supersedes?: readonly string[]; arrival?: string }): Promise<boolean | "cancelled"> {
   return db.transaction(async (tx) => {
-    const ready = await claimTurn(tx, shopId, matchId, change.attempt, change.supersedes ?? [], change.receivedAt ?? new Date());
+    const ready = await claimTurn(tx, shopId, matchId, change.attempt, change.supersedes ?? [], change.arrival);
     if (ready !== true) return ready;
     await tx.query(`delete from follow_up_cancels where created_at < now() - interval '${CANCELS_KEPT}'`);
     const { rows } = await tx.query("delete from follow_ups where match_id = $1 and shop_id = $2 returning 1", [matchId, shopId]);

@@ -4,7 +4,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
-import { dropFollowUp, followUpsFor, saleIdsOnText, saveFollowUp } from "./followUps";
+import { dropFollowUp, followUpsFor, nextArrival, saleIdsOnText, saveFollowUp } from "./followUps";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 
@@ -131,38 +131,44 @@ describe("the follow-ups a shop has confirmed", () => {
     });
 
     describe("when the page knows nothing to cancel, as after a reload, the order the server received changes in decides", () => {
-      const EARLY = new Date("2026-11-09T12:00:00.000Z");
-      const LATE = new Date("2026-11-09T12:00:05.000Z");
+      const EARLY = "5";
+      const LATE = "6";
       const FRESH = "00000000-0000-4000-8000-0000000000c1";
 
       it("refuses a save received before a dismissal that already landed", async () => {
-        await saveFollowUp(db, input({ attempt: FRESH, receivedAt: new Date("2026-11-09T11:59:00.000Z") }));
-        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: LATE })).toBe(true);
-        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe("cancelled");
+        await saveFollowUp(db, input({ attempt: FRESH, arrival: "4" }));
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, arrival: LATE })).toBe(true);
+        expect(await saveFollowUp(db, input({ arrival: EARLY }))).toBe("cancelled");
         expect(await followUpsFor(db, shopA)).toEqual([]);
       });
 
       it("refuses a dismissal received before a save that already landed", async () => {
-        expect(await saveFollowUp(db, input({ receivedAt: LATE }))).toBe(true);
-        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: EARLY })).toBe("cancelled");
+        expect(await saveFollowUp(db, input({ arrival: LATE }))).toBe(true);
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, arrival: EARLY })).toBe("cancelled");
         expect(await followUpsFor(db, shopA)).toHaveLength(1);
       });
 
       it("refuses an older date received before a newer one that already landed", async () => {
-        expect(await saveFollowUp(db, input({ due: "2026-11-14", attempt: FRESH, receivedAt: LATE }))).toBe(true);
-        expect(await saveFollowUp(db, input({ due: "2026-11-13", receivedAt: EARLY }))).toBe("cancelled");
+        expect(await saveFollowUp(db, input({ due: "2026-11-14", attempt: FRESH, arrival: LATE }))).toBe(true);
+        expect(await saveFollowUp(db, input({ due: "2026-11-13", arrival: EARLY }))).toBe("cancelled");
         expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
       });
 
       it("lets a change received later go through", async () => {
-        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe(true);
-        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: LATE })).toBe(true);
+        expect(await saveFollowUp(db, input({ arrival: EARLY }))).toBe(true);
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, arrival: LATE })).toBe(true);
+      });
+
+      it("gives every change its own place in line, so two can't tie", async () => {
+        const a = BigInt(await nextArrival(db));
+        const b = BigInt(await nextArrival(db));
+        expect(b > a).toBe(true);
       });
 
       it("keeps one shop's order apart from another's", async () => {
         const theirs = await newMatch(shopB);
-        await dropFollowUp(db, shopB, theirs, { attempt: DROP, receivedAt: LATE });
-        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe(true);
+        await dropFollowUp(db, shopB, theirs, { attempt: DROP, arrival: LATE });
+        expect(await saveFollowUp(db, input({ arrival: EARLY }))).toBe(true);
       });
     });
 

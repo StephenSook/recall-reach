@@ -12,7 +12,7 @@ const stored = vi.hoisted(() => vi.fn());
 vi.mock("@/server/agent/followUpAdvice", () => ({ adviseFollowUp: advise, storedAdvice: stored }));
 const client = vi.hoisted(() => vi.fn());
 vi.mock("@/server/agent/claude", async (real) => ({ ...(await real<typeof import("@/server/agent/claude")>()), agentClientFromEnv: client }));
-const saved = vi.hoisted(() => ({ followUpsFor: vi.fn(), saveFollowUp: vi.fn(), dropFollowUp: vi.fn(), saleIdsOnText: vi.fn() }));
+const saved = vi.hoisted(() => ({ followUpsFor: vi.fn(), saveFollowUp: vi.fn(), dropFollowUp: vi.fn(), saleIdsOnText: vi.fn(), nextArrival: vi.fn() }));
 vi.mock("@/server/queue/followUps", () => saved);
 
 import { DELETE, POST, PUT } from "./route";
@@ -42,6 +42,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     saved.saveFollowUp.mockResolvedValue(true);
     saved.dropFollowUp.mockResolvedValue(true);
     saved.saleIdsOnText.mockResolvedValue(new Set([SALE]));
+    saved.nextArrival.mockResolvedValue("7");
   });
   afterEach(() => {
     vi.resetAllMocks();
@@ -144,7 +145,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
       const res = await confirm({ saleId: SALE, due: "2026-11-12" });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ saved: true, movedEarlier: false });
-      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT, supersedes: [], receivedAt: expect.any(Date) });
+      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT, supersedes: [], arrival: "7" });
     });
 
     it("refuses a save with no attempt id, since it couldn't be cancelled", async () => {
@@ -328,12 +329,12 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
   describe("dismissing", () => {
     it("removes it for this shop", async () => {
       expect((await dismiss({ saleId: SALE })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [], receivedAt: expect.any(Date) });
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [], arrival: "7" });
     });
 
     it("cancels the saves the page never heard back from", async () => {
       expect((await dismiss({ saleId: SALE, supersedes: [ATTEMPT] })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [ATTEMPT], receivedAt: expect.any(Date) });
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [ATTEMPT], arrival: "7" });
     });
 
     it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses earlier changes that are %s", async (_name, supersedes) => {
