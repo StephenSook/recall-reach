@@ -63,6 +63,7 @@ describe("the integrations list", () => {
     ["render-workflows", "the task never finished", { replay: { lastRunAt: OLD, task: { outcome: null, finishedAt: null } } }, "off"],
     ["ag-studio", "its data didn't answer", { agStudio: { licence: true, rows: null } }, "off"],
     ["ag-studio", "its data is empty", { agStudio: { licence: true, rows: 0 } }, "off"],
+    ["ag-studio", "Recall Replay has no run yet", { agStudio: { licence: true, rows: "no-run" } }, "off"],
     ["newman", "the last run failed", { newman: { conclusion: "failure", at: RECENT } }, "off"],
     ["newman", "GitHub didn't say", { newman: null }, "off"],
     ["newman", "the last run is old", { newman: { conclusion: "success", at: OLD } }, "off"],
@@ -80,6 +81,23 @@ describe("the integrations list", () => {
   it.each(["ag-grid", "ag-studio"])("doesn't call %s live on a licence key, because a key being set doesn't show the browser used it", (id) => {
     expect(row(healthy, id)).toMatchObject({ mode: "client", checkedAt: null });
     expect(row({ ...healthy, agGridLicence: false, agStudio: { licence: false, rows: 900 } }, id)).toMatchObject({ mode: "client", detail: expect.stringContaining("No licence key") });
+  });
+
+  it.each([
+    [null, "Its data didn't answer."],
+    ["no-run", "Recall Replay has no run yet, so it has no data."],
+    [0, "Recall Replay's latest run has no rows."],
+  ] as const)("says what AG Studio's data did when it was %s", (rows, words) => {
+    expect(row({ ...healthy, agStudio: { licence: true, rows } }, "ag-studio").detail).toBe(words);
+  });
+
+  it("says only what it knows when the scheduled refresh failed but a recent run exists", () => {
+    const detail = row({ ...healthy, replay: { lastRunAt: RECENT, task: { outcome: "FAILED", finishedAt: RECENT } } }, "render-workflows").detail;
+    expect(detail).toBe("The scheduled refresh didn't finish cleanly lately. A Replay run from the last 2 days exists.");
+  });
+
+  it("doesn't guess why GitHub showed no scheduled run", () => {
+    expect(row({ ...healthy, newman: null }, "newman").detail).toBe("GitHub showed no scheduled run. The repository may be private, or GitHub didn't answer.");
   });
 
   it("says when AG Studio's data answered", () => {

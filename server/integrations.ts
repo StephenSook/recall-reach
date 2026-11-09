@@ -4,7 +4,6 @@
 import packageJson from "../package.json";
 import type { Queryable } from "./db/types";
 import type { Health } from "./health";
-import { studioDataset } from "./studio/dataset";
 import { sweepCounts } from "./sweep/sweep";
 
 export type IntegrationMode = "live" | "fallback" | "off" | "client";
@@ -34,7 +33,8 @@ export interface IntegrationFacts {
   channel3: { fresh: boolean; lastOkAt: string | null; searched: number; listings: number };
   replay: { lastRunAt: string | null; task: { outcome: string | null; finishedAt: string | null } | null };
   agGridLicence: boolean;
-  agStudio: { licence: boolean; rows: number | null };
+  /** The latest Replay run's rows, as AG Studio reads them. "no-run" when Replay has none; null when the query failed. */
+  agStudio: { licence: boolean; rows: number | "no-run" | null };
   newman: NewmanRun | null;
 }
 
@@ -90,18 +90,19 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
     checked("render-workflows", "Render Workflows", {
       passed: taskWorked,
       at: taskWorked ? (replay.task?.finishedAt ?? null) : replay.lastRunAt,
-      detail: taskWorked ? `The scheduled refresh ended ${replay.task?.outcome} in the last 2 days.` : replayFresh ? "The scheduled refresh didn't finish cleanly lately. The web service refreshed Replay instead." : "No refresh in the last 2 days.",
+      // A run row doesn't say who wrote it, the task or the web service, so the fallback says only that one exists.
+      detail: taskWorked ? `The scheduled refresh ended ${replay.task?.outcome} in the last 2 days.` : replayFresh ? "The scheduled refresh didn't finish cleanly lately. A Replay run from the last 2 days exists." : "No refresh in the last 2 days.",
       otherwise: replayFresh ? "fallback" : "off",
     }),
     inBrowser("ag-grid", "AG Grid Enterprise", facts.agGridLicence ? "Licence key is set on the server, for the queue and Replay tables." : "No licence key is set, so the tables show AG's watermark."),
-    agStudio.rows === null || agStudio.rows === 0
-      ? checked("ag-studio", "AG Studio", { passed: false, at: null, detail: "Its data didn't answer." })
+    typeof agStudio.rows !== "number" || agStudio.rows === 0
+      ? checked("ag-studio", "AG Studio", { passed: false, at: null, detail: agStudio.rows === null ? "Its data didn't answer." : agStudio.rows === "no-run" ? "Recall Replay has no run yet, so it has no data." : "Recall Replay's latest run has no rows." })
       : inBrowser("ag-studio", "AG Studio", `${agStudio.licence ? "Licence key is set on the server" : "No licence key is set"}. Its data answered with ${agStudio.rows} rows.`),
     inBrowser("bryntum", "Bryntum Scheduler", `Package version ${packageJson.dependencies["@bryntum/scheduler-community"]}.`),
     checked("newman", "Postman collection (Newman in CI)", {
       passed: newmanPassed,
       at: newman?.at ?? null,
-      detail: newmanPassed ? "The last scheduled run against this site passed." : newman ? `The last run isn't a recent pass (${newman.conclusion ?? "unknown"}).` : "GitHub doesn't show a run yet.",
+      detail: newmanPassed ? "The last scheduled run against this site passed." : newman ? `The last run isn't a recent pass (${newman.conclusion ?? "unknown"}).` : "GitHub showed no scheduled run. The repository may be private, or GitHub didn't answer.",
     }),
   ];
 
@@ -156,13 +157,22 @@ const readNewman = createNewmanReader();
 
 interface Readers {
   sweepCounts: (db: Queryable) => Promise<{ searched: number; listings: number }>;
-  studioRows: (db: Queryable) => Promise<number | null>;
+  studioRows: (db: Queryable) => Promise<number | "no-run">;
   newman: (now: Date) => Promise<NewmanRun | null>;
+}
+
+/** A count of the rows AG Studio reads (server/studio/dataset.ts), without loading them: this route is public. */
+async function studioRowCount(db: Queryable): Promise<number | "no-run"> {
+  const { rows } = await db.query<{ run: string | null; n: string }>(
+    `with latest as (select id from replay_runs order by created_at desc, id limit 1)
+     select (select id::text from latest) as run, (select count(*) from replay_rows where run_id = (select id from latest))::text as n`,
+  );
+  return rows[0]?.run ? Number(rows[0].n) : "no-run";
 }
 
 const REAL_READERS: Readers = {
   sweepCounts,
-  studioRows: async (db) => (await studioDataset(db))?.rows.length ?? null,
+  studioRows: studioRowCount,
   newman: readNewman,
 };
 
@@ -197,4 +207,16 @@ export async function integrationFacts(
     agStudio: { licence: Boolean(env.AG_STUDIO_LICENSE_KEY?.trim()), rows: studio },
     newman,
   };
+}
+
+/** The whole /api/health answer: the checks, then one row per outside service. The route and the OpenAPI test both use this. */
+export async function withIntegrations<H extends Parameters<typeof integrationFacts>[1]>(
+  db: Queryable,
+  health: H,
+  env: { AG_GRID_LICENSE_KEY?: string; AG_STUDIO_LICENSE_KEY?: string },
+  readers: Partial<Readers> = {},
+  now: Date = new Date(),
+): Promise<H & { integrations: Integrations }> {
+  const facts = await integrationFacts(db, health, env, { ...REAL_READERS, ...readers }, now);
+  return { ...health, integrations: integrationsFrom(facts, now) };
 }

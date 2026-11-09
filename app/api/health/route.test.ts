@@ -70,6 +70,7 @@ describe("GET /api/health", () => {
     expect(mode("channel3")).toBe("off");
     expect(mode("newman")).toBe("off");
     expect(mode("bryntum")).toBe("client");
+    expect((body.integrations.rows as { id: string; detail: string }[]).find((r) => r.id === "ag-studio")?.detail).toBe("Recall Replay's latest run has no rows.");
     expect(body.integrations.summary.of).toBe(body.integrations.rows.length);
     expect(JSON.stringify(body)).not.toContain("PLANTED-KEY");
   });
