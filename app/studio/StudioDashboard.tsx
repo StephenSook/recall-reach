@@ -22,6 +22,8 @@ import type {
 import type { CustomCellRendererProps } from 'ag-grid-react';
 import type { StudioRow } from '@/server/studio/dataset';
 import { createStudioAdapter } from './adapter';
+import { OutcomeBadge } from './OutcomeBadge';
+import { recallsToReadWidget, TO_READ, type RecallRegistry } from './RecallsToRead';
 import { leadWithRecallChecker, RECALL_TOOL, recallCheckerAgent, recallNumberIn, recallToolLabel, runRecallCheck, type RecallCheckArgs } from './recallTool';
 import { toStudioRows } from './rows';
 
@@ -64,7 +66,7 @@ const f = (fieldId: keyof StudioRow) => `${SOURCE_ID}.${fieldId}`;
 
 const RECALL_COUNT = { id: f('recallNumber'), aggregation: 'countd' } as const;
 
-const INITIAL_STATE: AgReportState = {
+const INITIAL_STATE: AgReportState<RecallRegistry> = {
   pages: [
     {
       id: 'recalls',
@@ -87,6 +89,15 @@ const INITIAL_STATE: AgReportState = {
           sort: [{ field: { id: f('recallYear') }, direction: 'asc' }],
           format: { title: { enabled: true, text: 'Recalls per year' } },
         },
+        'w-to-read': {
+          type: TO_READ,
+          dataMapping: {
+            recall: [{ id: f('recallNumber') }],
+            title: [{ id: f('recallTitle') }],
+            outcome: [{ id: f('outcome') }],
+          },
+          format: { title: { enabled: true, text: 'Read these first' } },
+        },
         'w-recall-list': {
           type: 'grid',
           dataMapping: {
@@ -96,8 +107,9 @@ const INITIAL_STATE: AgReportState = {
         },
       },
       widgetLayout: {
-        'w-by-outcome': { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 16 },
-        'w-by-year': { xTrack: 12, yTrack: 0, xSpan: 12, ySpan: 16 },
+        'w-by-outcome': { xTrack: 0, yTrack: 0, xSpan: 9, ySpan: 16 },
+        'w-by-year': { xTrack: 9, yTrack: 0, xSpan: 6, ySpan: 16 },
+        'w-to-read': { xTrack: 15, yTrack: 0, xSpan: 9, ySpan: 16 },
         'w-recall-list': { xTrack: 0, yTrack: 16, xSpan: 24, ySpan: 22 },
       },
     },
@@ -120,41 +132,10 @@ const PANELS: AgPanelConfig = {
 // Customisation: the outcome column renders as a coloured chip.
 // ---------------------------------------------------------------------------
 
-const OUTCOME_COLOURS: Record<StudioRow["outcome"], string> = {
-  Matched: '#e8590c',
-  "Can't tell yet": '#fcc419',
-  Cleared: '#69db7c',
-  'Nothing near': '#ced4da',
-};
-
-function isOutcome(value: unknown): value is StudioRow["outcome"] {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(OUTCOME_COLOURS, value);
-}
-
 function OutcomeChip(props: CustomCellRendererProps) {
   const raw: unknown = props.value;
   if (raw == null) return null;
-  const label =
-    typeof props.valueFormatted === 'string' && props.valueFormatted !== '' ? props.valueFormatted : String(raw);
-  if (!isOutcome(raw)) return <>{label}</>;
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        // Small enough that "Nothing near" fits the grid's default column width.
-        padding: '0 7px',
-        borderRadius: 999,
-        lineHeight: '20px',
-        fontSize: 12,
-        fontWeight: 600,
-        // Black text clears 4.5:1 on all four backgrounds (lowest: 5.87:1 on #e8590c).
-        color: '#000000',
-        background: OUTCOME_COLOURS[raw],
-      }}
-    >
-      {label}
-    </span>
-  );
+  return typeof raw === 'string' ? <OutcomeBadge outcome={raw} /> : <>{String(raw)}</>;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +217,7 @@ function recallMenu(params: AgGetContextMenuParams): AgContextMenuItem[] {
 export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
   const adapter = useMemo(() => createStudioAdapter(), []);
   // `data` may be replaced later: Studio processes changes to synchronous (in-memory) rows.
-  const data = useMemo<AgDataSourcesDefinition>(
+  const data = useMemo<AgDataSourcesDefinition<RecallRegistry>>(
     () => ({
       description: "CPSC product recalls and the outcome of checking each against one resale shop's own catalog.",
       sources: [
@@ -252,7 +233,7 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
     [rows],
   );
 
-  const widgets = useMemo(() => createWidgets({ overrides: [{ id: 'grid', options: GRID_OPTIONS }] }), []);
+  const widgets = useMemo(() => createWidgets<RecallRegistry>({ additionalTypes: [recallsToReadWidget], overrides: [{ id: 'grid', options: GRID_OPTIONS }] }), []);
 
   // `ai` is read once, when Studio is created; a new adapter after that is ignored.
   const ai = useMemo<AgAiHarnessSetup>(
