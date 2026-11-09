@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { tidy } from "./apimatic-tidy";
+import { PROVENANCE, tidy, withProvenance } from "./apimatic-tidy";
 
 const BANNED = /[\u2013\u2014\u2018\u2019\u201c\u201d]/;
 
@@ -39,5 +39,23 @@ describe("tidying what APIMatic generates", () => {
     expect(files.length).toBeGreaterThan(100);
     const found = files.filter((f) => !/\.(woff2?|png|jpe?g|ico|zip|gif|webp)$/.test(f) && BANNED.test(readFileSync(f, "utf8")));
     expect(found).toEqual([]);
+  });
+});
+
+describe("saying where the SDK came from", () => {
+  const readme = "# Recall Reach public API\n\nThe Recall Reach public API SDK for TypeScript.\n";
+
+  it("adds one line under the title, saying APIMatic's CLI generated it from this repo's openapi.yaml", () => {
+    expect(withProvenance(readme)).toBe(`# Recall Reach public API\n\n${PROVENANCE}\n\nThe Recall Reach public API SDK for TypeScript.\n`);
+    expect(PROVENANCE).toContain("APIMatic's CLI");
+    expect(PROVENANCE).toContain("openapi.yaml");
+  });
+
+  it("adds it only once, so running the tidy again changes nothing", () => {
+    expect(withProvenance(withProvenance(readme))).toBe(withProvenance(readme));
+  });
+
+  it("is in the committed SDK README, so a regenerated SDK can't arrive without it", () => {
+    expect(readFileSync("sdk/typescript/README.md", "utf8")).toContain(PROVENANCE);
   });
 });
