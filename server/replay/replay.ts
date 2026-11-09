@@ -1,5 +1,6 @@
 // Recall Replay: every recall loaded, in one run, against the demo catalog, with a clock. It uses the same seed and
 // matcher as a demo shop, but makes no capture, so it spends nothing and anyone can run it again.
+import { randomUUID } from "node:crypto";
 import { missingRecallYears } from "../cpsc/load";
 import type { Db, Queryable } from "../db/types";
 import { seedDemoShop } from "../demo/seed";
@@ -140,10 +141,12 @@ const isFresh = async (db: Db, now: Date, freshMs: number) => {
  */
 export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date, freshMs: number = REPLAY_FRESH_MS): Promise<"FRESH" | "RAN" | "DISCARDED"> {
   if (await isFresh(db, now, freshMs)) return "FRESH";
+  const holder = randomUUID();
   const { rows: held } = await db.query(
-    `insert into replay_lease (id, until) values (1, now() + interval '10 minutes')
-     on conflict (id) do update set until = excluded.until where replay_lease.until < now()
+    `insert into replay_lease (id, holder, until) values (1, $1, now() + interval '35 minutes')
+     on conflict (id) do update set holder = excluded.holder, until = excluded.until where replay_lease.until < now()
      returning 1`,
+    [holder],
   );
   if (held.length === 0) return "FRESH";
   try {
@@ -155,8 +158,8 @@ export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }
     );
     return dropped.rows.length > 0 ? "DISCARDED" : "RAN";
   } finally {
-    // Into the past, not now(): the next try's now() can be the very same instant.
-    await db.query("update replay_lease set until = '-infinity' where id = 1");
+    // Into the past, not now(): the next try's now() can be the very same instant. Only this claim's own lease.
+    await db.query("update replay_lease set until = '-infinity' where id = 1 and holder = $1", [holder]);
   }
 }
 

@@ -103,8 +103,27 @@ describe("Recall Replay", () => {
         expect(await refresh()).toBe("RAN");
       });
 
+      it("won't let a run whose lease lapsed release the lease of the run that took over", async () => {
+        let releaseA: () => void = () => {};
+        const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+        let releaseB: () => void = () => {};
+        const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+        const a = refreshReplay(db, async () => { await gateA; throw new Error("A gave up"); }, NOW);
+        await vi.waitFor(async () => expect((await db.query("select 1 from replay_lease where until > now()")).rows).toHaveLength(1));
+        await db.query("update replay_lease set until = now() - interval '1 second'");
+        const b = refreshReplay(db, async () => { await gateB; return run(fakePayPal().client); }, NOW);
+        await vi.waitFor(async () => expect((await db.query("select 1 from replay_lease where until > now()")).rows).toHaveLength(1));
+        releaseA();
+        await expect(a).rejects.toThrow("A gave up");
+        const third = vi.fn(() => run(fakePayPal().client));
+        expect(await refreshReplay(db, third, NOW)).toBe("FRESH");
+        expect(third).not.toHaveBeenCalled();
+        releaseB();
+        expect(await b).toBe("RAN");
+      });
+
       it("takes over a lease a crashed run left behind once it has expired", async () => {
-        await db.query("insert into replay_lease (id, until) values (1, now() - interval '1 minute')");
+        await db.query("insert into replay_lease (id, holder, until) values (1, gen_random_uuid(), now() - interval '1 minute')");
         expect(await refresh()).toBe("RAN");
       });
     });
