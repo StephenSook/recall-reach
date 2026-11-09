@@ -101,7 +101,7 @@ describe("the follow-ups a shop has confirmed", () => {
   describe("a save the owner dismissed before it got an answer", () => {
     it("is refused if it lands after the dismissal, so the reminder can't come back", async () => {
       await dropFollowUp(db, shopA, match, [ATTEMPT]);
-      expect(await saveFollowUp(db, input())).toBe("dismissed");
+      expect(await saveFollowUp(db, input())).toBe("cancelled");
       expect(await followUpsFor(db, shopA)).toEqual([]);
     });
 
@@ -114,6 +114,12 @@ describe("the follow-ups a shop has confirmed", () => {
     it("doesn't stop the owner confirming it again later", async () => {
       await dropFollowUp(db, shopA, match, [ATTEMPT]);
       expect(await saveFollowUp(db, input({ attempt: "00000000-0000-4000-8000-0000000000a2" }))).toBe(true);
+    });
+
+    it("is refused if a later change replaced it, so the owner's latest date stands", async () => {
+      expect(await saveFollowUp(db, input({ due: "2026-11-14", attempt: "00000000-0000-4000-8000-0000000000b2", supersedes: [ATTEMPT] }))).toBe(true);
+      expect(await saveFollowUp(db, input({ due: "2026-11-13" }))).toBe("cancelled");
+      expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
     });
 
     it("can only be cancelled by the shop that made it", async () => {

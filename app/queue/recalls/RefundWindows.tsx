@@ -89,7 +89,8 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
   /** Saves one. Returns whether it saved, so Confirm all stops at the first it can't. */
   const save = async (f: FollowUpView): Promise<boolean> => {
     const attempt = crypto.randomUUID();
-    const { ok, status, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot, attempt });
+    const earlier = unsure.current.get(f.saleId) ?? [];
+    const { ok, status, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot, attempt, supersedes: earlier });
     if (!ok) {
       setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
       if (status === 0 || status >= 500) unsure.current.set(f.saleId, [...(unsure.current.get(f.saleId) ?? []), attempt].slice(-20));
@@ -104,6 +105,8 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       return false;
     }
     setMessage(null);
+    // The server cancelled the earlier unanswered saves under the same lock, so none can land after this one.
+    unsure.current.delete(f.saleId);
     setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const, movedEarlier: data.movedEarlier === true }].sort((a, b) => a.due.localeCompare(b.due)));
     dropProposal(f.saleId);
     return true;

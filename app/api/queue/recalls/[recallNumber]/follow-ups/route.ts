@@ -60,6 +60,7 @@ async function outOfDate(status: number, error: string, shopId: string, sales: r
 
 const saleIdOf = (body: Record<string, unknown> | null) => (typeof body?.saleId === "string" && UUID.test(body.saleId) ? body.saleId : null);
 const isId = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
+const isIds = (value: unknown): value is string[] => Array.isArray(value) && value.length <= MAX_ATTEMPTS && value.every(isId);
 
 const failed = (where: string, err: unknown) => {
   // The name only: a database error can quote what it was given.
@@ -112,6 +113,8 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
   if (!snapshot) return refused(400, "not a follow-up");
   const attempt = body?.attempt;
   if (!isId(attempt)) return refused(400, "not a follow-up");
+  const supersedes = body?.supersedes ?? [];
+  if (!isIds(supersedes)) return refused(400, "not a follow-up");
   const due = typeof body?.due === "string" ? body.due : "";
   try {
     const timeline = await timelineOf(session.shopId, session.sessionId, recallNumber);
@@ -126,8 +129,8 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
     if (due > addDays(timeline.today, advice.mostDays)) return refused(422, `Pick a day within ${advice.mostDays} days, given this hazard.`);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
     const movedEarlier = placed?.due === due && placed.movedEarlier;
-    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot, attempt });
-    if (saved === "dismissed") return outOfDate(409, "You dismissed this follow-up before it saved.", session.shopId, timeline.sales);
+    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot, attempt, supersedes });
+    if (saved === "cancelled") return outOfDate(409, "This change was cancelled before it saved.", session.shopId, timeline.sales);
     // The sale was just found on this shop's timeline, so a refusal here means CPSC changed the recall a moment ago.
     if (!saved) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
     return Response.json({ saved: true, movedEarlier }, { headers: { "cache-control": "no-store" } });
@@ -143,7 +146,7 @@ export async function DELETE(request: Request): Promise<Response> {
   const saleId = saleIdOf(body);
   if (!saleId) return refused(400, "not a follow-up");
   const attempts = body?.attempts ?? [];
-  if (!Array.isArray(attempts) || attempts.length > MAX_ATTEMPTS || !attempts.every(isId)) return refused(400, "not a follow-up");
+  if (!isIds(attempts)) return refused(400, "not a follow-up");
   try {
     await dropFollowUp(getDb(), session.shopId, saleId, attempts);
     return Response.json({ dismissed: true }, { headers: { "cache-control": "no-store" } });

@@ -143,7 +143,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
       const res = await confirm({ saleId: SALE, due: "2026-11-12" });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ saved: true, movedEarlier: false });
-      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT });
+      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT, supersedes: [] });
     });
 
     it("refuses a save with no attempt id, since it couldn't be cancelled", async () => {
@@ -151,12 +151,23 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
       expect(saved.saveFollowUp).not.toHaveBeenCalled();
     });
 
-    it("says so when the owner dismissed this save before it landed", async () => {
-      saved.saveFollowUp.mockResolvedValue("dismissed");
+    it("passes on the earlier saves this one replaces, so they can't land after it", async () => {
+      const EARLIER = "00000000-0000-4000-8000-0000000000a0";
+      await confirm({ saleId: SALE, due: "2026-11-12", supersedes: [EARLIER] });
+      expect(saved.saveFollowUp.mock.calls[0][1]).toMatchObject({ supersedes: [EARLIER] });
+    });
+
+    it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses earlier saves that are %s", async (_name, supersedes) => {
+      expect((await confirm({ saleId: SALE, due: "2026-11-12", supersedes })).status).toBe(400);
+      expect(saved.saveFollowUp).not.toHaveBeenCalled();
+    });
+
+    it("says so when the owner dismissed or replaced this save before it landed", async () => {
+      saved.saveFollowUp.mockResolvedValue("cancelled");
       saved.followUpsFor.mockResolvedValue([]);
       const res = await confirm({ saleId: SALE, due: "2026-11-12" });
       expect(res.status).toBe(409);
-      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/dismissed/), confirmed: [] });
+      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/cancelled/), confirmed: [] });
     });
 
     it("ignores a reason or quote the page sends", async () => {

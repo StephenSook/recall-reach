@@ -37,13 +37,15 @@ export async function saleIdsOnText(db: Queryable, shopId: string, snapshot: str
 const CANCELS_KEPT = "1 day";
 
 /** False when the match isn't this shop's, or CPSC has changed the recall since this advice was read: it saves only against the text it came from. */
-export async function saveFollowUp(db: Db, input: { shopId: string; attempt: string } & SavedFollowUp): Promise<boolean | "dismissed"> {
-  // The sale's row is locked first, by this and by a dismissal, so whichever comes second sees the other.
+export async function saveFollowUp(db: Db, input: { shopId: string; attempt: string; supersedes?: readonly string[] } & SavedFollowUp): Promise<boolean | "cancelled"> {
+  // The sale's row is locked first, by this and by a dismissal, so whichever comes second sees the other. Earlier saves this
+  // one replaces are cancelled under the same lock, so one that lands late can't overwrite the owner's latest date.
   return db.transaction(async (tx) => {
     const { rows: mine } = await tx.query("select 1 from recall_matches where id = $1 and shop_id = $2 for update", [input.matchId, input.shopId]);
     if (mine.length === 0) return false;
+    for (const earlier of input.supersedes ?? []) await tx.query("insert into follow_up_cancels (attempt, shop_id) values ($1, $2) on conflict do nothing", [earlier, input.shopId]);
     const { rows: cancelled } = await tx.query("select 1 from follow_up_cancels where attempt = $1 and shop_id = $2", [input.attempt, input.shopId]);
-    if (cancelled.length > 0) return "dismissed";
+    if (cancelled.length > 0) return "cancelled";
     const { rows } = await tx.query(
       `insert into follow_ups (match_id, shop_id, due_on, reason, hazard_quote, moved_earlier, recall_sha256)
        select m.id, m.shop_id, $3::date, $4, $5, $6, $7 from recall_matches m join recalls r on r.recall_id = m.recall_id where m.id = $1 and m.shop_id = $2 and r.raw_sha256 = $7 and m.recall_sha256 = $7
