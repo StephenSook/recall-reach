@@ -72,7 +72,7 @@ export const AG_GRID_CLAIMS: Claim[] = [
   { what: "Column filters, including a date filter on the sale date", file: "app/queue/MatchGrid.tsx", find: "agDateColumnFilter" },
   { what: "CSV export of the Tell CPSC list, limited to columns with no buyer data", file: "app/queue/MatchGrid.tsx", find: "exportDataAsCsv" },
   { what: "A status bar counts the rows, and a running total says what could be refunded, from the shop's own order prices", file: "app/queue/MatchGrid.tsx", find: "statusBar={STATUS_BAR}" },
-  { what: "AG Grid Enterprise row grouping, by recall or state, with sale totals", file: "app/queue/MatchGrid.tsx", find: 'aggFunc: "sum"' },
+  { what: "AG Grid Enterprise row grouping, by recall or state, with sale totals", file: "app/queue/MatchGrid.tsx", find: "aggFunc: saleTotal" },
   { what: "Enterprise set filters on recall, state, path and message", file: "app/queue/MatchGrid.tsx", find: "agSetColumnFilter" },
   { what: "Excel export of the owner's view, leaving out payments nobody could identify", file: "app/queue/MatchGrid.tsx", find: "exportDataAsExcel" },
   { what: "A cross-filter chart of sales: pressing a bar filters the table", file: "app/queue/MatchGrid.tsx", find: "createCrossFilterChart" },

@@ -160,7 +160,7 @@ Where each number in the film and the write-up comes from: [`docs/SOURCES.md`](d
 
 ![How Recall Reach works: a shop's order file and PayPal account, Recall Reach on Render, the PayPal sandbox calls behind each step, and what the family gets. Every blue label is in the shipped code.](docs/images/architecture.png)
 
-Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Community for the queue and Recall Replay. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
+Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Enterprise for the queue and Recall Replay (trial licence through Dec 9, 2026, after which AG's watermark can show) and the free edition on the eval page. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
 
 The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 minutes. It touches the database only when the answer changes or on the hourly heartbeat, because a query every 15 minutes would keep a free-tier database awake around the clock.
 

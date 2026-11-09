@@ -13,6 +13,6 @@ What it stands on, and didn't write:
 - CPSC's public recalls API and its warnings file
 - PayPal's sandbox, through the Agent Toolkit, the Server SDK and plain REST
 - Claude, through the Anthropic SDK
-- Channel3's public search, AG Grid Community, Bryntum Scheduler, Next.js, Postgres on Neon, and Render
+- Channel3's public search, AG Grid Community and Enterprise, AG Studio, Bryntum Scheduler, Next.js, Postgres on Neon, and Render
 
 The full list is in `package.json`.

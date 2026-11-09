@@ -1,5 +1,5 @@
-// A second model family's blind check of Claude's eval labels. This re-scores the stored answers, so what /eval says can't drift
-// from the files. It's a check by a model, not an audit by a person.
+// A second model family's blind check of Claude's eval labels. This re-scores the stored answers and reads /eval's sentence, so the
+// page can't drift from the files. It's a check by a model, not an audit by a person.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -42,6 +42,12 @@ describe("the blind check of Claude's labels by a second model", () => {
     const lookalikes = sample.pairs.filter((p) => isLookalike(p.label));
     expect(lookalikes).toHaveLength(44);
     expect(lookalikes.filter((p) => answers.answers[p.pair_id] === "MATCH")).toEqual([]);
+  });
+
+  it("is what /eval says", () => {
+    const page = readFileSync("app/eval/page.tsx", "utf8");
+    expect(page).toContain("checked 50 of them: it agreed on 34, said the title can&apos;t settle it on the other 16");
+    expect(page).toContain("No person has audited them");
   });
 
   it("checked the labels the eval really uses", () => {
