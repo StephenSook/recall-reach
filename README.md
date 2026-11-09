@@ -4,6 +4,8 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
+[![CI](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml) [![Newman against the live site](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml)
+
 ![The demo shop's queue on the deployed site: 1,855 recalls checked, 4 matched, 5 can't tell yet, 24 cleared, with each sale's state and why it came up](docs/images/queue.png)
 
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet.
