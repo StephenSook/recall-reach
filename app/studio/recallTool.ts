@@ -2,6 +2,7 @@
 // rules matcher decides, not the model. Only what the owner typed and CPSC's public records pass through it: nothing PayPal
 // returns. The sentences it hands back are the ones /check shows, so "nothing found" can't read as "safe" here either.
 import type { AgAiAgentDefinition, AgAiTool, AgAiToolContext, AgAiToolLabel, AgAiToolLabelParams, AgAiToolResult, AgAnyAiAgentDefinition } from "ag-studio";
+import { z } from "zod";
 import { type ItemAnswer, readItemAnswer, type RecallToRead } from "@/app/check/itemAnswer";
 import type { TextCheckAnswer } from "@/server/match/textCheck";
 
@@ -21,11 +22,21 @@ export interface RecallCheckArgs {
 const RECALLS_SHOWN = 10;
 const FAILED = "The check could not run. Please try again.";
 
+const count = z.number().int().nonnegative();
+const checkAnswer = z.object({
+  results: z.array(z.object({ recallNumber: z.string(), title: z.string(), verdict: z.enum(["MATCH", "SCOPE_GAP"]), strength: z.string(), tiedToRecall: z.boolean(), sharesWords: z.boolean(), missing: z.array(z.string()) }).passthrough()),
+  more: count,
+  notJudged: count,
+  mentioned: z.object({ recalls: z.array(z.object({ recallNumber: z.string(), title: z.string() })), total: count }).refine((m) => m.total >= m.recalls.length && (m.total === 0 || m.recalls.length > 0)),
+  checked: z.object({ recalls: count, from: z.string().nullable(), yearsMissing: z.array(z.number().int()) }).passthrough(),
+  note: z.string(),
+}).passthrough();
+
 /** A broken answer must fail. Read as an answer, its empty lists would say nothing was found. */
-function isAnswer(body: unknown): body is TextCheckAnswer {
-  const a = body as Partial<TextCheckAnswer> | null;
-  return Array.isArray(a?.results) && typeof a?.more === "number" && typeof a?.notJudged === "number" && Array.isArray(a?.mentioned?.recalls) && typeof a?.mentioned?.total === "number" && typeof a?.checked?.recalls === "number" && Array.isArray(a?.checked?.yearsMissing);
-}
+const readAnswer = (body: unknown) => {
+  const parsed = checkAnswer.safeParse(body);
+  return parsed.success ? (parsed.data as unknown as TextCheckAnswer) : null;
+};
 
 const forReading = (r: RecallToRead) => ({ recallNumber: r.recallNumber, title: r.title, page: `/recall/${encodeURIComponent(r.recallNumber)}`, missing: r.missing, modelNamed: r.modelNamed ?? undefined });
 
@@ -42,9 +53,10 @@ export async function runRecallCheck(args: RecallCheckArgs, ctx: AgAiToolContext
     const res = await send(`/api/check?${query}`, { signal: ctx.signal });
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) return ctx.error((body as { error?: string } | null)?.error ?? FAILED);
-    if (!isAnswer(body)) return ctx.error(FAILED);
-    const item = readItemAnswer(body);
-    return ctx.success(item.says, forTheModel(item, body.note));
+    const answer = readAnswer(body);
+    if (!answer) return ctx.error(FAILED);
+    const item = readItemAnswer(answer);
+    return ctx.success(item.says, forTheModel(item, answer.note));
   } catch (err) {
     if (ctx.signal.aborted) return ctx.error("Stopped.");
     return ctx.error(err instanceof Error && err.name === "TypeError" ? "This page couldn't reach the server. Please try again." : FAILED);

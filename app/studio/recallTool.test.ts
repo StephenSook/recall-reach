@@ -80,10 +80,26 @@ describe("checking a product from the dashboard's assistant", () => {
     ["no results list", answer({ results: undefined })],
     ["no count of what was read", answer({ checked: undefined })],
     ["a count that isn't a number", answer({ more: "many" })],
+    ["a negative count", answer({ more: -1 })],
+    ["a count of recalls that share words, with none listed", answer({ mentioned: { recalls: [], total: 3 } })],
+    ["more recalls listed than counted", answer({ mentioned: { recalls: [{ recallNumber: "1", title: "t" }], total: 0 } })],
+    ["a result with no word on whether it's tied", answer({ results: [{ ...result(), tiedToRecall: undefined }] })],
+    ["a result with no word on what it shares", answer({ results: [{ ...result(), verdict: "SCOPE_GAP", tiedToRecall: false, sharesWords: undefined }] })],
+    ["a result with a verdict the site never gives", answer({ results: [result({ verdict: "SAFE" })] })],
+    ["a result with no recall number", answer({ results: [result({ recallNumber: undefined })] })],
+    ["no list of what a result is missing", answer({ results: [result({ missing: undefined })] })],
+    ["a count of recalls read that isn't whole", answer({ checked: { ...checked, recalls: 1.5 } })],
+    ["no list of missing years", answer({ checked: { ...checked, yearsMissing: undefined } })],
+    ["no note", answer({ note: undefined })],
     ["no list of recalls that share words", answer({ mentioned: undefined })],
   ])("treats %s as a failed check, because a broken answer must not read as nothing found", async (_name, body) => {
     const r = await run({ title: "x" }, reply(body) as unknown as typeof fetch);
     expect(r.success).toBe(false);
+  });
+
+  it("shows a failed check as a check that didn't run, on the owner's row", async () => {
+    const r = await run({ title: "x" }, reply(answer({ mentioned: { recalls: [], total: 3 } })) as unknown as typeof fetch);
+    expect(recallToolLabel({ args: { title: "x" }, status: "done", result: r as never }).pill).toBe("Didn't run");
   });
 
   it("treats a page that isn't JSON as a failed check", async () => {
