@@ -1,7 +1,7 @@
 "use client";
 
-// AG Studio 3.0.0 dashboard of recall outcomes, with AG's built-in AI agents.
-// Every AG name below is taken from the 3.0.0 .d.ts files (see the import list in the report).
+// AG Studio 3.1.0 dashboard of recall outcomes, with AG's built-in AI agents.
+// Every AG name below is taken from the 3.1.0 .d.ts files.
 
 import { useMemo } from 'react';
 import { AgStudio, AgStudioProvider, createWidgets } from 'ag-studio-react';
@@ -13,6 +13,7 @@ import type {
   AgFieldDefinition,
   AgPanelConfig,
   AgReportState,
+  AgStudioApi,
   AgWidgetField,
 } from 'ag-studio';
 import type { CustomCellRendererProps } from 'ag-grid-react';
@@ -184,7 +185,8 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
 
   // `ai` is read once, when Studio is created; a new adapter after that is ignored.
   const ai = useMemo<AgAiHarnessSetup>(
-    () => ({ api }) => createAiHarness(api, { adapter, primary: 'lead' }),
+    // 3.1.0 types this `api` as the core API. It is the same object createAiHarness asks for.
+    () => ({ api }) => createAiHarness(api as AgStudioApi, { adapter, primary: 'lead' }),
     [adapter],
   );
 

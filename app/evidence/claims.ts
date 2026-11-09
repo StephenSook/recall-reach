@@ -78,7 +78,7 @@ export const AG_GRID_CLAIMS: Claim[] = [
 
 /** AG Studio, on /studio only. Its agent's query tool sends rows to the model, so the page's rows hold no PayPal value. */
 export const AG_STUDIO_CLAIMS: Claim[] = [
-  { what: "AG Studio 3.0.0 draws the recall dashboard, with its own agents", file: "app/studio/StudioDashboard.tsx", find: "createAiHarness" },
+  { what: "AG Studio 3.1.0 draws the recall dashboard, with its own agents", file: "app/studio/StudioDashboard.tsx", find: "createAiHarness" },
   { what: "The agents run on Claude through this site's route, which drops any tool named for money", file: "server/studio/turn.ts", find: "MONEY.test" },
   { what: "The outcome column draws each result as a coloured chip", file: "app/studio/StudioDashboard.tsx", find: "createCellRenderer" },
   { what: "Its rows are CPSC's recalls and the demo shop's own titles, read from no PayPal table", file: "server/studio/dataset.ts", find: "STUDIO_TABLES" },
