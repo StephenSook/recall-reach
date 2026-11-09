@@ -278,6 +278,10 @@ describe("what the grid holds", () => {
       "waits", "weak"]);
   });
 
+  it("leaves the Sale column off a store's listings, which were never sold", () => {
+    expect(hiddenColumns([{ noticeState: null }], true).has("saleUsd")).toBe(true);
+  });
+
   describe("the sale's price and whether it can be refunded", () => {
     const confirmed = { verdict: "MATCH", strength: "CONFIRMED", salePath: "REFUND_ELIGIBLE", joinState: "IDENTIFIED", refund: null } as const;
 
@@ -305,6 +309,10 @@ describe("what the grid holds", () => {
     it("still counts one on its last day", () => {
       const last = row({ ...confirmed, orderedOn: "2026-05-13", saleCents: 1850, saleCurrency: "USD" });
       expect(by(gridRows([last], toCards([last]).cards, { today: "2026-11-09" }), "m1").refundEligible).toBe(true);
+    });
+
+    it("doesn't count a sale whose PayPal record is no longer held, because the refund refuses it", () => {
+      expect(by(build([row({ ...confirmed, paymentHeld: false })]), "m1").refundEligible).toBe(false);
     });
 
     it("reads a line discounted past its price as zero, the way the refund does", () => {

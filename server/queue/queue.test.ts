@@ -58,6 +58,19 @@ describe("loadQueue", () => {
     return found;
   };
 
+  it("still loads when one line's total is too big for a 32-bit number", async () => {
+    await db.query("update order_lines set quantity = 99999, unit_price_cents = 99999 where shop_id = $1", [shopId]);
+    const rows = (await loadQueue(db, shopId, "session-1")).rows;
+    expect(rows.find((r) => r.saleCents === 9999800001)).toBeDefined();
+  });
+
+  it("says when PayPal's record of a sale is no longer held", async () => {
+    const before = await row("27072");
+    expect(before.paymentHeld).toBe(true);
+    await db.query("delete from paypal_payments where shop_id = $1", [shopId]);
+    expect((await row("27072")).paymentHeld).toBe(false);
+  });
+
   it("lists each case with the recall, the item, verdict, path, join and evidence", async () => {
     expect(await row("27072")).toMatchObject({
       recallTitle: expect.stringMatching(/^Baby Brezza/),

@@ -40,7 +40,7 @@ export interface GridRow {
 const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 /** What a store's listings have no use for, or no right to say: nothing there was sold, and nothing can be sent. */
-const SALE_COLUMNS = ["path", "soldOn", "noticeState"];
+const SALE_COLUMNS = ["path", "soldOn", "noticeState", "saleUsd"];
 
 /** The columns a queue leaves out. Message comes back with the first message. */
 export function hiddenColumns(rows: Pick<GridRow, "noticeState">[], listings: boolean): Set<string> {
@@ -98,7 +98,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
       anchor: card ? `#sale-${card}` : null,
       saleId: r.recordId,
       saleUsd: saleCents !== null && r.saleCurrency === "USD" && !r.orderIncomplete ? saleCents / 100 : null,
-      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed") && saleCents !== 0 && !r.orderIncomplete && windowOpen,
+      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed") && saleCents !== 0 && !r.orderIncomplete && windowOpen && r.paymentHeld !== false,
     };
   });
 }
