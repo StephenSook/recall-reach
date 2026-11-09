@@ -54,9 +54,66 @@ components:
         - checks
         - database
         - market
+        - integrations
       properties:
         ok:
           type: boolean
+        integrations:
+          type: object
+          description: One row per outside service. A row says live only after its own
+            check passed; client means it runs only in the browser.
+          required:
+            - summary
+            - rows
+          properties:
+            summary:
+              type: object
+              required:
+                - live
+                - fallback
+                - off
+                - client
+                - of
+              properties:
+                live:
+                  type: integer
+                fallback:
+                  type: integer
+                off:
+                  type: integer
+                client:
+                  type: integer
+                of:
+                  type: integer
+            rows:
+              type: array
+              items:
+                type: object
+                required:
+                  - id
+                  - name
+                  - mode
+                  - detail
+                  - checkedAt
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  mode:
+                    type: string
+                    enum:
+                      - live
+                      - fallback
+                      - off
+                      - client
+                  detail:
+                    type: string
+                  checkedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
         build:
           type:
             - string

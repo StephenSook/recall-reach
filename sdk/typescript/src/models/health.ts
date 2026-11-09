@@ -3,12 +3,18 @@ import type { Schema } from "../core/validation/schema.js";
 import { checksSchema, type Checks } from "./checks.js";
 import { databaseSchema, type Database } from "./database.js";
 import { degradedSchema, type Degraded } from "./degraded.js";
+import { integrationsSchema, type Integrations } from "./integrations.js";
 import { marketSchema, type Market } from "./market.js";
 import { paypalSchema, type Paypal } from "./paypal.js";
 import { warningsSchema, type Warnings } from "./warnings.js";
 
 export type Health = {
   ok: boolean;
+  /**
+   * One row per outside service. A row says live only after its own check passed; client means it
+   * runs only in the browser.
+   */
+  integrations: Integrations;
   /** The commit this answer came from. */
   build?: string | null;
   /** CPSC's warnings file, apart from recalls. Not part of ok. */
@@ -28,6 +34,7 @@ export type Health = {
 
 export const healthSchema: Schema<Health> = s.object<Health>({
   ok: s.boolean(),
+  integrations: integrationsSchema,
   build: s.optionalNullable(s.string()),
   warnings: s.optional(s.lazy(() => warningsSchema)),
   degraded: s.optionalNullable(s.lazy(() => degradedSchema)),

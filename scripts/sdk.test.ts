@@ -6,6 +6,7 @@ import { pullRecalls } from "@/server/cpsc/pull";
 import { migrate } from "@/server/db/migrate";
 import type { Queryable } from "@/server/db/types";
 import { getHealth } from "@/server/health";
+import { withIntegrations } from "@/server/integrations";
 import { testDb } from "@/test/pglite";
 import { checkAnswerSchema } from "../sdk/typescript/src/models/check-answer";
 import { healthSchema } from "../sdk/typescript/src/models/health";
@@ -55,7 +56,10 @@ describe("the generated SDK reads the real answers", () => {
   });
 
   it("health", async () => {
-    const health = await getHealth(real, { PAYPAL_WEBHOOK_ID: "x", RECORD_HMAC_SECRET: "r".repeat(32) });
-    expect(healthSchema.decode(JSON.parse(JSON.stringify(health))).paypal?.environment).toBe("sandbox");
+    // What the route sends: getHealth plus the integration rows (no GitHub call in a test).
+    const health = await withIntegrations(real, await getHealth(real, { PAYPAL_WEBHOOK_ID: "x", RECORD_HMAC_SECRET: "r".repeat(32) }), {}, { newman: async () => null });
+    const read = healthSchema.decode(JSON.parse(JSON.stringify(health)));
+    expect(read.paypal?.environment).toBe("sandbox");
+    expect(read.integrations.rows.length).toBe(read.integrations.summary.of);
   });
 });
