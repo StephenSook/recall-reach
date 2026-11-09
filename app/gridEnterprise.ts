@@ -1,7 +1,7 @@
 // AG Grid Enterprise, for the two tables a shop owner works in: the queue and Recall Replay. Only those two import this, so
 // every other page keeps the free grid. Nothing in a grid goes to a model: these features all run in the owner's browser.
 import { AgChartsEnterpriseModule } from "ag-charts-enterprise";
-import { ColumnApiModule, ModuleRegistry, NumberFilterModule } from "ag-grid-community";
+import { ColumnApiModule, type Module, NumberFilterModule } from "ag-grid-community";
 import {
   CellSelectionModule,
   ClipboardModule,
@@ -20,7 +20,8 @@ import {
 } from "ag-grid-enterprise";
 import "./gridSetup";
 
-ModuleRegistry.registerModules([
+// Given to each of the two grids, not registered globally: a global module would apply to every grid opened after it, such as eval's.
+export const ENTERPRISE_MODULES: Module[] = [
   ColumnApiModule,
   NumberFilterModule,
   RowGroupingModule,
@@ -36,7 +37,7 @@ ModuleRegistry.registerModules([
   CellSelectionModule,
   ClipboardModule,
   IntegratedChartsModule.with(AgChartsEnterpriseModule),
-]);
+];
 
 let licensed = false;
 

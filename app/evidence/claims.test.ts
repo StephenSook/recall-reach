@@ -12,5 +12,8 @@ describe("the evidence pages", () => {
     expect(Object.keys(pkg.dependencies).filter((d) => d.startsWith("ag-grid")).sort()).toEqual(["ag-grid-community", "ag-grid-enterprise", "ag-grid-react"]);
     for (const file of ["app/queue/MatchGrid.tsx", "app/replay/ReplayGrid.tsx"]) expect(readFileSync(file, "utf8")).toContain("licenseGrid(licenseKey)");
     for (const file of ["app/eval/WrongPairsGrid.tsx", "app/gridSetup.ts"]) expect(readFileSync(file, "utf8")).not.toMatch(/ag-grid-enterprise|gridEnterprise/);
+    // Registered on each grid, not globally: a global one would turn the eval page's grid into Enterprise after a client-side visit.
+    expect(readFileSync("app/gridEnterprise.ts", "utf8")).not.toContain("registerModules");
+    for (const file of ["app/queue/MatchGrid.tsx", "app/replay/ReplayGrid.tsx"]) expect(readFileSync(file, "utf8")).toContain("modules={ENTERPRISE_MODULES}");
   });
 });

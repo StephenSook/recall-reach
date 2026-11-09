@@ -4,8 +4,8 @@
  * A copy of the columns grouped by one of them, or none. Every groupable column says so outright, because the grid keeps a group
  * the new columns don't mention. The chosen one is hidden: each group row already says it.
  */
-export function grouped<T extends { field?: unknown; enableRowGroup?: boolean }>(columns: T[], field: string | null): T[] {
-  return columns.map((c) => (c.enableRowGroup ? { ...c, rowGroup: c.field === field, hide: c.field === field } : c));
+export function grouped<T extends { field?: unknown }>(columns: T[], field: string | null, groupable: readonly string[]): T[] {
+  return columns.map((c) => (groupable.includes(String(c.field)) ? { ...c, rowGroup: c.field === field, hide: c.field === field } : c));
 }
 
 export interface RefundTotal {
@@ -14,6 +14,14 @@ export interface RefundTotal {
   /** Refund-eligible sales with no price in dollars. They count, and aren't in the money figure. */
   unpriced: number;
 }
+
+const UNIDENTIFIED = "UNIDENTIFIED";
+
+/** A group row has no data of its own, so what it may carry depends on what's under it. */
+export const onlyUnidentified = (rows: readonly { verdict?: string }[]) => rows.length > 0 && rows.every((r) => r.verdict === UNIDENTIFIED);
+
+export const hasSaleWithNoUsdPrice = (rows: readonly { soldOn?: string | null; saleUsd?: number | null; verdict?: string }[]) =>
+  rows.some((r) => r.soldOn && r.saleUsd === null && r.verdict !== UNIDENTIFIED);
 
 /** One row per sale: a sale that matches two recalls is two rows, and can only be refunded once. */
 function oneRowPerSale<T extends { saleId?: string | null }>(rows: Iterable<T>): T[] {
@@ -46,10 +54,10 @@ export interface SaleSum {
   unpriced: number;
 }
 
-export function saleSum(rows: Iterable<{ saleId?: string | null; saleUsd?: number | null; soldOn?: string | null }>): SaleSum {
+export function saleSum(rows: Iterable<{ saleId?: string | null; saleUsd?: number | null; soldOn?: string | null; verdict?: string }>): SaleSum {
   let cents = 0;
   let unpriced = 0;
-  for (const row of oneRowPerSale(rows)) {
+  for (const row of oneRowPerSale([...rows].filter((r) => r.verdict !== UNIDENTIFIED))) {
     if (row.saleUsd !== null && row.saleUsd !== undefined) cents += Math.round(row.saleUsd * 100);
     else if (row.soldOn) unpriced++;
   }
@@ -62,26 +70,26 @@ export const usd = (value: number | null | undefined) => (value === null || valu
 export const saleLabel = (sum: SaleSum) => (sum.unpriced > 0 ? `${usd(sum.usd)} + ${sum.unpriced} with no USD price` : usd(sum.usd));
 
 const NO_USD_PRICE = "No USD price";
-type SaleRow = { soldOn?: string | null } | undefined;
+type SaleRow = { soldOn?: string | null; verdict?: string } | undefined;
 const isTotal = (value: unknown): value is { unpriced: number; toString(): string; toNumber(): number } => value !== null && typeof value === "object" && "toNumber" in value;
 
 /** What the Sale column says: a group's total in words, dollars on a sale, and never a blank where a price was left out. */
 export function saleCellWords(value: unknown, row: SaleRow): string {
   if (isTotal(value)) return value.toString();
-  if (value === null || value === undefined) return row?.soldOn ? NO_USD_PRICE : "";
+  if (value === null || value === undefined) return row?.soldOn && row.verdict !== UNIDENTIFIED ? NO_USD_PRICE : "";
   return usd(value as number);
 }
 
 /** The same for Excel. Numbers stay numbers so they add up, and a total that left a sale out keeps saying so. */
 export function saleForExport(value: unknown, row: SaleRow): unknown {
   if (isTotal(value)) return value.unpriced > 0 ? value.toString() : value.toNumber();
-  if ((value === null || value === undefined) && row?.soldOn) return NO_USD_PRICE;
+  if ((value === null || value === undefined) && row?.soldOn && row.verdict !== UNIDENTIFIED) return NO_USD_PRICE;
   return value;
 }
 
 /** What a cell copies as. A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave by copying either. */
 export function copiedCell(columnId: string, value: unknown, row: ({ verdict?: string } & SaleRow) | undefined): unknown {
-  if (row?.verdict === "UNIDENTIFIED") return "";
+  if (row?.verdict === UNIDENTIFIED) return "";
   return columnId === "saleUsd" ? saleCellWords(value, row) : value;
 }
 

@@ -1,29 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { chartRole, copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
+import { chartRole, copiedCell, excelColumns, grouped, hasSaleWithNoUsdPrice, onlyUnidentified, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 
 describe("grouping the table", () => {
-  const cols = [{ field: "recallNumber", enableRowGroup: true }, { field: "state", enableRowGroup: true }, { field: "product" }];
+  const cols = [{ field: "recallNumber" }, { field: "state" }, { field: "product" }];
+  const groupable = ["recallNumber", "state"];
 
   it("groups by the chosen column and hides it, because the group row already says it", () => {
-    expect(grouped(cols, "state")[1]).toEqual({ field: "state", enableRowGroup: true, rowGroup: true, hide: true });
+    expect(grouped(cols, "state", groupable)[1]).toEqual({ field: "state", rowGroup: true, hide: true });
   });
 
   it("clears the others in so many words, because the grid keeps a group the new columns don't mention", () => {
-    expect(grouped(cols, "state")[0]).toEqual({ field: "recallNumber", enableRowGroup: true, rowGroup: false, hide: false });
+    expect(grouped(cols, "state", groupable)[0]).toEqual({ field: "recallNumber", rowGroup: false, hide: false });
   });
 
   it("clears every group for no group", () => {
-    expect(grouped(cols, null).filter((c) => (c as { rowGroup?: boolean }).rowGroup)).toEqual([]);
-    expect(grouped(cols, null)[1]).toMatchObject({ rowGroup: false, hide: false });
+    expect(grouped(cols, null, groupable).filter((c) => (c as { rowGroup?: boolean }).rowGroup)).toEqual([]);
+    expect(grouped(cols, null, groupable)[1]).toMatchObject({ rowGroup: false, hide: false });
   });
 
   it("leaves a column that can't be grouped alone", () => {
-    expect(grouped(cols, "state")[2]).toEqual({ field: "product" });
+    expect(grouped(cols, "state", groupable)[2]).toEqual({ field: "product" });
   });
 
   it("doesn't change the columns it was given", () => {
-    grouped(cols, "state");
-    expect(cols[1]).toEqual({ field: "state", enableRowGroup: true });
+    grouped(cols, "state", groupable);
+    expect(cols[1]).toEqual({ field: "state" });
   });
 });
 
@@ -60,6 +61,10 @@ describe("a group's sale total", () => {
 
   it("doesn't count a listing nobody bought", () => {
     expect(saleSum([{ saleId: "a", saleUsd: null, soldOn: null }])).toEqual({ usd: 0, unpriced: 0 });
+  });
+
+  it("leaves a payment nobody could identify out, because it isn't one of the shop's sales", () => {
+    expect(saleSum([{ saleId: null, saleUsd: null, soldOn: "2026-11-01", verdict: "UNIDENTIFIED" }])).toEqual({ usd: 0, unpriced: 0 });
   });
 
   it("says when a group left a sale out", () => {
@@ -101,6 +106,10 @@ describe("the sale column", () => {
 
   it("says when a sale isn't priced in dollars, rather than leaving it blank", () => {
     expect(saleCellWords(null, sold)).toBe("No USD price");
+  });
+
+  it("leaves a payment nobody could identify blank too", () => {
+    expect(saleCellWords(null, { soldOn: "2026-11-01", verdict: "UNIDENTIFIED" })).toBe("");
   });
 
   it("leaves a listing nobody bought blank", () => {
@@ -162,5 +171,33 @@ describe("what the chart can use", () => {
 
   it.each(["state", "path", "noticeState", "product", "soldOn"])("keeps %s out, because a sale matching two recalls would count twice there", (field) => {
     expect(chartRole(field)).toBe("excluded");
+  });
+});
+
+describe("a row made only of payments nobody could identify", () => {
+  it("is one when every sale under it is", () => {
+    expect(onlyUnidentified([{ verdict: "UNIDENTIFIED" }, { verdict: "UNIDENTIFIED" }])).toBe(true);
+  });
+
+  it("isn't one when any sale is the shop's own", () => {
+    expect(onlyUnidentified([{ verdict: "UNIDENTIFIED" }, { verdict: "MATCH" }])).toBe(false);
+  });
+
+  it("isn't one with nothing under it", () => {
+    expect(onlyUnidentified([])).toBe(false);
+  });
+});
+
+describe("whether any sale has no USD price", () => {
+  it("is true for a sale in another currency", () => {
+    expect(hasSaleWithNoUsdPrice([{ soldOn: "2026-11-01", saleUsd: null, verdict: "MATCH" }])).toBe(true);
+  });
+
+  it("isn't set off by a payment nobody could identify", () => {
+    expect(hasSaleWithNoUsdPrice([{ soldOn: "2026-11-01", saleUsd: null, verdict: "UNIDENTIFIED" }])).toBe(false);
+  });
+
+  it("isn't set off by a listing", () => {
+    expect(hasSaleWithNoUsdPrice([{ soldOn: null, saleUsd: null, verdict: "MATCH" }])).toBe(false);
   });
 });

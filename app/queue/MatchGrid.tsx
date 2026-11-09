@@ -3,9 +3,9 @@
 import type { ChartRef, ColDef, DefaultMenuItem, GridApi, IAggFuncParams, ICellRendererParams, IRowNode, ProcessCellForExportParams, ShouldRowBeSkippedParams, SideBarDef, StatusPanelDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
-import { licenseGrid } from "@/app/gridEnterprise";
+import { ENTERPRISE_MODULES, licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
-import { chartRole, copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
+import { chartRole, copiedCell, excelColumns, grouped, hasSaleWithNoUsdPrice, onlyUnidentified, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
@@ -57,33 +57,39 @@ function saleTotal({ rowNode }: IAggFuncParams<Row>) {
 }
 
 /** A payment nobody could identify is PayPal's record, not the shop's, so no file made from this table carries it. */
-const keepsOutUnidentified = (p: ShouldRowBeSkippedParams<Row>) => p.node.data?.verdict === "UNIDENTIFIED";
+const nodeRows = (node: IRowNode<Row> | null | undefined): Row[] => (node?.data ? [node.data] : (node?.allLeafChildren ?? []).flatMap((n) => (n.data ? [n.data] : [])));
+const keepsOutUnidentified = (p: ShouldRowBeSkippedParams<Row>) => onlyUnidentified(nodeRows(p.node));
 // AG Grid's type says string, and Excel only gets a number cell from a number, so a number goes through as one.
 const cellForExport = (p: ProcessCellForExportParams<Row>): string =>
   (p.column.getColId() === "saleUsd" ? saleForExport(p.value, p.node?.data) : p.value) as string;
-const cellForClipboard = (p: ProcessCellForExportParams<Row>): string => copiedCell(p.column.getColId(), p.value, p.node?.data) as string;
+const cellForClipboard = (p: ProcessCellForExportParams<Row>): string => (onlyUnidentified(nodeRows(p.node)) ? "" : copiedCell(p.column.getColId(), p.value, p.node?.data)) as string;
 // The right-click menu's default export and chart entries would skip the rules above.
 const MENU_ITEMS: DefaultMenuItem[] = ["copy", "copyWithHeaders"];
 
 const SET_FILTER = "agSetColumnFilter";
 
 const columns: ColDef<Row>[] = [
-  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: SET_FILTER, chartDataType: chartRole("recallNumber"), enableRowGroup: true },
-  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("product") },
-  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("itemTitle") },
-  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("state"), enableRowGroup: true },
-  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: chartRole("path"), enableRowGroup: true },
+  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: SET_FILTER, chartDataType: chartRole("recallNumber") },
+  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: "agTextColumnFilter", chartDataType: chartRole("product") },
+  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: "agTextColumnFilter", chartDataType: chartRole("itemTitle") },
+  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("state") },
+  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: chartRole("path") },
   { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: chartRole("soldOn") },
   { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleCellWords(p.value, p.data), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: chartRole("saleUsd") },
-  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("noticeState"), enableRowGroup: true },
-  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("reason") },
+  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("noticeState") },
+  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: "agTextColumnFilter", chartDataType: chartRole("reason") },
   { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false, suppressColumnsToolPanel: true },
 ];
 
 const EXPORT_RULES = { shouldRowBeSkipped: keepsOutUnidentified };
 const DEFAULT_COL: ColDef<Row> = { sortable: true, resizable: true };
 const AUTO_GROUP: ColDef<Row> = { headerName: "Group", minWidth: 180 };
-const SIDE_BAR: SideBarDef = { toolPanels: ["columns", "filters"], hiddenByDefault: false };
+// The buttons above the table are the one way to group, so the chart and the group buttons can't disagree with the grid.
+const SIDE_BAR: SideBarDef = {
+  toolPanels: [{ id: "columns", labelDefault: "Columns", labelKey: "columns", iconKey: "columns", toolPanel: "agColumnsToolPanel", toolPanelParams: { suppressRowGroups: true, suppressValues: true, suppressPivots: true, suppressPivotMode: true } }, "filters"],
+  hiddenByDefault: false,
+};
+const GROUPABLE = ["recallNumber", "state"] as const;
 const STATUS_BAR: { statusPanels: StatusPanelDef[] } = {
   statusPanels: [
     { statusPanel: "agTotalAndFilteredRowCountComponent", align: "left" },
@@ -103,14 +109,14 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
   const chartBox = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ChartRef | null>(null);
   const [charted, setCharted] = useState(false);
-  const [isGrouped, setIsGrouped] = useState(false);
+  const isGrouped = groupBy !== null;
   // What this tab could cost in refunds. The prices are the shop's own, from its order file.
   const refund = useMemo(() => refundTotal(rows.filter((r) => inTab(r, tab))), [rows, tab]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
-  const priceInOtherCurrency = rows.some((r) => r.soldOn && r.saleUsd === null);
+  const priceInOtherCurrency = hasSaleWithNoUsdPrice(rows);
   const shownColumns = useMemo(() => {
     const hidden = hiddenColumns(rows, listings);
-    return grouped(columns.filter((c) => !hidden.has(String(c.field))), groupBy);
+    return grouped(columns.filter((c) => !hidden.has(String(c.field))), groupBy, GROUPABLE);
   }, [rows, listings, groupBy]);
 
   const choose = (next: GridTab) => {
@@ -136,6 +142,11 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
     chartRef.current?.destroyChart();
     chartRef.current = null;
     setCharted(false);
+  };
+
+  const chooseGroup = (field: string | null) => {
+    if (field) closeChart();
+    setGroupBy(field);
   };
 
   const toggleChart = () => {
@@ -172,7 +183,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
       </header>
       <div className="tabs grid-groups" role="group" aria-label="Group">
         {GROUPS.map((g) => (
-          <button key={g.label} type="button" className="tab" aria-pressed={groupBy === g.field} onClick={() => setGroupBy(g.field)}>
+          <button key={g.label} type="button" className="tab" aria-pressed={groupBy === g.field} onClick={() => chooseGroup(g.field)}>
             {g.label}
           </button>
         ))}
@@ -184,6 +195,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         ) : null}
       </div>
       <AgGridReact<Row>
+        modules={ENTERPRISE_MODULES}
         theme={gridTheme}
         rowData={rows}
         columnDefs={shownColumns}
@@ -209,16 +221,10 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
           // A row opens its window. The checkbox only picks it.
           if (e.column.getColId() !== "ag-Grid-SelectionColumn" && e.data?.anchor) window.location.hash = e.data.anchor;
         }}
-        isExternalFilterPresent={() => tabRef.current !== "all"}
+        isExternalFilterPresent={() => true}
         doesExternalFilterPass={(n: IRowNode<Row>) => inTab(n.data as GridRow, tabRef.current)}
         onGridReady={(e) => {
           api.current = e.api;
-        }}
-        onColumnRowGroupChanged={(e) => {
-          // Covers the column menu and the side panel as well as the buttons above.
-          const any = e.api.getRowGroupColumns().length > 0;
-          setIsGrouped(any);
-          if (any) closeChart();
         }}
         onSelectionChanged={(e) => setSelected(e.api.getSelectedRows().map((r) => String(r.matchId)))}
       />

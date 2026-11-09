@@ -3,7 +3,7 @@
 import type { ColDef, GridApi, ICellRendererParams, IRowNode, SideBarDef, StatusPanelDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
-import { licenseGrid } from "@/app/gridEnterprise";
+import { ENTERPRISE_MODULES, licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
 import { grouped } from "@/app/queue/gridFeatures";
 import type { ReplayOutcome, ReplayRow } from "@/server/replay/replay";
@@ -39,17 +39,21 @@ const outcomeWord = (value: unknown) => OUTCOME_CHIP[value as ReplayOutcome] ?? 
 const splitWord = (value: unknown) => (value ? (SPLIT_CHIP[value as keyof typeof SPLIT_CHIP] ?? String(value)) : "");
 
 const columns: ColDef<ReplayRow>[] = [
-  { field: "recallNumber", headerName: "Recall", width: 84, cellClass: "id", filter: true },
+  { field: "recallNumber", headerName: "Recall", width: 84, cellClass: "id", filter: "agTextColumnFilter" },
   { field: "recallDate", headerName: "Recalled", width: 104, cellDataType: "dateString", filter: "agDateColumnFilter" },
-  { field: "recallTitle", headerName: "CPSC's title", flex: 3, minWidth: 220, wrapText: true, autoHeight: true, filter: true },
-  { field: "outcome", headerName: "Outcome", width: 136, cellRenderer: OutcomeCell, cellClass: "chip-cell", filter: "agSetColumnFilter", filterParams: { valueFormatter: (p: { value: unknown }) => outcomeWord(p.value) }, valueFormatter: (p) => outcomeWord(p.value), enableRowGroup: true },
-  { field: "saleSplit", headerName: "Path", width: 146, cellRenderer: SplitCell, cellClass: "chip-cell", filter: "agSetColumnFilter", filterParams: { valueFormatter: (p: { value: unknown }) => splitWord(p.value) }, valueFormatter: (p) => splitWord(p.value), enableRowGroup: true },
-  { field: "itemTitle", headerName: "Demo shop's item", flex: 2, minWidth: 150, wrapText: true, autoHeight: true, filter: true },
+  { field: "recallTitle", headerName: "CPSC's title", flex: 3, minWidth: 220, wrapText: true, autoHeight: true, filter: "agTextColumnFilter" },
+  { field: "outcome", headerName: "Outcome", width: 136, cellRenderer: OutcomeCell, cellClass: "chip-cell", filter: "agSetColumnFilter", filterParams: { valueFormatter: (p: { value: unknown }) => outcomeWord(p.value) }, valueFormatter: (p) => outcomeWord(p.value) },
+  { field: "saleSplit", headerName: "Path", width: 146, cellRenderer: SplitCell, cellClass: "chip-cell", filter: "agSetColumnFilter", filterParams: { valueFormatter: (p: { value: unknown }) => splitWord(p.value) }, valueFormatter: (p) => splitWord(p.value) },
+  { field: "itemTitle", headerName: "Demo shop's item", flex: 2, minWidth: 150, wrapText: true, autoHeight: true, filter: "agTextColumnFilter" },
 ];
 
 const DEFAULT_COL: ColDef<ReplayRow> = { sortable: true, resizable: true };
 const AUTO_GROUP: ColDef<ReplayRow> = { headerName: "Group", minWidth: 180 };
-const SIDE_BAR: SideBarDef = { toolPanels: ["columns", "filters"], hiddenByDefault: false };
+const SIDE_BAR: SideBarDef = {
+  toolPanels: [{ id: "columns", labelDefault: "Columns", labelKey: "columns", iconKey: "columns", toolPanel: "agColumnsToolPanel", toolPanelParams: { suppressRowGroups: true, suppressValues: true, suppressPivots: true, suppressPivotMode: true } }, "filters"],
+  hiddenByDefault: false,
+};
+const GROUPABLE = ["outcome", "saleSplit"] as const;
 const STATUS_BAR: { statusPanels: StatusPanelDef[] } = { statusPanels: [{ statusPanel: "agTotalAndFilteredRowCountComponent", align: "left" }] };
 
 export default function ReplayGrid({ rows, licenseKey = null }: { rows: ReplayRow[]; licenseKey?: string | null }) {
@@ -59,7 +63,7 @@ export default function ReplayGrid({ rows, licenseKey = null }: { rows: ReplayRo
   const tabRef = useRef<Tab>("ALL");
   const [tab, setTab] = useState<Tab>("ALL");
   const [groupBy, setGroupBy] = useState<string | null>(null);
-  const shownColumns = useMemo(() => grouped(columns, groupBy), [groupBy]);
+  const shownColumns = useMemo(() => grouped(columns, groupBy, GROUPABLE), [groupBy]);
   const choose = (next: Tab) => {
     tabRef.current = next;
     setTab(next);
@@ -91,6 +95,7 @@ export default function ReplayGrid({ rows, licenseKey = null }: { rows: ReplayRo
         </button>
       </div>
       <AgGridReact<ReplayRow>
+        modules={ENTERPRISE_MODULES}
         theme={gridTheme}
         rowData={rows}
         columnDefs={shownColumns}

@@ -22,10 +22,6 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
   await expect(grid.locator(".ag-status-bar")).toContainText("Rows");
   await expect(grid.locator(".ag-side-bar")).toBeVisible();
   await expect(page.getByTestId("refund-total")).toContainText("Refund eligible");
-  if (process.env.AG_GRID_LICENSE_KEY) {
-    await expect(page.locator(".ag-watermark").first()).toBeHidden();
-    noLicenceComplaint(logs);
-  }
 
   // On a grouped table a row still opens its card, and a sale can still be picked and approved.
   await grid.getByRole("button", { name: "By state", exact: true }).click();
@@ -87,6 +83,10 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
     await page.waitForTimeout(1200);
     await page.screenshot({ path: `${SHOTS}/grid-chart.png` });
   }
+  if (process.env.AG_GRID_LICENSE_KEY) {
+    await expect(page.locator("[class*=watermark]:visible")).toHaveCount(0);
+    noLicenceComplaint(logs);
+  }
   await grid.getByRole("button", { name: "Hide chart" }).click();
   await expect(chart.locator("canvas")).toHaveCount(0);
 
@@ -96,6 +96,26 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
   await expect(chart.locator("canvas")).toHaveCount(0);
   await grid.getByRole("button", { name: "No groups" }).click();
   expect(logs.filter((l) => /AG Grid: error|is not registered|Missing module/i.test(l))).toEqual([]);
+});
+
+test("the eval page stays on the free grid after a visit to an Enterprise table", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Try it as a demo shop" }).click();
+  await expect(page).toHaveURL(/\/queue$/, { timeout: 60_000 });
+  await expect(page.getByTestId("match-grid").locator(".ag-status-bar")).toBeVisible();
+  // By the site's own link, so it's a client-side move and the Enterprise table's code stays loaded.
+  await page.getByRole("link", { name: "How well it works" }).click();
+  await expect(page).toHaveURL(/\/eval$/, { timeout: 30_000 });
+  const cell = page.locator(".ag-row[row-id] .ag-cell").first();
+  await expect(cell).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ag-status-bar, .ag-side-bar")).toHaveCount(0);
+  await cell.click({ button: "right" });
+  await page.waitForTimeout(400);
+  await expect(page.locator(".ag-menu")).toHaveCount(0);
+  await page.locator(".ag-header-cell .ag-header-cell-filter-button, .ag-header-icon.ag-header-cell-menu-button").first().click();
+  await expect(page.locator(".ag-set-filter")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 });
 
 test("Recall Replay groups and exports", async ({ page }) => {
