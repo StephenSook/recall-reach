@@ -24,9 +24,12 @@ describe("GET /api/health", () => {
     vi.stubEnv("DEBUG", "");
     vi.stubEnv("NODE_DEBUG", "");
     vi.spyOn(console, "error").mockImplementation(() => {});
+    // The Newman row asks GitHub. No test here should.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
   });
   afterEach(async () => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     await real.close();
   });
@@ -53,6 +56,22 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect((await res.json()).ok).toBe(true);
+  });
+
+  it("lists each outside service, says whether a licence is set and never what it is", async () => {
+    await healthy();
+    vi.stubEnv("AG_GRID_LICENSE_KEY", "PLANTED-KEY");
+    vi.stubEnv("AG_STUDIO_LICENSE_KEY", "");
+    const body = await (await GET()).json();
+    const mode = (id: string) => (body.integrations.rows as { id: string; mode: string }[]).find((r) => r.id === id)?.mode;
+    expect(mode("neon")).toBe("live");
+    expect(mode("ag-grid")).toBe("live");
+    expect(mode("ag-studio")).toBe("off");
+    expect(mode("channel3")).toBe("off");
+    expect(mode("newman")).toBe("off");
+    expect(mode("bryntum")).toBe("client");
+    expect(body.integrations.summary.of).toBe(body.integrations.rows.length);
+    expect(JSON.stringify(body)).not.toContain("PLANTED-KEY");
   });
 
   it("answers 503 when a check fails, and says which", async () => {

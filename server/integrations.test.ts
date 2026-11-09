@@ -1,0 +1,155 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import { createNewmanReader, integrationsFrom, integrationFacts, type IntegrationFacts } from "./integrations";
+
+const NOW = new Date("2026-11-09T20:00:00.000Z");
+const RECENT = "2026-11-09T19:00:00.000Z";
+const OLD = "2026-10-01T00:00:00.000Z";
+
+const healthy: IntegrationFacts = {
+  databaseOk: true,
+  checkedAt: NOW.toISOString(),
+  cpsc: { fresh: true, recalls: 1855, lastPullAt: RECENT },
+  claude: { mainFresh: true, mainAt: RECENT, anyFresh: true, anyAt: RECENT },
+  paypal: { webhookConfigured: true, lastVerifiedWebhookAt: RECENT },
+  channel3: { fresh: true, lastOkAt: RECENT, searched: 54, listings: 300 },
+  replay: { lastRunAt: RECENT, task: { outcome: "FRESH", finishedAt: RECENT } },
+  agGridLicence: true,
+  agStudio: { licence: true, rows: 900 },
+  newman: { conclusion: "success", at: RECENT },
+};
+
+const row = (facts: IntegrationFacts, id: string) => {
+  const found = integrationsFrom(facts, NOW).rows.find((r) => r.id === id);
+  if (!found) throw new Error(`no row ${id}`);
+  return found;
+};
+
+describe("the integrations list", () => {
+  it("is live for each thing whose own check passed, and client for what only runs in the browser", () => {
+    const { rows, summary } = integrationsFrom(healthy, NOW);
+    expect(rows.filter((r) => r.mode !== "live").map((r) => [r.id, r.mode])).toEqual([["bryntum", "client"]]);
+    expect(summary).toEqual({ live: rows.length - 1, fallback: 0, off: 0, client: 1, of: rows.length });
+  });
+
+  it("gives a time for every live row", () => {
+    for (const r of integrationsFrom(healthy, NOW).rows.filter((x) => x.mode === "live")) expect(Date.parse(r.checkedAt ?? "")).not.toBeNaN();
+  });
+
+  it("gives every row an id, a name and a line of plain detail", () => {
+    for (const r of integrationsFrom(healthy, NOW).rows) {
+      expect(r.id).toMatch(/^[a-z0-9-]+$/);
+      expect(r.name.length).toBeGreaterThan(2);
+      expect(r.detail.length).toBeGreaterThan(5);
+    }
+  });
+
+  it("names Bryntum's installed version and doesn't call it live, because the server can't see the browser", () => {
+    expect(row(healthy, "bryntum")).toMatchObject({ mode: "client", checkedAt: null, detail: expect.stringMatching(/\d+\.\d+\.\d+/) });
+  });
+
+  const broken: [string, string, Partial<IntegrationFacts>, string][] = [
+    ["neon", "the database didn't answer", { databaseOk: false }, "off"],
+    ["cpsc", "the last read is old or failed", { cpsc: { fresh: false, recalls: 1855, lastPullAt: OLD } }, "off"],
+    ["claude", "no model has answered lately", { claude: { mainFresh: false, mainAt: OLD, anyFresh: false, anyAt: OLD } }, "off"],
+    ["claude", "only the fallback model answered", { claude: { mainFresh: false, mainAt: OLD, anyFresh: true, anyAt: RECENT } }, "fallback"],
+    ["paypal", "no webhook has been verified", { paypal: { webhookConfigured: true, lastVerifiedWebhookAt: null } }, "off"],
+    ["paypal", "the last verified webhook is old", { paypal: { webhookConfigured: true, lastVerifiedWebhookAt: OLD } }, "off"],
+    ["paypal", "webhooks aren't set up", { paypal: { webhookConfigured: false, lastVerifiedWebhookAt: RECENT } }, "off"],
+    ["channel3", "the market search has gone quiet", { channel3: { fresh: false, lastOkAt: OLD, searched: 54, listings: 300 } }, "off"],
+    ["render-workflows", "the task failed but the web service refreshed", { replay: { lastRunAt: RECENT, task: { outcome: "FAILED", finishedAt: RECENT } } }, "fallback"],
+    ["render-workflows", "the task is old but the web service refreshed", { replay: { lastRunAt: RECENT, task: { outcome: "FRESH", finishedAt: OLD } } }, "fallback"],
+    ["render-workflows", "the task has never run but the web service refreshed", { replay: { lastRunAt: RECENT, task: null } }, "fallback"],
+    ["render-workflows", "the task never finished", { replay: { lastRunAt: OLD, task: { outcome: null, finishedAt: null } } }, "off"],
+    ["ag-grid", "no licence key is set", { agGridLicence: false }, "off"],
+    ["ag-studio", "no licence key is set", { agStudio: { licence: false, rows: 900 } }, "off"],
+    ["ag-studio", "its data didn't answer", { agStudio: { licence: true, rows: null } }, "off"],
+    ["ag-studio", "its data is empty", { agStudio: { licence: true, rows: 0 } }, "off"],
+    ["newman", "the last run failed", { newman: { conclusion: "failure", at: RECENT } }, "off"],
+    ["newman", "GitHub didn't say", { newman: null }, "off"],
+    ["newman", "the last run is old", { newman: { conclusion: "success", at: OLD } }, "off"],
+  ];
+
+  it.each(broken)("%s isn't live when %s", (id, _why, change, mode) => {
+    expect(row({ ...healthy, ...change }, id).mode).toBe(mode);
+  });
+
+  it("counts what isn't live", () => {
+    const { summary } = integrationsFrom({ ...healthy, agGridLicence: false, claude: { mainFresh: false, mainAt: OLD, anyFresh: true, anyAt: RECENT } }, NOW);
+    expect(summary).toMatchObject({ fallback: 1, off: 1, client: 1 });
+  });
+
+  it("can only say live through the one helper that needs a passed check and a time", () => {
+    const source = readFileSync("server/integrations.ts", "utf8").replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
+    expect(source.match(/\? "live" :/g)).toHaveLength(1);
+    expect(source).not.toMatch(/mode:\s*"live"/);
+  });
+});
+
+describe("gathering the facts", () => {
+  const health = {
+    database: { ok: true },
+    checkedAt: NOW.toISOString(),
+    checks: { lastPull: true },
+    cpsc: { recalls: 1855, lastPull: { finishedAt: RECENT } },
+    claude: { mainModelFresh: true, mainModelOkAt: RECENT, fresh: true, lastOkAt: RECENT },
+    paypal: { webhookConfigured: true, lastVerifiedWebhookAt: RECENT },
+    market: { fresh: true, lastOkAt: RECENT },
+    replay: { lastRunAt: RECENT, lastTaskRun: { outcome: "FRESH", finishedAt: RECENT } },
+  } as never;
+  const env = { AG_GRID_LICENSE_KEY: "PLANTED-GRID-KEY", AG_STUDIO_LICENSE_KEY: "PLANTED-STUDIO-KEY" };
+  const deps = { sweepCounts: async () => ({ searched: 54, listings: 300 }), studioRows: async () => 900, newman: async () => ({ conclusion: "success", at: RECENT }) };
+
+  it("shows whether a licence is set and never the licence", async () => {
+    const facts = await integrationFacts({} as never, health, env, deps);
+    expect(facts).toMatchObject({ agGridLicence: true, agStudio: { licence: true, rows: 900 } });
+    expect(JSON.stringify(integrationsFrom(facts, NOW))).not.toContain("PLANTED");
+  });
+
+  it("treats a blank licence as none", async () => {
+    expect((await integrationFacts({} as never, health, { AG_GRID_LICENSE_KEY: "  " }, deps)).agGridLicence).toBe(false);
+  });
+
+  it("marks one failed check down and leaves the others", async () => {
+    const facts = await integrationFacts({} as never, health, env, { ...deps, studioRows: async () => { throw new Error("db"); }, sweepCounts: async () => { throw new Error("db"); } });
+    expect(facts.agStudio.rows).toBeNull();
+    expect(facts.channel3).toMatchObject({ fresh: false });
+    expect(facts.newman).toMatchObject({ conclusion: "success" });
+  });
+});
+
+describe("reading Newman's last run", () => {
+  const answered = (run: object | null, status = 200) => vi.fn<typeof fetch>(async () => Response.json({ workflow_runs: run ? [run] : [] }, { status }));
+
+  it("reads the conclusion and time of the last finished run", async () => {
+    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    expect(await createNewmanReader(fetchImpl)(NOW)).toEqual({ conclusion: "success", at: RECENT });
+    expect(String(fetchImpl.mock.calls[0][0])).toContain("/actions/workflows/newman.yml/runs");
+  });
+
+  it("asks GitHub once an hour at most", async () => {
+    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    const read = createNewmanReader(fetchImpl);
+    await read(NOW);
+    await read(new Date(NOW.getTime() + 59 * 60_000));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await read(new Date(NOW.getTime() + 61 * 60_000));
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("says nothing when GitHub won't show it, as with a private repository", async () => {
+    expect(await createNewmanReader(answered(null, 404))(NOW)).toBeNull();
+  });
+
+  it("says nothing when there's no run yet", async () => {
+    expect(await createNewmanReader(answered(null))(NOW)).toBeNull();
+  });
+
+  it("says nothing when GitHub can't be reached, and asks again sooner", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => { throw new Error("offline"); });
+    const read = createNewmanReader(fetchImpl);
+    expect(await read(NOW)).toBeNull();
+    await read(new Date(NOW.getTime() + 6 * 60_000));
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});

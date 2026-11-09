@@ -1,0 +1,182 @@
+// What each outside service is doing right now, one row each, for /api/health, so anyone can check the wiring with one GET.
+// A row reads live only after its own check passed: there's one helper that can say so, and a test holds it to that.
+// Whether a licence is set is all that's read about one. Its value never comes here.
+import packageJson from "../package.json";
+import type { Queryable } from "./db/types";
+import type { Health } from "./health";
+import { studioDataset } from "./studio/dataset";
+import { sweepCounts } from "./sweep/sweep";
+
+export type IntegrationMode = "live" | "fallback" | "off" | "client";
+
+export interface IntegrationRow {
+  id: string;
+  name: string;
+  mode: IntegrationMode;
+  detail: string;
+  /** When the check ran, or when the thing last worked. Null when there's nothing to show. */
+  checkedAt: string | null;
+}
+
+export interface Integrations {
+  summary: { live: number; fallback: number; off: number; client: number; of: number };
+  rows: IntegrationRow[];
+}
+
+export interface NewmanRun { conclusion: string | null; at: string | null }
+
+export interface IntegrationFacts {
+  databaseOk: boolean;
+  checkedAt: string;
+  cpsc: { fresh: boolean; recalls: number; lastPullAt: string | null };
+  claude: { mainFresh: boolean; mainAt: string | null; anyFresh: boolean; anyAt: string | null };
+  paypal: { webhookConfigured: boolean; lastVerifiedWebhookAt: string | null };
+  channel3: { fresh: boolean; lastOkAt: string | null; searched: number; listings: number };
+  replay: { lastRunAt: string | null; task: { outcome: string | null; finishedAt: string | null } | null };
+  agGridLicence: boolean;
+  agStudio: { licence: boolean; rows: number | null };
+  newman: NewmanRun | null;
+}
+
+const DAY_MS = 86_400_000;
+const WEBHOOK_MAX_AGE_MS = 7 * DAY_MS;
+const RUN_MAX_AGE_MS = 2 * DAY_MS;
+
+interface Check {
+  passed: boolean;
+  at: string | null;
+  detail: string;
+  otherwise?: "fallback" | "off";
+}
+
+/** The only place a row can say live: its check passed, and there's a time to show for it. */
+function checked(id: string, name: string, { passed, at, detail, otherwise = "off" }: Check): IntegrationRow {
+  return { id, name, mode: passed && at !== null ? "live" : otherwise, detail, checkedAt: at };
+}
+
+export function integrationsFrom(facts: IntegrationFacts, now: Date): Integrations {
+  const within = (at: string | null, ms: number) => at !== null && now.getTime() - Date.parse(at) <= ms;
+  const { claude, paypal, channel3, replay, newman, agStudio, cpsc } = facts;
+
+  const taskWorked = replay.task !== null && replay.task.outcome !== null && replay.task.outcome !== "FAILED" && within(replay.task.finishedAt, RUN_MAX_AGE_MS);
+  const replayFresh = within(replay.lastRunAt, RUN_MAX_AGE_MS);
+  const webhookSeen = paypal.webhookConfigured && within(paypal.lastVerifiedWebhookAt, WEBHOOK_MAX_AGE_MS);
+  const newmanPassed = newman?.conclusion === "success" && within(newman.at, RUN_MAX_AGE_MS);
+  const studioAnswered = agStudio.rows !== null && agStudio.rows > 0;
+
+  const rows: IntegrationRow[] = [
+    checked("neon", "Neon Postgres", { passed: facts.databaseOk, at: facts.databaseOk ? facts.checkedAt : null, detail: facts.databaseOk ? "Answered this request." : "Didn't answer." }),
+    checked("cpsc", "CPSC recalls", { passed: cpsc.fresh, at: cpsc.lastPullAt, detail: cpsc.fresh ? `${cpsc.recalls} recalls held. Polled in the last 2.5 hours.` : "The last poll is old or failed." }),
+    checked("claude", "Claude", {
+      passed: claude.mainFresh,
+      at: claude.mainFresh ? claude.mainAt : claude.anyAt,
+      detail: claude.mainFresh ? "The main model answered in the last 2 days." : claude.anyFresh ? "Only the fallback model answered in the last 2 days." : "No answer in the last 2 days.",
+      otherwise: claude.anyFresh ? "fallback" : "off",
+    }),
+    checked("paypal", "PayPal sandbox webhooks", {
+      passed: webhookSeen,
+      at: paypal.lastVerifiedWebhookAt,
+      detail: webhookSeen ? "PayPal's signature on a webhook was verified in the last 7 days." : paypal.webhookConfigured ? "No webhook verified in the last 7 days." : "Webhooks aren't set up.",
+    }),
+    checked("channel3", "Channel3 market search", {
+      passed: channel3.fresh,
+      at: channel3.lastOkAt,
+      detail: channel3.fresh ? `Searched ${channel3.searched} recalls, holding ${channel3.listings} listings.` : "No good search in the last 8 days.",
+    }),
+    checked("render-workflows", "Render Workflows", {
+      passed: taskWorked,
+      at: taskWorked ? (replay.task?.finishedAt ?? null) : replay.lastRunAt,
+      detail: taskWorked ? `The scheduled refresh ended ${replay.task?.outcome} in the last 2 days.` : replayFresh ? "The scheduled refresh didn't finish cleanly lately. The web service refreshed Replay instead." : "No refresh in the last 2 days.",
+      otherwise: replayFresh ? "fallback" : "off",
+    }),
+    checked("ag-grid", "AG Grid Enterprise", {
+      passed: facts.agGridLicence,
+      at: facts.checkedAt,
+      detail: facts.agGridLicence ? "Licence key is set on the server, for the queue and Replay tables." : "No licence key is set, so the tables show AG's watermark.",
+    }),
+    checked("ag-studio", "AG Studio", {
+      passed: agStudio.licence && studioAnswered,
+      at: facts.checkedAt,
+      detail: !agStudio.licence ? "No licence key is set." : studioAnswered ? `Licence key is set, and its data answered with ${agStudio.rows} rows.` : "Licence key is set, but its data didn't answer.",
+    }),
+    { id: "bryntum", name: "Bryntum Scheduler", mode: "client", detail: `Runs in the browser, so this server can't check it. Package version ${packageJson.dependencies["@bryntum/scheduler-community"]}.`, checkedAt: null },
+    checked("newman", "Postman collection (Newman in CI)", {
+      passed: newmanPassed,
+      at: newman?.at ?? null,
+      detail: newmanPassed ? "The last scheduled run against this site passed." : newman ? `The last run isn't a recent pass (${newman.conclusion ?? "unknown"}).` : "GitHub doesn't show a run yet.",
+    }),
+  ];
+
+  const count = (mode: IntegrationMode) => rows.filter((r) => r.mode === mode).length;
+  return { summary: { live: count("live"), fallback: count("fallback"), off: count("off"), client: count("client"), of: rows.length }, rows };
+}
+
+const NEWMAN_RUNS = "https://api.github.com/repos/StephenSook/recall-reach/actions/workflows/newman.yml/runs?status=completed&per_page=1";
+const NEWMAN_CACHE_MS = 60 * 60_000;
+const NEWMAN_RETRY_MS = 5 * 60_000;
+
+/** GitHub's public API, at most hourly: a health check mustn't spend its rate limit. Null when GitHub won't say, as with a private repository. */
+export function createNewmanReader(fetchImpl: typeof fetch = (...args) => fetch(...args)): (now: Date) => Promise<NewmanRun | null> {
+  let held: { run: NewmanRun | null; until: number } | null = null;
+  return async (now) => {
+    if (held && now.getTime() < held.until) return held.run;
+    try {
+      const res = await fetchImpl(NEWMAN_RUNS, { headers: { accept: "application/vnd.github+json" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
+      const body = res.ok ? ((await res.json()) as { workflow_runs?: { conclusion?: string | null; updated_at?: string }[] }) : null;
+      const last = body?.workflow_runs?.[0];
+      const run = last ? { conclusion: last.conclusion ?? null, at: last.updated_at ?? null } : null;
+      held = { run, until: now.getTime() + NEWMAN_CACHE_MS };
+      return run;
+    } catch {
+      held = { run: null, until: now.getTime() + NEWMAN_RETRY_MS };
+      return null;
+    }
+  };
+}
+
+const readNewman = createNewmanReader();
+
+interface Readers {
+  sweepCounts: (db: Queryable) => Promise<{ searched: number; listings: number }>;
+  studioRows: (db: Queryable) => Promise<number | null>;
+  newman: (now: Date) => Promise<NewmanRun | null>;
+}
+
+const REAL_READERS: Readers = {
+  sweepCounts,
+  studioRows: async (db) => (await studioDataset(db))?.rows.length ?? null,
+  newman: readNewman,
+};
+
+const orNull = async <T>(read: () => Promise<T>): Promise<T | null> => {
+  try {
+    return await read();
+  } catch (err) {
+    // The name only: a database error can quote what it was given.
+    console.error("integration check failed:", err instanceof Error ? err.name : "unknown error");
+    return null;
+  }
+};
+
+/** Reads what /api/health doesn't already hold. One check failing marks that row down and leaves the others. */
+export async function integrationFacts(
+  db: Queryable,
+  health: Pick<Health, "database" | "checkedAt" | "checks" | "cpsc" | "claude" | "paypal" | "market" | "replay">,
+  env: { AG_GRID_LICENSE_KEY?: string; AG_STUDIO_LICENSE_KEY?: string },
+  readers: Readers = REAL_READERS,
+  now: Date = new Date(),
+): Promise<IntegrationFacts> {
+  const [sweep, studio, newman] = await Promise.all([orNull(() => readers.sweepCounts(db)), orNull(() => readers.studioRows(db)), orNull(() => readers.newman(now))]);
+  return {
+    databaseOk: health.database.ok,
+    checkedAt: health.checkedAt,
+    cpsc: { fresh: health.checks.lastPull, recalls: health.cpsc?.recalls ?? 0, lastPullAt: health.cpsc?.lastPull?.finishedAt ?? null },
+    claude: { mainFresh: health.claude.mainModelFresh, mainAt: health.claude.mainModelOkAt, anyFresh: health.claude.fresh, anyAt: health.claude.lastOkAt },
+    paypal: { webhookConfigured: health.paypal.webhookConfigured, lastVerifiedWebhookAt: health.paypal.lastVerifiedWebhookAt },
+    channel3: { fresh: health.market.fresh && sweep !== null, lastOkAt: health.market.lastOkAt, searched: sweep?.searched ?? 0, listings: sweep?.listings ?? 0 },
+    replay: { lastRunAt: health.replay.lastRunAt, task: health.replay.lastTaskRun ? { outcome: health.replay.lastTaskRun.outcome, finishedAt: health.replay.lastTaskRun.finishedAt } : null },
+    agGridLicence: Boolean(env.AG_GRID_LICENSE_KEY?.trim()),
+    agStudio: { licence: Boolean(env.AG_STUDIO_LICENSE_KEY?.trim()), rows: studio },
+    newman,
+  };
+}
