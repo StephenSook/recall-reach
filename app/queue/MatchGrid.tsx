@@ -1,9 +1,11 @@
 "use client";
 
-import type { ColDef, GridApi, ICellRendererParams, IRowNode } from "ag-grid-community";
+import type { ChartRef, ColDef, GridApi, ICellRendererParams, IRowNode, SideBarDef, StatusPanelDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
+import { licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
+import { excelColumns, grouped, refundTotal, usd } from "./gridFeatures";
 import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
@@ -17,15 +19,24 @@ const TABS: { id: GridTab; label: string }[] = [
   { id: "all", label: "All candidates" },
 ];
 
+const GROUPS: { field: string | null; label: string }[] = [
+  { field: null, label: "No groups" },
+  { field: "recallNumber", label: "By recall" },
+  { field: "state", label: "By state" },
+];
+
 const PAGE_SIZE = 50;
 
 type Row = Partial<GridRow>;
 
-function StateCell({ data }: ICellRendererParams<Row>) {
-  return data?.state ? <span className={`chip chip-${data.verdict}`}>{data.state}</span> : null;
+// On a group row there's no data, only the value it groups by.
+function StateCell({ data, value }: ICellRendererParams<Row>) {
+  if (!data) return value ? <span className="chip">{String(value)}</span> : null;
+  return data.state ? <span className={`chip chip-${data.verdict}`}>{data.state}</span> : null;
 }
-function PathCell({ data }: ICellRendererParams<Row>) {
-  return data?.path ? <span className={chipClass(data.path)}>{data.path}</span> : null;
+function PathCell({ data, value }: ICellRendererParams<Row>) {
+  const path = data?.path ?? (value as string | null | undefined);
+  return path ? <span className={chipClass(path)}>{path}</span> : null;
 }
 function SoldCell({ data }: ICellRendererParams<Row>) {
   return data ? soldLabel(data) : null;
@@ -34,37 +45,85 @@ function OpenCell({ data }: ICellRendererParams<Row>) {
   return data?.anchor ? <a href={data.anchor}>Open</a> : null;
 }
 
+const SET_FILTER = "agSetColumnFilter";
+
 const columns: ColDef<Row>[] = [
-  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: true },
-  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
-  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true },
-  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: true },
-  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: true },
-  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell },
-  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: true },
-  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true },
-  { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false },
+  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
+  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
+  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
+  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
+  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
+  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: "excluded" },
+  { field: "saleUsd", headerName: "Sale", width: 92, type: "rightAligned", valueFormatter: (p) => usd(p.value as number | null), aggFunc: "sum", filter: "agNumberColumnFilter", chartDataType: "series" },
+  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
+  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
+  { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false, suppressColumnsToolPanel: true },
 ];
 
+const DEFAULT_COL: ColDef<Row> = { sortable: true, resizable: true };
+const AUTO_GROUP: ColDef<Row> = { headerName: "Group", minWidth: 180 };
+const SIDE_BAR: SideBarDef = { toolPanels: ["columns", "filters"], hiddenByDefault: false };
+const STATUS_BAR: { statusPanels: StatusPanelDef[] } = {
+  statusPanels: [
+    { statusPanel: "agTotalAndFilteredRowCountComponent", align: "left" },
+    { statusPanel: "agSelectedRowCountComponent", align: "left" },
+  ],
+};
+
 /** The seller's queue as a table: every candidate, findable. A row opens its window, where the work happens. */
-export default function MatchGrid({ rows, startOn = "needs", listings = false }: { rows: GridRow[]; startOn?: GridTab; listings?: boolean }) {
+export default function MatchGrid({ rows, startOn = "needs", listings = false, licenseKey = null }: { rows: GridRow[]; startOn?: GridTab; listings?: boolean; licenseKey?: string | null }) {
+  // Before the first grid draws, or it shows the watermark.
+  licenseGrid(licenseKey);
   const api = useRef<GridApi<Row> | null>(null);
   const tabRef = useRef<GridTab>(startOn);
   const [tab, setTab] = useState<GridTab>(startOn);
+  const [groupBy, setGroupBy] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [shown, setShown] = useState(() => rows.filter((r) => inTab(r, startOn)).length);
-  const candidates = rows.filter((r) => r.verdict !== "UNIDENTIFIED").length;
-  const totals = useMemo(() => [{ product: `${shown} of ${candidates} shown` }], [shown, candidates]);
+  const chartBox = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ChartRef | null>(null);
+  const [charted, setCharted] = useState(false);
+  // What this tab could cost in refunds. The prices are the shop's own, from its order file.
+  const refund = useMemo(() => refundTotal(rows.filter((r) => inTab(r, tab))), [rows, tab]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
   const shownColumns = useMemo(() => {
     const hidden = hiddenColumns(rows, listings);
-    return columns.filter((c) => !hidden.has(String(c.field)));
-  }, [rows, listings]);
+    return grouped(columns.filter((c) => !hidden.has(String(c.field))), groupBy);
+  }, [rows, listings, groupBy]);
 
   const choose = (next: GridTab) => {
     tabRef.current = next;
     setTab(next);
     api.current?.onFilterChanged();
+  };
+
+  const exportExcel = () => {
+    const grid = api.current;
+    if (!grid) return;
+    grid.exportDataAsExcel({
+      fileName: "recall-queue.xlsx",
+      columnKeys: excelColumns((grid.getAllDisplayedColumns() ?? []).map((c) => c.getColId())),
+      // A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave in a file.
+      shouldRowBeSkipped: (p) => p.node.data?.verdict === "UNIDENTIFIED",
+    });
+  };
+
+  // In a space of its own under the buttons: AG's floating window opens in the middle of a long table, out of sight.
+  const toggleChart = () => {
+    if (chartRef.current) {
+      chartRef.current.destroyChart();
+      chartRef.current = null;
+      setCharted(false);
+      return;
+    }
+    if (!chartBox.current) return;
+    chartRef.current = api.current?.createCrossFilterChart({
+      chartType: "column",
+      chartContainer: chartBox.current,
+      cellRange: { columns: [groupBy === "state" ? "state" : "recallNumber", "saleUsd"] },
+      aggFunc: "sum",
+      chartThemeOverrides: { common: { title: { enabled: true, text: groupBy === "state" ? "Sales by state" : "Sales by recall" } } },
+    }) ?? null;
+    setCharted(chartRef.current !== null);
   };
 
   return (
@@ -82,17 +141,35 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
           <input type="search" placeholder="Filter" onChange={(e) => api.current?.setGridOption("quickFilterText", e.target.value)} />
         </label>
       </header>
+      <div className="tabs grid-groups" role="group" aria-label="Group">
+        {GROUPS.map((g) => (
+          <button key={g.label} type="button" className="tab" aria-pressed={groupBy === g.field} onClick={() => setGroupBy(g.field)}>
+            {g.label}
+          </button>
+        ))}
+        {refund.count > 0 ? (
+          <span className="grid-refund-total" data-testid="refund-total">
+            Refund eligible in this tab: <strong>{refund.count}</strong> ({usd(refund.usd)}
+            {refund.unpriced > 0 ? `, ${refund.unpriced} with no price in dollars` : ""})
+          </span>
+        ) : null}
+      </div>
       <AgGridReact<Row>
         theme={gridTheme}
         rowData={rows}
         columnDefs={shownColumns}
-        defaultColDef={{ sortable: true, resizable: true }}
+        defaultColDef={DEFAULT_COL}
+        autoGroupColumnDef={AUTO_GROUP}
         domLayout="autoHeight"
         pagination={rows.length > PAGE_SIZE}
         paginationPageSize={PAGE_SIZE}
         paginationPageSizeSelector={false}
         getRowId={(p) => String(p.data.matchId)}
-        pinnedBottomRowData={totals}
+        statusBar={STATUS_BAR}
+        sideBar={SIDE_BAR}
+        enableCharts
+        suppressAggFuncInHeader
+        cellSelection
         rowSelection={listings ? undefined : { mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false, isRowSelectable: (n: IRowNode<Row>) => Boolean(n.data?.approvable) }}
         selectionColumnDef={{ width: 44, minWidth: 44, maxWidth: 44, resizable: false, sortable: false }}
         onCellClicked={(e) => {
@@ -104,7 +181,6 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
         onGridReady={(e) => {
           api.current = e.api;
         }}
-        onModelUpdated={(e) => setShown(e.api.getDisplayedRowCount())}
         onSelectionChanged={(e) => setSelected(e.api.getSelectedRows().map((r) => String(r.matchId)))}
       />
       {/* No message or refund can come from a listing, so a store's queue has nothing to approve or export. */}
@@ -125,7 +201,6 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
             api.current?.exportDataAsCsv({
               fileName: "tell-cpsc.csv",
               columnKeys: [...TELL_CPSC_COLUMNS],
-              skipPinnedBottom: true,
               shouldRowBeSkipped: (p) => !p.node.data?.tellCpsc,
               exportedRows: "all",
             })
@@ -133,7 +208,14 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false }:
         >
           Export Tell CPSC list
         </button>
+        <button type="button" className="btn btn-outline" onClick={exportExcel}>
+          Export to Excel
+        </button>
+        <button type="button" className="btn btn-outline" onClick={toggleChart} aria-pressed={charted}>
+          {charted ? "Hide chart" : "Chart sales"}
+        </button>
       </div>}
+      <div ref={chartBox} className={charted ? "grid-chart" : undefined} data-testid="grid-chart" />
     </section>
   );
 }

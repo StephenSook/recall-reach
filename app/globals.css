@@ -666,6 +666,20 @@ pre {
   text-overflow: ellipsis;
 }
 
+.grid-groups {
+  padding: 6px 8px;
+}
+.grid-chart {
+  height: 360px;
+  border-top: 2px solid var(--color-ink);
+}
+.grid-refund-total {
+  align-self: center;
+  margin-inline-start: auto;
+  padding-inline-end: 4px;
+  font-size: 14px;
+}
+
 /* One item, typed at the counter */
 .item-answer {
   max-width: 640px;

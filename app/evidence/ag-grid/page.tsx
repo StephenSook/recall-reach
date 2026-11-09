@@ -9,7 +9,7 @@ export default function AgGridEvidence() {
         <h1>How it uses AG Grid</h1>
       </header>
       <p>
-        AG Grid Community 36.3.0, on the <Link href="/replay">Recall Replay</Link> page, the <Link href="/eval">eval</Link> page and in the seller&apos;s queue on a wide screen. On a phone, the queue is the windows alone.
+        AG Grid Enterprise 36.3.0 on the <Link href="/replay">Recall Replay</Link> page and in the seller&apos;s queue on a wide screen, and the free edition on the <Link href="/eval">eval</Link> page. On a phone, the queue is the windows alone. The Enterprise licence is a trial key through Dec 9, 2026, so AG&apos;s watermark can show after that.
       </p>
       <ClaimList claims={AG_GRID_CLAIMS} />
       <h2>AG Studio</h2>

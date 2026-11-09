@@ -71,9 +71,15 @@ export const AG_GRID_CLAIMS: Claim[] = [
   { what: "Quick filter across every column", file: "app/queue/MatchGrid.tsx", find: "quickFilterText" },
   { what: "Column filters, including a date filter on the sale date", file: "app/queue/MatchGrid.tsx", find: "agDateColumnFilter" },
   { what: "CSV export of the Tell CPSC list, limited to columns with no buyer data", file: "app/queue/MatchGrid.tsx", find: "exportDataAsCsv" },
-  { what: "A pinned row says how many rows are shown", file: "app/queue/MatchGrid.tsx", find: "pinnedBottomRowData" },
+  { what: "A status bar counts the rows, and a running total says what could be refunded, from the shop's own order prices", file: "app/queue/MatchGrid.tsx", find: "statusBar={STATUS_BAR}" },
+  { what: "AG Grid Enterprise row grouping, by recall or state, with sale totals", file: "app/queue/MatchGrid.tsx", find: 'aggFunc: "sum"' },
+  { what: "Enterprise set filters on recall, state, path and message", file: "app/queue/MatchGrid.tsx", find: "agSetColumnFilter" },
+  { what: "Excel export of the owner's view, leaving out payments nobody could identify", file: "app/queue/MatchGrid.tsx", find: "exportDataAsExcel" },
+  { what: "A cross-filter chart of sales: pressing a bar filters the table", file: "app/queue/MatchGrid.tsx", find: "createCrossFilterChart" },
+  { what: "Columns and filters side panels", file: "app/queue/MatchGrid.tsx", find: "sideBar={SIDE_BAR}" },
+  { what: "Enterprise is licensed with a trial key through Dec 9, 2026: after that AG's watermark can show", file: "app/gridEnterprise.ts", find: "LicenseManager.setLicenseKey" },
   { what: "Pagination on Recall Replay", file: "app/replay/ReplayGrid.tsx", find: "paginationPageSize" },
-  { what: "AG Grid Community on those three pages, with a theme set from the app's own colors", file: "app/gridSetup.ts", find: "themeQuartz" },
+  { what: "Enterprise on the queue and Replay, the free edition on the eval page, with a theme set from the app's own colors", file: "app/gridSetup.ts", find: "themeQuartz" },
 ];
 
 /** AG Studio, on /studio only. Its agent's query tool sends rows to the model, so the page's rows hold no PayPal value. */

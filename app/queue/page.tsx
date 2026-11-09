@@ -403,7 +403,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </Fragment>
         ))}
       </section>
-      <MatchGridLoader rows={[...grid, ...unidentifiedRows(unidentified)]} startOn={listed && grid.some((r) => r.isLead && r.listedOnShelf) ? "shelf" : "needs"} listings={Boolean(listed)} />
+      <MatchGridLoader rows={[...grid, ...unidentifiedRows(unidentified)]} startOn={listed && grid.some((r) => r.isLead && r.listedOnShelf) ? "shelf" : "needs"} listings={Boolean(listed)} licenseKey={process.env.AG_GRID_LICENSE_KEY?.trim() || null} />
       <p className="cards-hint note">Open a row to work on it.</p>
       {cleared.length > 0 || unrelated > 0 ? (
         <section className="narrow-only">

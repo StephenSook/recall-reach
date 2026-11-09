@@ -13,7 +13,7 @@ const subscribe = (change: () => void) => {
   return () => query.removeEventListener("change", change);
 };
 
-export function ReplayGridLoader({ rows }: { rows: ReplayRow[] }) {
+export function ReplayGridLoader({ rows, licenseKey }: { rows: ReplayRow[]; licenseKey?: string | null }) {
   const wide = useSyncExternalStore(subscribe, () => window.matchMedia(WIDE).matches, () => false);
-  return wide ? <ReplayGrid rows={rows} /> : null;
+  return wide ? <ReplayGrid rows={rows} licenseKey={licenseKey} /> : null;
 }

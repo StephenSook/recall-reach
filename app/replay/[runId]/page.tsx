@@ -58,7 +58,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ runId: 
       <div className="actions">
         <RunAgainButton />
       </div>
-      <ReplayGridLoader rows={replay.rows} />
+      <ReplayGridLoader rows={replay.rows} licenseKey={process.env.AG_GRID_LICENSE_KEY?.trim() || null} />
       <section className="narrow-only">
         <h2 className="section-title">What it found</h2>
         <ul className="window cleared-list" data-testid="replay-found">

@@ -7,8 +7,10 @@ describe("the evidence pages", () => {
     expect(readFileSync(file, "utf8")).toContain(find);
   });
 
-  it("uses AG Grid's free edition only, so a page can't show a license watermark", () => {
+  it("keeps AG Grid Enterprise to the queue and Recall Replay, and licensed there", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
-    expect(Object.keys(pkg.dependencies).filter((d) => d.startsWith("ag-grid")).sort()).toEqual(["ag-grid-community", "ag-grid-react"]);
+    expect(Object.keys(pkg.dependencies).filter((d) => d.startsWith("ag-grid")).sort()).toEqual(["ag-grid-community", "ag-grid-enterprise", "ag-grid-react"]);
+    for (const file of ["app/queue/MatchGrid.tsx", "app/replay/ReplayGrid.tsx"]) expect(readFileSync(file, "utf8")).toContain("licenseGrid(licenseKey)");
+    for (const file of ["app/eval/WrongPairsGrid.tsx", "app/gridSetup.ts"]) expect(readFileSync(file, "utf8")).not.toMatch(/ag-grid-enterprise|gridEnterprise/);
   });
 });
