@@ -236,6 +236,8 @@ EXPECT_BUILD=<short commit> pnpm test:golden            # the golden path on the
 
 `e2e/measure/` holds specs run on purpose on a deployment: the Claude check, a sale reaching the queue, a shop's own file, and a stored shop getting a new recall. Against a deployed site, both wait for `/api/health` to name `EXPECT_BUILD` first, and refuse to run without it, so a check made just after a push can't pass on the build before it.
 
+An axe-core pass, `e2e/local/axe.spec.ts`, checks 13 public pages a judge is sent to, at desktop and phone width, in Chromium and WebKit: 52 views, each passing only with zero violations, plus a control that plants a missing image description and must be caught. It runs locally against a production build (`pnpm build`, then `pnpm exec playwright test --config playwright.axe.config.ts`), not in CI, which has no browser. Last run Nov 9, 2026: 52 of 52 views passed.
+
 ## Deploy
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/StephenSook/recall-reach)
