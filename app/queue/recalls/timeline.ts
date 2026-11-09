@@ -20,6 +20,8 @@ export interface TimelineSale {
   tone: "notice" | "check" | "refund";
   /** In words: what this sale's place on the line means. */
   meaning: string;
+  /** A confirmed match whose family hasn't been reached or hasn't answered, so a follow-up has somewhere to go. */
+  needsReaching: boolean;
 }
 
 export interface Timeline {
@@ -54,6 +56,13 @@ function readingOf(row: Sold, windowEnds: string, today: string): Pick<TimelineS
   return { tone: "refund", meaning: "Sold after the recall, within 180 days of its order date" };
 }
 
+/** Whether a follow-up means anything: the match is settled, no refund is under way, and the family hasn't answered. */
+function stillToReach(row: Sold): boolean {
+  if (row.verdict !== "MATCH" || row.strength !== "CONFIRMED" || row.joinState === "AMBIGUOUS_JOIN" || row.salePath === "REVIEW") return false;
+  if (row.refund && row.refund.status !== "failed") return false;
+  return !row.notice || (row.notice.state !== "FAMILY_RESPONDED" && !row.notice.stopped);
+}
+
 /** Null when this shop has no sale of this recall to draw. A cleared sale gets nothing, and a listing hasn't sold, so neither is on the line. */
 export function timelineFor(rows: QueueRow[], recallNumber: string, today: string): Timeline | null {
   const sold = rows.filter((r): r is Sold => r.recallNumber === recallNumber && r.verdict !== "CLEARED" && !r.isListing && Boolean(r.orderedOn) && r.salePath !== null);
@@ -62,7 +71,7 @@ export function timelineFor(rows: QueueRow[], recallNumber: string, today: strin
   const sales = sold
     .map((r) => {
       const windowEnds = addDays(r.orderedOn, REFUND_WINDOW_DAYS);
-      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, ...readingOf(r, windowEnds, today) };
+      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, needsReaching: stillToReach(r), ...readingOf(r, windowEnds, today) };
     })
     .sort((a, b) => a.orderedOn.localeCompare(b.orderedOn));
   const dates = [first.recallDate, today, ...sales.flatMap((s) => [s.orderedOn, s.windowEnds])].sort();

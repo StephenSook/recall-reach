@@ -38,6 +38,43 @@ describe("timelineFor", () => {
     expect(t?.sales.map((s) => s.id)).toEqual(["old", "new"]);
   });
 
+  describe("whether a sale still needs its family reached", () => {
+    const reach = (over: Partial<QueueRow>) => timelineFor([row(over)], "27027", TODAY)?.sales[0].needsReaching;
+    const notice = (state: string, stopped = false) => ({ id: "n", kind: "SAFETY", state, stopped, passedOn: false, result: null, daysSinceSent: null, secondDue: false }) as unknown as QueueRow["notice"];
+
+    it("does when no notice has been written", () => {
+      expect(reach({})).toBe(true);
+    });
+
+    it.each(["PREPARED", "OPENED_IN_MAIL", "MARKED_SENT"])("does when the notice is at %s, with no answer yet", (state) => {
+      expect(reach({ notice: notice(state) })).toBe(true);
+    });
+
+    it("doesn't once the family has answered", () => {
+      expect(reach({ notice: notice("FAMILY_RESPONDED") })).toBe(false);
+    });
+
+    it("doesn't once the family has asked for no more", () => {
+      expect(reach({ notice: notice("MARKED_SENT", true) })).toBe(false);
+    });
+
+    it("doesn't while a refund is under way or done", () => {
+      expect(reach({ refund: { id: "r", status: "refunded", amountCents: 100, currency: "USD", failure: null } })).toBe(false);
+    });
+
+    it("does after a refund failed, because the family still hasn't been helped", () => {
+      expect(reach({ refund: { id: "r", status: "failed", amountCents: 100, currency: "USD", failure: "no" } })).toBe(true);
+    });
+
+    it.each([
+      ["a match nobody has confirmed", { verdict: "SCOPE_GAP" as const }],
+      ["a sale made on the recall date", { salePath: "REVIEW" as const }],
+      ["a sale that could be either of two payments", { joinState: "AMBIGUOUS_JOIN" }],
+    ])("doesn't for %s, which a person looks at first", (_name, over) => {
+      expect(reach(over)).toBe(false);
+    });
+  });
+
   it("leaves a listing with no sale off the line", () => {
     const t = timelineFor([row({ matchId: "shelf", orderedOn: null, salePath: null }), row({ matchId: "sold" })], "27027", TODAY);
     expect(t?.sales.map((s) => s.id)).toEqual(["sold"]);
