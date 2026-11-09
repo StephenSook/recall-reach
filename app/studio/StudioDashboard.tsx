@@ -10,8 +10,10 @@ import { AgStudioAiModule, createAiHarness, directLlmRunner, studioTheme } from 
 import type {
   AgAiHarnessSetup,
   AgAiPromptStarter,
+  AgContextMenuItem,
   AgDataSourcesDefinition,
   AgFieldDefinition,
+  AgGetContextMenuParams,
   AgPanelConfig,
   AgReportState,
   AgStudioApi,
@@ -20,7 +22,7 @@ import type {
 import type { CustomCellRendererProps } from 'ag-grid-react';
 import type { StudioRow } from '@/server/studio/dataset';
 import { createStudioAdapter } from './adapter';
-import { leadWithRecallChecker, RECALL_TOOL, recallCheckerAgent, recallToolLabel, runRecallCheck, type RecallCheckArgs } from './recallTool';
+import { leadWithRecallChecker, RECALL_TOOL, recallCheckerAgent, recallNumberIn, recallToolLabel, runRecallCheck, type RecallCheckArgs } from './recallTool';
 import { toStudioRows } from './rows';
 
 export interface StudioDashboardProps {
@@ -220,6 +222,13 @@ const AI_TOOL_DISPLAY: Record<string, AgAiToolDisplay> = {
   [RECALL_TOOL.name]: { label: (params) => recallToolLabel(params as Parameters<typeof recallToolLabel>[0]) },
 };
 
+// Right-clicking a row that is one recall opens that recall's page, in a new tab so the chat and the view stay here.
+function recallMenu(params: AgGetContextMenuParams): AgContextMenuItem[] {
+  const recall = recallNumberIn(params.filter);
+  if (!recall) return [];
+  return [{ name: `Open recall ${recall}`, action: () => window.open(`/recall/${recall}`, '_blank', 'noopener') }];
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -288,6 +297,7 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
         widgets={widgets}
         ai={ai}
         aiToolDisplay={AI_TOOL_DISPLAY}
+        getContextMenuItems={recallMenu}
       />
     </AgStudioProvider>
   );

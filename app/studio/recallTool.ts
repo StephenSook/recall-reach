@@ -97,3 +97,19 @@ export function recallToolLabel({ args, status, result }: Pick<AgAiToolLabelPara
   const pill = result.data ? PILLS[result.data.kind] : undefined;
   return pill ? { text, pill } : { text };
 }
+
+const RECALL_NUMBER = /^[0-9A-Za-z-]{1,20}$/;
+
+/** The recall a right-click landed on, from the filter AG Studio describes it with. Only a row that is exactly one recall has one. */
+export function recallNumberIn(filter: unknown): string | null {
+  const f = filter as { operator?: string; conditions?: unknown[]; field?: { id?: string }; value?: unknown } | null | undefined;
+  if (f?.operator === "AND" && Array.isArray(f.conditions)) {
+    for (const part of f.conditions) {
+      const found = recallNumberIn(part);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (f?.operator !== "equals" || f.field?.id !== "recalls.recallNumber" || typeof f.value !== "string") return null;
+  return RECALL_NUMBER.test(f.value) ? f.value : null;
+}

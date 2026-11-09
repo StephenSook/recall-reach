@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readTurn, toClaude } from "@/server/studio/turn";
-import { leadWithRecallChecker, RECALL_AGENT_ID, RECALL_TOOL, recallCheckerAgent, recallToolLabel, runRecallCheck } from "./recallTool";
+import { leadWithRecallChecker, RECALL_AGENT_ID, RECALL_TOOL, recallCheckerAgent, recallNumberIn, recallToolLabel, runRecallCheck } from "./recallTool";
 
 const checked = { recalls: 934, from: "2025-01-02", to: "2026-11-06", yearsMissing: [] as number[] };
 const answer = (over: object = {}) => ({ results: [], more: 0, cleared: 0, notJudged: 0, mentioned: { recalls: [], total: 0 }, checked, note: "Rules comparing your text with CPSC's public records.", ...over });
@@ -138,6 +138,32 @@ describe("the row the owner sees for each check", () => {
 
   it("shows no result for a settled call with an answer it can't read", () => {
     expect(recallToolLabel(done({})).pill).toBeUndefined();
+  });
+});
+
+describe("what a right-click on the dashboard knows", () => {
+  // Captured from AG Studio 3.1.0, right-clicking a row of the recall list.
+  const row = { operator: "AND", conditions: [
+    { operator: "equals", options: { matchCase: true }, field: { id: "recalls.recallNumber" }, value: "27072" },
+    { operator: "equals", options: { matchCase: true }, field: { id: "recalls.outcome" }, value: "Matched" },
+  ] };
+
+  it("finds the recall number on a grid row", () => {
+    expect(recallNumberIn(row)).toBe("27072");
+  });
+
+  it("finds it when it's the only condition", () => {
+    expect(recallNumberIn(row.conditions[0])).toBe("27072");
+  });
+
+  it.each([
+    ["nothing right-clicked", undefined],
+    ["a chart bar, which has no recall number", { operator: "equals", field: { id: "recalls.outcome" }, value: "Matched" }],
+    ["a value that isn't a recall number", { operator: "equals", field: { id: "recalls.recallNumber" }, value: "../../admin" }],
+    ["a range rather than one recall", { operator: "notEquals", field: { id: "recalls.recallNumber" }, value: "27072" }],
+    ["either of two recalls", { operator: "OR", conditions: [{ operator: "equals", field: { id: "recalls.recallNumber" }, value: "27072" }] }],
+  ])("offers no recall for %s", (_name, filter) => {
+    expect(recallNumberIn(filter)).toBeNull();
   });
 });
 
