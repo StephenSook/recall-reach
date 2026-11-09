@@ -75,12 +75,35 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   const dropProposal = (saleId: string) => setPlan((p) => (p ? { ...p, proposals: p.proposals.filter((x) => x.saleId !== saleId) } : p));
 
+  /**
+   * One change to a sale's reminder. It carries its own id and the ids of this sale's earlier changes that got no clear answer,
+   * which the server cancels first, so none can land after it. One with no clear answer (no reply, or a server error) joins them.
+   */
+  const changeOnServer = async (method: "PUT" | "DELETE", saleId: string, body: object) => {
+    const attempt = crypto.randomUUID();
+    const result = await call(url, method, { ...body, saleId, attempt, supersedes: unsure.current.get(saleId) ?? [] });
+    if (result.ok) unsure.current.delete(saleId);
+    else if (result.status === 0 || result.status >= 500) unsure.current.set(saleId, [...(unsure.current.get(saleId) ?? []), attempt].slice(-20));
+    return result;
+  };
+
+  /** What the server says is saved now, after it refused a change that no longer stands. */
+  const adoptServerList = (data: Record<string, unknown>) => {
+    if (!Array.isArray(data.confirmed)) return false;
+    setPlan(null);
+    setConfirmed((data.confirmed as SavedFollowUp[]).map(toView));
+    return true;
+  };
+
   const dismissProposal = (saleId: string) => {
     if (!unsure.current.has(saleId)) return dropProposal(saleId);
     void change(async () => {
-      const { ok, data } = await call(url, "DELETE", { saleId, attempts: unsure.current.get(saleId) });
-      if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
-      unsure.current.delete(saleId);
+      const { ok, data } = await changeOnServer("DELETE", saleId, {});
+      if (!ok) {
+        setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
+        adoptServerList(data);
+        return;
+      }
       setMessage(null);
       dropProposal(saleId);
     });
@@ -88,25 +111,15 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   /** Saves one. Returns whether it saved, so Confirm all stops at the first it can't. */
   const save = async (f: FollowUpView): Promise<boolean> => {
-    const attempt = crypto.randomUUID();
-    const earlier = unsure.current.get(f.saleId) ?? [];
-    const { ok, status, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot, attempt, supersedes: earlier });
+    const { ok, data } = await changeOnServer("PUT", f.saleId, { due: f.due, snapshot: f.snapshot });
     if (!ok) {
       setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
-      if (status === 0 || status >= 500) unsure.current.set(f.saleId, [...(unsure.current.get(f.saleId) ?? []), attempt].slice(-20));
-      if (Array.isArray(data.confirmed)) {
-        // CPSC changed the recall, or the sale was resolved: what's proposed, and any reminder it took, no longer stands.
-        setPlan(null);
-        setConfirmed((data.confirmed as SavedFollowUp[]).map(toView));
-      } else {
-        // A new array, so the chart puts a dragged bar back where it was.
-        setConfirmed((c) => [...c]);
-      }
+      // CPSC changed the recall, the sale was resolved, or a newer change landed: show what's saved. Otherwise a new array,
+      // so the chart puts a dragged bar back where it was.
+      if (!adoptServerList(data)) setConfirmed((c) => [...c]);
       return false;
     }
     setMessage(null);
-    // The server cancelled the earlier unanswered saves under the same lock, so none can land after this one.
-    unsure.current.delete(f.saleId);
     setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const, movedEarlier: data.movedEarlier === true }].sort((a, b) => a.due.localeCompare(b.due)));
     dropProposal(f.saleId);
     return true;
@@ -121,9 +134,12 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   const dismissSaved = (saleId: string) =>
     change(async () => {
-      const { ok, data } = await call(url, "DELETE", { saleId, attempts: unsure.current.get(saleId) ?? [] });
-      if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
-      unsure.current.delete(saleId);
+      const { ok, data } = await changeOnServer("DELETE", saleId, {});
+      if (!ok) {
+        setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
+        adoptServerList(data);
+        return;
+      }
       setMessage(null);
       setConfirmed((c) => c.filter((x) => x.saleId !== saleId));
     });

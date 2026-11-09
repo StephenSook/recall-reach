@@ -28,7 +28,8 @@ const call = (method: "POST" | "PUT" | "DELETE", handler: typeof POST, body?: ob
 const propose = () => call("POST", POST);
 const ATTEMPT = "00000000-0000-4000-8000-0000000000a1";
 const confirm = (body: object) => call("PUT", PUT, { snapshot: "snap-1", attempt: ATTEMPT, ...body });
-const dismiss = (body: object) => call("DELETE", DELETE, body);
+const DROP = "00000000-0000-4000-8000-0000000000d1";
+const dismiss = (body: object) => call("DELETE", DELETE, { attempt: DROP, ...body });
 
 describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
   beforeEach(() => {
@@ -309,19 +310,34 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     });
   });
 
+  describe("dismissing, when a change it replaced already landed", () => {
+    it("refuses a dismissal with no attempt id, since a newer change couldn't cancel it", async () => {
+      expect((await call("DELETE", DELETE, { saleId: SALE })).status).toBe(400);
+      expect(saved.dropFollowUp).not.toHaveBeenCalled();
+    });
+
+    it("says so when a newer change cancelled this dismissal", async () => {
+      saved.dropFollowUp.mockResolvedValue("cancelled");
+      saved.followUpsFor.mockResolvedValue([REMINDER]);
+      const res = await dismiss({ saleId: SALE });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/cancelled/), confirmed: [REMINDER] });
+    });
+  });
+
   describe("dismissing", () => {
     it("removes it for this shop", async () => {
       expect((await dismiss({ saleId: SALE })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, []);
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [] });
     });
 
     it("cancels the saves the page never heard back from", async () => {
-      expect((await dismiss({ saleId: SALE, attempts: [ATTEMPT] })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, [ATTEMPT]);
+      expect((await dismiss({ saleId: SALE, supersedes: [ATTEMPT] })).status).toBe(200);
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [ATTEMPT] });
     });
 
-    it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses attempts that are %s", async (_name, attempts) => {
-      expect((await dismiss({ saleId: SALE, attempts })).status).toBe(400);
+    it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses earlier changes that are %s", async (_name, supersedes) => {
+      expect((await dismiss({ saleId: SALE, supersedes })).status).toBe(400);
       expect(saved.dropFollowUp).not.toHaveBeenCalled();
     });
 

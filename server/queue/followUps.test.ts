@@ -23,6 +23,7 @@ describe("the follow-ups a shop has confirmed", () => {
   };
   const current = async () => (await db.query<{ raw_sha256: string }>("select r.raw_sha256 from recall_matches m join recalls r using (recall_id) where m.id = $1", [match])).rows[0].raw_sha256;
   const ATTEMPT = "00000000-0000-4000-8000-0000000000a1";
+  const DROP = "00000000-0000-4000-8000-0000000000d1";
   const input = (over: object = {}) => ({ shopId: shopA, matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha, attempt: ATTEMPT, ...over });
 
   beforeEach(async () => {
@@ -90,29 +91,29 @@ describe("the follow-ups a shop has confirmed", () => {
 
   it("removes it", async () => {
     await saveFollowUp(db, input());
-    expect(await dropFollowUp(db, shopA, match)).toBe(true);
+    expect(await dropFollowUp(db, shopA, match, { attempt: DROP })).toBe(true);
     expect(await followUpsFor(db, shopA)).toEqual([]);
   });
 
   it("says when there was nothing to remove", async () => {
-    expect(await dropFollowUp(db, shopA, match)).toBe(false);
+    expect(await dropFollowUp(db, shopA, match, { attempt: DROP })).toBe(false);
   });
 
   describe("a save the owner dismissed before it got an answer", () => {
     it("is refused if it lands after the dismissal, so the reminder can't come back", async () => {
-      await dropFollowUp(db, shopA, match, [ATTEMPT]);
+      await dropFollowUp(db, shopA, match, { attempt: DROP, supersedes: [ATTEMPT] });
       expect(await saveFollowUp(db, input())).toBe("cancelled");
       expect(await followUpsFor(db, shopA)).toEqual([]);
     });
 
     it("is removed if it landed first", async () => {
       await saveFollowUp(db, input());
-      expect(await dropFollowUp(db, shopA, match, [ATTEMPT])).toBe(true);
+      expect(await dropFollowUp(db, shopA, match, { attempt: DROP, supersedes: [ATTEMPT] })).toBe(true);
       expect(await followUpsFor(db, shopA)).toEqual([]);
     });
 
     it("doesn't stop the owner confirming it again later", async () => {
-      await dropFollowUp(db, shopA, match, [ATTEMPT]);
+      await dropFollowUp(db, shopA, match, { attempt: DROP, supersedes: [ATTEMPT] });
       expect(await saveFollowUp(db, input({ attempt: "00000000-0000-4000-8000-0000000000a2" }))).toBe(true);
     });
 
@@ -122,15 +123,22 @@ describe("the follow-ups a shop has confirmed", () => {
       expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
     });
 
+    it("a dismissal that lands late can't remove a newer save that replaced it", async () => {
+      await saveFollowUp(db, input());
+      expect(await saveFollowUp(db, input({ due: "2026-11-14", attempt: "00000000-0000-4000-8000-0000000000b3", supersedes: [DROP] }))).toBe(true);
+      expect(await dropFollowUp(db, shopA, match, { attempt: DROP })).toBe("cancelled");
+      expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
+    });
+
     it("can only be cancelled by the shop that made it", async () => {
-      await dropFollowUp(db, shopB, match, [ATTEMPT]);
+      await dropFollowUp(db, shopB, match, { attempt: DROP, supersedes: [ATTEMPT] });
       expect(await saveFollowUp(db, input())).toBe(true);
     });
   });
 
   it("won't let another shop remove one", async () => {
     await saveFollowUp(db, input());
-    expect(await dropFollowUp(db, shopB, match)).toBe(false);
+    expect(await dropFollowUp(db, shopB, match, { attempt: DROP })).toBe(false);
     expect(await followUpsFor(db, shopA)).toHaveLength(1);
   });
 

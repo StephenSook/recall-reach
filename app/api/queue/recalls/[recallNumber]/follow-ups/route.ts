@@ -139,16 +139,22 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
   }
 }
 
-export async function DELETE(request: Request): Promise<Response> {
+export async function DELETE(request: Request, { params }: Context): Promise<Response> {
   const session = await currentSession();
   if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
   const body = await readJson(request);
   const saleId = saleIdOf(body);
   if (!saleId) return refused(400, "not a follow-up");
-  const attempts = body?.attempts ?? [];
-  if (!isIds(attempts)) return refused(400, "not a follow-up");
+  const attempt = body?.attempt;
+  const supersedes = body?.supersedes ?? [];
+  if (!isId(attempt) || !isIds(supersedes)) return refused(400, "not a follow-up");
   try {
-    await dropFollowUp(getDb(), session.shopId, saleId, attempts);
+    const dropped = await dropFollowUp(getDb(), session.shopId, saleId, { attempt, supersedes });
+    if (dropped === "cancelled") {
+      // A newer change to this reminder landed first. Hand back what's saved, so the page shows it.
+      const timeline = await timelineOf(session.shopId, session.sessionId, (await params).recallNumber);
+      return outOfDate(409, "This change was cancelled before it saved.", session.shopId, timeline?.sales ?? []);
+    }
     return Response.json({ dismissed: true }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("dismiss", err);
