@@ -30,7 +30,7 @@ const checkAnswer = z.object({
   mentioned: z.object({ recalls: z.array(z.object({ recallNumber: z.string(), title: z.string() })), total: count }).refine((m) => m.total >= m.recalls.length && (m.total === 0 || m.recalls.length > 0)),
   checked: z.object({ recalls: count, from: z.string().nullable(), yearsMissing: z.array(z.number().int()) }).passthrough(),
   note: z.string(),
-}).passthrough();
+}).passthrough().refine((a) => a.more === 0 || a.results.length > 0);
 
 /** A broken answer must fail. Read as an answer, its empty lists would say nothing was found. */
 const readAnswer = (body: unknown) => {

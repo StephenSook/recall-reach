@@ -81,6 +81,7 @@ describe("checking a product from the dashboard's assistant", () => {
     ["no count of what was read", answer({ checked: undefined })],
     ["a count that isn't a number", answer({ more: "many" })],
     ["a negative count", answer({ more: -1 })],
+    ["more recalls found than listed, with none listed", answer({ more: 3 })],
     ["a count of recalls that share words, with none listed", answer({ mentioned: { recalls: [], total: 3 } })],
     ["more recalls listed than counted", answer({ mentioned: { recalls: [{ recallNumber: "1", title: "t" }], total: 0 } })],
     ["a result with no word on whether it's tied", answer({ results: [{ ...result(), tiedToRecall: undefined }] })],
