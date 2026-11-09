@@ -37,6 +37,16 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | Postman | [postman/recall-reach.postman_collection.json](postman/recall-reach.postman_collection.json) | Public API requests with answer checks, run by Newman against the live site. | [scripts/postman.test.ts](scripts/postman.test.ts), [.github/workflows/newman.yml](.github/workflows/newman.yml) |
 | Render | [render.yaml](render.yaml) | The web service and Replay refresh workflow. | [workflows/replayTask.ts](workflows/replayTask.ts), [scripts/startReplayTask.ts](scripts/startReplayTask.ts) |
 
+## How it compares to what exists today
+
+| Existing way | What it is | Who it reaches | What Recall Reach adds |
+|---|---|---|---|
+| [CPSC recall emails](https://www.cpsc.gov/FAQ/About-Us-FAQ) | CPSC emails recall alerts "at the end of each business day". | People who signed up. | They still have to match each alert to what they own. Recall Reach does that match for the shop, against the shop's own sales. |
+| [Maker's notice to registered owners](https://www.ecfr.gov/current/title-16/chapter-II/subchapter-B/part-1130) ([CPSC notification types](https://www.cpsc.gov/Business--Manufacturing/Recall-Guidance/Recall-Notification-Types)) | Makers of durable infant and toddler products must include a registration card and notify registrants of a recall. | People who registered the product, and end users a firm or retailer has on file. | A family who bought the item used from a local shop isn't on that list unless they registered it. Recall Reach starts from the shop's record of who bought it. |
+| [Household recall-match apps](https://centerforrecallsafety.com/) | The family enters each item's brand and model, and the app matches recalls. | Families who use the app and add their items. | The family has to know the item and enter it. The shop's sale record already lists the item and the buyer. |
+| [SaferProducts.gov](https://www.saferproducts.gov/) and [Recalls.gov](https://www.recalls.gov/) | Federal sites where anyone can search recalls. | Anyone who thinks to search. | The check doesn't wait on the family thinking to look. |
+| [CPSC guidance to resellers](https://www.cpsc.gov/FAQ/ResaleThrift-Stores) ([Resellers Guide](https://www.cpsc.gov/s3fs-public/254_ResellersGuide_2-5-25.pdf?VersionId=64v2yseh3V_CPDahb7bxmSadGjfRhm1x)) | CPSC tells resale shops to check recalls "before taking a product into inventory or selling it", and asks to hear if a shop finds it "may have sold one of these products in the past". | Shop owners, for what they take in and sell next. | That page doesn't say how to reach the family who already bought it. Recall Reach drafts that email with CPSC's hazard and remedy word for word, and refunds the sale through PayPal once the owner approves. |
+
 ## What it does
 
 1. **Checks past sales against real recalls.** It pulls recalls from CPSC every 15 minutes and checks each shop's order lines against them with rules, in the app. A shop that uploaded before a recall came in gets that recall on its next visit from the same browser.
