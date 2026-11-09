@@ -120,7 +120,7 @@ describe("the judge's sandbox refusal", () => {
   });
 
   it("removes ids even if PayPal repeats them in its description", async () => {
-    const body = { debug_id: "debug-private", id: "refund-private", details: [{ issue: "UNEXPECTED", description: "OLD-CAPTURE refund-private debug-private 9AB123456CD789012" }] };
+    const body = { debug_id: "debug-private", id: "refund-private", details: [{ issue: "UNEXPECTED", description: "OLD-CAPTURE refund-private debug-private 9AB12345CD6789012" }] };
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(capture()).mockResolvedValueOnce(Response.json(body, { status: 422 }));
     const result = await judgeRefusal({ env, captureIds, fetchImpl });
     expect(result.details[0].description).toBe("[hidden] [hidden] [hidden] [hidden]");
