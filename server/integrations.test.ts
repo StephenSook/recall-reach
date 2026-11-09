@@ -126,29 +126,54 @@ describe("gathering the facts", () => {
 });
 
 describe("reading Newman's last run", () => {
-  const answered = (run: object | null, status = 200) => vi.fn<typeof fetch>(async () => Response.json({ workflow_runs: run ? [run] : [] }, { status }));
+  const STEPS = ["Run the public collection", "Check the counts"];
+  const ranSteps = { jobs: [{ steps: STEPS.map((name) => ({ name, conclusion: "success" })) }] };
+  const answered = (run: object | null, status = 200, jobs: object = ranSteps) =>
+    vi.fn<typeof fetch>(async (url) => (String(url).includes("/jobs") ? Response.json(jobs) : Response.json({ workflow_runs: run ? [run] : [] }, { status })));
+
+  it("names the workflow's own steps", () => {
+    const workflow = readFileSync(".github/workflows/newman.yml", "utf8");
+    for (const step of STEPS) expect(workflow).toContain(`name: ${step}`);
+  });
+
+  it("doesn't take a passed workflow as a passed check when its steps were skipped, as after it retires", async () => {
+    const skipped = { jobs: [{ steps: STEPS.map((name) => ({ name, conclusion: "skipped" })) }] };
+    expect(await createNewmanReader(answered({ id: 7, conclusion: "success", updated_at: RECENT }, 200, skipped))(NOW)).toEqual({ conclusion: "skipped", at: RECENT });
+  });
+
+  it("says unverified when GitHub won't show the steps", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => (String(url).includes("/jobs") ? new Response("{}", { status: 500 }) : Response.json({ workflow_runs: [{ id: 7, conclusion: "success", updated_at: RECENT }] })));
+    expect(await createNewmanReader(fetchImpl)(NOW)).toEqual({ conclusion: "unverified", at: RECENT });
+  });
+
+  it("reports a failed run without asking for its steps", async () => {
+    const fetchImpl = answered({ id: 7, conclusion: "failure", updated_at: RECENT });
+    expect(await createNewmanReader(fetchImpl)(NOW)).toEqual({ conclusion: "failure", at: RECENT });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 
   it("reads the conclusion and time of the last finished run", async () => {
-    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    const fetchImpl = answered({ id: 7, conclusion: "success", updated_at: RECENT });
     expect(await createNewmanReader(fetchImpl)(NOW)).toEqual({ conclusion: "success", at: RECENT });
     expect(String(fetchImpl.mock.calls[0][0])).toContain("/actions/workflows/newman.yml/runs");
+    expect(String(fetchImpl.mock.calls[1][0])).toContain("/actions/runs/7/jobs");
   });
 
   it("asks GitHub once an hour at most", async () => {
-    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    const fetchImpl = answered({ id: 7, conclusion: "success", updated_at: RECENT });
     const read = createNewmanReader(fetchImpl);
     await read(NOW);
     await read(new Date(NOW.getTime() + 59 * 60_000));
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    await read(new Date(NOW.getTime() + 61 * 60_000));
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    await read(new Date(NOW.getTime() + 61 * 60_000));
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
   it("makes one request however many calls arrive together", async () => {
-    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    const fetchImpl = answered({ id: 7, conclusion: "success", updated_at: RECENT });
     const read = createNewmanReader(fetchImpl);
     const runs = await Promise.all(Array.from({ length: 100 }, () => read(NOW)));
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(runs.every((run) => run?.conclusion === "success")).toBe(true);
   });
 

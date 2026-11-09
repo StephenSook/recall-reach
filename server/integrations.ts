@@ -109,7 +109,10 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
   return { summary: { live: count("live"), fallback: count("fallback"), off: count("off"), client: count("client"), of: rows.length }, rows };
 }
 
-const NEWMAN_RUNS = "https://api.github.com/repos/StephenSook/recall-reach/actions/workflows/newman.yml/runs?status=completed&per_page=1";
+const GITHUB_REPO = "https://api.github.com/repos/StephenSook/recall-reach";
+const NEWMAN_RUNS = `${GITHUB_REPO}/actions/workflows/newman.yml/runs?status=completed&per_page=1`;
+/** The workflow can pass with these skipped, as it does once it retires, so a passed run alone proves nothing. */
+const NEWMAN_STEPS = ["Run the public collection", "Check the counts"];
 const NEWMAN_CACHE_MS = 60 * 60_000;
 const NEWMAN_RETRY_MS = 5 * 60_000;
 
@@ -120,10 +123,20 @@ export function createNewmanReader(fetchImpl: typeof fetch = (...args) => fetch(
   let asking: Promise<NewmanRun | null> | null = null;
   const ask = async (now: Date): Promise<NewmanRun | null> => {
     try {
-      const res = await fetchImpl(NEWMAN_RUNS, { headers: { accept: "application/vnd.github+json" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
-      const body = res.ok ? ((await res.json()) as { workflow_runs?: { conclusion?: string | null; updated_at?: string }[] }) : null;
+      const request = () => ({ headers: { accept: "application/vnd.github+json" }, cache: "no-store" as const, redirect: "error" as const, signal: AbortSignal.timeout(3000) });
+      const res = await fetchImpl(NEWMAN_RUNS, request());
+      const body = res.ok ? ((await res.json()) as { workflow_runs?: { id?: number; conclusion?: string | null; updated_at?: string }[] }) : null;
       const last = body?.workflow_runs?.[0];
-      const run = last ? { conclusion: last.conclusion ?? null, at: last.updated_at ?? null } : null;
+      let run: NewmanRun | null = last ? { conclusion: last.conclusion ?? null, at: last.updated_at ?? null } : null;
+      if (run && last && run.conclusion === "success") {
+        const jobsRes = await fetchImpl(`${GITHUB_REPO}/actions/runs/${Number(last.id)}/jobs`, request());
+        const jobs = jobsRes.ok ? ((await jobsRes.json()) as { jobs?: { steps?: { name?: string; conclusion?: string | null }[] }[] }) : null;
+        if (!jobs) run = { ...run, conclusion: "unverified" };
+        else {
+          const steps = (jobs.jobs ?? []).flatMap((job) => job.steps ?? []);
+          if (!NEWMAN_STEPS.every((name) => steps.some((step) => step.name === name && step.conclusion === "success"))) run = { ...run, conclusion: "skipped" };
+        }
+      }
       held = { run, until: now.getTime() + NEWMAN_CACHE_MS };
       return run;
     } catch {
