@@ -2,7 +2,7 @@
 
 // The refund-window chart and the follow-ups on it. Claude proposes, the owner confirms, and every date is checked again on the
 // server. Everything the chart can do, the list under it can do too, so a phone or a keyboard loses nothing.
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { SavedFollowUp } from "@/server/queue/followUps";
 import { closingSoonLine, textChangedLine, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
 import { RefundTimelineLoader } from "./RefundTimelineLoader";
@@ -36,6 +36,8 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
   const [busy, setBusy] = useState(false);
   const [oneChange] = useState(oneAtATime);
   const [message, setMessage] = useState<string | null>(null);
+  // Sales whose save got no answer: it may have saved, so dismissing one removes it on the server too.
+  const unsure = useRef(new Set<string>());
   const url = `/api/queue/recalls/${encodeURIComponent(timeline.recallNumber)}/follow-ups`;
   const titleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId)?.title ?? "This sale";
   const saleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId);
@@ -73,11 +75,23 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   const dropProposal = (saleId: string) => setPlan((p) => (p ? { ...p, proposals: p.proposals.filter((x) => x.saleId !== saleId) } : p));
 
+  const dismissProposal = (saleId: string) => {
+    if (!unsure.current.has(saleId)) return dropProposal(saleId);
+    void change(async () => {
+      const { ok, data } = await call(url, "DELETE", { saleId });
+      if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
+      unsure.current.delete(saleId);
+      setMessage(null);
+      dropProposal(saleId);
+    });
+  };
+
   /** Saves one. Returns whether it saved, so Confirm all stops at the first it can't. */
   const save = async (f: FollowUpView): Promise<boolean> => {
     const { ok, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot });
     if (!ok) {
       setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
+      if (typeof data.error !== "string") unsure.current.add(f.saleId);
       if (Array.isArray(data.confirmed)) {
         // CPSC changed the recall, or the sale was resolved: what's proposed, and any reminder it took, no longer stands.
         setPlan(null);
@@ -89,6 +103,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       return false;
     }
     setMessage(null);
+    unsure.current.delete(f.saleId);
     setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const, movedEarlier: data.movedEarlier === true }].sort((a, b) => a.due.localeCompare(b.due)));
     dropProposal(f.saleId);
     return true;
@@ -141,7 +156,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
                   <span>Follow up by {dayLabel(f.due)}</span>
                   <p className="follow-why">{followUpLines(f).join(" ")}</p>
                   <button type="button" className="btn" disabled={busy} onClick={() => void confirmOne(f)}>Confirm</button>
-                  <button type="button" className="btn btn-outline" disabled={busy} onClick={() => dropProposal(f.saleId)}>Dismiss</button>
+                  <button type="button" className="btn btn-outline" disabled={busy} onClick={() => dismissProposal(f.saleId)}>Dismiss</button>
                 </li>
               ))}
             </ul>

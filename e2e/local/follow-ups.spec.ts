@@ -174,6 +174,28 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
   await expect(page.getByTestId("follow-ups-confirmed")).toContainText(REASON, { timeout: 30_000 });
 
+  // The same lost answer, then Dismiss on the proposal still showing: the reminder that did save goes too, and stays gone.
+  await page.getByTestId("follow-ups-confirmed").getByRole("button", { name: "Dismiss" }).first().click();
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(proposals).toContainText(REASON, { timeout: 30_000 });
+  await page.route(planUrl, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await proposals.getByRole("button", { name: "Confirm" }).first().click();
+  await expect(page.getByTestId("follow-up-message")).toContainText("didn't work");
+  await page.unroute(planUrl);
+  const dropped = page.waitForResponse((r) => r.request().method() === "DELETE");
+  await proposals.getByRole("button", { name: "Dismiss" }).first().click();
+  expect((await dropped).status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await proposals.getByRole("button", { name: "Confirm" }).first().click();
+  await expect(page.getByTestId("follow-ups-confirmed")).toContainText(REASON);
+
   // The queue card shows it. It's a reminder there: nothing was sent.
   await page.goto("/queue");
   await expect(page.getByTestId("follow-up-by").first()).toContainText("Follow up by");
