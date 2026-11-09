@@ -103,6 +103,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
   const chartBox = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ChartRef | null>(null);
   const [charted, setCharted] = useState(false);
+  const [isGrouped, setIsGrouped] = useState(false);
   // What this tab could cost in refunds. The prices are the shop's own, from its order file.
   const refund = useMemo(() => refundTotal(rows.filter((r) => inTab(r, tab))), [rows, tab]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
@@ -129,15 +130,20 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
     });
   };
 
-  // In a space of its own under the buttons: AG's floating window opens in the middle of a long table, out of sight.
+  // In a space of its own under the buttons: AG's floating window opens in the middle of a long table, out of sight. Never while
+  // the table is grouped: the chart reads group rows as well as sales, and would count the money twice.
+  const closeChart = () => {
+    chartRef.current?.destroyChart();
+    chartRef.current = null;
+    setCharted(false);
+  };
+
   const toggleChart = () => {
     if (chartRef.current) {
-      chartRef.current.destroyChart();
-      chartRef.current = null;
-      setCharted(false);
+      closeChart();
       return;
     }
-    if (!chartBox.current) return;
+    if (!chartBox.current || isGrouped) return;
     chartRef.current = api.current?.createCrossFilterChart({
       chartType: "column",
       chartContainer: chartBox.current,
@@ -208,6 +214,12 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         onGridReady={(e) => {
           api.current = e.api;
         }}
+        onColumnRowGroupChanged={(e) => {
+          // Covers the column menu and the side panel as well as the buttons above.
+          const any = e.api.getRowGroupColumns().length > 0;
+          setIsGrouped(any);
+          if (any) closeChart();
+        }}
         onSelectionChanged={(e) => setSelected(e.api.getSelectedRows().map((r) => String(r.matchId)))}
       />
       {/* No message or refund can come from a listing, so a store's queue has nothing to approve or export. */}
@@ -238,7 +250,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         <button type="button" className="btn btn-outline" onClick={exportExcel}>
           Export to Excel
         </button>
-        <button type="button" className="btn btn-outline" onClick={toggleChart} aria-pressed={charted}>
+        <button type="button" className="btn btn-outline" onClick={toggleChart} aria-pressed={charted} disabled={isGrouped} title={isGrouped ? "Choose No groups to chart sales" : undefined}>
           {charted ? "Hide chart" : "Chart sales"}
         </button>
       </div>}

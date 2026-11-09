@@ -60,6 +60,8 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
   await grid.getByRole("button", { name: "Export to Excel" }).click();
   expect((await download).suggestedFilename()).toBe("recall-queue.xlsx");
 
+  // A chart reads group rows as well as sales, so the two can't be on at once.
+  await expect(grid.getByRole("button", { name: "Chart sales" })).toBeDisabled();
   await grid.getByRole("button", { name: "No groups" }).click();
   await grid.getByRole("button", { name: "Chart sales" }).click();
   const chart = page.getByTestId("grid-chart");
@@ -71,6 +73,12 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
   }
   await grid.getByRole("button", { name: "Hide chart" }).click();
   await expect(chart.locator("canvas")).toHaveCount(0);
+
+  await grid.getByRole("button", { name: "Chart sales" }).click();
+  await expect(chart.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+  await grid.getByRole("button", { name: "By state", exact: true }).click();
+  await expect(chart.locator("canvas")).toHaveCount(0);
+  await grid.getByRole("button", { name: "No groups" }).click();
   expect(logs.filter((l) => /AG Grid: error|is not registered|Missing module/i.test(l))).toEqual([]);
 });
 
