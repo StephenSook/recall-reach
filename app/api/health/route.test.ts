@@ -65,7 +65,7 @@ describe("GET /api/health", () => {
     const body = await (await GET()).json();
     const mode = (id: string) => (body.integrations.rows as { id: string; mode: string }[]).find((r) => r.id === id)?.mode;
     expect(mode("neon")).toBe("live");
-    expect(mode("ag-grid")).toBe("live");
+    expect(mode("ag-grid")).toBe("client");
     expect(mode("ag-studio")).toBe("off");
     expect(mode("channel3")).toBe("off");
     expect(mode("newman")).toBe("off");

@@ -54,6 +54,11 @@ function checked(id: string, name: string, { passed, at, detail, otherwise = "of
   return { id, name, mode: passed && at !== null ? "live" : otherwise, detail, checkedAt: at };
 }
 
+/** Runs in the visitor's browser, so this server can't see it working. A licence key being set doesn't show that either. */
+function inBrowser(id: string, name: string, detail: string): IntegrationRow {
+  return { id, name, mode: "client", detail: `Runs in the browser, so this server can't check it. ${detail}`, checkedAt: null };
+}
+
 export function integrationsFrom(facts: IntegrationFacts, now: Date): Integrations {
   const within = (at: string | null, ms: number) => at !== null && now.getTime() - Date.parse(at) <= ms;
   const { claude, paypal, channel3, replay, newman, agStudio, cpsc } = facts;
@@ -62,7 +67,6 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
   const replayFresh = within(replay.lastRunAt, RUN_MAX_AGE_MS);
   const webhookSeen = paypal.webhookConfigured && within(paypal.lastVerifiedWebhookAt, WEBHOOK_MAX_AGE_MS);
   const newmanPassed = newman?.conclusion === "success" && within(newman.at, RUN_MAX_AGE_MS);
-  const studioAnswered = agStudio.rows !== null && agStudio.rows > 0;
 
   const rows: IntegrationRow[] = [
     checked("neon", "Neon Postgres", { passed: facts.databaseOk, at: facts.databaseOk ? facts.checkedAt : null, detail: facts.databaseOk ? "Answered this request." : "Didn't answer." }),
@@ -89,17 +93,11 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
       detail: taskWorked ? `The scheduled refresh ended ${replay.task?.outcome} in the last 2 days.` : replayFresh ? "The scheduled refresh didn't finish cleanly lately. The web service refreshed Replay instead." : "No refresh in the last 2 days.",
       otherwise: replayFresh ? "fallback" : "off",
     }),
-    checked("ag-grid", "AG Grid Enterprise", {
-      passed: facts.agGridLicence,
-      at: facts.checkedAt,
-      detail: facts.agGridLicence ? "Licence key is set on the server, for the queue and Replay tables." : "No licence key is set, so the tables show AG's watermark.",
-    }),
-    checked("ag-studio", "AG Studio", {
-      passed: agStudio.licence && studioAnswered,
-      at: facts.checkedAt,
-      detail: !agStudio.licence ? "No licence key is set." : studioAnswered ? `Licence key is set, and its data answered with ${agStudio.rows} rows.` : "Licence key is set, but its data didn't answer.",
-    }),
-    { id: "bryntum", name: "Bryntum Scheduler", mode: "client", detail: `Runs in the browser, so this server can't check it. Package version ${packageJson.dependencies["@bryntum/scheduler-community"]}.`, checkedAt: null },
+    inBrowser("ag-grid", "AG Grid Enterprise", facts.agGridLicence ? "Licence key is set on the server, for the queue and Replay tables." : "No licence key is set, so the tables show AG's watermark."),
+    agStudio.rows === null || agStudio.rows === 0
+      ? checked("ag-studio", "AG Studio", { passed: false, at: null, detail: "Its data didn't answer." })
+      : inBrowser("ag-studio", "AG Studio", `${agStudio.licence ? "Licence key is set on the server" : "No licence key is set"}. Its data answered with ${agStudio.rows} rows.`),
+    inBrowser("bryntum", "Bryntum Scheduler", `Package version ${packageJson.dependencies["@bryntum/scheduler-community"]}.`),
     checked("newman", "Postman collection (Newman in CI)", {
       passed: newmanPassed,
       at: newman?.at ?? null,
@@ -118,8 +116,9 @@ const NEWMAN_RETRY_MS = 5 * 60_000;
 /** GitHub's public API, at most hourly: a health check mustn't spend its rate limit. Null when GitHub won't say, as with a private repository. */
 export function createNewmanReader(fetchImpl: typeof fetch = (...args) => fetch(...args)): (now: Date) => Promise<NewmanRun | null> {
   let held: { run: NewmanRun | null; until: number } | null = null;
-  return async (now) => {
-    if (held && now.getTime() < held.until) return held.run;
+  // Calls arriving together share one request: this route is public, and the first call after the cache lapses can be many.
+  let asking: Promise<NewmanRun | null> | null = null;
+  const ask = async (now: Date): Promise<NewmanRun | null> => {
     try {
       const res = await fetchImpl(NEWMAN_RUNS, { headers: { accept: "application/vnd.github+json" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
       const body = res.ok ? ((await res.json()) as { workflow_runs?: { conclusion?: string | null; updated_at?: string }[] }) : null;
@@ -131,6 +130,11 @@ export function createNewmanReader(fetchImpl: typeof fetch = (...args) => fetch(
       held = { run: null, until: now.getTime() + NEWMAN_RETRY_MS };
       return null;
     }
+  };
+  return async (now) => {
+    if (held && now.getTime() < held.until) return held.run;
+    asking ??= ask(now).finally(() => { asking = null; });
+    return asking;
   };
 }
 

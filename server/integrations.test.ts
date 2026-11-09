@@ -28,8 +28,8 @@ const row = (facts: IntegrationFacts, id: string) => {
 describe("the integrations list", () => {
   it("is live for each thing whose own check passed, and client for what only runs in the browser", () => {
     const { rows, summary } = integrationsFrom(healthy, NOW);
-    expect(rows.filter((r) => r.mode !== "live").map((r) => [r.id, r.mode])).toEqual([["bryntum", "client"]]);
-    expect(summary).toEqual({ live: rows.length - 1, fallback: 0, off: 0, client: 1, of: rows.length });
+    expect(rows.filter((r) => r.mode !== "live").map((r) => [r.id, r.mode])).toEqual([["ag-grid", "client"], ["ag-studio", "client"], ["bryntum", "client"]]);
+    expect(summary).toEqual({ live: rows.length - 3, fallback: 0, off: 0, client: 3, of: rows.length });
   });
 
   it("gives a time for every live row", () => {
@@ -61,8 +61,6 @@ describe("the integrations list", () => {
     ["render-workflows", "the task is old but the web service refreshed", { replay: { lastRunAt: RECENT, task: { outcome: "FRESH", finishedAt: OLD } } }, "fallback"],
     ["render-workflows", "the task has never run but the web service refreshed", { replay: { lastRunAt: RECENT, task: null } }, "fallback"],
     ["render-workflows", "the task never finished", { replay: { lastRunAt: OLD, task: { outcome: null, finishedAt: null } } }, "off"],
-    ["ag-grid", "no licence key is set", { agGridLicence: false }, "off"],
-    ["ag-studio", "no licence key is set", { agStudio: { licence: false, rows: 900 } }, "off"],
     ["ag-studio", "its data didn't answer", { agStudio: { licence: true, rows: null } }, "off"],
     ["ag-studio", "its data is empty", { agStudio: { licence: true, rows: 0 } }, "off"],
     ["newman", "the last run failed", { newman: { conclusion: "failure", at: RECENT } }, "off"],
@@ -75,8 +73,17 @@ describe("the integrations list", () => {
   });
 
   it("counts what isn't live", () => {
-    const { summary } = integrationsFrom({ ...healthy, agGridLicence: false, claude: { mainFresh: false, mainAt: OLD, anyFresh: true, anyAt: RECENT } }, NOW);
-    expect(summary).toMatchObject({ fallback: 1, off: 1, client: 1 });
+    const { summary } = integrationsFrom({ ...healthy, agStudio: { licence: true, rows: null }, claude: { mainFresh: false, mainAt: OLD, anyFresh: true, anyAt: RECENT } }, NOW);
+    expect(summary).toMatchObject({ fallback: 1, off: 1, client: 2 });
+  });
+
+  it.each(["ag-grid", "ag-studio"])("doesn't call %s live on a licence key, because a key being set doesn't show the browser used it", (id) => {
+    expect(row(healthy, id)).toMatchObject({ mode: "client", checkedAt: null });
+    expect(row({ ...healthy, agGridLicence: false, agStudio: { licence: false, rows: 900 } }, id)).toMatchObject({ mode: "client", detail: expect.stringContaining("No licence key") });
+  });
+
+  it("says when AG Studio's data answered", () => {
+    expect(row(healthy, "ag-studio").detail).toContain("900 rows");
   });
 
   it("can only say live through the one helper that needs a passed check and a time", () => {
@@ -135,6 +142,14 @@ describe("reading Newman's last run", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     await read(new Date(NOW.getTime() + 61 * 60_000));
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes one request however many calls arrive together", async () => {
+    const fetchImpl = answered({ conclusion: "success", updated_at: RECENT });
+    const read = createNewmanReader(fetchImpl);
+    const runs = await Promise.all(Array.from({ length: 100 }, () => read(NOW)));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(runs.every((run) => run?.conclusion === "success")).toBe(true);
   });
 
   it("says nothing when GitHub won't show it, as with a private repository", async () => {
