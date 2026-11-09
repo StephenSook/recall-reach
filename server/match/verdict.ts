@@ -34,7 +34,7 @@ export interface MatchCandidate {
   orderedOn?: string;
 }
 
-const COMPANY_WORDS = new Set(["enterprises", "enterprise", "inc", "llc", "ltd", "corp", "corporation", "company", "co", "international", "group"]);
+export const COMPANY_WORDS = new Set(["enterprises", "enterprise", "inc", "llc", "ltd", "corp", "corporation", "company", "co", "international", "group"]);
 const STOP_WORDS = new Set(
   "a an and are as at be been by can for from has have in into is it its of on or that the their these they this to was were which with both each other only recall recalled recalls involves product products unit units model models number numbers printed label located sold".split(" "),
 );

@@ -83,6 +83,55 @@ describe("checking a store listing before it can be offered", () => {
     expect(readListingCheck(answer, listing)).toBe("NO_MATCH_FOUND");
   });
 
+  it("a recall from the listing's own maker holds it, even when the listing adds an ordinary word, and doesn't claim to name it", async () => {
+    const listing = { title: "Wooden Dryer", brand: "Baby Brezza Enterprises" };
+    const answer = await checked(listing);
+    expect(answer.results.find((r) => r.recallNumber === "27072")).toMatchObject({ strength: "BRAND", tiedToRecall: false });
+    expect(readListingCheck(answer, listing)).toBe("MAKER_NOT_RULED_OUT");
+  });
+
+  it("finds a recall from the listing's own maker however long the listing's title is", async () => {
+    const title = "Compact Electric Countertop Baby Bottle Steam Sterilizer Dryer Machine With Drying Function, Large Capacity For Bottles Pacifiers And Breast Pump Parts, BPA Free, Easy One Button Operation, Ideal Baby Shower Gift For New Parents And Daycare";
+    expect(await verdict({ title, brand: "Baby Brezza" })).toBe("NAMES_A_RECALL");
+    expect(await verdict({ title, brand: "Baby Brezza Enterprises, LLC" })).toBe("NAMES_A_RECALL");
+  });
+
+  it("doesn't clear a code one character from the recalled model when the maker matches", async () => {
+    expect(await verdict({ title: "BRZ0081", brand: "Baby Brezza" })).toBe("NAMES_A_RECALL");
+    expect(await verdict({ title: "BRZ0081", brand: "Acme" })).toBe("NO_MATCH_FOUND");
+  });
+
+  it.each(["BRZ 0081", "BRZ-0081", "BRZ0081/BRZ0082", "BRZ 0081,", "(BRZ 0081)"])("doesn't clear %s, however the code is written", async (title) => {
+    expect(await verdict({ title, brand: "Baby Brezza" })).toBe("NAMES_A_RECALL");
+  });
+
+  it.each(["Girls Necklace 36 cm", "Leather belt fits waists 20 to 24 inches", "Necklace HO25"])("doesn't read a size or a phrase in %s as a recalled model", async (title) => {
+    await db.query("update recalls set title = 'Acme Recalls Rompers Due to Choking Hazard', description = 'This recall involves rompers in sizes 3-6M, styles HO24 and HTO24, tag X36CM.', products = '[{\"name\":\"Rompers\",\"model\":\"\",\"type\":null,\"units\":null}]'::jsonb where recall_number = '27018'");
+    expect(await verdict({ title, brand: "Acme" })).toBe("NO_MATCH_FOUND");
+  });
+
+  it("finds the recalls of a firm whose name is mostly company words", async () => {
+    await db.query("update recalls set title = 'The Company Store Recalls Hooded Robes Due to Burn Hazard', products = '[{\"name\":\"Hooded Robes\",\"model\":\"\",\"type\":null,\"units\":null}]'::jsonb where recall_number = '27018'");
+    const listing = { title: "White cotton terry hooded robe for kids, long sleeves and front pockets, matching belt, cozy comfortable bath wear for children, great after a shower or swimming", brand: "The Company Store" };
+    expect((await checked(listing)).results.map((r) => r.recallNumber)).toContain("27018");
+  });
+
+  it("leaves a same-prefix code that isn't close to any recalled model alone", async () => {
+    expect(await verdict({ title: "Bottle warmer BRZ9999", brand: "Baby Brezza" })).toBe("NO_MATCH_FOUND");
+  });
+
+  it("lists a same-maker recall ahead of recalls that only share a kind of product", async () => {
+    // Romorgniz's Six-Drawer Dressers read closer to these words, but they're another maker's. SOOWERY's own recall goes first.
+    const shown = await checkText(db, { title: "SOOWERY Six-Drawer Dressers Oak", model: "" }, TODAY, { maxResults: 1, mentions: false });
+    expect(shown.results[0]?.recallNumber).toBe("27049");
+  });
+
+  it("isn't held by a recall from the same maker that the rules cleared or that names another product", () => {
+    const empty = { results: [], more: 0, cleared: 0, notJudged: 0, mentioned: { recalls: [], total: 0 }, checked: { recalls: 1, from: null, to: null, yearsMissing: [] }, note: "" };
+    expect(readListingCheck({ ...empty, heldByMaker: 0 }, { brand: "Acme" })).toBe("NO_MATCH_FOUND");
+    expect(readListingCheck({ ...empty, heldByMaker: 1 }, { brand: "Acme" })).toBe("MAKER_NOT_RULED_OUT");
+  });
+
   it("the same words with no maker can't be told apart, so they aren't clear", async () => {
     expect(await verdict({ title: "Bottle sterilizer dryer", brand: null })).toBe("COULD_NOT_FINISH");
   });

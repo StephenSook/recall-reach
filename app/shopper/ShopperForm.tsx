@@ -18,7 +18,7 @@ const SAID: Record<Exclude<ShopperView["outcome"], "PICKED">, string> = {
   BUSY: "Too many tries from here. Try again in an hour.",
 };
 
-const CHECK_WORDS = { NAMES_A_RECALL: "its words match a recall", NO_MATCH_FOUND: "no recall match found", COULD_NOT_FINISH: "the check couldn't finish" } as const;
+const CHECK_WORDS = { NAMES_A_RECALL: "its words match a recall", NO_MATCH_FOUND: "no recall match found", COULD_NOT_FINISH: "the check couldn't finish", MAKER_NOT_RULED_OUT: "a recall from this maker can't be ruled out" } as const;
 
 function Steps({ steps }: { steps: ShopperView["steps"] }) {
   if (steps.length === 0) return null;

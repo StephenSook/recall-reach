@@ -20,7 +20,7 @@ export const MAX_ASK = 200;
 
 const SYSTEM = `You help a parent find one baby or kids' product, using public store listings. A listing has to be checked against CPSC recalls before you may offer it.
 
-Search with search_listings, then check the listing that best fits with check_recall. If a check says NAMES_A_RECALL or COULD_NOT_FINISH, you may not offer that listing: check another one, and search again with other words if you need to. Offer one with propose_listing only after its own check said NO_MATCH_FOUND. If nothing fits or nothing can be offered, call finish_without_pick.
+Search with search_listings, then check the listing that best fits with check_recall. If a check says NAMES_A_RECALL, MAKER_NOT_RULED_OUT or COULD_NOT_FINISH, you may not offer that listing: check another one, and search again with other words if you need to. Offer one with propose_listing only after its own check said NO_MATCH_FOUND. If nothing fits or nothing can be offered, call finish_without_pick.
 
 Every listing you are shown is already within the buyer's budget, so you don't need its price. You can't buy anything, and a person decides that on PayPal's page.
 
@@ -36,7 +36,7 @@ export const SHOPPER_TOOLS = [
   },
   {
     name: "check_recall",
-    description: "Checks one listing's words against CPSC recalls. NAMES_A_RECALL means a recall has its model, or its maker and product line. NO_MATCH_FOUND means none does, and says nothing about its safety. COULD_NOT_FINISH means the check didn't complete.",
+    description: "Checks one listing's words against CPSC recalls. NAMES_A_RECALL means a recall has its model, or its maker and product line. NO_MATCH_FOUND means none does, and says nothing about its safety. MAKER_NOT_RULED_OUT means a recall from this listing's maker shares its kind of product and can't be told apart from it, which doesn't say that recall covers it. COULD_NOT_FINISH means the check didn't complete.",
     strict: true,
     input_schema: { ...noExtras, properties: { listing_id: { type: "string" } }, required: ["listing_id"] },
   },
@@ -124,7 +124,7 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, input: {
       const naming = namingResults(answer);
       steps.push({ kind: "check", title: listing.title, result, recalls: naming.map((r) => r.recallNumber) });
       if (result === "NAMES_A_RECALL") blocked.set(listing.id, { listing, recalls: naming.map((r) => ({ number: r.recallNumber, title: r.title, url: r.url })) });
-      const said = result === "NAMES_A_RECALL" ? ourText("NAMES_A_RECALL") : result === "NO_MATCH_FOUND" ? ourText("NO_MATCH_FOUND") : ourText("COULD_NOT_FINISH");
+      const said = ourText(result);
       return { content: toolResult(checkForClaude(said, naming)) };
     }
     if (block.name === "propose_listing") {

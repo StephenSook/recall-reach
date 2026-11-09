@@ -11,6 +11,7 @@ const CHECKED: Record<string, string> = {
   NAMES_A_RECALL: "a recall names it, so it can't be offered",
   NO_MATCH_FOUND: "no recall held here names it",
   COULD_NOT_FINISH: "the check couldn't finish, so it can't be offered",
+  MAKER_NOT_RULED_OUT: "a recall from this maker can't be ruled out, so it can't be offered",
 };
 
 /** Whether the run's offer was paid. A payment is claimed only when PayPal's order read back as completed. */

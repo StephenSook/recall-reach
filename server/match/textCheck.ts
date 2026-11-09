@@ -4,7 +4,7 @@ import { missingRecallYears } from "../cpsc/load";
 import { cpscPhoto } from "../cpsc/photo";
 import type { Queryable } from "../db/types";
 import { CHECK_FROM, MIN_SIMILARITY } from "./run";
-import { editDistance, modelsShown, modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
+import { COMPANY_WORDS, editDistance, modelsShown, modelTokens, namesProductLine, nearMissCodes, normalizeModel, type VerdictResult, verdictFor, words } from "./verdict";
 import type { Recall } from "../cpsc/schema";
 
 export const MAX_TITLE = 200;
@@ -49,6 +49,8 @@ export interface TextCheckAnswer {
    */
   mentioned: { recalls: { recallNumber: string; title: string }[]; total: number };
   checked: { recalls: number; from: string | null; to: string | null; yearsMissing: number[] };
+  /** Only for a store listing. Recalls from its own maker that share only the kind of thing: not named, and not ruled out either. */
+  heldByMaker?: number;
   note: string;
 }
 
@@ -142,13 +144,31 @@ async function recallsWithTypedWords(db: Queryable, text: string, sought: string
   return rows.map((r) => ({ recallNumber: r.recall_number, title: r.title }));
 }
 
+/** The same company words, for Postgres to take out of a recall's title, so a firm's name reads the same on both sides. */
+const COMPANY_WORDS_IN_TITLE = `\\m(${[...COMPANY_WORDS].join("|")})\\M`;
+
+/** Whether the text has a code one typing slip from a model this recall lists. */
+function oneSlipFromModel(recallText: string, text: string): boolean {
+  const listed = modelTokens(recallText).map(normalizeModel);
+  // Split on slashes, since one listing can give two codes that way. "BRZ 0081" is written in two pieces, so letters then
+  // three or more digits are read as one code. Anything looser turns "36 cm" and "to 24" into codes.
+  const pieces = text.toUpperCase().split(/\s+/).map(normalizeModel).filter(Boolean);
+  const spaced = pieces.slice(1).flatMap((part, i) => (/^[A-Z]{2,}$/.test(pieces[i]) && /^\d{3,}$/.test(part) ? [pieces[i] + part] : []));
+  const codes = [...modelTokens(text.toUpperCase()).flatMap((t) => t.split("/")).map(normalizeModel), ...spaced];
+  return codes.some((code) => listed.some((model) => model.length >= 5 && editDistance(code, model) === 1));
+}
+
 export async function checkText(
   db: Queryable,
   input: TextCheck,
   today: string,
-  opts: { maxCandidates?: number; maxResults?: number; mentions?: boolean; withTypedModel?: boolean } = {},
+  opts: { maxCandidates?: number; maxResults?: number; mentions?: boolean; withTypedModel?: boolean; maker?: string | null } = {},
 ): Promise<TextCheckAnswer> {
   const text = `${input.title} ${input.model}`.trim();
+  // Whole words only, the way the title is compared below, and without "LLC" and the like, as the rules read a firm's name.
+  // A long listing reads unlike a recall's title, so its maker can't rest on similarity.
+  const makerWords = (opts.maker ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !COMPANY_WORDS.has(w)).join(" ");
+  const maker = makerWords ? ` ${makerWords} ` : "";
   // A number typed alone counts as the model, whichever field it went in.
   const typedModel = normalizeModel(input.model) || (/^[\d\s.-]+$/.test(input.title) ? normalizeModel(input.title) : "");
   const { rows: counted } = await db.query<{ n: string; first: string | null; last: string | null }>(
@@ -162,24 +182,28 @@ export async function checkText(
     `with near as (
        select recall_id,
          word_similarity($2, lower(title || ' ' || coalesce((select string_agg(p->>'name', ' ') from jsonb_array_elements(products) p), ''))) as similarity,
-         exists (select 1 from jsonb_array_elements_text($3::jsonb) as t(token) where position(t.token in regexp_replace(upper(title || ' ' || description), '[^A-Z0-9]', '', 'g')) > 0) as model_hit
+         exists (select 1 from jsonb_array_elements_text($3::jsonb) as t(token) where position(t.token in regexp_replace(upper(title || ' ' || description), '[^A-Z0-9]', '', 'g')) > 0) as model_hit,
+         ($6::text <> '' and position($6::text in ' ' || regexp_replace(regexp_replace(regexp_replace(lower(title), '[^a-z0-9]+', ' ', 'g'), $7::text, ' ', 'g'), ' +', ' ', 'g') || ' ') > 0) as maker_hit
        from recalls where recall_date >= $1::date
      )
      select r.recall_number, r.recall_date::text as recall_date, r.url, r.title, r.description, r.products, r.retailers, count(*) over ()::text as near
      from near n join recalls r using (recall_id)
-     where n.model_hit or n.similarity >= $4
-     order by n.model_hit desc, n.similarity desc, r.recall_number desc
+     where n.model_hit or n.maker_hit or n.similarity >= $4
+     order by n.model_hit desc, n.maker_hit desc, n.similarity desc, r.recall_number desc
      limit $5`,
-    [CHECK_FROM, text.toLowerCase(), JSON.stringify(tokens), MIN_SIMILARITY, opts.maxCandidates ?? MAX_CANDIDATES],
+    [CHECK_FROM, text.toLowerCase(), JSON.stringify(tokens), MIN_SIMILARITY, opts.maxCandidates ?? MAX_CANDIDATES, maker, COMPANY_WORDS_IN_TITLE],
   );
   const judged = rows.map((recall) => {
     const verdict = verdictFor(recall, { title: text, description: "" });
-    const tied = verdict.verdict === "MATCH" || verdict.strength === "CONFIRMED" || (verdict.strength === "BRAND" && namesProductLine(verdict.matched)) || (verdict.verdict !== "CLEARED" && nearMissCodes(`${recall.title} ${recall.description}`, text).length > 0);
+    const nearCode = nearMissCodes(`${recall.title} ${recall.description}`, text).length > 0;
+    const kindOnly = verdict.matched.some((m) => m.startsWith("kind:"));
+    const tied = verdict.verdict === "MATCH" || verdict.strength === "CONFIRMED" || (verdict.strength === "BRAND" && namesProductLine(verdict.matched)) || (verdict.verdict !== "CLEARED" && nearCode);
     const digitsOnly = /^\d+$/.test(typedModel) && typedModel.length >= MIN_DIGITS_MODEL;
     if (verdict.verdict === "CLEARED" && digitsOnly && standaloneNumbers(`${recall.title} ${recall.description}`).has(typedModel)) {
       return {
         recall,
         tied: true,
+        kindOnly: false,
         verdict: {
           ...verdict,
           verdict: "SCOPE_GAP" as const,
@@ -188,7 +212,22 @@ export async function checkText(
         },
       };
     }
-    return { recall, tied, verdict };
+    // The maker's own text, and a code one slip from a model CPSC lists: clearing that is the harm this check exists to stop.
+    // Narrower than nearCode, which also takes any code with the same prefix.
+    if (verdict.verdict === "CLEARED" && verdict.strength === "BRAND" && oneSlipFromModel(`${recall.title} ${recall.description}`, text)) {
+      return {
+        recall,
+        tied: true,
+        kindOnly: false,
+        verdict: {
+          ...verdict,
+          verdict: "SCOPE_GAP" as const,
+          reason: "This text has a code close to a model CPSC lists for this recall. Read it to see whether that is your product's model.",
+          missing: ["whether the code in this text is the model CPSC lists"],
+        },
+      };
+    }
+    return { recall, tied, kindOnly, verdict };
   });
 
   const kept = judged.filter((j) => j.verdict.verdict !== "CLEARED");
@@ -207,7 +246,7 @@ export async function checkText(
   const slips = judged.filter((j) => typos.has(j.recall.recall_number) && !hasWords.has(j.recall.recall_number));
   for (const number of typos) hasWords.add(number);
   // A cut-off list has to keep the recalls that could be this text, ahead of ones that only share a kind of product.
-  const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied ? 1 : hasWords.has(j.recall.recall_number) ? 2 : 3);
+  const rank = (j: (typeof judged)[number]) => (j.verdict.verdict === "MATCH" ? 0 : j.tied || j.kindOnly ? 1 : hasWords.has(j.recall.recall_number) ? 2 : 3);
   const found = kept.sort((a, b) => rank(a) - rank(b));
   const foundNumbers = new Set(found.map((j) => j.recall.recall_number));
   const past = [...slips.map((j) => ({ recallNumber: j.recall.recall_number, title: j.recall.title })), ...withWords].filter((r) => !foundNumbers.has(r.recallNumber));
@@ -232,25 +271,28 @@ export async function checkText(
     mentioned: { recalls: past.slice(0, limit), total: past.length },
     checked: { recalls: Number(counted[0].n), from: counted[0].first, to: counted[0].last, yearsMissing },
     note: NOTE,
+    ...(opts.maker !== undefined ? { heldByMaker: found.filter((j) => j.kindOnly).length } : {}),
   };
 }
 
 /** The results tied to one recall. The rest only share a kind of product with it, as any high chair does with every recalled high chair. */
 export const namingResults = (answer: Pick<TextCheckAnswer, "results">) => answer.results.filter((r) => r.tiedToRecall);
 
-export type ListingCheck = "NAMES_A_RECALL" | "NO_MATCH_FOUND" | "COULD_NOT_FINISH";
+export type ListingCheck = "NAMES_A_RECALL" | "NO_MATCH_FOUND" | "COULD_NOT_FINISH" | "MAKER_NOT_RULED_OUT";
 
 /** Whether a listing may be offered. Only NO_MATCH_FOUND may. Unsure never reads as clear. */
 export function readListingCheck(answer: TextCheckAnswer, listing: { brand: string | null }): ListingCheck {
   if (namingResults(answer).length > 0 || answer.more > 0) return "NAMES_A_RECALL";
   if (answer.notJudged > 0 || answer.checked.yearsMissing.length > 0) return "COULD_NOT_FINISH";
+  // A recall from the listing's own maker of the same kind of thing. Nothing says it's this product and nothing says it isn't.
+  if ((answer.heldByMaker ?? 0) > 0) return "MAKER_NOT_RULED_OUT";
   // With no maker named, nothing separates this from a recall of the same kind of product.
   return !listing.brand && answer.results.length > 0 ? "COULD_NOT_FINISH" : "NO_MATCH_FOUND";
 }
 
 /** Every result, and the listing's whole text: cutting it short could drop the model that names a recall. */
 export const checkListing = (db: Queryable, listing: { title: string; brand: string | null }, today: string) =>
-  checkText(db, { title: `${listing.brand ?? ""} ${listing.title}`.trim(), model: "" }, today, { maxResults: MAX_CANDIDATES, mentions: false });
+  checkText(db, { title: `${listing.brand ?? ""} ${listing.title}`.trim(), model: "" }, today, { maxResults: MAX_CANDIDATES, mentions: false, maker: listing.brand });
 
 const RECALL_NUMBER = /^[A-Za-z0-9-]{1,16}$/;
 

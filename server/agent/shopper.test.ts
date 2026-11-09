@@ -73,6 +73,22 @@ describe("the shopping agent", () => {
     expect(result.steps.at(-1)).toMatchObject({ kind: "check", result: "NO_MATCH_FOUND", recalls: [] });
   });
 
+  it("can't offer a listing that a recall from its own maker can't be told apart from, and blames no recall for it", async () => {
+    const sameMaker: TextCheckAnswer = { ...clear, heldByMaker: 1, results: [{ ...flagged.results[0], strength: "BRAND", tiedToRecall: false }] };
+    const { client, requests } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")], { stop: "end_turn" }]);
+    const result = await run(client, { check: async () => sameMaker });
+    expect(requests[3]).toContain("did not say NO_MATCH_FOUND");
+    expect(result.pick).toBeNull();
+    expect(result.blocked).toEqual([]);
+    expect(result.steps.at(-1)).toMatchObject({ kind: "check", result: "MAKER_NOT_RULED_OUT", recalls: [] });
+  });
+
+  it("a recall that only happens to share the maker's name doesn't hold a listing", async () => {
+    const otherProduct: TextCheckAnswer = { ...clear, results: [{ ...flagged.results[0], strength: "BRAND", tiedToRecall: false }] };
+    const { client } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")]]);
+    expect((await run(client, { check: async () => otherProduct })).outcome).toBe("PICKED");
+  });
+
   it("can't offer a listing a recall names by its maker and line, or by its model", async () => {
     const { client, requests } = fakeClaude([[search()], [check("listing-2")], [propose("listing-2")], { stop: "end_turn" }]);
     const result = await run(client, { check: async () => ({ ...clear, results: [{ ...flagged.results[0], strength: "BRAND" }, { ...flagged.results[0], recallNumber: "1", strength: "PRODUCT_WORDS", tiedToRecall: false }] }) });
