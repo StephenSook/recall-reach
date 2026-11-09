@@ -132,7 +132,9 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
 
   describe("confirming", () => {
     it("saves the date, with Claude's reason read on the server", async () => {
-      expect((await confirm({ saleId: SALE, due: "2026-11-12" })).status).toBe(200);
+      const res = await confirm({ saleId: SALE, due: "2026-11-12" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ saved: true, movedEarlier: false });
       expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1" });
     });
 
@@ -143,8 +145,9 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
 
     it("records when the window moved the date earlier", async () => {
       loadQueue.mockResolvedValue({ rows: [row({ orderedOn: "2026-05-21" })], shop: { kind: "DEMO" } });
-      await confirm({ saleId: SALE, due: "2026-11-10" });
+      const res = await confirm({ saleId: SALE, due: "2026-11-10" });
       expect(saved.saveFollowUp.mock.calls[0][1]).toMatchObject({ due: "2026-11-10", movedEarlier: true });
+      expect(await res.json()).toEqual({ saved: true, movedEarlier: true });
     });
 
     it("runs the date check on the server, whatever the page thinks", async () => {

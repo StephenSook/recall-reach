@@ -117,10 +117,11 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
     if (!advice) return outOfDate(409, "Plan the follow-ups first.", session.shopId, timeline.sales);
     if (advice.snapshot !== snapshot) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
-    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier: placed?.due === due && placed.movedEarlier, snapshot });
+    const movedEarlier = placed?.due === due && placed.movedEarlier;
+    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot });
     // The sale was just found on this shop's timeline, so a refusal here means CPSC changed the recall a moment ago.
     if (!saved) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
-    return Response.json({ saved: true }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ saved: true, movedEarlier }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("save", err);
   }

@@ -88,7 +88,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       return false;
     }
     setMessage(null);
-    setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const }].sort((a, b) => a.due.localeCompare(b.due)));
+    setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const, movedEarlier: data.movedEarlier === true }].sort((a, b) => a.due.localeCompare(b.due)));
     dropProposal(f.saleId);
     return true;
   };
