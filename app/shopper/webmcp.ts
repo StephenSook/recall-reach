@@ -164,9 +164,10 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
             return { value: PAYPAL_OPENED, summary: "PayPal opened" };
           }
           leaving = true;
+          const searchWhenAnswered = nextSearch;
           deps.later(() => {
-            // Cancelled, or this page's tools removed, since answering: stay put.
-            if (signal.aborted) {
+            // Cancelled, this page's tools removed, or a newer search that may refuse this listing: stay put.
+            if (signal.aborted || nextSearch !== searchWhenAnswered) {
               checkingOut = false;
               return;
             }
