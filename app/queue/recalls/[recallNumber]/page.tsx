@@ -4,6 +4,7 @@ import { followUpsFor } from "@/server/queue/followUps";
 import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { currentSession } from "@/server/web/http";
+import { activeFollowUps } from "../followUps";
 import { RefundWindows } from "../RefundWindows";
 import { timelineFor } from "../timeline";
 
@@ -17,8 +18,7 @@ export default async function RecallTimelinePage({ params }: { params: Promise<{
   if (!shop) redirect("/");
   const timeline = timelineFor(rows, recallNumber, businessDay());
   if (!timeline) notFound();
-  const onThisTimeline = new Set(timeline.sales.map((s) => s.id));
-  const saved = (await followUpsFor(getDb(), session.shopId)).filter((f) => onThisTimeline.has(f.matchId));
+  const saved = activeFollowUps(await followUpsFor(getDb(), session.shopId), timeline.sales);
   return (
     <main className="page">
       <header className="page-head">

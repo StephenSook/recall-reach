@@ -76,3 +76,23 @@ export const closingSoonLine = (count: number) => (count === 1 ? "1 sale: window
 
 /** The last day the date picker offers. A sale with no refund open has no window to stay inside. */
 export const latestDay = (sale: TimelineSale) => (hasOpenWindow(sale) ? lastFollowUpDay(sale.windowEnds) : undefined);
+
+/** The saved reminders still in force: on this timeline, for a family not yet reached. Answered, or refunded, and it retires. */
+export function activeFollowUps<T extends { matchId: string }>(saved: readonly T[], sales: readonly TimelineSale[]): T[] {
+  const open = new Set(sales.filter((s) => s.needsReaching).map((s) => s.id));
+  return saved.filter((f) => open.has(f.matchId));
+}
+
+/** Runs one change at a time and drops any started meanwhile, so a late answer can't undo a dismissal or bring it back. */
+export function oneAtATime() {
+  let running = false;
+  return async <T>(work: () => Promise<T>): Promise<T | undefined> => {
+    if (running) return undefined;
+    running = true;
+    try {
+      return await work();
+    } finally {
+      running = false;
+    }
+  };
+}

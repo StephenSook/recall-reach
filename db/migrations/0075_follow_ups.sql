@@ -24,6 +24,7 @@ create table follow_ups (
   reason         text not null,
   hazard_quote   text not null,
   moved_earlier  boolean not null default false,
+  recall_sha256  text not null, -- the CPSC text the reason and quote came from; a new snapshot retires this
   confirmed_at   timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );

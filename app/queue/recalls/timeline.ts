@@ -57,7 +57,7 @@ function readingOf(row: Sold, windowEnds: string, today: string): Pick<TimelineS
 }
 
 /** Whether a follow-up means anything: the match is settled, no refund is under way, and the family hasn't answered. */
-function stillToReach(row: Sold): boolean {
+export function isStillToReach(row: QueueRow): boolean {
   if (row.verdict !== "MATCH" || row.strength !== "CONFIRMED" || row.joinState === "AMBIGUOUS_JOIN" || row.salePath === "REVIEW") return false;
   if (row.refund && row.refund.status !== "failed") return false;
   return !row.notice || (row.notice.state !== "FAMILY_RESPONDED" && !row.notice.stopped);
@@ -71,7 +71,7 @@ export function timelineFor(rows: QueueRow[], recallNumber: string, today: strin
   const sales = sold
     .map((r) => {
       const windowEnds = addDays(r.orderedOn, REFUND_WINDOW_DAYS);
-      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, needsReaching: stillToReach(r), ...readingOf(r, windowEnds, today) };
+      return { id: r.matchId, title: r.itemTitle, orderedOn: r.orderedOn, windowEnds, needsReaching: isStillToReach(r), ...readingOf(r, windowEnds, today) };
     })
     .sort((a, b) => a.orderedOn.localeCompare(b.orderedOn));
   const dates = [first.recallDate, today, ...sales.flatMap((s) => [s.orderedOn, s.windowEnds])].sort();

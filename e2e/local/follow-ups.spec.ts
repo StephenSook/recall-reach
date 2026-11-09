@@ -75,6 +75,18 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   expect((await moved).status()).toBe(200);
   await expect(confirmed.locator('input[type="date"]').first()).not.toHaveValue(dateBefore);
 
+  // Dragging across an empty part of the chart adds nothing: every bar here comes from a sale or a saved follow-up.
+  const bars = await page.locator(".b-sch-event-wrap").count();
+  const chartAt = await page.getByTestId("refund-timeline").boundingBox();
+  if (!chartAt) throw new Error("no chart");
+  // The Dates row, right of the Today label: nothing is drawn there.
+  await page.mouse.move(chartAt.x + 800, chartAt.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(chartAt.x + 920, chartAt.y + 100, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  expect(await page.locator(".b-sch-event-wrap").count()).toBe(bars);
+
   if (process.env.AXE_PATH) {
     await page.addScriptTag({ path: process.env.AXE_PATH });
     const found = await page.evaluate(async () => {

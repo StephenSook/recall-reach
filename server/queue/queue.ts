@@ -179,7 +179,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
      left join order_lines l on l.id = m.order_line_id
      left join shop_items i on i.id = m.shop_item_id
      left join safety_receipts sr on sr.id = m.safety_receipt_id
-     left join follow_ups fu on fu.match_id = m.id
+     left join follow_ups fu on fu.match_id = m.id and fu.recall_sha256 = r.raw_sha256
      left join seller_answers sa on sa.shop_id = m.shop_id and sa.recall_number = r.recall_number and sa.listing_title = coalesce(l.title, i.title)
      left join lateral (
        select * from notices x where x.match_id = m.id order by x.prepared_at desc, x.kind desc limit 1

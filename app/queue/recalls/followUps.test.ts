@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFollowUpDate, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, placeFollowUps } from "./followUps";
+import { activeFollowUps, checkFollowUpDate, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, oneAtATime, placeFollowUps } from "./followUps";
 import type { TimelineSale } from "./timeline";
 
 const TODAY = "2026-11-09";
@@ -96,5 +96,47 @@ describe("what a follow-up says", () => {
 
   it("leaves it open for a sale with no refund window", () => {
     expect(latestDay(sale({ tone: "notice" }))).toBeUndefined();
+  });
+});
+
+describe("which saved reminders still apply", () => {
+  const saved = (matchId: string) => ({ matchId, due: "2026-11-20", reason: "r", hazardQuote: "q", movedEarlier: false });
+
+  it("keeps a sale whose family still needs reaching", () => {
+    expect(activeFollowUps([saved("m1")], [sale()])).toHaveLength(1);
+  });
+
+  it("retires one once the family has answered or a refund has started", () => {
+    expect(activeFollowUps([saved("m1")], [sale({ needsReaching: false })])).toEqual([]);
+  });
+
+  it("leaves out a sale on another recall's timeline", () => {
+    expect(activeFollowUps([saved("other")], [sale()])).toEqual([]);
+  });
+});
+
+describe("one change at a time", () => {
+  it("runs the first", async () => {
+    const guard = oneAtATime();
+    let ran = 0;
+    expect(await guard(async () => { ran++; return "done"; })).toBe("done");
+    expect(ran).toBe(1);
+  });
+
+  it("refuses a second while the first is still going, so a late answer can't undo a dismissal", async () => {
+    const guard = oneAtATime();
+    let finish: () => void = () => undefined;
+    const first = guard(() => new Promise<string>((resolve) => { finish = () => resolve("first"); }));
+    let ran = false;
+    expect(await guard(async () => { ran = true; return "second"; })).toBeUndefined();
+    expect(ran).toBe(false);
+    finish();
+    expect(await first).toBe("first");
+  });
+
+  it("lets the next one through once the first is done, even if it failed", async () => {
+    const guard = oneAtATime();
+    await guard(async () => { throw new Error("no"); }).catch(() => undefined);
+    expect(await guard(async () => "next")).toBe("next");
   });
 });

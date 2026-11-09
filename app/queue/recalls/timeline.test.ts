@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { QueueRow } from "@/server/queue/queue";
-import { REFUND_WINDOW_DAYS, timelineFor } from "./timeline";
+import { isStillToReach, REFUND_WINDOW_DAYS, timelineFor } from "./timeline";
 
 const row = (over: Partial<QueueRow>) =>
   ({ matchId: "m1", recallNumber: "27027", recallTitle: "A recall", recallDate: "2026-10-15", itemTitle: "An item", orderedOn: "2026-11-06", salePath: "REFUND_ELIGIBLE", verdict: "MATCH", strength: "CONFIRMED", isListing: false, joinState: "IDENTIFIED", refund: null, ...over }) as QueueRow;
@@ -36,6 +36,11 @@ describe("timelineFor", () => {
       TODAY,
     );
     expect(t?.sales.map((s) => s.id)).toEqual(["old", "new"]);
+  });
+
+  it("answers for a queue card the same way as for the timeline", () => {
+    expect(isStillToReach(row({}))).toBe(true);
+    expect(isStillToReach(row({ refund: { id: "r", status: "refunded", amountCents: 1, currency: "USD", failure: null } }))).toBe(false);
   });
 
   describe("whether a sale still needs its family reached", () => {

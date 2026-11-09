@@ -80,6 +80,19 @@ describe("the follow-ups a shop has confirmed", () => {
     expect(await followUpsFor(db, shopA)).toEqual([]);
   });
 
+  it("drops out when CPSC changes the recall, so old advice isn't shown as current", async () => {
+    await saveFollowUp(db, input());
+    await db.query("update recalls set raw_sha256 = 'a-new-snapshot' where recall_id = (select recall_id from recall_matches where id = $1)", [match]);
+    expect(await followUpsFor(db, shopA)).toEqual([]);
+  });
+
+  it("can be planned again after that, and shows", async () => {
+    await saveFollowUp(db, input());
+    await db.query("update recalls set raw_sha256 = 'a-new-snapshot' where recall_id = (select recall_id from recall_matches where id = $1)", [match]);
+    await saveFollowUp(db, input({ due: "2026-11-20" }));
+    expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-20" }]);
+  });
+
   it("only returns this shop's", async () => {
     const theirs = await newMatch(shopB);
     await saveFollowUp(db, input());
