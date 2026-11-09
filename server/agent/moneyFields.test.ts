@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AGENT_TOOLS } from "./recallAgent";
+import { FOLLOW_UP_TOOLS } from "./followUpAdvice";
 import { QUESTION_TOOLS } from "./recallQuestion";
 import { SHOPPER_TOOLS } from "./shopper";
 import { readTurn, toClaude } from "../studio/turn";
@@ -10,12 +11,13 @@ import { readTurn, toClaude } from "../studio/turn";
 const MONEY = /amount|currency|capture|refund|payee/i;
 
 /** Every tool any model is offered, listed here. A new file defining a tool fails below until it's added. */
-const TOOL_FILES = ["server/agent/recallAgent.ts", "server/agent/recallQuestion.ts", "server/agent/shopper.ts", "server/studio/turn.ts"];
+const TOOL_FILES = ["server/agent/followUpAdvice.ts", "server/agent/recallAgent.ts", "server/agent/recallQuestion.ts", "server/agent/shopper.ts", "server/studio/turn.ts"];
 
 describe("what Claude's tools can say about money", () => {
   it.each([
     ["the check", AGENT_TOOLS],
     ["the question writer", QUESTION_TOOLS],
+    ["the follow-up adviser", FOLLOW_UP_TOOLS],
     ["the shopping agent", SHOPPER_TOOLS],
   ])("%s has no money field, name or description", (_name, tools) => {
     expect(tools.length).toBeGreaterThan(0);
