@@ -61,6 +61,7 @@ const BUILDS_WHAT_CLAUDE_READS = [
 ];
 /** Each other file that imports Claude's client and reaches PayPal's code, with why that's safe. */
 const REACHES_PAYPAL_FOR_ITS_OWN_JOB: Record<string, string> = {
+  "app/api/queue/recalls/[recallNumber]/follow-ups/route.ts": "reads the shop's own sales so code can place each date; the model is asked by recall number alone (its route.test.ts and followUpAdvice.test.ts)",
   "app/api/shopper/run/route.ts": "starts the shopping agent; it gets the client, and the agent is below",
   "instrumentation.ts": "starts the scheduled jobs; its only model call is the daily \"Say ok.\" check, which carries no PayPal data",
   "server/agent/shopper.ts": "makes the buyer's sandbox order after a person picks; the model reads only typed listing words and CPSC text (shopper.test.ts)",
