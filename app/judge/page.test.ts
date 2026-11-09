@@ -1,9 +1,17 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+const ready = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("@/server/paypal/judgeRefusal", () => ({ lateRefundReady: ready }));
+
 import JudgeDoor from "./page";
 
-const html = renderToStaticMarkup(createElement(JudgeDoor));
+const render = async () => renderToStaticMarkup(await JudgeDoor());
+let html = "";
+beforeAll(async () => {
+  html = await render();
+});
 
 describe("the judge's door", () => {
   it("offers the labelled sandbox late-refund test without a payment id", () => {
@@ -32,6 +40,14 @@ describe("the judge's door", () => {
 
   it("numbers the steps under More to try on from the first five", () => {
     expect(html).toMatch(/data-testid="itinerary-more"[^>]*start="6"|start="6"[^>]*data-testid="itinerary-more"/);
+  });
+
+  it("offers Recall Replay for thirty seconds instead when no refunded sandbox sale is on hand to test with", async () => {
+    ready.mockResolvedValueOnce(false);
+    const without = await render();
+    const row = without.slice(without.indexOf("<td>30 seconds</td>"), without.indexOf("</tr>", without.indexOf("<td>30 seconds</td>")));
+    expect(row).toContain('href="/replay"');
+    expect(row).not.toContain("#late-refund");
   });
 
   it("gives thirty seconds to a money moment that needs no demo shop", () => {

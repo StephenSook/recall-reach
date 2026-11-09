@@ -2,11 +2,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { StartDemoButton } from "../StartDemoButton";
 import { LiveNow } from "./LiveNow";
+import { lateRefundReady } from "@/server/paypal/judgeRefusal";
 import { LateRefundTest } from "./LateRefundTest";
 
 export const dynamic = "force-dynamic";
 
-export default function JudgeDoor() {
+export default async function JudgeDoor() {
+  // The late-refund test needs a refunded sandbox sale from the last two days. Without one, thirty seconds goes to Replay.
+  const lateRefund = await lateRefundReady();
   return (
     <main className="page">
       <header className="page-head">
@@ -32,7 +35,15 @@ export default function JudgeDoor() {
             <tr>
               <td>30 seconds</td>
               <td>
-                Press <a href="#late-refund">See PayPal refuse a late refund</a>, below. PayPal&apos;s sandbox answers for real, and no money moves.
+                {lateRefund ? (
+                  <>
+                    Press <a href="#late-refund">See PayPal refuse a late refund</a>, below. PayPal&apos;s sandbox answers for real, and no money moves.
+                  </>
+                ) : (
+                  <>
+                    <Link href="/replay">Recall Replay</Link>, and press its recount.
+                  </>
+                )}
               </td>
             </tr>
             <tr>

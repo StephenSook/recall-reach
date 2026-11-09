@@ -54,6 +54,18 @@ async function recentRefundedCaptures(): Promise<string[]> {
   return rows.map((row) => row.capture_id);
 }
 
+/**
+ * Whether there's a refunded sandbox sale on hand to test with. The 46-hour purge empties them, so after a quiet couple of days
+ * there's none, and /judge offers something else for thirty seconds. PayPal's own check still runs when the button is pressed.
+ */
+export async function lateRefundReady(): Promise<boolean> {
+  try {
+    return (await recentRefundedCaptures()).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** No app client or call logger: those can retry, replace the mock header, or write records. */
 export async function judgeRefusal(opts: {
   env?: NodeJS.ProcessEnv;

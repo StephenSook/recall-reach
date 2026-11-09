@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "@/test/fixtures/paypal/refund-time-limit.json";
-import { judgeRefusal } from "./judgeRefusal";
+const dbQuery = vi.hoisted(() => vi.fn());
+vi.mock("@/server/db/pg", () => ({ getDb: () => ({ query: dbQuery }) }));
+
+import { judgeRefusal, lateRefundReady } from "./judgeRefusal";
 import { PAYPAL_SANDBOX_BASE } from "./token";
 
 const env = { NODE_ENV: "test" as const, PAYPAL_CLIENT_ID: "client", PAYPAL_CLIENT_SECRET: "secret" };
@@ -164,5 +167,22 @@ describe("the judge's sandbox refusal", () => {
       .mockResolvedValueOnce(Response.json({ status: "PARTIALLY_REFUNDED" }));
     expect(await judgeRefusal({ env, fetchImpl, captureIds: async () => ["A1", "B2"] })).toMatchObject({ expected: false, message: expect.stringContaining("No refund request was sent") });
     expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/refund"))).toEqual([]);
+  });
+});
+
+describe("whether the late-refund test has a sale to use", () => {
+  it("is ready with a recent refunded sandbox sale on record", async () => {
+    dbQuery.mockResolvedValueOnce({ rows: [{ capture_id: CAPTURE }] });
+    expect(await lateRefundReady()).toBe(true);
+  });
+
+  it("isn't once the purge has emptied them", async () => {
+    dbQuery.mockResolvedValueOnce({ rows: [] });
+    expect(await lateRefundReady()).toBe(false);
+  });
+
+  it("isn't when the records can't be read", async () => {
+    dbQuery.mockRejectedValueOnce(new Error("database down"));
+    expect(await lateRefundReady()).toBe(false);
   });
 });
