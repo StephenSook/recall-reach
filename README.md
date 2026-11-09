@@ -184,7 +184,10 @@ only when this variable is set. Never commit the token. A different origin needs
 own registration. Trial enrollment and browser support still need live verification.
 
 For ChatGPT desktop, open Settings > Browser > Enable site tools, then open `/shopper`
-in its browser. If the browser blocks the new tab, PayPal opens in this same tab instead.
+in its browser. If the browser blocks the new tab, the tool answers that PayPal's page is opening in this tab, and
+moves this tab there a moment later. A cancel after that answer doesn't stop the move, because the call is over and a
+client may cancel as cleanup; moving there moves no money, since the buyer still approves on PayPal. A newer search
+before the move does stop it, and the Agent tools panel says so.
 Ask it to find a listing, check it, and start checkout; the buyer approves on PayPal.
 An unknown listing has no recall number to report, so it is refused with an empty
 recall list. A matched listing reports the actual CPSC number and title.
