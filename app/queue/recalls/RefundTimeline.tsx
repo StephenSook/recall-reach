@@ -41,6 +41,7 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
   const [scheduler, setScheduler] = useState<BryntumScheduler | null>(null);
   const { recallDate, today } = timeline;
   // The chart's features are set up once, so they read the current follow-ups through this.
+  const wrapper = useRef<HTMLDivElement | null>(null);
   const current = useRef({ followUps, timeline, onMove });
   useEffect(() => {
     current.current = { followUps, timeline, onMove };
@@ -107,11 +108,24 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
     }
   }, [scheduler, followUps]);
   const anyConfirmed = followUps.some((f) => f.state === "confirmed");
+  const hasFollowUps = followUps.length > 0;
+  // The chart is hidden from screen readers, so it mustn't take keyboard focus either. The chart adds these stops as it redraws.
+  useEffect(() => {
+    const box = wrapper.current;
+    if (!box || !hasFollowUps) return;
+    const noStops = () => box.querySelectorAll('[tabindex="0"]').forEach((el) => el.setAttribute("tabindex", "-1"));
+    noStops();
+    const watch = new MutationObserver(noStops);
+    watch.observe(box, { subtree: true, childList: true, attributes: true, attributeFilter: ["tabindex"] });
+    return () => watch.disconnect();
+  }, [hasFollowUps]);
   const { dragFeature, tooltipFeature, onDrop } = useMemo(() => {
     const inFollowUp = (id: unknown) => current.current.followUps.find((f) => `${FOLLOW_PREFIX}${f.saleId}` === String(id));
     return {
       dragFeature: {
         constrainDragToResource: true,
+        // The date shows in the list as soon as it's dropped, and this tip's own colors don't clear contrast.
+        showTooltip: false,
         validatorFn: ({ eventRecords, startDate }: { eventRecords: { id: unknown }[]; startDate: Date }) => {
           const follow = inFollowUp(eventRecords[0]?.id);
           const sale = current.current.timeline.sales.find((s) => s.id === follow?.saleId);
@@ -134,9 +148,9 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
     };
   }, []);
   return (
-    // Read-only until there's a follow-up to hover or drag. The list under it says the same in words and has every action,
-    // so that's what a screen reader or keyboard gets: Bryntum's own markup puts buttons inside a grid role.
-    <div className="refund-timeline" data-testid="refund-timeline" inert={followUps.length === 0} style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
+    // Read-only until there's a follow-up to hover or drag. The list under it says the same in words and has every action, so
+    // that's what a screen reader or keyboard gets: Bryntum's own markup puts buttons inside a grid role, so the chart stays hidden from them.
+    <div ref={wrapper} className="refund-timeline" data-testid="refund-timeline" inert={!hasFollowUps} aria-hidden={hasFollowUps ? true : undefined} style={{ height: HEADER_HEIGHT + resources.length * ROW_HEIGHT + 2 }}>
       <BryntumScheduler
         ref={setScheduler}
         readOnly={!anyConfirmed}

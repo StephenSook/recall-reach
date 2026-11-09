@@ -62,6 +62,28 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.waitForTimeout(1200);
   await expect(page.locator(".b-sch-event-wrap:has(.timeline-refund)").first()).toHaveCSS("opacity", "1");
 
+  // Dragging a confirmed follow-up moves it, and the server saves the new date.
+  const bar = page.locator(".b-sch-event-wrap:has(.timeline-follow-confirmed)").first();
+  const at = await bar.boundingBox();
+  if (!at) throw new Error("no bar to drag");
+  const dateBefore = await confirmed.locator('input[type="date"]').first().inputValue();
+  const moved = page.waitForResponse((r) => r.request().method() === "PUT");
+  await page.mouse.move(at.x + 30, at.y + at.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 70, at.y + at.height / 2, { steps: 10 });
+  await page.mouse.up();
+  expect((await moved).status()).toBe(200);
+  await expect(confirmed.locator('input[type="date"]').first()).not.toHaveValue(dateBefore);
+
+  if (process.env.AXE_PATH) {
+    await page.addScriptTag({ path: process.env.AXE_PATH });
+    const found = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: () => Promise<{ violations: { id: string; nodes: unknown[] }[] }> } }).axe;
+      return (await axe.run()).violations.map((v) => `${v.id} x${v.nodes.length}`);
+    });
+    expect(found).toEqual([]);
+  }
+
   // A date the window can't take is refused by the server, and the saved date stands.
   const day = confirmed.locator('input[type="date"]').first();
   const before = await day.inputValue();
