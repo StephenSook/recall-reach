@@ -29,6 +29,8 @@ describe("findViolations", () => {
     ["a hidden research file", "See research/.notes.md"],
     ["a file in a hidden research folder", "See research/.private/notes.md"],
     ["a research folder ending in a slash", "See research/raw/ for the answers"],
+    ["a research file with a space, in backticks", "See `research/Market analysis.md`"],
+    ["a research folder with a space, in quotes", 'See "research/market analysis/results.json"'],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
