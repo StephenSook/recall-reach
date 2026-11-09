@@ -18,10 +18,36 @@ describe("the judge's door", () => {
     for (const row of ["30 seconds", "3 minutes", "10 minutes"]) expect(html).toContain(`<td>${row}</td>`);
   });
 
-  it("says what to look for at every step", () => {
-    const steps = html.slice(html.indexOf('data-testid="itinerary"'), html.indexOf("</ol>")).split("<li>").slice(1);
-    expect(steps.length).toBeGreaterThanOrEqual(8);
-    for (const step of steps) expect(step).toContain("Look for");
+  const listAt = (testId: string) => {
+    const start = html.indexOf(`data-testid="${testId}"`);
+    return html.slice(start, html.indexOf("</ol>", start)).split("<li>").slice(1);
+  };
+
+  it("keeps five steps in view, the rest under More to try, and says what to look for at every one", () => {
+    expect(listAt("itinerary")).toHaveLength(5);
+    expect(listAt("itinerary-more").length).toBeGreaterThanOrEqual(4);
+    expect(html).toContain("<summary>More to try</summary>");
+    for (const step of [...listAt("itinerary"), ...listAt("itinerary-more")]) expect(step).toContain("Look for");
+  });
+
+  it("numbers the steps under More to try on from the first five", () => {
+    expect(html).toMatch(/data-testid="itinerary-more"[^>]*start="6"|start="6"[^>]*data-testid="itinerary-more"/);
+  });
+
+  it("gives thirty seconds to a money moment that needs no demo shop", () => {
+    const row = html.slice(html.indexOf("<td>30 seconds</td>"), html.indexOf("</tr>", html.indexOf("<td>30 seconds</td>")));
+    expect(row).toContain('href="#late-refund"');
+    expect(row).toContain("See PayPal refuse a late refund");
+    expect(html).toContain('id="late-refund"');
+  });
+
+  it("says the 10-minute route covers what's under More to try", () => {
+    expect(html).toContain("All the steps, including More to try.");
+  });
+
+  it("gives the measured time for a sale to reach the queue, not a guess", () => {
+    expect(html).toContain("In five sandbox runs on Nov 8 and 9 it took 13 to 99 seconds; four of the five took 20 seconds or less.");
+    expect(html).not.toContain("a minute or two");
   });
 
   it("numbers the steps the table refers to", () => {

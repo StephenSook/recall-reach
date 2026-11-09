@@ -37,7 +37,7 @@ export function LateRefundTest() {
     }
   }
   return (
-    <section className="window" data-testid="late-refund-test" aria-labelledby="late-refund-title">
+    <section className="window" id="late-refund" data-testid="late-refund-test" aria-labelledby="late-refund-title">
       <h2 id="late-refund-title" className="section-title">Sandbox test: PayPal refuses a late refund</h2>
       <p>We ask PayPal&apos;s sandbox to answer as if this sale&apos;s refund window had passed, on a sale already refunded, so no money can move.</p>
       <button type="button" className="btn" disabled={asking} onClick={ask}>{asking ? "Asking PayPal" : "See PayPal refuse a late refund"}</button>

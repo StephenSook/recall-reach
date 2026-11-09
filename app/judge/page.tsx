@@ -32,7 +32,7 @@ export default function JudgeDoor() {
             <tr>
               <td>30 seconds</td>
               <td>
-                <Link href="/replay">Recall Replay</Link>, and press its recount.
+                Press <a href="#late-refund">See PayPal refuse a late refund</a>, below. PayPal&apos;s sandbox answers for real, and no money moves.
               </td>
             </tr>
             <tr>
@@ -41,7 +41,7 @@ export default function JudgeDoor() {
             </tr>
             <tr>
               <td>10 minutes</td>
-              <td>All the steps.</td>
+              <td>All the steps, including More to try.</td>
             </tr>
           </tbody>
         </table>
@@ -56,34 +56,39 @@ export default function JudgeDoor() {
           <span className="quiet">Look for five records side by side, and whether they agree, with PayPal&apos;s own check of its webhook beside ours. If PayPal hasn&apos;t finished the refund, the page says so.</span>
         </li>
         <li>
-          <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue. PayPal can take a minute or two. With a PayPal sandbox buyer login, Buy with a PayPal sandbox login does the same on PayPal&apos;s own page.
+          <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue. In five sandbox runs on Nov 8 and 9 it took 13 to 99 seconds; four of the five took 20 seconds or less. With a PayPal sandbox buyer login, Buy with a PayPal sandbox login does the same on PayPal&apos;s own page.
           <span className="quiet">Look for a new card arriving with nothing pressed, and how many seconds it took.</span>
-        </li>
-        <li>
-          <strong>See the refund windows.</strong> In the queue, open a sale&apos;s row, then Why this came up, then Refund windows.
-          <span className="quiet">Look for each sale&apos;s 180 days as a bar, with a line at the recall date and one at today.</span>
-        </li>
-        <li>
-          <strong>Ask what a recall needs.</strong> On the card for recall 27040, press Approve this check request and answer on the family&apos;s page.
-          <span className="quiet">Look for the answer changing the seller&apos;s card, with no money moved.</span>
-        </li>
-        <li>
-          <strong>See it stay quiet.</strong> <Link href="/replay">Recall Replay</Link> runs every recall from 2025 on, and you can recount it. <Link href="/eval">The eval</Link> has held-out numbers beside a word-match baseline.
-          <span className="quiet">Look for how many recalls had nothing near them, and where the eval says it falls short.</span>
-        </li>
-        <li>
-          <strong>Try to break it.</strong> <Link href="/safety">The safety checks</Link> try five attacks on the real code.
-          <span className="quiet">Look for what stopped each one, and the test that pins it.</span>
         </li>
         <li>
           <strong>Ask the shopping agent.</strong> <Link href="/shopper">Press a chip</Link> and wait about ten seconds. It uses real Claude and real listings, on a small daily limit.
           <span className="quiet">Look for a listing it wouldn&apos;t offer, with the recall named, and open What the agent did. Listings change, so a run may come back different, and it may not stop any.</span>
         </li>
         <li>
-          <strong>Type a product you know.</strong> <Link href="/check">Check one item</Link> takes what&apos;s on a label and a model number, or <Link href="/check?title=Baby+Brezza+sterilizer&amp;model=BRZ0083">see one name a recall</Link>.
-          <span className="quiet">Look for the recall to read, and what it says when nothing names your product.</span>
+          <strong>See it stay quiet.</strong> <Link href="/replay">Recall Replay</Link> runs every recall from 2025 on, and you can recount it. <Link href="/eval">The eval</Link> has held-out numbers beside a word-match baseline.
+          <span className="quiet">Look for how many recalls had nothing near them, and where the eval says it falls short.</span>
         </li>
       </ol>
+      <details className="window">
+        <summary>More to try</summary>
+        <ol className="cleared-list numbered-steps" start={6} data-testid="itinerary-more">
+          <li>
+            <strong>See the refund windows.</strong> In the queue, open a sale&apos;s row, then Why this came up, then Refund windows.
+            <span className="quiet">Look for each sale&apos;s 180 days as a bar, with a line at the recall date and one at today.</span>
+          </li>
+          <li>
+            <strong>Ask what a recall needs.</strong> On the card for recall 27040, press Approve this check request and answer on the family&apos;s page.
+            <span className="quiet">Look for the answer changing the seller&apos;s card, with no money moved.</span>
+          </li>
+          <li>
+            <strong>Try to break it.</strong> <Link href="/safety">The safety checks</Link> try five attacks on the real code.
+            <span className="quiet">Look for what stopped each one, and the test that pins it.</span>
+          </li>
+          <li>
+            <strong>Type a product you know.</strong> <Link href="/check">Check one item</Link> takes what&apos;s on a label and a model number, or <Link href="/check?title=Baby+Brezza+sterilizer&amp;model=BRZ0083">see one name a recall</Link>.
+            <span className="quiet">Look for the recall to read, and what it says when nothing names your product.</span>
+          </li>
+        </ol>
+      </details>
       <LateRefundTest />
       <h2 className="section-title">From a terminal</h2>
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
