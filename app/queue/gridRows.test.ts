@@ -289,6 +289,15 @@ describe("what the grid holds", () => {
       expect(by(build([row({ saleCents: 1850, saleCurrency: "CAD" })]), "m1").saleUsd).toBeNull();
     });
 
+    it("reads a line discounted past its price as zero, the way the refund does", () => {
+      expect(by(build([row({ saleCents: -500, saleCurrency: "USD" })]), "m1").saleUsd).toBe(0);
+    });
+
+    it("doesn't count a line with nothing to refund", () => {
+      expect(by(build([row({ ...confirmed, saleCents: -500, saleCurrency: "USD" })]), "m1").refundEligible).toBe(false);
+      expect(by(build([row({ ...confirmed, saleCents: 0, saleCurrency: "USD" })]), "m1").refundEligible).toBe(false);
+    });
+
     it("leaves a listing with no sale blank", () => {
       expect(by(build([row({ saleCents: null, saleCurrency: null })]), "m1").saleUsd).toBeNull();
     });

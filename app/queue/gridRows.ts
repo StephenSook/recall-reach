@@ -69,6 +69,8 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
   return [...rows].sort((a, b) => place(a) - place(b)).map((r) => {
     const isLead = leads.has(r.matchId);
     const card = cardOf.get(r.matchId);
+    // A line discounted past its price has nothing to refund, as refundAmountCents reads it.
+    const saleCents = r.saleCents === null || r.saleCents === undefined ? null : Math.max(0, r.saleCents);
     return {
       matchId: r.matchId,
       recallNumber: r.recallNumber,
@@ -91,8 +93,8 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,
       saleId: r.recordId,
-      saleUsd: r.saleCents !== null && r.saleCents !== undefined && r.saleCurrency === "USD" ? r.saleCents / 100 : null,
-      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed"),
+      saleUsd: saleCents !== null && r.saleCurrency === "USD" ? saleCents / 100 : null,
+      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed") && saleCents !== 0,
     };
   });
 }
