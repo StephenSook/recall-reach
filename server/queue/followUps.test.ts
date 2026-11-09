@@ -13,6 +13,7 @@ describe("the follow-ups a shop has confirmed", () => {
   let shopA: string;
   let shopB: string;
   let match: string;
+  let sha: string;
 
   const newMatch = async (shop: string) => {
     const { rows: items } = await db.query<{ id: string }>("insert into shop_items (shop_id, title, source) values ($1, 'A high chair', 'test') returning id", [shop]);
@@ -20,7 +21,8 @@ describe("the follow-ups a shop has confirmed", () => {
     const { rows } = await db.query<{ id: string }>("insert into recall_matches (shop_id, recall_id, recall_sha256, shop_item_id, verdict, matched, missing, reason) values ($1, $2, $3, $4, 'MATCH', '[]'::jsonb, '[]'::jsonb, 'test') returning id", [shop, recalls[0].recall_id, recalls[0].raw_sha256, items[0].id]);
     return rows[0].id;
   };
-  const input = (over: object = {}) => ({ shopId: shopA, matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, ...over });
+  const current = async () => (await db.query<{ raw_sha256: string }>("select r.raw_sha256 from recall_matches m join recalls r using (recall_id) where m.id = $1", [match])).rows[0].raw_sha256;
+  const input = (over: object = {}) => ({ shopId: shopA, matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha, ...over });
 
   beforeEach(async () => {
     db = await testDb();
@@ -30,6 +32,7 @@ describe("the follow-ups a shop has confirmed", () => {
     shopA = await createShop(db, { name: "A", kind: "DEMO" });
     shopB = await createShop(db, { name: "B", kind: "DEMO" });
     match = await newMatch(shopA);
+    sha = await current();
   });
   afterEach(async () => {
     await db.close();
@@ -37,7 +40,7 @@ describe("the follow-ups a shop has confirmed", () => {
 
   it("keeps what was confirmed", async () => {
     expect(await saveFollowUp(db, input())).toBe(true);
-    expect(await followUpsFor(db, shopA)).toEqual([{ matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false }]);
+    expect(await followUpsFor(db, shopA)).toEqual([{ matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha }]);
   });
 
   it("moves the date when it's saved again, and keeps one row", async () => {
@@ -89,8 +92,14 @@ describe("the follow-ups a shop has confirmed", () => {
   it("can be planned again after that, and shows", async () => {
     await saveFollowUp(db, input());
     await db.query("update recalls set raw_sha256 = 'a-new-snapshot' where recall_id = (select recall_id from recall_matches where id = $1)", [match]);
-    await saveFollowUp(db, input({ due: "2026-11-20" }));
+    await saveFollowUp(db, input({ due: "2026-11-20", snapshot: "a-new-snapshot" }));
     expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-20" }]);
+  });
+
+  it("won't save advice read from older CPSC text, even if CPSC changed a moment ago", async () => {
+    await db.query("update recalls set raw_sha256 = 'a-new-snapshot' where recall_id = (select recall_id from recall_matches where id = $1)", [match]);
+    expect(await saveFollowUp(db, input())).toBe(false);
+    expect(await followUpsFor(db, shopA)).toEqual([]);
   });
 
   it("only returns this shop's", async () => {

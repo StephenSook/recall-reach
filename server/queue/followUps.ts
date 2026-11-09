@@ -9,27 +9,29 @@ export interface SavedFollowUp {
   reason: string;
   hazardQuote: string;
   movedEarlier: boolean;
+  /** The CPSC text the reason and quote came from. */
+  snapshot: string;
 }
 
 export async function followUpsFor(db: Queryable, shopId: string): Promise<SavedFollowUp[]> {
-  const { rows } = await db.query<{ match_id: string; due: string; reason: string; hazard_quote: string; moved_earlier: boolean }>(
-    `select f.match_id, f.due_on::text as due, f.reason, f.hazard_quote, f.moved_earlier
+  const { rows } = await db.query<{ match_id: string; due: string; reason: string; hazard_quote: string; moved_earlier: boolean; recall_sha256: string }>(
+    `select f.match_id, f.due_on::text as due, f.reason, f.hazard_quote, f.moved_earlier, f.recall_sha256
      from follow_ups f join recall_matches m on m.id = f.match_id join recalls r on r.recall_id = m.recall_id
      where f.shop_id = $1 and f.recall_sha256 = r.raw_sha256
      order by f.due_on, f.match_id`,
     [shopId],
   );
-  return rows.map((r) => ({ matchId: r.match_id, due: r.due, reason: r.reason, hazardQuote: r.hazard_quote, movedEarlier: r.moved_earlier }));
+  return rows.map((r) => ({ matchId: r.match_id, due: r.due, reason: r.reason, hazardQuote: r.hazard_quote, movedEarlier: r.moved_earlier, snapshot: r.recall_sha256 }));
 }
 
-/** False when the match isn't this shop's. The insert selects from the shop's own match, so another shop's id reaches nothing. */
+/** False when the match isn't this shop's, or CPSC has changed the recall since this advice was read: it saves only against the text it came from. */
 export async function saveFollowUp(db: Queryable, input: { shopId: string } & SavedFollowUp): Promise<boolean> {
   const { rows } = await db.query(
     `insert into follow_ups (match_id, shop_id, due_on, reason, hazard_quote, moved_earlier, recall_sha256)
-     select m.id, m.shop_id, $3::date, $4, $5, $6, r.raw_sha256 from recall_matches m join recalls r on r.recall_id = m.recall_id where m.id = $1 and m.shop_id = $2
+     select m.id, m.shop_id, $3::date, $4, $5, $6, $7 from recall_matches m join recalls r on r.recall_id = m.recall_id where m.id = $1 and m.shop_id = $2 and r.raw_sha256 = $7
      on conflict (match_id) do update set due_on = excluded.due_on, reason = excluded.reason, hazard_quote = excluded.hazard_quote, moved_earlier = excluded.moved_earlier, recall_sha256 = excluded.recall_sha256, updated_at = now()
      returning 1`,
-    [input.matchId, input.shopId, input.due, input.reason, input.hazardQuote, input.movedEarlier],
+    [input.matchId, input.shopId, input.due, input.reason, input.hazardQuote, input.movedEarlier, input.snapshot],
   );
   return rows.length > 0;
 }

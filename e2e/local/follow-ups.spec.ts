@@ -26,7 +26,7 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
     recallNumber = found.rows[0].n;
     await db.query(
       `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
-       select raw_sha256, '1', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
+       select raw_sha256, '2', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
        on conflict do nothing`,
       [REASON, recallNumber],
     );

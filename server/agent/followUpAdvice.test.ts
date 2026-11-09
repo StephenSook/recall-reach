@@ -55,7 +55,7 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
 
   it("returns the days, the sentence and CPSC's words", async () => {
     const { client } = fakeClaude([[good()]]);
-    expect(await advise(client)).toEqual({ status: "ADVISED", advice: { withinDays: 3, reason: REASON, hazardQuote: hazard } });
+    expect(await advise(client)).toMatchObject({ status: "ADVISED", advice: { withinDays: 3, reason: REASON, hazardQuote: hazard } });
   });
 
   it("offers one tool, which can only record the advice", async () => {
@@ -117,6 +117,10 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     ["a long reason", "x ".repeat(120)],
     ["two sentences", "Entrapment is serious. Reach them soon."],
     ["calling something safe", "This product is safe to keep for now."],
+    ["saying it isn't recalled", "This product is not recalled, so act soon."],
+    ["saying there's no danger", "There is no danger to the child, so follow up in thirty days."],
+    ["saying nothing is urgent", "No urgent action is needed for this hazard."],
+    ["calling it harmless", "This hazard is harmless, so follow up later."],
     ["a dash", "Entrapment — reach this family soon."],
     ["curly quotes", "CPSC says “entrapment” is serious."],
     ["nothing", " "],
@@ -124,6 +128,11 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     const { client, requests } = fakeClaude([[good({ reason })], [good()]]);
     expect((await advise(client)).status).toBe("ADVISED");
     expect(lastReply(requests[1])[0]).toMatchObject({ type: "tool_result", is_error: true });
+  });
+
+  it("carries which CPSC text it read, so a saved reminder can be tied to it", async () => {
+    const { rows } = await db.query<{ raw_sha256: string }>("select raw_sha256 from recalls where recall_number = $1", [RECALL]);
+    expect(await advise(fakeClaude([[good()]]).client)).toMatchObject({ advice: { snapshot: rows[0].raw_sha256 } });
   });
 
   it("gives up after a few bad tries and stores nothing", async () => {
@@ -138,7 +147,7 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     const first = fakeClaude([[good()]]);
     await advise(first.client);
     const second = fakeClaude([]);
-    expect(await advise(second.client)).toEqual({ status: "ADVISED", advice: { withinDays: 3, reason: REASON, hazardQuote: hazard } });
+    expect(await advise(second.client)).toMatchObject({ status: "ADVISED", advice: { withinDays: 3, reason: REASON, hazardQuote: hazard } });
     expect(second.requests).toHaveLength(0);
   });
 

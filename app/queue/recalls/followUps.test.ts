@@ -60,7 +60,11 @@ describe("checking a date the owner confirms or drags to", () => {
   });
 
   it("lets a notice's date go past the bar, with no refund window to protect", () => {
-    expect(checkFollowUpDate(sale({ tone: "notice", windowEnds: "2026-06-01" }), "2026-12-20", TODAY)).toBe("OK");
+    expect(checkFollowUpDate(sale({ tone: "notice", windowEnds: "2026-06-01" }), "2026-12-09", TODAY)).toBe("OK");
+  });
+
+  it("stops a notice's date 30 days out, so it can't land off the end of the chart", () => {
+    expect(checkFollowUpDate(sale({ tone: "notice", windowEnds: "2026-06-01" }), "2026-12-10", TODAY)).toBe("TOO_FAR");
   });
 
   it.each(["", "soon", "2026-13-40", "2026-02-30", "2026-11-14T00:00:00Z", "11/14/2026"])("refuses %j, which isn't a calendar day", (day) => {
@@ -91,11 +95,11 @@ describe("what a follow-up says", () => {
   });
 
   it("stops the date picker a week before an open window ends", () => {
-    expect(latestDay(sale({ windowEnds: "2026-11-20" }))).toBe("2026-11-13");
+    expect(latestDay(sale({ windowEnds: "2026-11-20" }), TODAY)).toBe("2026-11-13");
   });
 
-  it("leaves it open for a sale with no refund window", () => {
-    expect(latestDay(sale({ tone: "notice" }))).toBeUndefined();
+  it("stops it 30 days out for a sale with no refund window", () => {
+    expect(latestDay(sale({ tone: "notice" }), TODAY)).toBe("2026-12-09");
   });
 });
 

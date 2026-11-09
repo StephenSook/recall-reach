@@ -18,6 +18,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_BODY_BYTES = 512;
 const BODY_TIMEOUT_MS = 5000;
 const SIGN_IN = "sign in as a shop first";
+const CPSC_CHANGED = "CPSC changed this recall. Plan the follow-ups again.";
 const perShop = createRateLimiter({ limit: 30, windowMs: 60 * 60 * 1000 });
 
 const ADVICE_REFUSED = {
@@ -31,6 +32,7 @@ const DATE_REFUSED: Record<Exclude<FollowUpDateCheck, "OK">, string> = {
   NOT_A_DATE: "Pick a day.",
   PAST: "That day has gone.",
   TOO_LATE: "That leaves less than a week of this sale's refund window.",
+  TOO_FAR: "Pick a day within 30 days.",
 };
 
 async function timelineOf(shopId: string, sessionId: string, recallNumber: string) {
@@ -79,7 +81,7 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
     }
     const done = new Set((await followUpsFor(getDb(), session.shopId)).map((f) => f.matchId));
     const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id)), advice.withinDays, timeline.today);
-    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, proposals, closingSoon }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("plan", err);
   }
@@ -93,6 +95,8 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
   const body = await readJson(request);
   const saleId = saleIdOf(body);
   if (!saleId) return refused(400, "not a follow-up");
+  const snapshot = typeof body?.snapshot === "string" && body.snapshot.length > 0 && body.snapshot.length <= 128 ? body.snapshot : null;
+  if (!snapshot) return refused(400, "not a follow-up");
   const due = typeof body?.due === "string" ? body.due : "";
   try {
     const timeline = await timelineOf(session.shopId, session.sessionId, recallNumber);
@@ -103,9 +107,11 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
     if (checked !== "OK") return refused(422, DATE_REFUSED[checked]);
     const advice = await storedAdvice(getDb(), recallNumber);
     if (!advice) return refused(409, "Plan the follow-ups first.");
+    if (advice.snapshot !== snapshot) return refused(409, CPSC_CHANGED);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
-    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier: placed?.due === due && placed.movedEarlier });
-    if (!saved) return refused(404, "This shop has no such sale of that recall.");
+    const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier: placed?.due === due && placed.movedEarlier, snapshot });
+    // The sale was just found on this shop's timeline, so a refusal here means CPSC changed the recall a moment ago.
+    if (!saved) return refused(409, CPSC_CHANGED);
     return Response.json({ saved: true }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("save", err);

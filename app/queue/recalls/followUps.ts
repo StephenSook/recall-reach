@@ -42,14 +42,17 @@ export function placeFollowUps(sales: readonly TimelineSale[], withinDays: numbe
 
 const isCalendarDay = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`)) && new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day;
 
-export type FollowUpDateCheck = "OK" | "NOT_A_DATE" | "PAST" | "TOO_LATE";
+export type FollowUpDateCheck = "OK" | "NOT_A_DATE" | "PAST" | "TOO_LATE" | "TOO_FAR";
+
+/** The chart ends at least this far past today, so a date within it always shows. Claude's own advice is at most this many days. */
+export const MAX_DAYS_AHEAD = 30;
 
 /** The same rule for a date the owner confirms or drags to. The server runs it again before anything is saved. */
 export function checkFollowUpDate(sale: TimelineSale, day: string, today: string): FollowUpDateCheck {
   if (!isCalendarDay(day)) return "NOT_A_DATE";
   if (day < today) return "PAST";
-  if (hasOpenWindow(sale) && day > lastFollowUpDay(sale.windowEnds)) return "TOO_LATE";
-  return "OK";
+  if (hasOpenWindow(sale)) return day > lastFollowUpDay(sale.windowEnds) ? "TOO_LATE" : "OK";
+  return day > addDays(today, MAX_DAYS_AHEAD) ? "TOO_FAR" : "OK";
 }
 
 /** One follow-up, as the timeline and the list under it show it. */
@@ -60,6 +63,8 @@ export interface FollowUpView {
   reason: string;
   hazardQuote: string;
   movedEarlier: boolean;
+  /** The CPSC text this came from, sent back when it's confirmed. */
+  snapshot: string;
 }
 
 const LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -74,8 +79,8 @@ export function followUpLines(f: Pick<FollowUpView, "reason" | "hazardQuote" | "
 
 export const closingSoonLine = (count: number) => (count === 1 ? "1 sale: window closes too soon, refund now." : `${count} sales: window closes too soon, refund now.`);
 
-/** The last day the date picker offers. A sale with no refund open has no window to stay inside. */
-export const latestDay = (sale: TimelineSale) => (hasOpenWindow(sale) ? lastFollowUpDay(sale.windowEnds) : undefined);
+/** The last day the date picker offers. */
+export const latestDay = (sale: TimelineSale, today: string) => (hasOpenWindow(sale) ? lastFollowUpDay(sale.windowEnds) : addDays(today, MAX_DAYS_AHEAD));
 
 /** The saved reminders still in force: on this timeline, for a family not yet reached. Answered, or refunded, and it retires. */
 export function activeFollowUps<T extends { matchId: string }>(saved: readonly T[], sales: readonly TimelineSale[]): T[] {

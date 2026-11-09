@@ -11,7 +11,7 @@ import { normalized, quoted } from "./quote";
 import { readRecall } from "./sources";
 
 /** Goes up when the prompt or the checks change, so advice written under older rules is written again. */
-export const FOLLOW_UP_VERSION = "1";
+export const FOLLOW_UP_VERSION = "2";
 
 const MAX_STEPS = 3;
 const MAX_REASON_LENGTH = 160;
@@ -21,7 +21,7 @@ const SYSTEM = `You help a resale shop decide how soon to follow up with a famil
 
 Give:
 - within_days: a whole number of days from today, from 1 to 30. Use fewer days for a hazard that can kill or seriously injure a child quickly and without warning, such as drowning, suffocation, strangulation or entrapment. Use more for a hazard that gives warning or causes minor injury.
-- reason: one short plain sentence saying why that many days, naming the hazard in CPSC's terms. Don't say the product is safe or unsafe. Use straight quotes and no dashes.
+- reason: one short plain sentence saying why that many days, naming the hazard in CPSC's terms. Don't say the product is safe or unsafe, whether it is recalled, or that there's no danger or no hurry. Use straight quotes and no dashes.
 - hazard_quote: the few words in CPSC's hazards field that the reason rests on, copied exactly. Keep it to a phrase.
 
 Record your answer with record_follow_up.`;
@@ -52,7 +52,8 @@ const answerInput = z.object({
 type Answer = z.infer<typeof answerInput>;
 
 const NOT_PLAIN = /[–—‘’“”]/;
-const CALLS_IT_SAFE = /\b(safe|unsafe)\b/i;
+/** A reason says how soon and why. It never says a product is fine, or what its recall status is. */
+const ASSURES = /\b(safe|unsafe|harmless|recalled|no (?:danger|risk|hazard|threat|urgent|urgency|need|rush)|not (?:dangerous|urgent|serious|hazardous|a risk|a danger))\b/i;
 /** A full stop with more words after it means a second sentence. */
 const SECOND_SENTENCE = /[.!?]\s+\S/;
 
@@ -61,7 +62,7 @@ function answerProblem(answer: Answer, hazards: string[]): OurText | null {
   if (!reason) return ourText("Give one short sentence in reason.");
   if (reason.length > MAX_REASON_LENGTH) return ourText("Make the reason shorter: one short sentence.");
   if (SECOND_SENTENCE.test(reason)) return ourText("The reason has to be one sentence.");
-  if (CALLS_IT_SAFE.test(reason)) return ourText("Don't say the product is safe or unsafe. Say why this many days.");
+  if (ASSURES.test(reason)) return ourText("Don't say whether the product is safe or recalled, or that there's no danger. Say why this many days, naming the hazard.");
   if (NOT_PLAIN.test(reason)) return ourText("Use straight quotes and no dashes.");
   if (answer.hazard_quote.trim().length > MAX_QUOTE_LENGTH) return ourText("Quote fewer words: only the ones the reason rests on.");
   if (!quoted(hazards, answer.hazard_quote)) return ourText("hazard_quote is not in CPSC's hazards field. Copy the exact words from it.");
@@ -72,6 +73,8 @@ export interface FollowUpAdvice {
   withinDays: number;
   reason: string;
   hazardQuote: string;
+  /** Which CPSC text this was read from. A saved reminder is tied to it. */
+  snapshot: string;
 }
 
 export type AdviceResult = { status: "ADVISED"; advice: FollowUpAdvice } | { status: "NO_ADVICE" | "OVER_BUDGET" | "UNAVAILABLE" | "NO_SUCH_RECALL" };
@@ -86,7 +89,7 @@ export async function storedAdvice(db: Queryable, recallNumber: string): Promise
   if (!recall) return null;
   const { rows } = await db.query<{ within_days: number; reason: string; hazard_quote: string }>("select within_days, reason, hazard_quote from follow_up_advice where recall_sha256 = $1 and agent_version = $2", [recall.raw_sha256, FOLLOW_UP_VERSION]);
   const row = rows[0];
-  return row ? { withinDays: row.within_days, reason: row.reason, hazardQuote: row.hazard_quote } : null;
+  return row ? { withinDays: row.within_days, reason: row.reason, hazardQuote: row.hazard_quote, snapshot: recall.raw_sha256 } : null;
 }
 
 async function runLoop(db: Queryable, client: Anthropic, model: string, text: unknown, number: string, hazards: string[], now: Date, spent: Spent, capMicros?: number): Promise<{ answer: Answer | null; model: string }> {
@@ -139,7 +142,7 @@ export async function adviseFollowUp(db: Queryable, client: Anthropic, input: { 
   }
   const a = run.answer;
   if (!a) return { status: "NO_ADVICE" };
-  const advice = { withinDays: a.within_days, reason: a.reason.trim(), hazardQuote: normalized(a.hazard_quote) };
+  const advice = { withinDays: a.within_days, reason: a.reason.trim(), hazardQuote: normalized(a.hazard_quote), snapshot: current.raw_sha256 };
   await db.query(
     `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
