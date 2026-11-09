@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import type { AgBaseRegistry, AgDefaultWidgetDefinition, AgWidgetDataFormat, AgWidgetFieldReference, AgWidgetParams } from 'ag-studio';
 import type { AgWidgetDefinition } from 'ag-studio-react';
 import { OutcomeBadge } from './OutcomeBadge';
-import { recallPage, recallsToRead, type RecallRow } from './toRead';
+import { recallPage, recallsToRead, rowsFrom, type RecallRow } from './toRead';
 
 export const TO_READ = 'recalls-to-read';
 
@@ -22,6 +22,7 @@ export interface RecallRegistry extends AgBaseRegistry {
 
 function RecallsToRead(props: AgWidgetParams<ToReadDefinition>) {
   const [rows, setRows] = useState<RecallRow[]>([]);
+  const [failed, setFailed] = useState(false);
 
   // Studio hands this component new props whenever its data should be read again, such as a filter changing.
   useEffect(() => {
@@ -39,17 +40,24 @@ function RecallsToRead(props: AgWidgetParams<ToReadDefinition>) {
       .getData({ fields: [recall, title, outcome] })
       .then(({ results }) => {
         if (!current) return;
-        const found = recallsToRead(results.rows.map((row) => ({ recallNumber: String(row[recall.key]), title: String(row[title.key]), outcome: String(row[outcome.key]) })));
+        const read = rowsFrom(results, { recall: recall.key, title: title.key, outcome: outcome.key });
+        const found = recallsToRead(read ?? []);
         setRows(found);
-        widgetApi.setDisplayState(found.length > 0 ? 'displayed' : 'noData');
+        setFailed(read === null);
+        widgetApi.setDisplayState(read === null || found.length > 0 ? 'displayed' : 'noData');
       })
       .catch(() => {
-        if (current) widgetApi.setDisplayState('noData');
+        if (!current) return;
+        setRows([]);
+        setFailed(true);
+        widgetApi.setDisplayState('displayed');
       });
     return () => {
       current = false;
     };
   }, [props]);
+
+  if (failed) return <p data-testid="studio-to-read-failed">This list couldn&apos;t be read. Please reload the page.</p>;
 
   return (
     <ul className="studio-to-read" data-testid="studio-to-read">

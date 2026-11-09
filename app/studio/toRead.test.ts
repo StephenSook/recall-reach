@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recallPage, recallsToRead } from "./toRead";
+import { recallPage, recallsToRead, rowsFrom } from "./toRead";
 
 const row = (recallNumber: string, outcome: string) => ({ recallNumber, title: `Recall ${recallNumber}`, outcome });
 
@@ -34,5 +34,21 @@ describe("the link to a recall", () => {
 
   it("can't be turned into another address by what's in the data", () => {
     expect(recallPage("../../admin")).toBe("/recall/..%2F..%2Fadmin");
+  });
+});
+
+describe("what a query hands the widget", () => {
+  const keys = { recall: "n", title: "t", outcome: "o" };
+
+  it("reads its rows", () => {
+    expect(rowsFrom({ rows: [{ n: "27072", t: "A recall", o: "Matched" }] }, keys)).toEqual([{ recallNumber: "27072", title: "A recall", outcome: "Matched" }]);
+  });
+
+  it("says a query that failed failed, because no rows from a failed query doesn't mean nothing to read", () => {
+    expect(rowsFrom({ rows: [], metadata: { error: { message: "no" } as never } }, keys)).toBeNull();
+  });
+
+  it("takes an empty answer from a query that worked as nothing to read", () => {
+    expect(rowsFrom({ rows: [] }, keys)).toEqual([]);
   });
 });
