@@ -409,6 +409,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       {cleared.length > 0 || unrelated > 0 ? (
         <section className="narrow-only">
           <h2 className="section-title">Checked and cleared</h2>
+          <p className="note">Cleared means this recall didn&apos;t match this sale. It doesn&apos;t mean the item is safe, or that no other recall exists.</p>
           {cleared.length > 0 ? (
             <div className="window" data-verdict="CLEARED" data-testid="cleared">
               <header className="window-bar">
