@@ -96,6 +96,14 @@ describe("the integrations list", () => {
     expect(detail).toBe("The scheduled refresh didn't finish cleanly lately. A Replay run from the last 2 days exists.");
   });
 
+  it("keeps a recent Channel3 search live when only its counts couldn't be read, and says so", () => {
+    expect(row({ ...healthy, channel3: { fresh: true, lastOkAt: RECENT, searched: null, listings: null } }, "channel3")).toMatchObject({
+      mode: "live",
+      checkedAt: RECENT,
+      detail: "A search worked in the last 8 days. Its counts couldn't be read just now.",
+    });
+  });
+
   it("doesn't guess why GitHub showed no scheduled run", () => {
     expect(row({ ...healthy, newman: null }, "newman").detail).toBe("GitHub showed no scheduled run. The repository may be private, or GitHub didn't answer.");
   });
@@ -138,7 +146,7 @@ describe("gathering the facts", () => {
   it("marks one failed check down and leaves the others", async () => {
     const facts = await integrationFacts({} as never, health, env, { ...deps, studioRows: async () => { throw new Error("db"); }, sweepCounts: async () => { throw new Error("db"); } });
     expect(facts.agStudio.rows).toBeNull();
-    expect(facts.channel3).toMatchObject({ fresh: false });
+    expect(facts.channel3).toMatchObject({ fresh: true, searched: null, listings: null });
     expect(facts.newman).toMatchObject({ conclusion: "success" });
   });
 });

@@ -30,7 +30,8 @@ export interface IntegrationFacts {
   cpsc: { fresh: boolean; recalls: number; lastPullAt: string | null };
   claude: { mainFresh: boolean; mainAt: string | null; anyFresh: boolean; anyAt: string | null };
   paypal: { webhookConfigured: boolean; lastVerifiedWebhookAt: string | null };
-  channel3: { fresh: boolean; lastOkAt: string | null; searched: number; listings: number };
+  /** searched and listings are null when the count query failed: that says nothing about whether the search works. */
+  channel3: { fresh: boolean; lastOkAt: string | null; searched: number | null; listings: number | null };
   replay: { lastRunAt: string | null; task: { outcome: string | null; finishedAt: string | null } | null };
   agGridLicence: boolean;
   /** The latest Replay run's rows, as AG Studio reads them. "no-run" when Replay has none; null when the query failed. */
@@ -85,7 +86,7 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
     checked("channel3", "Channel3 market search", {
       passed: channel3.fresh,
       at: channel3.lastOkAt,
-      detail: channel3.fresh ? `Searched ${channel3.searched} recalls, holding ${channel3.listings} listings.` : "No good search in the last 8 days.",
+      detail: !channel3.fresh ? "No good search in the last 8 days." : channel3.searched === null ? "A search worked in the last 8 days. Its counts couldn't be read just now." : `Searched ${channel3.searched} recalls, holding ${channel3.listings} listings.`,
     }),
     checked("render-workflows", "Render Workflows", {
       passed: taskWorked,
@@ -201,7 +202,7 @@ export async function integrationFacts(
     cpsc: { fresh: health.checks.lastPull, recalls: health.cpsc?.recalls ?? 0, lastPullAt: health.cpsc?.lastPull?.finishedAt ?? null },
     claude: { mainFresh: health.claude.mainModelFresh, mainAt: health.claude.mainModelOkAt, anyFresh: health.claude.fresh, anyAt: health.claude.lastOkAt },
     paypal: { webhookConfigured: health.paypal.webhookConfigured, lastVerifiedWebhookAt: health.paypal.lastVerifiedWebhookAt },
-    channel3: { fresh: health.market.fresh && sweep !== null, lastOkAt: health.market.lastOkAt, searched: sweep?.searched ?? 0, listings: sweep?.listings ?? 0 },
+    channel3: { fresh: health.market.fresh, lastOkAt: health.market.lastOkAt, searched: sweep?.searched ?? null, listings: sweep?.listings ?? null },
     replay: { lastRunAt: health.replay.lastRunAt, task: health.replay.lastTaskRun ? { outcome: health.replay.lastTaskRun.outcome, finishedAt: health.replay.lastTaskRun.finishedAt } : null },
     agGridLicence: Boolean(env.AG_GRID_LICENSE_KEY?.trim()),
     agStudio: { licence: Boolean(env.AG_STUDIO_LICENSE_KEY?.trim()), rows: studio },
