@@ -130,6 +130,42 @@ describe("the follow-ups a shop has confirmed", () => {
       expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
     });
 
+    describe("when the page knows nothing to cancel, as after a reload, the order the server received changes in decides", () => {
+      const EARLY = new Date("2026-11-09T12:00:00.000Z");
+      const LATE = new Date("2026-11-09T12:00:05.000Z");
+      const FRESH = "00000000-0000-4000-8000-0000000000c1";
+
+      it("refuses a save received before a dismissal that already landed", async () => {
+        await saveFollowUp(db, input({ attempt: FRESH, receivedAt: new Date("2026-11-09T11:59:00.000Z") }));
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: LATE })).toBe(true);
+        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe("cancelled");
+        expect(await followUpsFor(db, shopA)).toEqual([]);
+      });
+
+      it("refuses a dismissal received before a save that already landed", async () => {
+        expect(await saveFollowUp(db, input({ receivedAt: LATE }))).toBe(true);
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: EARLY })).toBe("cancelled");
+        expect(await followUpsFor(db, shopA)).toHaveLength(1);
+      });
+
+      it("refuses an older date received before a newer one that already landed", async () => {
+        expect(await saveFollowUp(db, input({ due: "2026-11-14", attempt: FRESH, receivedAt: LATE }))).toBe(true);
+        expect(await saveFollowUp(db, input({ due: "2026-11-13", receivedAt: EARLY }))).toBe("cancelled");
+        expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-14" }]);
+      });
+
+      it("lets a change received later go through", async () => {
+        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe(true);
+        expect(await dropFollowUp(db, shopA, match, { attempt: DROP, receivedAt: LATE })).toBe(true);
+      });
+
+      it("keeps one shop's order apart from another's", async () => {
+        const theirs = await newMatch(shopB);
+        await dropFollowUp(db, shopB, theirs, { attempt: DROP, receivedAt: LATE });
+        expect(await saveFollowUp(db, input({ receivedAt: EARLY }))).toBe(true);
+      });
+    });
+
     it("can only be cancelled by the shop that made it", async () => {
       await dropFollowUp(db, shopB, match, { attempt: DROP, supersedes: [ATTEMPT] });
       expect(await saveFollowUp(db, input())).toBe(true);

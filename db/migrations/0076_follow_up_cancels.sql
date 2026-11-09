@@ -6,3 +6,12 @@ create table follow_up_cancels (
   created_at  timestamptz not null default now()
 );
 comment on table follow_up_cancels is 'data-source: shop-owned';
+
+-- When the server received the newest change to each sale's reminder. A change received earlier that lands later is
+-- refused, so the order the owner acted in holds even when the page has forgotten what to cancel, as after a reload.
+create table follow_up_fences (
+  match_id     uuid primary key references recall_matches (id) on delete cascade,
+  shop_id      uuid not null references shops (id) on delete cascade,
+  received_at  timestamptz not null
+);
+comment on table follow_up_fences is 'data-source: shop-owned';

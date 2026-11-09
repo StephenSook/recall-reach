@@ -144,7 +144,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
       const res = await confirm({ saleId: SALE, due: "2026-11-12" });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ saved: true, movedEarlier: false });
-      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT, supersedes: [] });
+      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT, supersedes: [], receivedAt: expect.any(Date) });
     });
 
     it("refuses a save with no attempt id, since it couldn't be cancelled", async () => {
@@ -328,12 +328,12 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
   describe("dismissing", () => {
     it("removes it for this shop", async () => {
       expect((await dismiss({ saleId: SALE })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [] });
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [], receivedAt: expect.any(Date) });
     });
 
     it("cancels the saves the page never heard back from", async () => {
       expect((await dismiss({ saleId: SALE, supersedes: [ATTEMPT] })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [ATTEMPT] });
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, { attempt: DROP, supersedes: [ATTEMPT], receivedAt: expect.any(Date) });
     });
 
     it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses earlier changes that are %s", async (_name, supersedes) => {
