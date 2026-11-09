@@ -79,8 +79,17 @@ export function saleForExport(value: unknown, row: SaleRow): unknown {
   return value;
 }
 
-/** A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave by copying either. */
-export const copiedCell = (value: unknown, row: { verdict?: string } | undefined): unknown => (row?.verdict === "UNIDENTIFIED" ? "" : value);
+/** What a cell copies as. A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave by copying either. */
+export function copiedCell(columnId: string, value: unknown, row: ({ verdict?: string } & SaleRow) | undefined): unknown {
+  if (row?.verdict === "UNIDENTIFIED") return "";
+  return columnId === "saleUsd" ? saleCellWords(value, row) : value;
+}
+
+/** Sales by recall is the one chart where each sale counts once, so nothing else can be picked in the chart's own panel. */
+export function chartRole(field: string): "category" | "series" | "excluded" {
+  if (field === "recallNumber") return "category";
+  return field === "saleUsd" ? "series" : "excluded";
+}
 
 const NOT_EXPORTED = new Set(["open", "ag-Grid-SelectionColumn"]);
 export const excelColumns = (columnIds: string[]) => columnIds.filter((id) => !NOT_EXPORTED.has(id));

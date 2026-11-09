@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
+import { chartRole, copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 
 describe("grouping the table", () => {
   const cols = [{ field: "recallNumber", enableRowGroup: true }, { field: "state", enableRowGroup: true }, { field: "product" }];
@@ -134,14 +134,33 @@ describe("the sale column", () => {
 
 describe("copying from the table", () => {
   it("copies an ordinary cell", () => {
-    expect(copiedCell("27072", { verdict: "MATCH" })).toBe("27072");
+    expect(copiedCell("recallNumber", "27072", { verdict: "MATCH" })).toBe("27072");
   });
 
   it("copies nothing from a payment nobody could identify", () => {
-    expect(copiedCell("A PayPal payment of 18.00 USD", { verdict: "UNIDENTIFIED" })).toBe("");
+    expect(copiedCell("itemTitle", "A PayPal payment of 18.00 USD", { verdict: "UNIDENTIFIED" })).toBe("");
   });
 
   it("copies a group row's value", () => {
-    expect(copiedCell("Matched", undefined)).toBe("Matched");
+    expect(copiedCell("state", "Matched", undefined)).toBe("Matched");
+  });
+
+  it("copies what the Sale column says, so a sale not in dollars isn't a blank in the spreadsheet", () => {
+    expect(copiedCell("saleUsd", null, { verdict: "MATCH", soldOn: "2026-11-01" })).toBe("Not in USD");
+  });
+
+  it("copies a sale in dollars", () => {
+    expect(copiedCell("saleUsd", 18.5, { verdict: "MATCH", soldOn: "2026-11-01" })).toBe("$18.50");
+  });
+});
+
+describe("what the chart can use", () => {
+  it("charts sales by recall, where a sale counts once", () => {
+    expect(chartRole("recallNumber")).toBe("category");
+    expect(chartRole("saleUsd")).toBe("series");
+  });
+
+  it.each(["state", "path", "noticeState", "product", "soldOn"])("keeps %s out, because a sale matching two recalls would count twice there", (field) => {
+    expect(chartRole(field)).toBe("excluded");
   });
 });

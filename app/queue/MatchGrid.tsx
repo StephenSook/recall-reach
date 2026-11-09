@@ -5,7 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
 import { licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
-import { copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
+import { chartRole, copiedCell, excelColumns, grouped, refundTotal, saleCellWords, saleForExport, saleLabel, saleSum, usd } from "./gridFeatures";
 import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
@@ -61,22 +61,22 @@ const keepsOutUnidentified = (p: ShouldRowBeSkippedParams<Row>) => p.node.data?.
 // AG Grid's type says string, and Excel only gets a number cell from a number, so a number goes through as one.
 const cellForExport = (p: ProcessCellForExportParams<Row>): string =>
   (p.column.getColId() === "saleUsd" ? saleForExport(p.value, p.node?.data) : p.value) as string;
-const cellForClipboard = (p: ProcessCellForExportParams<Row>): string => copiedCell(p.value, p.node?.data) as string;
-// The right-click menu has its own export entries, which would skip the rule above.
-const MENU_ITEMS: DefaultMenuItem[] = ["copy", "copyWithHeaders", "separator", "chartRange"];
+const cellForClipboard = (p: ProcessCellForExportParams<Row>): string => copiedCell(p.column.getColId(), p.value, p.node?.data) as string;
+// The right-click menu's default export and chart entries would skip the rules above.
+const MENU_ITEMS: DefaultMenuItem[] = ["copy", "copyWithHeaders"];
 
 const SET_FILTER = "agSetColumnFilter";
 
 const columns: ColDef<Row>[] = [
-  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
-  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
-  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
-  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
-  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
-  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: "excluded" },
-  { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleCellWords(p.value, p.data), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: "series" },
-  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
-  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
+  { field: "recallNumber", headerName: "Recall", width: 80, cellClass: "id", filter: SET_FILTER, chartDataType: chartRole("recallNumber"), enableRowGroup: true },
+  { field: "product", headerName: "Product", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("product") },
+  { field: "itemTitle", headerName: "Your item", flex: 2, minWidth: 130, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("itemTitle") },
+  { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("state"), enableRowGroup: true },
+  { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: chartRole("path"), enableRowGroup: true },
+  { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: chartRole("soldOn") },
+  { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleCellWords(p.value, p.data), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: chartRole("saleUsd") },
+  { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: chartRole("noticeState"), enableRowGroup: true },
+  { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: chartRole("reason") },
   { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false, suppressColumnsToolPanel: true },
 ];
 
