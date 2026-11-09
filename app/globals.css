@@ -624,7 +624,8 @@ pre {
   max-width: none;
 }
 .studio-frame {
-  height: 78vh;
+  /* The page around it is about 240px tall, so the dashboard fills the window and the page doesn't scroll. */
+  height: calc(100vh - 240px);
   min-height: 560px;
   margin-block: 12px;
   border: 2px solid var(--color-ink);

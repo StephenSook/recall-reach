@@ -26,7 +26,7 @@ export default async function StudioPage() {
         <h1>Recall dashboard</h1>
       </header>
       <p>Ask it to change the view, in plain words.</p>
-      {data ? <StudioLoader rows={data.rows} licenseKey={licenseKey} /> : <p data-testid="studio-empty">Recall Replay hasn&apos;t run yet, so there&apos;s nothing to show.</p>}
+      {data ? <div className="studio-frame"><StudioLoader rows={data.rows} licenseKey={licenseKey} /></div> : <p data-testid="studio-empty">Recall Replay hasn&apos;t run yet, so there&apos;s nothing to show.</p>}
       <p className="note">CPSC&apos;s recalls from 2025 on, and what the demo shop&apos;s check found for each. Nothing PayPal returns is on this page.</p>
     </main>
   );
