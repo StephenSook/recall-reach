@@ -110,7 +110,8 @@ export function integrationsFrom(facts: IntegrationFacts, now: Date): Integratio
 }
 
 const GITHUB_REPO = "https://api.github.com/repos/StephenSook/recall-reach";
-const NEWMAN_RUNS = `${GITHUB_REPO}/actions/workflows/newman.yml/runs?status=completed&per_page=1`;
+// Scheduled runs on main only: a manual run can be pointed at another site, so it says nothing about this one.
+const NEWMAN_RUNS = `${GITHUB_REPO}/actions/workflows/newman.yml/runs?event=schedule&branch=main&status=completed&per_page=1`;
 /** The workflow can pass with these skipped, as it does once it retires, so a passed run alone proves nothing. */
 const NEWMAN_STEPS = ["Run the public collection", "Check the counts"];
 const NEWMAN_CACHE_MS = 60 * 60_000;
@@ -125,8 +126,8 @@ export function createNewmanReader(fetchImpl: typeof fetch = (...args) => fetch(
     try {
       const request = () => ({ headers: { accept: "application/vnd.github+json" }, cache: "no-store" as const, redirect: "error" as const, signal: AbortSignal.timeout(3000) });
       const res = await fetchImpl(NEWMAN_RUNS, request());
-      const body = res.ok ? ((await res.json()) as { workflow_runs?: { id?: number; conclusion?: string | null; updated_at?: string }[] }) : null;
-      const last = body?.workflow_runs?.[0];
+      const body = res.ok ? ((await res.json()) as { workflow_runs?: { id?: number; event?: string; head_branch?: string; conclusion?: string | null; updated_at?: string }[] }) : null;
+      const last = body?.workflow_runs?.find((r) => r.event === "schedule" && r.head_branch === "main");
       let run: NewmanRun | null = last ? { conclusion: last.conclusion ?? null, at: last.updated_at ?? null } : null;
       if (run && last && run.conclusion === "success") {
         const jobsRes = await fetchImpl(`${GITHUB_REPO}/actions/runs/${Number(last.id)}/jobs`, request());
