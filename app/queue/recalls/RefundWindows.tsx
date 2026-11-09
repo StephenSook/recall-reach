@@ -4,7 +4,7 @@
 // server. Everything the chart can do, the list under it can do too, so a phone or a keyboard loses nothing.
 import { useMemo, useState } from "react";
 import type { SavedFollowUp } from "@/server/queue/followUps";
-import { closingSoonLine, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
+import { closingSoonLine, textChangedLine, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
 import { RefundTimelineLoader } from "./RefundTimelineLoader";
 import type { Timeline } from "./timeline";
 
@@ -14,6 +14,7 @@ interface Plan {
   snapshot: string;
   proposals: ProposedFollowUp[];
   closingSoon: number;
+  notOnThisText: number;
   confirmed: SavedFollowUp[];
 }
 
@@ -67,7 +68,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       // The server's list, not this page's: it holds a reminder saved elsewhere and not one that no longer stands.
       setConfirmed(next.confirmed.map(toView));
       setPlan(next);
-      if (next.proposals.length === 0 && next.closingSoon === 0) setMessage("No sale needs a follow-up date right now.");
+      if (next.proposals.length === 0 && next.closingSoon === 0 && next.notOnThisText === 0) setMessage("No sale needs a follow-up date right now.");
     });
 
   const dropProposal = (saleId: string) => setPlan((p) => (p ? { ...p, proposals: p.proposals.filter((x) => x.saleId !== saleId) } : p));
@@ -130,6 +131,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
         ) : null}
         {message ? <p role="status" className="alert" data-testid="follow-up-message">{message}</p> : null}
         {plan && plan.closingSoon > 0 ? <p className="alert" data-testid="closing-soon">{closingSoonLine(plan.closingSoon)}</p> : null}
+        {plan && plan.notOnThisText > 0 ? <p className="alert" data-testid="text-changed">{textChangedLine(plan.notOnThisText)}</p> : null}
         {proposed.length > 0 ? (
           <>
             <ul data-testid="follow-up-proposals">

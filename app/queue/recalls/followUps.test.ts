@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFollowUps, checkFollowUpDate, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, oneAtATime, placeFollowUps } from "./followUps";
+import { activeFollowUps, checkFollowUpDate, closingSoonLine, textChangedLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, oneAtATime, placeFollowUps } from "./followUps";
 import type { TimelineSale } from "./timeline";
 
 const TODAY = "2026-11-09";
@@ -142,5 +142,15 @@ describe("one change at a time", () => {
     const guard = oneAtATime();
     await guard(async () => { throw new Error("no"); }).catch(() => undefined);
     expect(await guard(async () => "next")).toBe("next");
+  });
+});
+
+describe("sales matched before CPSC changed the recall", () => {
+  it("says so for one", () => {
+    expect(textChangedLine(1)).toBe("1 sale: CPSC changed this recall after it was checked, so no date is proposed.");
+  });
+
+  it("says so for several", () => {
+    expect(textChangedLine(3)).toBe("3 sales: CPSC changed this recall after they were checked, so no date is proposed.");
   });
 });

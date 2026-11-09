@@ -77,6 +77,8 @@ export function followUpLines(f: Pick<FollowUpView, "reason" | "hazardQuote" | "
   return [f.reason, `CPSC: "${f.hazardQuote}"`, ...(f.movedEarlier ? [MOVED_NOTE] : [])];
 }
 
+export const textChangedLine = (count: number) => (count === 1 ? "1 sale: CPSC changed this recall after it was checked, so no date is proposed." : `${count} sales: CPSC changed this recall after they were checked, so no date is proposed.`);
+
 export const closingSoonLine = (count: number) => (count === 1 ? "1 sale: window closes too soon, refund now." : `${count} sales: window closes too soon, refund now.`);
 
 /** The last day the date picker offers. */

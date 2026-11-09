@@ -47,6 +47,23 @@ describe("the follow-ups a shop has confirmed", () => {
     expect(await saleIdsOnText(db, shopA, "text-of-another-record")).toEqual(new Set());
   });
 
+  describe("when CPSC edits the recall after this sale was matched, and the sale hasn't been checked against the new text", () => {
+    const newText = "the-recalls-new-text";
+    const edited = async () => {
+      await db.query("update recalls set raw_sha256 = $1 where recall_id = (select recall_id from recall_matches where id = $2)", [newText, match]);
+    };
+
+    it("doesn't plan on the new text", async () => {
+      await edited();
+      expect(await saleIdsOnText(db, shopA, newText)).toEqual(new Set());
+    });
+
+    it("doesn't save advice read from the new text", async () => {
+      await edited();
+      expect(await saveFollowUp(db, input({ snapshot: newText }))).toBe(false);
+    });
+  });
+
   it("keeps what was confirmed", async () => {
     expect(await saveFollowUp(db, input())).toBe(true);
     expect(await followUpsFor(db, shopA)).toEqual([{ matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha }]);
@@ -98,9 +115,10 @@ describe("the follow-ups a shop has confirmed", () => {
     expect(await followUpsFor(db, shopA)).toEqual([]);
   });
 
-  it("can be planned again after that, and shows", async () => {
+  it("can be planned again once the sale has been checked against the new text, and shows", async () => {
     await saveFollowUp(db, input());
     await db.query("update recalls set raw_sha256 = 'a-new-snapshot' where recall_id = (select recall_id from recall_matches where id = $1)", [match]);
+    await db.query("update recall_matches set recall_sha256 = 'a-new-snapshot' where id = $1", [match]);
     await saveFollowUp(db, input({ due: "2026-11-20", snapshot: "a-new-snapshot" }));
     expect(await followUpsFor(db, shopA)).toMatchObject([{ due: "2026-11-20" }]);
   });
