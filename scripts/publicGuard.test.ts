@@ -26,6 +26,9 @@ describe("findViolations", () => {
     ["a research file with a digit", "See research/NOTES-2.md"],
     ["a research script, any extension", "Ported from the EDA script (research/eda/analysis.py: sale_window)"],
     ["a research folder, no file named", "Shaped as Channel3 answered (research/raw/channel3), with invented products"],
+    ["a hidden research file", "See research/.notes.md"],
+    ["a file in a hidden research folder", "See research/.private/notes.md"],
+    ["a research folder ending in a slash", "See research/raw/ for the answers"],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
@@ -38,6 +41,7 @@ describe("findViolations", () => {
 
   it("doesn't mistake an ordinary word for the folder", () => {
     expect(findViolations([file("server/a.ts", "We did our research/review before this. It's a search.")])).toEqual([]);
+    expect(findViolations([file("server/a.ts", "That took research/review.")])).toEqual([]);
   });
 
   it("lets .gitignore name what it keeps out", () => {
