@@ -1,6 +1,6 @@
 // axe-core on every public page a judge is sent to, at desktop and phone width, in each browser the config names. A view
-// passes only with zero violations. Run with playwright.axe.config.ts; each view is its own test, so the count is in the
-// run's "passed" line.
+// passes only with zero violations. Run with playwright.axe.config.ts; each view is its own test, so the run's "passed" line
+// counts them, plus the one control per browser at the end: 52 views and 2 controls, 54 in all.
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 

@@ -14,6 +14,8 @@ process.env.FAKE_PAYPAL_CONTROL = FAKE_PAYPAL_CONTROL;
 
 export default defineConfig({
   testDir: "e2e/local",
+  // The axe pass has its own config, with WebKit too: playwright.axe.config.ts.
+  testIgnore: "axe.spec.ts",
   timeout: 3 * 60_000,
   retries: 0,
   workers: 1,

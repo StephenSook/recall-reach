@@ -6,6 +6,7 @@ import local from "./playwright.local.config";
 export default defineConfig({
   ...local,
   testMatch: "axe.spec.ts",
+  testIgnore: undefined,
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
     { name: "webkit", use: { browserName: "webkit" } },
