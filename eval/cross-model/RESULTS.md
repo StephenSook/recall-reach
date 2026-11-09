@@ -3,6 +3,7 @@
 NOT a human audit. A second model family checked Claude's eval labels blind. "No person has audited them yet" stays true until a person does.
 
 - Auditor: OpenAI's gpt-6.1-sol via the Codex CLI v0.163.0 (codex exec, read-only sandbox, reasoning effort high, no browsing; model name read from the run log header). It saw blind-pairs.json: recall title, recalled products and models, the first 600 characters of the description, and the listing title. It never saw Claude's labels, and the script asserts that no label appears in that file.
+- Where it ran: Codex started in a folder that also held sample.json with Claude's labels (`codex exec -C . -s read-only`), so the sandbox could have read them. Its run log lists every command it ran: two, both reading only cross-model/blind-pairs.json (`head -c 100000` and a Python count of the pairs). It never opened sample.json or any other file. The log isn't in this repo because it holds local paths.
 - Sample: the same 50 held-out pairs as the human audit (seed 20261108, stratified 36 NEAR_MISS / 8 NO_MATCH / 6 UNSURE from 95).
 - Scorer: score_audit.py, unchanged. It prints "Stephen" as the answerer because it was written for a human audit; here the answers are gpt-6.1-sol's. server/eval/crossModel.test.ts re-scores them on every CI run.
 - Result (MEASURED): agreement 34 of 50 (68%, Wilson 95% 54 to 79%). NEAR_MISS 20 of 36, NO_MATCH 8 of 8, UNSURE 6 of 6.
