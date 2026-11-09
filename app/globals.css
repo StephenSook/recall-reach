@@ -633,6 +633,10 @@ pre {
   overflow: hidden;
   background: var(--color-paper);
 }
+/* AG Studio prints each assistant step's working under its label, with raw field tokens like @field[recalls.outcome]. The label and the answer say it plainly. */
+.studio-frame .ag-studio-ai-step-subline {
+  display: none;
+}
 
 /* One item, typed at the counter */
 .item-answer {
