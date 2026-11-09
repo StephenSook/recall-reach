@@ -1,6 +1,7 @@
 // What the grid shows, built on the server so only these fields reach the browser. The cards decide what can be
 // approved: only a sale's lead has Approve, because a sale gets one question and the wrong one would block the right one.
 import type { QueueCard, QueueRow, UnidentifiedPayment } from "@/server/queue/queue";
+import { REFUND_WINDOW_DAYS } from "./recalls/timeline";
 import { canNotify, needsApproval, NOTICE_STATE, pathNow, saleWaits, sharedWordOnly, sitsApart, stateChip } from "./labels";
 
 export type GridTab = "needs" | "words" | "done" | "cleared" | "shelf" | "unidentified" | "all";
@@ -36,6 +37,8 @@ export interface GridRow {
   refundEligible: boolean;
 }
 
+const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
 /** What a store's listings have no use for, or no right to say: nothing there was sold, and nothing can be sent. */
 const SALE_COLUMNS = ["path", "soldOn", "noticeState"];
 
@@ -52,7 +55,7 @@ export const soldLabel = (row: Partial<Pick<GridRow, "soldOn" | "listedOnShelf">
 /** CPSC's words and the sale date. No shop text, and nothing about a buyer. */
 export const TELL_CPSC_COLUMNS = ["recallNumber", "product", "soldOn"] as const satisfies readonly (keyof GridRow)[];
 
-export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWordsApart?: boolean; listings?: boolean } = {}): GridRow[] {
+export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWordsApart?: boolean; listings?: boolean; today?: string } = {}): GridRow[] {
   const cardOf = new Map<string, string>();
   for (const card of cards) for (const r of [card.lead, ...card.also]) cardOf.set(r.matchId, card.lead.matchId);
   const leads = new Set(cards.map((c) => c.lead.matchId));
@@ -71,6 +74,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
     const card = cardOf.get(r.matchId);
     // A line discounted past its price has nothing to refund, as refundAmountCents reads it.
     const saleCents = r.saleCents === null || r.saleCents === undefined ? null : Math.max(0, r.saleCents);
+    const windowOpen = !opts.today || !r.orderedOn || addDays(r.orderedOn, REFUND_WINDOW_DAYS) >= opts.today;
     return {
       matchId: r.matchId,
       recallNumber: r.recallNumber,
@@ -93,8 +97,8 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,
       saleId: r.recordId,
-      saleUsd: saleCents !== null && r.saleCurrency === "USD" ? saleCents / 100 : null,
-      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed") && saleCents !== 0,
+      saleUsd: saleCents !== null && r.saleCurrency === "USD" && !r.orderIncomplete ? saleCents / 100 : null,
+      refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed") && saleCents !== 0 && !r.orderIncomplete && windowOpen,
     };
   });
 }

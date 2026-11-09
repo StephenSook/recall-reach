@@ -63,7 +63,7 @@ describe("a group's sale total", () => {
   });
 
   it("says when a group left a sale out", () => {
-    expect(saleLabel({ usd: 18.5, unpriced: 1 })).toBe("$18.50 + 1 not in USD");
+    expect(saleLabel({ usd: 18.5, unpriced: 1 })).toBe("$18.50 + 1 with no USD price");
   });
 
   it("is plain dollars otherwise", () => {
@@ -92,7 +92,7 @@ describe("the sale column", () => {
   const sold = { soldOn: "2026-11-01" };
 
   it("shows a group's total in words", () => {
-    expect(saleCellWords(total(20, 1), undefined)).toBe("$20.00 + 1 not in USD");
+    expect(saleCellWords(total(20, 1), undefined)).toBe("$20.00 + 1 with no USD price");
   });
 
   it("shows dollars on a sale", () => {
@@ -100,7 +100,7 @@ describe("the sale column", () => {
   });
 
   it("says when a sale isn't priced in dollars, rather than leaving it blank", () => {
-    expect(saleCellWords(null, sold)).toBe("Not in USD");
+    expect(saleCellWords(null, sold)).toBe("No USD price");
   });
 
   it("leaves a listing nobody bought blank", () => {
@@ -112,11 +112,11 @@ describe("the sale column", () => {
   });
 
   it("keeps the warning on a group total that left a sale out", () => {
-    expect(saleForExport(total(20, 1), undefined)).toBe("$20.00 + 1 not in USD");
+    expect(saleForExport(total(20, 1), undefined)).toBe("$20.00 + 1 with no USD price");
   });
 
   it("keeps the warning on a group with nothing in dollars", () => {
-    expect(saleForExport(total(0, 2), undefined)).toBe("$0.00 + 2 not in USD");
+    expect(saleForExport(total(0, 2), undefined)).toBe("$0.00 + 2 with no USD price");
   });
 
   it("exports a sale in dollars as a number", () => {
@@ -124,7 +124,7 @@ describe("the sale column", () => {
   });
 
   it("marks a sale not in dollars in the file too", () => {
-    expect(saleForExport(null, sold)).toBe("Not in USD");
+    expect(saleForExport(null, sold)).toBe("No USD price");
   });
 
   it("passes other cells through", () => {
@@ -146,7 +146,7 @@ describe("copying from the table", () => {
   });
 
   it("copies what the Sale column says, so a sale not in dollars isn't a blank in the spreadsheet", () => {
-    expect(copiedCell("saleUsd", null, { verdict: "MATCH", soldOn: "2026-11-01" })).toBe("Not in USD");
+    expect(copiedCell("saleUsd", null, { verdict: "MATCH", soldOn: "2026-11-01" })).toBe("No USD price");
   });
 
   it("copies a sale in dollars", () => {

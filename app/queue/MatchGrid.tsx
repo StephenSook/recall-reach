@@ -255,7 +255,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         </button>
       </div>}
       <div ref={chartBox} className={charted ? "grid-chart" : undefined} data-testid="grid-chart" />
-      {charted && priceInOtherCurrency ? <p className="note" data-testid="chart-note">Sales priced in another currency aren&apos;t in this chart.</p> : null}
+      {charted && priceInOtherCurrency ? <p className="note" data-testid="chart-note">Sales with no USD price aren&apos;t in this chart.</p> : null}
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { businessDay } from "@/server/time/businessDay";
 import { redirect } from "next/navigation";
 import { Fragment, Suspense } from "react";
 import { getDb } from "@/server/db/pg";
@@ -301,7 +302,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const listed = listings && !rows.some((r) => r.familyAsked) ? listingCounts(cards, listings.total) : null;
   const split = real ? splitCounts(cards) : null;
   const waiting = real ? cards.filter((c) => saleWaits(c) && !sitsApart(c)).length : counts.waiting;
-  const grid = gridRows(rows, cards, { sharedWordsApart: real, listings: Boolean(listed) });
+  const grid = gridRows(rows, cards, { sharedWordsApart: real, listings: Boolean(listed), today: businessDay() });
 
   return (
     <main className="page">

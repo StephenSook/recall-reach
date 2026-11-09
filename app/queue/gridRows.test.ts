@@ -289,6 +289,24 @@ describe("what the grid holds", () => {
       expect(by(build([row({ saleCents: 1850, saleCurrency: "CAD" })]), "m1").saleUsd).toBeNull();
     });
 
+    it("gives no price for a line whose order couldn't be read in full, because its share of a discount can't be trusted", () => {
+      expect(by(build([row({ saleCents: 1850, saleCurrency: "USD", orderIncomplete: true })]), "m1").saleUsd).toBeNull();
+    });
+
+    it("doesn't count a line of an order that couldn't be read in full, because the refund refuses it", () => {
+      expect(by(build([row({ ...confirmed, saleCents: 1850, saleCurrency: "USD", orderIncomplete: true })]), "m1").refundEligible).toBe(false);
+    });
+
+    it("doesn't count a sale past 180 days from its order date", () => {
+      const old = row({ ...confirmed, orderedOn: "2026-05-01", saleCents: 1850, saleCurrency: "USD" });
+      expect(by(gridRows([old], toCards([old]).cards, { today: "2026-11-09" }), "m1").refundEligible).toBe(false);
+    });
+
+    it("still counts one on its last day", () => {
+      const last = row({ ...confirmed, orderedOn: "2026-05-13", saleCents: 1850, saleCurrency: "USD" });
+      expect(by(gridRows([last], toCards([last]).cards, { today: "2026-11-09" }), "m1").refundEligible).toBe(true);
+    });
+
     it("reads a line discounted past its price as zero, the way the refund does", () => {
       expect(by(build([row({ saleCents: -500, saleCurrency: "USD" })]), "m1").saleUsd).toBe(0);
     });

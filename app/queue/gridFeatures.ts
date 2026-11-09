@@ -42,7 +42,7 @@ export function refundTotal(rows: Iterable<{ saleId?: string | null; refundEligi
 
 export interface SaleSum {
   usd: number;
-  /** Sales priced in another currency. A listing nobody bought isn't one. */
+  /** Sales with no price to count: another currency, or an order that couldn't be read in full. A listing nobody bought isn't one. */
   unpriced: number;
 }
 
@@ -59,23 +59,23 @@ export function saleSum(rows: Iterable<{ saleId?: string | null; saleUsd?: numbe
 const DOLLARS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 export const usd = (value: number | null | undefined) => (value === null || value === undefined ? "" : DOLLARS.format(value));
 
-export const saleLabel = (sum: SaleSum) => (sum.unpriced > 0 ? `${usd(sum.usd)} + ${sum.unpriced} not in USD` : usd(sum.usd));
+export const saleLabel = (sum: SaleSum) => (sum.unpriced > 0 ? `${usd(sum.usd)} + ${sum.unpriced} with no USD price` : usd(sum.usd));
 
-const NOT_IN_USD = "Not in USD";
+const NO_USD_PRICE = "No USD price";
 type SaleRow = { soldOn?: string | null } | undefined;
 const isTotal = (value: unknown): value is { unpriced: number; toString(): string; toNumber(): number } => value !== null && typeof value === "object" && "toNumber" in value;
 
 /** What the Sale column says: a group's total in words, dollars on a sale, and never a blank where a price was left out. */
 export function saleCellWords(value: unknown, row: SaleRow): string {
   if (isTotal(value)) return value.toString();
-  if (value === null || value === undefined) return row?.soldOn ? NOT_IN_USD : "";
+  if (value === null || value === undefined) return row?.soldOn ? NO_USD_PRICE : "";
   return usd(value as number);
 }
 
 /** The same for Excel. Numbers stay numbers so they add up, and a total that left a sale out keeps saying so. */
 export function saleForExport(value: unknown, row: SaleRow): unknown {
   if (isTotal(value)) return value.unpriced > 0 ? value.toString() : value.toNumber();
-  if ((value === null || value === undefined) && row?.soldOn) return NOT_IN_USD;
+  if ((value === null || value === undefined) && row?.soldOn) return NO_USD_PRICE;
   return value;
 }
 
