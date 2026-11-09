@@ -48,7 +48,7 @@ describe("the refresh task's line", () => {
   const task = (lastTaskRun: Health["replay"]["lastTaskRun"]) => line({ ...healthy, replay: { ...healthy.replay, lastTaskRun } }, "Replay's daily task");
 
   it("says what the task's last run did, from the row the task wrote itself, with the host's run id", () => {
-    expect(task(healthy.replay.lastTaskRun)).toMatchObject({ state: "ok", reading: expect.stringMatching(/^Last run finished .+: the numbers were fresh, so it changed nothing\. Run trn-abc\.$/) });
+    expect(task(healthy.replay.lastTaskRun)).toMatchObject({ state: "ok", reading: expect.stringMatching(/^Last run finished .+: the numbers were fresh, or another refresh had them in hand, so it changed nothing\. Run trn-abc\.$/) });
     expect(task({ ...healthy.replay.lastTaskRun!, outcome: "RAN" })?.reading).toContain("it ran Replay again");
     expect(task({ ...healthy.replay.lastTaskRun!, outcome: "FAILED" })).toMatchObject({ state: "problem", reading: expect.stringContaining("it failed") });
   });
@@ -67,8 +67,14 @@ describe("the refresh task's line", () => {
     expect(task(old)).toMatchObject({ state: "unknown", reading: expect.stringMatching(/over 2 days ago\./) });
   });
 
-  it("says what stands in when its daily start is skipped", () => {
-    expect(task(null)?.measures).toContain("once the numbers pass 26 hours");
+  it.each([26, 24])("says what stands in when its daily start is skipped, at the %i hours this server uses", (hours) => {
+    const found = statusLines({ ...healthy, replay: { ...healthy.replay, lastTaskRun: null } }, { claudeKeySet: true, replayFallbackHours: hours }).find((l) => l.service === "Replay's daily task");
+    expect(found?.measures).toContain(`once the numbers pass ${hours} hours`);
+  });
+
+  it("doesn't claim the numbers were fresh when another refresh had them in hand", () => {
+    const fresh = task({ taskRunId: "trn-f", startedAt: "2026-11-09T10:00:00.000Z", finishedAt: "2026-11-09T10:00:02.000Z", outcome: "FRESH" as const });
+    expect(fresh?.reading).toContain("or another refresh had them in hand");
   });
 });
 

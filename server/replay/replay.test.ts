@@ -6,7 +6,7 @@ import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import type { Db, Queryable } from "../db/types";
 import type { Method, PayPalClient } from "../paypal/client";
-import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FALLBACK_MS, REPLAY_TASK_FRESH_MS, REPLAY_FROM, REPLAYS_KEPT, runReplay } from "./replay";
+import { latestRecallDay, latestReplay, loadReplay, proveReplay, refreshReplay, REPLAY_FALLBACK_MS, REPLAY_TASK_FRESH_MS, REPLAY_FROM, REPLAYS_KEPT, runReplay, REPLAY_FRESH_MS, REPLAY_LEASE_MINUTES, webReplayFreshMs } from "./replay";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const TODAY = "2026-11-06";
@@ -83,6 +83,19 @@ describe("Recall Replay", () => {
     const age = (runId: string, hours: number) => db.query("update replay_runs set created_at = $2::timestamptz where id = $1", [runId, hoursBeforeNow(hours)]);
     const refresh = (client = fakePayPal().client) => refreshReplay(db, () => run(client), NOW);
     const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from replay_runs")).rows[0].n);
+
+    describe("which age the web service waits for", () => {
+      it("is the fallback's when the daily task is set up, and a day otherwise", () => {
+        expect(webReplayFreshMs({ REPLAY_VIA_WORKFLOW: "1" })).toBe(REPLAY_FALLBACK_MS);
+        expect(webReplayFreshMs({})).toBe(REPLAY_FRESH_MS);
+      });
+    });
+
+    it("holds the lease longer than the task's own time limit, so a live run can't lose it", () => {
+      const limit = /timeoutSeconds:\s*(\d+)\s*\*\s*(\d+)/.exec(readFileSync("workflows/replayTask.ts", "utf8"));
+      expect(limit).not.toBeNull();
+      expect(REPLAY_LEASE_MINUTES * 60).toBeGreaterThan(Number(limit![1]) * Number(limit![2]));
+    });
 
     describe("when the task and the web service both try at once", () => {
       it("lets only one do the work, and the other finds it in hand", async () => {

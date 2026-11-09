@@ -13,7 +13,7 @@ export async function register(): Promise<void> {
     console.warn("background jobs not started: DATABASE_URL is not set");
     return;
   }
-  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }, { REPLAY_FALLBACK_MS, REPLAY_FRESH_MS, refreshReplay, runReplay }, { payPalClientFromEnv }, { businessDay }, { sweepRecalls }, { channel3Search }, { DEMO_RECALL_NUMBERS }] = await Promise.all([
+  const [{ getDb }, { appJobs }, { startScheduler }, { CHECK_FROM }, { refreshReplay, runReplay, webReplayFreshMs }, { payPalClientFromEnv }, { businessDay }, { sweepRecalls }, { channel3Search }, { DEMO_RECALL_NUMBERS }] = await Promise.all([
     import("./server/db/pg"),
     import("./server/jobs/appJobs"),
     import("./server/jobs/scheduler"),
@@ -34,7 +34,7 @@ export async function register(): Promise<void> {
     appJobs(getDb(), {
       backfillFromYear: Number(CHECK_FROM.slice(0, 4)),
       refreshReplay: shopDataKey
-        ? (at) => refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(at), now: at, secret: shopDataKey }), at, process.env.REPLAY_VIA_WORKFLOW ? REPLAY_FALLBACK_MS : REPLAY_FRESH_MS)
+        ? (at) => refreshReplay(getDb(), () => runReplay(getDb(), payPalClientFromEnv(), { today: businessDay(at), now: at, secret: shopDataKey }), at, webReplayFreshMs(process.env))
         : undefined,
       refreshSafety: shopDataKey ? (at) => refreshSafety(getDb(), { now: at, secret: shopDataKey }) : undefined,
       sweepMarket: (at) => sweepRecalls(getDb(), channel3Search(), at, undefined, DEMO_RECALL_NUMBERS),

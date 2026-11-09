@@ -54,6 +54,10 @@ export const REPLAY_FRESH_MS = 24 * 3_600_000;
  */
 export const REPLAY_TASK_FRESH_MS = 20 * 3_600_000;
 export const REPLAY_FALLBACK_MS = 26 * 3_600_000;
+/** The age the web service waits for: the fallback's with the daily task set up (REPLAY_VIA_WORKFLOW), a day without it. */
+export const webReplayFreshMs = (env: Record<string, string | undefined>) => (env.REPLAY_VIA_WORKFLOW ? REPLAY_FALLBACK_MS : REPLAY_FRESH_MS);
+/** Longer than the task's own 30-minute limit, so a live run can't lose the lease. A test holds the two apart. */
+export const REPLAY_LEASE_MINUTES = 35;
 
 const DIGEST_SQL = `encode(sha256(convert_to(string_agg(recall_number || ':' || raw_sha256, ',' order by recall_number), 'UTF8')), 'hex')`;
 
@@ -143,10 +147,10 @@ export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }
   if (await isFresh(db, now, freshMs)) return "FRESH";
   const holder = randomUUID();
   const { rows: held } = await db.query(
-    `insert into replay_lease (id, holder, until) values (1, $1, now() + interval '35 minutes')
+    `insert into replay_lease (id, holder, until) values (1, $1, now() + make_interval(mins => $2))
      on conflict (id) do update set holder = excluded.holder, until = excluded.until where replay_lease.until < now()
      returning 1`,
-    [holder],
+    [holder, REPLAY_LEASE_MINUTES],
   );
   if (held.length === 0) return "FRESH";
   try {

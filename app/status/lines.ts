@@ -2,6 +2,7 @@
 // "last read" never passes for "working right now". Only Postgres is asked anything when the page loads.
 import { ranAt } from "@/app/replay/labels";
 import type { Health } from "@/server/health";
+import { webReplayFreshMs } from "@/server/replay/replay";
 import type { TaskRun } from "@/server/replay/taskRuns";
 
 export type LineState = "ok" | "problem" | "unknown";
@@ -40,7 +41,7 @@ export const WHAT_HAPPENS: { when: string; does: string; seen: string }[] = [
 const NOT_READ = "Can't tell: this is stored in the database, which did not answer.";
 
 /** What each outcome of the refresh task means, in the task's own words for it. */
-const TASK_DID = { FRESH: "the numbers were fresh, so it changed nothing", RAN: "it ran Replay again", DISCARDED: "it ran Replay but kept the last run", FAILED: "it failed" } as const;
+const TASK_DID = { FRESH: "the numbers were fresh, or another refresh had them in hand, so it changed nothing", RAN: "it ran Replay again", DISCARDED: "it ran Replay but kept the last run", FAILED: "it failed" } as const;
 /** The task's own 30-minute limit, and a little for the host to start it. */
 const TASK_LIMIT_MS = 35 * 60_000;
 /** The task is started daily and a start can be skipped, so a run older than this says nothing about now. */
@@ -60,7 +61,9 @@ function taskReading(task: TaskRun | null, checkedAt: string): { state: LineStat
   return { state: "ok", reading: did };
 }
 
-export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLine[] {
+export function statusLines(h: Health, env: { claudeKeySet: boolean; replayFallbackHours?: number }): StatusLine[] {
+  // The hours this server waits before refreshing Replay itself, so the sentence below matches what it does.
+  const fallbackHours = env.replayFallbackHours ?? webReplayFreshMs(process.env) / 3_600_000;
   const db = h.database.ok;
   const pull = h.cpsc?.lastPull;
   const verified = h.paypal.lastVerifiedWebhookAt;
@@ -112,7 +115,7 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
       state: !db ? "unknown" : task.state,
       reading: !db ? NOT_READ : task.reading,
       measures:
-        "The row Replay's refresh task on Render Workflows writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass 26 hours.",
+        `The row Replay's refresh task on Render Workflows writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass ${fallbackHours} hours.`,
     },
     {
       service: "Channel3",
