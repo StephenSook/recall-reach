@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ShopperView } from "@/app/api/shopper/run/route";
 import { SHOPPER_EXAMPLES } from "@/server/shopper/examples";
+import { AgentTools } from "./AgentTools";
 
 // The same list the server records runs of, so a recorded example always matches a chip.
 const CHIPS = SHOPPER_EXAMPLES;
@@ -150,6 +151,7 @@ export function ShopperForm() {
         </article>
       ) : null}
       {view ? <Steps steps={view.steps} /> : null}
+      <AgentTools />
     </>
   );
 }

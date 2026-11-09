@@ -168,6 +168,36 @@ Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web 
 
 The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 minutes. It touches the database only when the answer changes or on the hourly heartbeat, because a query every 15 minutes would keep a free-tier database awake around the clock.
 
+## WebMCP on the shopper page
+
+`/shopper` registers `search_listings`, `check_recall`, and `start_checkout` only when
+`document.modelContext.registerTool` exists. Its Agent tools panel shows each call. The
+existing form also works without WebMCP. Listings and prices come from Channel3, recalls
+from CPSC. The buyer reviews and approves on PayPal's sandbox page. PayPal responses
+stay in the browser's checkout handoff and never enter a tool result or the call log.
+
+To enable an origin trial, register the exact origin
+`https://recall-reach-web-e022.onrender.com` in Chrome's origin-trial console. Set the
+returned token as the server environment variable `WEBMCP_ORIGIN_TRIAL_TOKEN` on the
+Render web service, then redeploy. Only `/shopper` emits the origin-trial meta tag, and
+only when this variable is set. Never commit the token. A different origin needs its
+own registration. Trial enrollment and browser support still need live verification.
+
+For ChatGPT desktop, open Settings > Browser > Enable site tools, then open `/shopper`
+in its browser. Allow pop-ups for this origin if checkout reports they are blocked.
+Ask it to find a listing, check it, and start checkout; the buyer approves on PayPal.
+An unknown listing has no recall number to report, so it is refused with an empty
+recall list. A matched listing reports the actual CPSC number and title.
+
+The API shape was checked against the [Nov 9 WebMCP draft](https://webmachinelearning.github.io/webmcp/)
+and [Chrome's imperative API guide](https://developer.chrome.com/docs/modern-web-guidance/guides/webmcp/agentic-javascript-tools):
+`document.modelContext.registerTool(tool, { signal })`, JSON Schema `inputSchema`,
+`execute(input, { signal })`, and cleanup by aborting the registration signal.
+`provideContext()` is removed; Chrome's guide records `navigator.modelContext` as
+deprecated in Chromium 150. This implementation targets the current document API,
+with no legacy navigator shim. Mocked registration tests do not establish native
+Chrome 149 or ChatGPT desktop compatibility. Run the tools there before claiming it.
+
 ## Run it locally
 
 To check the code you need no keys, no accounts and no database, only Node 22.12 or newer, pnpm 10 and `openssl`. Postgres runs inside the tests.
@@ -194,6 +224,7 @@ pnpm dev                       # http://localhost:3000
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test && pnpm build   # what CI runs, with a gitleaks scan of the full history
+pnpm exec playwright test --config playwright.webmcp.config.ts  # local browser smoke, mocked document tools and PayPal; build first
 pnpm eval                                                # recomputes eval/results.json
 EXPECT_BUILD=<short commit> pnpm test:golden            # the golden path on the deployed site. It makes real sandbox payments and one real sandbox refund
 ```

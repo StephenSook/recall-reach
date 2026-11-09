@@ -19,6 +19,7 @@ export default async function ShopperPage({ searchParams }: { searchParams: Prom
   const message = typeof error === "string" && Object.hasOwn(ERRORS, error) ? ERRORS[error] : cancelled ? "You cancelled at PayPal. Nothing was bought." : null;
   return (
     <main className="page">
+      {process.env.WEBMCP_ORIGIN_TRIAL_TOKEN ? <meta httpEquiv="origin-trial" content={process.env.WEBMCP_ORIGIN_TRIAL_TOKEN} /> : null}
       <header className="page-head">
         <h1>Ask an agent to find it, with the recall check first</h1>
       </header>

@@ -87,22 +87,26 @@ export function channel3Search(fetchImpl: typeof fetch = fetch, opts: { timeoutM
 export interface BuyableListing extends MarketListing {
   priceCents: number;
   currency: "USD";
+  /** Public offer domain, included only for the site tools. Never kept by the recall sweep. */
+  retailer?: string | null;
 }
 
 /** The lowest in-stock price in dollars. A listing with none can't be offered. The retailers stop here too. */
-function buyable(p: { id?: unknown; title?: unknown; brands?: unknown; offers?: unknown }): BuyableListing | null {
+function buyable(p: { id?: unknown; title?: unknown; brands?: unknown; offers?: unknown }, includeRetailer = false): BuyableListing | null {
   if (typeof p?.id !== "string" || !p.id || p.id.length > MAX_ID || typeof p.title !== "string" || !p.title.trim()) return null;
-  const offers = Array.isArray(p.offers) ? (p.offers as { availability?: unknown; price?: { price?: unknown; currency?: unknown } }[]) : [];
+  const offers = Array.isArray(p.offers) ? (p.offers as { domain?: unknown; availability?: unknown; price?: { price?: unknown; currency?: unknown } }[]) : [];
   const prices = offers.flatMap((o) => (o?.availability === "InStock" && o.price?.currency === "USD" && typeof o.price.price === "number" && o.price.price > 0 ? [Math.round(o.price.price * 100)] : []));
   if (prices.length === 0) return null;
   const brand = Array.isArray(p.brands) ? (p.brands as { name?: unknown }[]).find((b) => typeof b?.name === "string")?.name : null;
-  return { id: p.id, title: p.title.trim().slice(0, 300), brand: typeof brand === "string" ? brand.slice(0, 120) : null, priceCents: Math.min(...prices), currency: "USD" };
+  const priceCents = Math.min(...prices);
+  const cheapest = offers.find((o) => o?.availability === "InStock" && o.price?.currency === "USD" && typeof o.price.price === "number" && Math.round(o.price.price * 100) === priceCents);
+  return { id: p.id, title: p.title.trim().slice(0, 300), brand: typeof brand === "string" ? brand.slice(0, 120) : null, priceCents, currency: "USD", ...(includeRetailer ? { retailer: typeof cheapest?.domain === "string" ? cheapest.domain.slice(0, 253) : null } : {}) };
 }
 
-function readBuyable(answer: unknown): BuyableListing[] {
+function readBuyable(answer: unknown, includeRetailer = false): BuyableListing[] {
   const content = (answer as { structuredContent?: { products?: unknown } }).structuredContent;
   if (!content || !Array.isArray(content.products)) throw new Error("Channel3 answered without a product list");
-  return content.products.flatMap((p: Parameters<typeof buyable>[0]) => buyable(p) ?? []).slice(0, MAX_LISTINGS);
+  return content.products.flatMap((p: Parameters<typeof buyable>[0]) => buyable(p, includeRetailer) ?? []).slice(0, MAX_LISTINGS);
 }
 
 export interface ListingSource {
@@ -111,10 +115,10 @@ export interface ListingSource {
   read: (id: string) => Promise<BuyableListing | null>;
 }
 
-export function channel3Listings(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number } = {}): ListingSource {
+export function channel3Listings(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number; includeRetailer?: boolean } = {}): ListingSource {
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   return {
-    search: (query) => callChannel3(fetchImpl, timeoutMs, "search_products", { query }, readBuyable),
+    search: (query) => callChannel3(fetchImpl, timeoutMs, "search_products", { query }, (answer) => readBuyable(answer, opts.includeRetailer)),
     read: (id) => callChannel3(fetchImpl, timeoutMs, "get_products", { product_ids: [id] }, (answer) => readBuyable(answer).find((l) => l.id === id) ?? null),
   };
 }

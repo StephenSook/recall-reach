@@ -70,7 +70,9 @@ describe("openapi.yaml", () => {
       // A route under /api/queue answers only a signed-in shop, so it isn't part of the public API. Nor are PayPal's ways back
       // to a demo shop, a sandbox order, a shop connecting its PayPal account, an owner signing in or a shop approving its
       // subscription: they're where PayPal's page sends a person, and nothing a client calls.
-      .filter((f) => f.endsWith("/route.ts") && !f.startsWith("app/api/queue/") && f !== "app/api/demo/buy/paypal/return/route.ts" && f !== "app/api/shopper/return/route.ts" && f !== "app/api/shop/paypal/back/route.ts" && f !== "app/api/owner/paypal/return/route.ts" && f !== "app/api/shop/subscription/return/route.ts" && /export (async )?function GET\b/.test(readFileSync(f, "utf8")));
+      // /api/shopper/listings is the page's same-origin transport, carrying private checkout slips. Its route tests prove
+      // that requests without the page's origin are refused; it isn't one of the cross-origin public recall APIs.
+      .filter((f) => f.endsWith("/route.ts") && !f.startsWith("app/api/queue/") && f !== "app/api/demo/buy/paypal/return/route.ts" && f !== "app/api/shopper/return/route.ts" && f !== "app/api/shopper/listings/route.ts" && f !== "app/api/shop/paypal/back/route.ts" && f !== "app/api/owner/paypal/return/route.ts" && f !== "app/api/shop/subscription/return/route.ts" && /export (async )?function GET\b/.test(readFileSync(f, "utf8")));
     expect(routes.length).toBeGreaterThanOrEqual(5);
     expect(routes.sort()).toEqual(Object.keys(spec.paths).filter((p) => spec.paths[p].get).map(routeFile).sort());
   });
