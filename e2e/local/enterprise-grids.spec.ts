@@ -27,6 +27,22 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
     noLicenceComplaint(logs);
   }
 
+  // On a grouped table a row still opens its card, and a sale can still be picked and approved.
+  await grid.getByRole("button", { name: "By state", exact: true }).click();
+  const firstGroup = grid.locator(".ag-row-group").first();
+  await firstGroup.locator(".ag-group-contracted").first().click();
+  const leaf = grid.locator(".ag-row[row-id]:not(.ag-row-group)").first();
+  await expect(leaf).toBeVisible();
+  const box = leaf.locator(".ag-selection-checkbox input, .ag-checkbox-input").first();
+  await box.check({ force: true });
+  await expect(grid.getByRole("button", { name: "Approve selected (1)" })).toBeEnabled();
+  await box.uncheck({ force: true });
+  await expect(grid.getByRole("button", { name: "Approve selected (0)" })).toBeDisabled();
+  await leaf.locator('[col-id="product"]').click();
+  await expect.poll(() => new URL(page.url()).hash).toMatch(/^#sale-/);
+  await page.evaluate(() => history.replaceState(null, "", location.pathname));
+  await grid.getByRole("button", { name: "No groups" }).click();
+
   await grid.getByRole("button", { name: "All candidates" }).click();
   await grid.getByRole("button", { name: "By recall", exact: true }).click();
   const group = grid.locator(".ag-row-group").first();
