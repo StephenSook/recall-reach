@@ -263,6 +263,17 @@ export function modelsNamedInText(text: string): string[] {
 /** Words for who a product is for. They appear across a brand's whole range, so sharing one says nothing about what it is. */
 const WHO_ITS_FOR = new Set(["baby", "babie", "toddler", "infant", "newborn", "kid", "child", "children", "boy", "girl", "men", "mens", "women", "womens", "ladie", "adult", "youth", "junior", "unisex"]);
 
+/** Words for the kind of thing, as they come out of words(). Most of a maker's range can share one, so alone it names no product line. */
+const KIND_OF_THING = new Set(
+  "chair stool seat bench sofa couch recliner lounger bed crib bassinet cradle mattress mattresse pillow blanket stroller carrier walker swing bouncer rocker playpen gate bottle cup toy game doll puzzle ball helmet bicycle bike scooter skateboard heater charger battery batterie lamp light fan table desk shelf shelve cabinet bookcase dresser drawer mirror rug pajama robe nightgown sleepwear shirt jacket hoodie vehicle mower boiler washer dryer range candle cleaner container fixture cover set kit pack".split(" "),
+);
+
+/** Words for a product's look, condition or version. They don't make it a different product. */
+const ONLY_DESCRIBES = new Set("new used like gently pre owned white black gray grey blue red pink green brown beige silver gold small medium large big mini xl size inch inche color version through generation one two three four five six seven eight nine ten all variou multiple".split(" "));
+
+/** Whether a word could tell one of a maker's products from another. */
+const saysWhichProduct = (w: string) => !WHO_ITS_FOR.has(w) && !KIND_OF_THING.has(w) && !ONLY_DESCRIBES.has(w) && !/^\d+$/.test(w);
+
 /** The words that say what a product is, leaving out who it's for. */
 export const whatItIs = (text: string): string[] => [...words(text)].filter((w) => !WHO_ITS_FOR.has(w));
 
@@ -421,7 +432,15 @@ export function verdictFor(
     }
     return cleared(unrelatedReason, matched);
   }
-  if (sharedLine.length > 0) matched.push(`product: ${sharedLine.join(", ")}`);
+  // "IKEA Antilop High Chair" and "IKEA ODGER Swivel Chairs" share a maker and the word chair, which names no product line.
+  // This only changes what the shared words are called and what the card claims. A word list can't prove a listing is a
+  // different product, so a store listing like this stays held: see readListingCheck.
+  const whatIsShared = sharedLine.filter((w) => !WHO_ITS_FOR.has(w));
+  const everyProductIsNamed = recall.products.every((p) => [...words(p.name)].some((w) => !brandWords.has(w) && saysWhichProduct(w)));
+  const inCpscText = words(`${recall.title} ${recall.description}`);
+  const listingNamesSomethingElse = [...itemWords].some((w) => !inCpscText.has(w) && saysWhichProduct(w));
+  const onlyTheKind = hasBrand && fullScope && whatIsShared.length > 0 && whatIsShared.every((w) => KIND_OF_THING.has(w)) && everyProductIsNamed && listingNamesSomethingElse;
+  if (sharedLine.length > 0) matched.push(`${onlyTheKind ? "kind" : "product"}: ${sharedLine.join(", ")}`);
 
   // A code only counts as a different model when it looks like one of CPSC's and is not a variant.
   const otherModels = itemCodes.filter((t) => isSiblingModel(t, recallModels) && !isVariantOf(t, recallModels));
@@ -457,7 +476,7 @@ export function verdictFor(
   if (brand && !hasBrand) missing.unshift(`whether this is ${brand}`);
   if (!fullScope) missing.push(seeCpsc);
   // Sleepwear that shares only "boy" with a recall of boys' jeans is the same brand, not the same line.
-  const sameKindOfThing = sharedLine.some((w) => !WHO_ITS_FOR.has(w));
+  const sameKindOfThing = whatIsShared.length > 0 && !onlyTheKind;
   const reason = hasBrand
     ? sameKindOfThing
       ? "The same product line, but the shop's text cannot show whether this unit is covered."

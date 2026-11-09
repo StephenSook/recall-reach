@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseRecalls, type Recall } from "../cpsc/schema";
-import { brandOf, fullScopeInRecord, limitedWithinModel, modelTokens, nearMissCodes, salePath, verdictFor } from "./verdict";
+import { brandOf, fullScopeInRecord, limitedWithinModel, modelTokens, namesProductLine, nearMissCodes, salePath, verdictFor } from "./verdict";
 
 // Real CPSC records (saved 2026-11-05). The matcher is tested on what CPSC actually wrote.
 const { valid } = parseRecalls(
@@ -689,5 +689,88 @@ describe("salePath", () => {
 
   it("is refund eligible only for a later date", () => {
     expect(salePath("2026-11-06", "2026-11-05")).toBe("REFUND_ELIGIBLE");
+  });
+});
+
+describe("the same maker and only the word for the kind of thing", () => {
+  const product = (name: string) => ({ name, model: "", type: null, units: null });
+  // Real CPSC recall 23118, which a live agent run blamed for an IKEA high chair.
+  const ODGER = {
+    title: "IKEA Recalls ODGER Swivel Chairs Due to Fall and Injury Hazards",
+    description: "This recall involves IKEA ODGER Swivel Chairs in the anthracite (gray) color.",
+    products: [product("IKEA ODGER Swivel Chairs, Anthracite")],
+    retailers: [] as string[],
+  };
+  const BRAND_ONLY = "The same brand, but the shop's text cannot show whether this item is covered.";
+  const SAME_LINE = "The same product line, but the shop's text cannot show whether this unit is covered.";
+  const names = (title: string, from: Pick<Recall, "title" | "description" | "products" | "retailers"> = ODGER) => namesProductLine(verdictFor(from, { title }).matched);
+
+  it("doesn't call another of the maker's chairs the recalled product line", () => {
+    const v = verdictFor(ODGER, { title: "IKEA Antilop High Chair" });
+    expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND", reason: BRAND_ONLY });
+    expect(namesProductLine(v.matched)).toBe(false);
+  });
+
+  it("still names the line when the listing is the recalled product", () => {
+    const v = verdictFor(ODGER, { title: "IKEA ODGER Swivel Chair" });
+    expect(v).toMatchObject({ verdict: "SCOPE_GAP", strength: "BRAND", reason: SAME_LINE });
+    expect(namesProductLine(v.matched)).toBe(true);
+  });
+
+  it("still names the line when a word more specific than the kind of thing is shared", () => {
+    expect(names("IKEA Swivel Office Chair")).toBe(true);
+    expect(names("Costway high chair", COSTWAY)).toBe(true);
+    expect(verdictFor(COSTWAY, { title: "Costway high chair" }).reason).toBe(SAME_LINE);
+  });
+
+  it.each(["IKEA Chair", "IKEA chair, gray, used", "IKEA Chair 24", "IKEA Chair 54 inches"])("holds %s, which says nothing that sets it apart", (title) => {
+    expect(names(title)).toBe(true);
+  });
+
+  it("holds a listing when the recall itself names only the kind of thing", () => {
+    const allChairs = { ...ODGER, title: "IKEA Recalls Chairs Due to Fall Hazard", description: "This recall involves chairs.", products: [product("IKEA Chairs")] };
+    expect(names("IKEA Antilop High Chair", allChairs)).toBe(true);
+  });
+
+  it.each([
+    ["Seats", "Seat"],
+    ["Cribs", "Crib"],
+    ["Strollers", "Stroller"],
+    ["Bottles", "Bottle"],
+  ])("treats %s as the kind of thing, not the product line", (plural, one) => {
+    const zephyr = { ...ODGER, title: `Acme Recalls Zephyr ${plural} Due to Fall Hazard`, description: `This recall involves Acme Zephyr ${plural}.`, products: [product(`Acme Zephyr ${plural}`)] };
+    expect(names(`Acme Nimbus ${one}`, zephyr)).toBe(false);
+    expect(names(`Acme Zephyr ${one}`, zephyr)).toBe(true);
+  });
+
+  it("holds a listing when the word that sets it apart is in CPSC's own text", () => {
+    expect(names("IKEA Antilop Chair", { ...ODGER, description: `${ODGER.description} Also included are Antilop chairs.` })).toBe(true);
+  });
+
+  it("holds a listing when the record isn't the whole list", () => {
+    expect(names("IKEA Antilop High Chair", { ...ODGER, description: `${ODGER.description} The affected model numbers are posted at https://acme.example/recall.` })).toBe(true);
+  });
+
+  it("needs every product in the recall to name something specific", () => {
+    expect(names("IKEA Antilop High Chair", { ...ODGER, products: [...ODGER.products, product("IKEA Chairs")] })).toBe(true);
+  });
+
+  it.each([
+    ["a count", "Romorgniz Recalls Six-Drawer Dressers Due to Tip-Over Hazard", "Six-Drawer Dressers", "Romorgniz 6 Drawer Bedroom Dresser"],
+    ["all of them", "Acme Recalls All Models of Swings Due to Fall Hazard", "All Models of Swings", "Acme Portable Swing"],
+    ["various", "Acme Recalls Various Swings Due to Fall Hazard", "Various Swings", "Acme Portable Swing"],
+    ["multiple", "Acme Recalls Multiple Swings Due to Fall Hazard", "Multiple Swings", "Acme Portable Swing"],
+  ])("doesn't take %s for a product's name", (_what, title, name, listing) => {
+    expect(names(listing, { ...ODGER, title, description: `This recall involves ${name}.`, products: [product(name)] })).toBe(true);
+  });
+
+  it("leaves the label alone when no maker is named", () => {
+    const swingChairs = { ...ODGER, title: "Acme Recalls Zephyr Swing Chairs Due to Fall Hazard", description: "This recall involves Acme Zephyr Swing Chairs.", products: [product("Acme Zephyr Swing Chairs")] };
+    expect(verdictFor(swingChairs, { title: "Nimbus Swing Chair" }).matched).toContain("product: chair, swing");
+  });
+
+  it("leaves the label alone when only who it's for is shared", () => {
+    const jeans = { ...ODGER, title: "IKEA Recalls ODGER Jeans Due to Choking Hazard", description: "This recall involves IKEA Boy ODGER Jeans.", products: [product("IKEA Boy ODGER Jeans")] };
+    expect(verdictFor(jeans, { title: "IKEA Boy Fleece Hat" }).matched).toContain("product: boy");
   });
 });
