@@ -174,7 +174,7 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
   await expect(page.getByTestId("follow-ups-confirmed")).toContainText(REASON, { timeout: 30_000 });
 
-  // The same lost answer, then Dismiss on the proposal still showing: the reminder that did save goes too, and stays gone.
+  // A save that went through but answered 503, then Dismiss on the proposal still showing: the reminder that did save goes too, and stays gone.
   await page.getByTestId("follow-ups-confirmed").getByRole("button", { name: "Dismiss" }).first().click();
   await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
   await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
@@ -182,7 +182,7 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.route(planUrl, async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
     await route.fetch();
-    await route.abort();
+    await route.fulfill({ status: 503, json: { error: "That didn't work. Please try again." } });
   });
   await proposals.getByRole("button", { name: "Confirm" }).first().click();
   await expect(page.getByTestId("follow-up-message")).toContainText("didn't work");

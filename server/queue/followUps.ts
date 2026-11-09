@@ -1,7 +1,7 @@
 // The follow-ups an owner has confirmed. Each is a date on their own timeline and queue card. Nothing here sends anything, and
 // none of it comes from PayPal: the date is the owner's and the reason is Claude's reading of CPSC's text. If CPSC changes that
 // text, the reminder drops out, and the sale can be planned again only once it's been checked against the new text.
-import type { Queryable } from "../db/types";
+import type { Db, Queryable } from "../db/types";
 
 export interface SavedFollowUp {
   matchId: string;
@@ -33,19 +33,36 @@ export async function saleIdsOnText(db: Queryable, shopId: string, snapshot: str
   return new Set(rows.map((r) => r.id));
 }
 
+/** A cancelled save can only be a moment old, so a day is ample. */
+const CANCELS_KEPT = "1 day";
+
 /** False when the match isn't this shop's, or CPSC has changed the recall since this advice was read: it saves only against the text it came from. */
-export async function saveFollowUp(db: Queryable, input: { shopId: string } & SavedFollowUp): Promise<boolean> {
-  const { rows } = await db.query(
-    `insert into follow_ups (match_id, shop_id, due_on, reason, hazard_quote, moved_earlier, recall_sha256)
-     select m.id, m.shop_id, $3::date, $4, $5, $6, $7 from recall_matches m join recalls r on r.recall_id = m.recall_id where m.id = $1 and m.shop_id = $2 and r.raw_sha256 = $7 and m.recall_sha256 = $7
-     on conflict (match_id) do update set due_on = excluded.due_on, reason = excluded.reason, hazard_quote = excluded.hazard_quote, moved_earlier = excluded.moved_earlier, recall_sha256 = excluded.recall_sha256, updated_at = now()
-     returning 1`,
-    [input.matchId, input.shopId, input.due, input.reason, input.hazardQuote, input.movedEarlier, input.snapshot],
-  );
-  return rows.length > 0;
+export async function saveFollowUp(db: Db, input: { shopId: string; attempt: string } & SavedFollowUp): Promise<boolean | "dismissed"> {
+  // The sale's row is locked first, by this and by a dismissal, so whichever comes second sees the other.
+  return db.transaction(async (tx) => {
+    const { rows: mine } = await tx.query("select 1 from recall_matches where id = $1 and shop_id = $2 for update", [input.matchId, input.shopId]);
+    if (mine.length === 0) return false;
+    const { rows: cancelled } = await tx.query("select 1 from follow_up_cancels where attempt = $1 and shop_id = $2", [input.attempt, input.shopId]);
+    if (cancelled.length > 0) return "dismissed";
+    const { rows } = await tx.query(
+      `insert into follow_ups (match_id, shop_id, due_on, reason, hazard_quote, moved_earlier, recall_sha256)
+       select m.id, m.shop_id, $3::date, $4, $5, $6, $7 from recall_matches m join recalls r on r.recall_id = m.recall_id where m.id = $1 and m.shop_id = $2 and r.raw_sha256 = $7 and m.recall_sha256 = $7
+       on conflict (match_id) do update set due_on = excluded.due_on, reason = excluded.reason, hazard_quote = excluded.hazard_quote, moved_earlier = excluded.moved_earlier, recall_sha256 = excluded.recall_sha256, updated_at = now()
+       returning 1`,
+      [input.matchId, input.shopId, input.due, input.reason, input.hazardQuote, input.movedEarlier, input.snapshot],
+    );
+    return rows.length > 0;
+  });
 }
 
-export async function dropFollowUp(db: Queryable, shopId: string, matchId: string): Promise<boolean> {
-  const { rows } = await db.query("delete from follow_ups where match_id = $1 and shop_id = $2 returning 1", [matchId, shopId]);
-  return rows.length > 0;
+/** Removes the reminder, and cancels any save of it the page never heard back from, so it can't land afterwards. */
+export async function dropFollowUp(db: Db, shopId: string, matchId: string, attempts: readonly string[] = []): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const { rows: mine } = await tx.query("select 1 from recall_matches where id = $1 and shop_id = $2 for update", [matchId, shopId]);
+    if (mine.length === 0) return false;
+    await tx.query(`delete from follow_up_cancels where created_at < now() - interval '${CANCELS_KEPT}'`);
+    for (const attempt of attempts) await tx.query("insert into follow_up_cancels (attempt, shop_id) values ($1, $2) on conflict do nothing", [attempt, shopId]);
+    const { rows } = await tx.query("delete from follow_ups where match_id = $1 and shop_id = $2 returning 1", [matchId, shopId]);
+    return rows.length > 0;
+  });
 }

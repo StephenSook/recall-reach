@@ -22,7 +22,8 @@ describe("the follow-ups a shop has confirmed", () => {
     return rows[0].id;
   };
   const current = async () => (await db.query<{ raw_sha256: string }>("select r.raw_sha256 from recall_matches m join recalls r using (recall_id) where m.id = $1", [match])).rows[0].raw_sha256;
-  const input = (over: object = {}) => ({ shopId: shopA, matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha, ...over });
+  const ATTEMPT = "00000000-0000-4000-8000-0000000000a1";
+  const input = (over: object = {}) => ({ shopId: shopA, matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha, attempt: ATTEMPT, ...over });
 
   beforeEach(async () => {
     db = await testDb();
@@ -95,6 +96,30 @@ describe("the follow-ups a shop has confirmed", () => {
 
   it("says when there was nothing to remove", async () => {
     expect(await dropFollowUp(db, shopA, match)).toBe(false);
+  });
+
+  describe("a save the owner dismissed before it got an answer", () => {
+    it("is refused if it lands after the dismissal, so the reminder can't come back", async () => {
+      await dropFollowUp(db, shopA, match, [ATTEMPT]);
+      expect(await saveFollowUp(db, input())).toBe("dismissed");
+      expect(await followUpsFor(db, shopA)).toEqual([]);
+    });
+
+    it("is removed if it landed first", async () => {
+      await saveFollowUp(db, input());
+      expect(await dropFollowUp(db, shopA, match, [ATTEMPT])).toBe(true);
+      expect(await followUpsFor(db, shopA)).toEqual([]);
+    });
+
+    it("doesn't stop the owner confirming it again later", async () => {
+      await dropFollowUp(db, shopA, match, [ATTEMPT]);
+      expect(await saveFollowUp(db, input({ attempt: "00000000-0000-4000-8000-0000000000a2" }))).toBe(true);
+    });
+
+    it("can only be cancelled by the shop that made it", async () => {
+      await dropFollowUp(db, shopB, match, [ATTEMPT]);
+      expect(await saveFollowUp(db, input())).toBe(true);
+    });
   });
 
   it("won't let another shop remove one", async () => {

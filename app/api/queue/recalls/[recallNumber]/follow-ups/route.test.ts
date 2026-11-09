@@ -26,7 +26,8 @@ const context = { params: Promise.resolve({ recallNumber: "27040" }) };
 const call = (method: "POST" | "PUT" | "DELETE", handler: typeof POST, body?: object, origin = "https://site.test") =>
   handler(new Request("https://site.test/api/queue/recalls/27040/follow-ups", { method, headers: { origin, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }), context);
 const propose = () => call("POST", POST);
-const confirm = (body: object) => call("PUT", PUT, { snapshot: "snap-1", ...body });
+const ATTEMPT = "00000000-0000-4000-8000-0000000000a1";
+const confirm = (body: object) => call("PUT", PUT, { snapshot: "snap-1", attempt: ATTEMPT, ...body });
 const dismiss = (body: object) => call("DELETE", DELETE, body);
 
 describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
@@ -142,7 +143,20 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
       const res = await confirm({ saleId: SALE, due: "2026-11-12" });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ saved: true, movedEarlier: false });
-      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1" });
+      expect(saved.saveFollowUp).toHaveBeenCalledWith({}, { shopId: "shop-1", matchId: SALE, due: "2026-11-12", reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, movedEarlier: false, snapshot: "snap-1", attempt: ATTEMPT });
+    });
+
+    it("refuses a save with no attempt id, since it couldn't be cancelled", async () => {
+      expect((await call("PUT", PUT, { saleId: SALE, due: "2026-11-12", snapshot: "snap-1" })).status).toBe(400);
+      expect(saved.saveFollowUp).not.toHaveBeenCalled();
+    });
+
+    it("says so when the owner dismissed this save before it landed", async () => {
+      saved.saveFollowUp.mockResolvedValue("dismissed");
+      saved.followUpsFor.mockResolvedValue([]);
+      const res = await confirm({ saleId: SALE, due: "2026-11-12" });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/dismissed/), confirmed: [] });
     });
 
     it("ignores a reason or quote the page sends", async () => {
@@ -287,7 +301,17 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
   describe("dismissing", () => {
     it("removes it for this shop", async () => {
       expect((await dismiss({ saleId: SALE })).status).toBe(200);
-      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE);
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, []);
+    });
+
+    it("cancels the saves the page never heard back from", async () => {
+      expect((await dismiss({ saleId: SALE, attempts: [ATTEMPT] })).status).toBe(200);
+      expect(saved.dropFollowUp).toHaveBeenCalledWith({}, "shop-1", SALE, [ATTEMPT]);
+    });
+
+    it.each([["not a list", "x"], ["not ids", ["x"]], ["too many", Array(21).fill(ATTEMPT)]])("refuses attempts that are %s", async (_name, attempts) => {
+      expect((await dismiss({ saleId: SALE, attempts })).status).toBe(400);
+      expect(saved.dropFollowUp).not.toHaveBeenCalled();
     });
 
     it("wants a session", async () => {

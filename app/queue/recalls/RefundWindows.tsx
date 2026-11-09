@@ -21,12 +21,12 @@ interface Plan {
 const toView = (s: SavedFollowUp): FollowUpView => ({ saleId: s.matchId, due: s.due, state: "confirmed", reason: s.reason, hazardQuote: s.hazardQuote, movedEarlier: s.movedEarlier, snapshot: s.snapshot });
 const DIDNT_WORK = "That didn't work. Please try again.";
 
-async function call(url: string, method: string, body?: object): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+async function call(url: string, method: string, body?: object): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   try {
     const res = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    return { ok: res.ok, data: ((await res.json().catch(() => ({}))) as Record<string, unknown>) ?? {} };
+    return { ok: res.ok, status: res.status, data: ((await res.json().catch(() => ({}))) as Record<string, unknown>) ?? {} };
   } catch {
-    return { ok: false, data: {} };
+    return { ok: false, status: 0, data: {} };
   }
 }
 
@@ -36,8 +36,8 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
   const [busy, setBusy] = useState(false);
   const [oneChange] = useState(oneAtATime);
   const [message, setMessage] = useState<string | null>(null);
-  // Sales whose save got no answer: it may have saved, so dismissing one removes it on the server too.
-  const unsure = useRef(new Set<string>());
+  // Saves with no clear answer (no reply, or a server error): each may yet land, so dismissing that sale cancels them on the server.
+  const unsure = useRef(new Map<string, string[]>());
   const url = `/api/queue/recalls/${encodeURIComponent(timeline.recallNumber)}/follow-ups`;
   const titleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId)?.title ?? "This sale";
   const saleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId);
@@ -78,7 +78,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
   const dismissProposal = (saleId: string) => {
     if (!unsure.current.has(saleId)) return dropProposal(saleId);
     void change(async () => {
-      const { ok, data } = await call(url, "DELETE", { saleId });
+      const { ok, data } = await call(url, "DELETE", { saleId, attempts: unsure.current.get(saleId) });
       if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
       unsure.current.delete(saleId);
       setMessage(null);
@@ -88,10 +88,11 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   /** Saves one. Returns whether it saved, so Confirm all stops at the first it can't. */
   const save = async (f: FollowUpView): Promise<boolean> => {
-    const { ok, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot });
+    const attempt = crypto.randomUUID();
+    const { ok, status, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot, attempt });
     if (!ok) {
       setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
-      if (typeof data.error !== "string") unsure.current.add(f.saleId);
+      if (status === 0 || status >= 500) unsure.current.set(f.saleId, [...(unsure.current.get(f.saleId) ?? []), attempt].slice(-20));
       if (Array.isArray(data.confirmed)) {
         // CPSC changed the recall, or the sale was resolved: what's proposed, and any reminder it took, no longer stands.
         setPlan(null);
@@ -103,7 +104,6 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       return false;
     }
     setMessage(null);
-    unsure.current.delete(f.saleId);
     setConfirmed((c) => [...c.filter((x) => x.saleId !== f.saleId), { ...f, state: "confirmed" as const, movedEarlier: data.movedEarlier === true }].sort((a, b) => a.due.localeCompare(b.due)));
     dropProposal(f.saleId);
     return true;
@@ -118,8 +118,9 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   const dismissSaved = (saleId: string) =>
     change(async () => {
-      const { ok, data } = await call(url, "DELETE", { saleId });
+      const { ok, data } = await call(url, "DELETE", { saleId, attempts: unsure.current.get(saleId) ?? [] });
       if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
+      unsure.current.delete(saleId);
       setMessage(null);
       setConfirmed((c) => c.filter((x) => x.saleId !== saleId));
     });
