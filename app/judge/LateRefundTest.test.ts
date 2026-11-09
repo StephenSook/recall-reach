@@ -35,4 +35,10 @@ describe("the late-refund result", () => {
     expect(html).not.toContain("What the owner sees");
     expect(html).not.toContain("PayPal refused the late refund.");
   });
+
+  it("shows no empty line when PayPal's answer names no issue", async () => {
+    const html = await render({}, 500);
+    expect(html).toContain("Unexpected answer");
+    expect(html).not.toContain("<code></code>");
+  });
 });

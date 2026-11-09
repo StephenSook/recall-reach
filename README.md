@@ -27,7 +27,7 @@ Checking one item at the counter, on a phone:
 
 ## See it for yourself
 
-On `/judge`, "See PayPal refuse a late refund" sends PayPal's sandbox test header (`PayPal-Mock-Response`, `REFUND_TIME_LIMIT_EXCEEDED`) with a one-cent refund on a recent demo sale that PayPal itself reports as fully refunded, so no money can move, and it changes no records here. It picks that sale from our refund records, which the 46-hour purge empties, so run the refund step first.
+On `/judge`, "See PayPal refuse a late refund" sends PayPal's sandbox test header (`PayPal-Mock-Response`, `REFUND_TIME_LIMIT_EXCEEDED`) with a one-cent refund on a recent sandbox sale that PayPal itself reports as fully refunded, so no money can move, and it changes no records here. It picks that sale from our refund records, which the 46-hour purge empties, so run the refund step first.
 
 | Page | What it shows |
 |---|---|

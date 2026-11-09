@@ -9,7 +9,7 @@ export function LateRefundResult({ result }: { result: JudgeRefusalResult }) {
     <div role="status">
       <p>{result.message}</p>
       {result.status !== null ? <p>PayPal HTTP status: {result.status}</p> : null}
-      {result.details.map((detail, i) => (
+      {result.details.filter((detail) => detail.issue || detail.description).map((detail, i) => (
         <p key={i}><code>{detail.issue}</code>{detail.description ? <>: {detail.description}</> : null}</p>
       ))}
       {result.expected ? <p>What the owner sees: {REFUND_STATE.failed} ({result.details[0].issue})</p> : null}
