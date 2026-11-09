@@ -55,6 +55,7 @@ const BUILDS_WHAT_CLAUDE_READS = [
   "server/agent/recallAgent.ts",
   "server/agent/recallQuestion.ts",
   "server/agent/checkRecord.ts",
+  "server/agent/followUpAdvice.ts",
   "server/studio/turn.ts",
   "server/studio/dataset.ts",
   "app/api/studio/turn/route.ts",
