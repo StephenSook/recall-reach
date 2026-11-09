@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { TextCheckAnswer } from "@/server/match/textCheck";
 
 export const PAYPAL_OPENED = "PayPal's page is open for the buyer to review and approve.";
+export const PAYPAL_OPENING = "PayPal's page is opening in this tab for the buyer to review and approve.";
 /** Where the client exposes the tools API. Browsers and desktop clients don't all agree yet. */
 export type ToolSurface = "document" | "navigator";
 export interface AgentCall { id: number; name: string; input: string; result: string; via: ToolSurface }
@@ -19,6 +20,8 @@ type Hosts = Record<ToolSurface, { modelContext?: ModelContext }>;
 
 // Long enough for the assistant to get its answer before this page goes away.
 const SAME_TAB_DELAY_MS = 1500;
+// If this tab is still here that long after the move (the buyer stopped it, or came back), checkout is free again.
+const STILL_HERE_MS = 10_000;
 
 const searchInput = z.strictObject({ query: z.string().trim().min(2).max(200), maxPrice: z.number().finite().min(1).max(2000).optional() });
 const checkInput = z.strictObject({ title: z.string().trim().min(2).max(200), model: z.string().trim().max(60).optional() });
@@ -153,7 +156,7 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
           // Read only the browser's redirect field. Never spread, return, or log the provider's response.
           const { approveUrl } = z.object({ approveUrl: z.string().url() }).parse(await res.json());
           const url = new URL(approveUrl);
-          if (url.protocol !== "https:" || !["www.paypal.com", "www.sandbox.paypal.com"].includes(url.hostname) || url.username || url.password || url.port || url.pathname !== "/checkoutnow") throw new Error("invalid approval destination");
+          if (url.protocol !== "https:" || url.hostname !== "www.sandbox.paypal.com" || url.username || url.password || url.port || url.pathname !== "/checkoutnow") throw new Error("invalid approval destination");
           signal.throwIfAborted();
           if (popup) {
             popup.location.replace(approveUrl);
@@ -161,8 +164,12 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
             return { value: PAYPAL_OPENED, summary: "PayPal opened" };
           }
           leaving = true;
-          deps.later(() => { if (!lifetime.signal.aborted) deps.navigate(approveUrl); }, SAME_TAB_DELAY_MS);
-          return { value: PAYPAL_OPENED, summary: "PayPal opening in this tab" };
+          deps.later(() => {
+            if (lifetime.signal.aborted) return;
+            deps.navigate(approveUrl);
+            deps.later(() => { checkingOut = false; }, STILL_HERE_MS);
+          }, SAME_TAB_DELAY_MS);
+          return { value: PAYPAL_OPENING, summary: "PayPal opening in this tab" };
         } finally {
           // A tab about to leave for PayPal takes no second checkout.
           if (!leaving) checkingOut = false;

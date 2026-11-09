@@ -53,7 +53,7 @@ test("when the browser blocks the new tab, the assistant is answered and this ta
   await context.route("https://www.sandbox.paypal.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Mock PayPal buyer approval page</h1>" }));
   await page.evaluate(() => window.shopperTools[0].execute({ query: "tub" }, { signal: new AbortController().signal }));
   const result = await page.evaluate(() => window.shopperTools[2].execute({ listingId: "tub" }, { signal: new AbortController().signal }));
-  expect(result).toBe("PayPal's page is open for the buyer to review and approve.");
+  expect(result).toBe("PayPal's page is opening in this tab for the buyer to review and approve.");
   await expect(page.getByTestId("agent-tools")).toContainText("PayPal opening in this tab");
   await expect(page.getByRole("heading", { name: "Mock PayPal buyer approval page" })).toBeVisible({ timeout: 10_000 });
   expect(context.pages()).toHaveLength(1);

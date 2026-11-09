@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { registerShopperTools, PAYPAL_OPENED, type AgentCall, type ShopperTool } from "./webmcp";
+import { registerShopperTools, PAYPAL_OPENED, PAYPAL_OPENING, type AgentCall, type ShopperTool } from "./webmcp";
 import { AgentCallPanel } from "./AgentTools";
 import type { TextCheckAnswer } from "@/server/match/textCheck";
 
@@ -145,7 +145,8 @@ describe("shopper site tools", () => {
 
     it("answers the assistant first, then moves this tab to PayPal", async () => {
       const h = await blocked();
-      expect(await h.run("start_checkout", { listingId: "tub" })).toBe(PAYPAL_OPENED);
+      expect(await h.run("start_checkout", { listingId: "tub" })).toBe(PAYPAL_OPENING);
+      expect(PAYPAL_OPENING).toBe("PayPal's page is opening in this tab for the buyer to review and approve.");
       expect(h.navigate).not.toHaveBeenCalled();
       expect(h.later).toHaveBeenCalledOnce();
       expect(h.later.mock.calls[0][1]).toBeGreaterThan(0);
@@ -193,6 +194,18 @@ describe("shopper site tools", () => {
       expect(h.fetcher).toHaveBeenCalledTimes(buys);
     });
 
+    it("takes another checkout if this tab is still here after the move", async () => {
+      const h = harness();
+      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer, { ...offer, id: "bath", slipId: "other-slip" }], refused: [] }));
+      await h.run("search_listings", { query: "tub" });
+      h.open.mockReturnValueOnce(null as never);
+      await h.run("start_checkout", { listingId: "tub" });
+      h.waiting[0]();
+      expect(await h.run("start_checkout", { listingId: "bath" })).toMatchObject({ refused: true });
+      h.waiting[1]();
+      expect(await h.run("start_checkout", { listingId: "bath" })).toBe(PAYPAL_OPENED);
+    });
+
     it("can try again after a checkout that didn't start", async () => {
       const h = await blocked();
       h.fetcher.mockResolvedValueOnce(Response.json({}, { status: 500 }));
@@ -210,6 +223,26 @@ describe("shopper site tools", () => {
     expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
     expect(h.popup.location.replace).not.toHaveBeenCalled();
     expect(h.popup.close).toHaveBeenCalledOnce();
+  });
+
+  it("won't send the buyer to live PayPal: this is sandbox only", async () => {
+    const h = harness();
+    await h.run("search_listings", { query: "tub" });
+    h.fetcher.mockResolvedValueOnce(Response.json({ approveUrl: "https://www.paypal.com/checkoutnow?token=x" }));
+    expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
+    expect(h.popup.location.replace).not.toHaveBeenCalled();
+  });
+
+  it("ignores an older search that answers after a newer one, so its offers can't be bought", async () => {
+    const h = harness();
+    let answerOlder: (response: Response) => void = () => {};
+    h.fetcher.mockImplementationOnce(() => new Promise((resolve) => { answerOlder = resolve; }));
+    const older = h.run("search_listings", { query: "older" });
+    h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [{ ...offer, id: "newer" }], refused: [] }));
+    await h.run("search_listings", { query: "newer" });
+    answerOlder(Response.json({ offerable: [offer], refused: [] }));
+    expect(await older).toMatchObject({ refused: true });
+    expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
   });
 
   it("uses the new tab, and doesn't move this one, when the browser allows it", async () => {
