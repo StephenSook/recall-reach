@@ -110,7 +110,8 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
   const chartRef = useRef<ChartRef | null>(null);
   const [charted, setCharted] = useState(false);
   const isGrouped = groupBy !== null;
-  // What this tab could cost in refunds. The prices are the shop's own, from its order file.
+  // What this tab could cost in refunds, by the shop's own prices and order dates. PayPal's own date decides when a refund is sent,
+  // as the refund windows page says, so the label names the date it used.
   const refund = useMemo(() => refundTotal(rows.filter((r) => inTab(r, tab))), [rows, tab]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
   const priceInOtherCurrency = hasSaleWithNoUsdPrice(rows);
@@ -189,7 +190,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         ))}
         {refund.count > 0 ? (
           <span className="grid-refund-total" data-testid="refund-total">
-            Refund eligible in this tab: <strong>{refund.count}</strong> ({usd(refund.usd)}
+            Refund eligible by order date, this tab: <strong>{refund.count}</strong> ({usd(refund.usd)}
             {refund.unpriced > 0 ? `, ${refund.unpriced} with no price in dollars` : ""})
           </span>
         ) : null}
