@@ -140,6 +140,7 @@ All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-hai
 - Tested on demo data and public listings. No real shop has run it yet.
 - A second notice, offered 3 days after a sent notice gets no answer, is tested but never seen live: a demo shop is deleted at 48 hours, and it has no shorter clock.
 - `/shopper` reads a listing's words. A match is about those words, not a finding that the item is recalled, and no match doesn't mean it's safe. Listings change, so a run isn't a fixed result. The listings seen so far are new goods, not secondhand.
+- The shopping agent checks a listing's words against CPSC recalls before it may offer it. Three shapes can still be offered: a recall from the listing's maker that doesn't list everything it covers and shares no product word with the listing, because holding those would block that maker's whole range; a product sold under a brand other than the recalling firm's name, such as PACEARTH from Pacearth Direct; and a kind of product named only in the recall's description, not in its product name.
 
 ## What the real sandbox did
 
