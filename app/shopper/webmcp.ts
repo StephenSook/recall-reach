@@ -98,6 +98,9 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
       object({ query: { type: "string", minLength: 2, maxLength: 200 }, maxPrice: { type: "number", minimum: 1, maximum: 2000, description: "Maximum listing price in USD.", default: 2000 } }, ["query"]),
       async (input, signal) => {
         const generation = ++nextSearch;
+        // Whatever an older search offered no longer stands: this one may refuse it.
+        offers.clear();
+        refusals.clear();
         const params = new URLSearchParams({ query: input.query, maxPrice: String(input.maxPrice ?? 2000) });
         const res = await deps.fetch(`/api/shopper/listings?${params}`, { signal, cache: "no-store" });
         if (!res.ok) return { value: refused([], res.status === 429 ? "Too many searches. Try again in an hour." : "The search could not finish."), summary: "Refused: search unavailable" };

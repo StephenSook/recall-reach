@@ -248,6 +248,21 @@ describe("shopper site tools", () => {
     expect(h.popup.close).toHaveBeenCalledOnce();
   });
 
+  it("offers nothing to check out while a newer search is still running, since it may refuse the listing", async () => {
+    const h = harness();
+    await h.run("search_listings", { query: "tub" });
+    let answerNewer: (response: Response) => void = () => {};
+    h.fetcher.mockImplementationOnce(() => new Promise((resolve) => { answerNewer = resolve; }));
+    const newer = h.run("search_listings", { query: "tub" });
+    const before = h.fetcher.mock.calls.length;
+    expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
+    expect(h.open).not.toHaveBeenCalled();
+    expect(h.fetcher).toHaveBeenCalledTimes(before);
+    answerNewer(Response.json({ offerable: [], refused: [{ ...refusal, id: "tub" }] }));
+    await newer;
+    expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true, recalls: [{ recallNumber: "22113" }] });
+  });
+
   describe("when a newer search lands while the order is being made", () => {
     async function pendingBuy(h: ReturnType<typeof harness>) {
       await h.run("search_listings", { query: "tub" });
