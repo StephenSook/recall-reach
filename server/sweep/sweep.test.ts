@@ -123,7 +123,7 @@ describe("the market sweep", () => {
   });
 
   describe("the Channel3 client, against a real MCP server", () => {
-    // Shaped as Channel3 answered on 2026-11-05 (research/raw/channel3), with invented products and retailers.
+    // Shaped as Channel3 answered on 2026-11-05 (a saved answer that isn't in this repo), with invented products and retailers.
     const fakeChannel3 = (seen: string[]) =>
       (async (_url: string | URL, init?: RequestInit) => {
         const server = new McpServer({ name: "fake", version: "1.0.0" });

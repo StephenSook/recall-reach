@@ -24,6 +24,8 @@ describe("findViolations", () => {
     ["the research folder, one level up", "read ../research/NOTES.md"],
     ["a nested research path", "See research/a/NOTES.md"],
     ["a research file with a digit", "See research/NOTES-2.md"],
+    ["a research script, any extension", "Ported from the EDA script (research/eda/analysis.py: sale_window)"],
+    ["a research folder, no file named", "Shaped as Channel3 answered (research/raw/channel3), with invented products"],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
