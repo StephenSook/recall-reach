@@ -65,7 +65,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     it("returns Claude's advice and the date code set for each sale", async () => {
       const res = await propose();
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, withinDays: 3, snapshot: "snap-1", proposals: [{ saleId: SALE, due: "2026-11-12", movedEarlier: false }], closingSoon: 0, notOnThisText: 0, confirmed: [] });
+      expect(await res.json()).toEqual({ reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, withinDays: 3, snapshot: "snap-1", proposals: [{ saleId: SALE, due: "2026-11-12", movedEarlier: false }], closingSoon: 0, notOnThisText: 0, mostDays: 14, confirmed: [] });
     });
 
     it("asks about the recall by its number and nothing else, so no sale can reach Claude", async () => {
@@ -279,6 +279,21 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
 
     it("takes the last day this hazard allows", async () => {
       expect((await confirm({ saleId: SALE, due: "2026-11-23" })).status).toBe(200);
+    });
+
+    it("limits how many changes a shop can make in an hour, so the routes can't be used to fill the database", async () => {
+      session.mockResolvedValue({ shopId: "shop-busy", sessionId: "s" });
+      const codes: number[] = [];
+      for (let i = 0; i < 121; i += 1) codes.push((await confirm({ saleId: SALE, due: "2026-11-12" })).status);
+      expect(codes.slice(0, 120).every((c) => c === 200)).toBe(true);
+      expect(codes[120]).toBe(429);
+      expect((await dismiss({ saleId: SALE })).status).toBe(429);
+    });
+
+    it("takes no place in line for a request with no session", async () => {
+      session.mockResolvedValue(null);
+      await confirm({ saleId: SALE, due: "2026-11-12" });
+      expect(saved.nextArrival).not.toHaveBeenCalled();
     });
 
     it("refuses a confirmation with no snapshot", async () => {

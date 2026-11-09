@@ -21,6 +21,9 @@ const BODY_TIMEOUT_MS = 5000;
 const SIGN_IN = "sign in as a shop first";
 const CPSC_CHANGED = "CPSC changed this recall. Plan the follow-ups again.";
 const perShop = createRateLimiter({ limit: 30, windowMs: 60 * 60 * 1000 });
+// Saves and dismissals, together. Plenty for an owner dragging dates about; not enough to fill a table.
+const changesPerShop = createRateLimiter({ limit: 120, windowMs: 60 * 60 * 1000 });
+const TOO_MANY_CHANGES = "Too many changes. Try again in a while.";
 
 const ADVICE_REFUSED = {
   NO_ADVICE: [502, "Claude couldn't back a date with CPSC's words, so no dates are proposed."],
@@ -95,7 +98,7 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
     const { proposals, closingSoon } = placeFollowUps(open.filter((s) => onThisText.has(s.id)), advice.withinDays, timeline.today);
     const notOnThisText = open.filter((s) => !onThisText.has(s.id)).length;
     // What's saved goes back too: this page may have missed a save, from a lost answer or another tab.
-    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon, notOnThisText, confirmed: activeFollowUps(saved, timeline.sales) }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon, notOnThisText, mostDays: advice.mostDays, confirmed: activeFollowUps(saved, timeline.sales) }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("plan", err);
   }
@@ -103,15 +106,16 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
 
 // Confirm, or move a confirmed one. The date is checked here against the shop's own sale, and the reason is read here too.
 export async function PUT(request: Request, { params }: Context): Promise<Response> {
-  // Taken first: the order changes reach the server is the order they count in.
+  const session = await currentSession();
+  if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
+  if (!changesPerShop(session.shopId)) return refused(429, TOO_MANY_CHANGES);
+  // Taken before the body is read: the order changes reach the server is the order they count in.
   let arrival: string;
   try {
     arrival = await nextArrival(getDb());
   } catch (err) {
     return failed("save", err);
   }
-  const session = await currentSession();
-  if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
   const { recallNumber } = await params;
   const body = await readJson(request);
   const saleId = saleIdOf(body);
@@ -147,14 +151,15 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
 }
 
 export async function DELETE(request: Request, { params }: Context): Promise<Response> {
+  const session = await currentSession();
+  if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
+  if (!changesPerShop(session.shopId)) return refused(429, TOO_MANY_CHANGES);
   let arrival: string;
   try {
     arrival = await nextArrival(getDb());
   } catch (err) {
     return failed("dismiss", err);
   }
-  const session = await currentSession();
-  if (!session || !fromThisSite(request)) return refused(401, SIGN_IN);
   const body = await readJson(request);
   const saleId = saleIdOf(body);
   if (!saleId) return refused(400, "not a follow-up");
