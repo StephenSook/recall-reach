@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answerSearch } from "../../test/fakeHistory";
 import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
@@ -83,6 +83,31 @@ describe("Recall Replay", () => {
     const age = (runId: string, hours: number) => db.query("update replay_runs set created_at = $2::timestamptz where id = $1", [runId, hoursBeforeNow(hours)]);
     const refresh = (client = fakePayPal().client) => refreshReplay(db, () => run(client), NOW);
     const runs = async () => Number((await db.query<{ n: string }>("select count(*)::text as n from replay_runs")).rows[0].n);
+
+    describe("when the task and the web service both try at once", () => {
+      it("lets only one do the work, and the other finds it in hand", async () => {
+        let release: () => void = () => {};
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const second = vi.fn(() => run(fakePayPal().client));
+        const first = refreshReplay(db, async () => { await gate; return run(fakePayPal().client); }, NOW);
+        await vi.waitFor(async () => expect((await db.query("select 1 from replay_lease where until > now()")).rows).toHaveLength(1));
+        expect(await refreshReplay(db, second, NOW)).toBe("FRESH");
+        expect(second).not.toHaveBeenCalled();
+        release();
+        expect(await first).toBe("RAN");
+        expect(await runs()).toBe(1);
+      });
+
+      it("hands the lease back after a run that fails, so the next try can run", async () => {
+        await expect(refreshReplay(db, async () => { throw new Error("PayPal down"); }, NOW)).rejects.toThrow("PayPal down");
+        expect(await refresh()).toBe("RAN");
+      });
+
+      it("takes over a lease a crashed run left behind once it has expired", async () => {
+        await db.query("insert into replay_lease (id, until) values (1, now() - interval '1 minute')");
+        expect(await refresh()).toBe("RAN");
+      });
+    });
 
     describe("with the daily Render Workflow in place", () => {
       const at = (hoursOld: number, freshMs: number) => async () => {

@@ -128,16 +128,36 @@ export async function runReplay(db: Db, client: PayPalClient, input: { today: st
  * Makes a new run if the newest good one is a day old. A run that couldn't read PayPal is dropped when there is a good
  * one to keep showing, and tried again at the next call, so a PayPal outage can't replace good numbers with a partial run.
  */
-export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date, freshMs: number = REPLAY_FRESH_MS): Promise<"FRESH" | "RAN" | "DISCARDED"> {
+const isFresh = async (db: Db, now: Date, freshMs: number) => {
   const { rows } = await db.query<{ at: string | Date | null }>("select max(created_at) as at from replay_runs where search_complete");
   const at = rows[0]?.at;
-  if (at && now.getTime() - new Date(at).getTime() < freshMs) return "FRESH";
-  const { runId } = await run();
-  const dropped = await db.query(
-    "delete from replay_runs r where r.id = $1 and not r.search_complete and exists (select 1 from replay_runs o where o.id <> r.id and o.search_complete) returning 1",
-    [runId],
+  return Boolean(at && now.getTime() - new Date(at).getTime() < freshMs);
+};
+
+/**
+ * Runs Replay if its newest complete run is older than freshMs. The task and the web service can both call this; a lease lets
+ * only one do the work, and the other answers FRESH, since a fresh run is on its way. Freshness is read again under the lease.
+ */
+export async function refreshReplay(db: Db, run: () => Promise<{ runId: string }>, now: Date, freshMs: number = REPLAY_FRESH_MS): Promise<"FRESH" | "RAN" | "DISCARDED"> {
+  if (await isFresh(db, now, freshMs)) return "FRESH";
+  const { rows: held } = await db.query(
+    `insert into replay_lease (id, until) values (1, now() + interval '10 minutes')
+     on conflict (id) do update set until = excluded.until where replay_lease.until < now()
+     returning 1`,
   );
-  return dropped.rows.length > 0 ? "DISCARDED" : "RAN";
+  if (held.length === 0) return "FRESH";
+  try {
+    if (await isFresh(db, now, freshMs)) return "FRESH";
+    const { runId } = await run();
+    const dropped = await db.query(
+      "delete from replay_runs r where r.id = $1 and not r.search_complete and exists (select 1 from replay_runs o where o.id <> r.id and o.search_complete) returning 1",
+      [runId],
+    );
+    return dropped.rows.length > 0 ? "DISCARDED" : "RAN";
+  } finally {
+    // Into the past, not now(): the next try's now() can be the very same instant.
+    await db.query("update replay_lease set until = '-infinity' where id = 1");
+  }
 }
 
 interface RunRow {
