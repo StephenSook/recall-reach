@@ -1,6 +1,6 @@
 // The Render Workflow task behind Replay's daily refresh. It takes no arguments and returns one word, so nothing of ours
 // is kept on Render's side. A daily GitHub Action starts it (scripts/startReplayTask.ts), so no Render API key sits on the
-// public web service. If it doesn't run, the web service does the refresh itself once the numbers pass 28 hours old.
+// public web service. If it doesn't run, the web service does the refresh itself once the numbers pass 26 hours old.
 import { type TaskContext, task } from "@renderinc/sdk/workflows";
 import { getDb } from "../server/db/pg";
 import { payPalClientFromEnv } from "../server/paypal/client";

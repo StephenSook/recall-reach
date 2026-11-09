@@ -112,7 +112,7 @@ export function statusLines(h: Health, env: { claudeKeySet: boolean }): StatusLi
       state: !db ? "unknown" : task.state,
       reading: !db ? NOT_READ : task.reading,
       measures:
-        "The row Replay's refresh task on Render Workflows writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass 28 hours.",
+        "The row Replay's refresh task on Render Workflows writes on every run, including runs that change nothing. Its daily start can be skipped, and then the web service refreshes Replay itself once the numbers pass 26 hours.",
     },
     {
       service: "Channel3",

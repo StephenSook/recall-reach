@@ -68,7 +68,7 @@ describe("the refresh task's line", () => {
   });
 
   it("says what stands in when its daily start is skipped", () => {
-    expect(task(null)?.measures).toContain("once the numbers pass 28 hours");
+    expect(task(null)?.measures).toContain("once the numbers pass 26 hours");
   });
 });
 

@@ -100,11 +100,11 @@ describe("Recall Replay", () => {
       });
 
       it("the web service holds back while the task still has time", async () => {
-        expect(await at(27, REPLAY_FALLBACK_MS)()).toBe("FRESH");
+        expect(await at(25, REPLAY_FALLBACK_MS)()).toBe("FRESH");
       });
 
       it("the web service steps in when the task didn't run, before health calls it stale", async () => {
-        expect(await at(29, REPLAY_FALLBACK_MS)()).toBe("RAN");
+        expect(await at(27, REPLAY_FALLBACK_MS)()).toBe("RAN");
         expect(REPLAY_FALLBACK_MS).toBeLessThan(48 * 3_600_000);
       });
     });

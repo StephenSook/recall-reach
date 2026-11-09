@@ -48,10 +48,11 @@ export const REPLAY_FROM = "2025-01-01";
 export const REPLAY_FRESH_MS = 24 * 3_600_000;
 /**
  * With the daily Render Workflow in place. GitHub's daily start can run hours late, so the task runs on anything over
- * 20 hours old, and this service only steps in past 28: the workflow does the work, and nothing depends on it.
+ * 20 hours old, and this service only steps in past 26: the workflow does the work, and nothing depends on it. GitHub also
+ * skips a daily start now and then (Nov 9, 2026), so this can't wait much longer: the hourly job makes the worst about 27.
  */
 export const REPLAY_TASK_FRESH_MS = 20 * 3_600_000;
-export const REPLAY_FALLBACK_MS = 28 * 3_600_000;
+export const REPLAY_FALLBACK_MS = 26 * 3_600_000;
 
 const DIGEST_SQL = `encode(sha256(convert_to(string_agg(recall_number || ':' || raw_sha256, ',' order by recall_number), 'UTF8')), 'hex')`;
 
