@@ -21,6 +21,7 @@ const SALE = "00000000-0000-4000-8000-000000000001";
 const OTHER = "00000000-0000-4000-8000-000000000002";
 const row = (over: Partial<QueueRow> = {}) => ({ matchId: SALE, recallNumber: "27040", recallTitle: "A recall", recallDate: "2026-10-15", itemTitle: "A high chair", orderedOn: "2026-11-01", salePath: "REFUND_ELIGIBLE", verdict: "MATCH", strength: "CONFIRMED", joinState: "IDENTIFIED", isListing: false, notice: null, refund: null, ...over }) as QueueRow;
 const ADVICE = { withinDays: 3, reason: "Entrapment can seriously injure a child quickly.", hazardQuote: "entrapment hazard", snapshot: "snap-1" };
+const REMINDER = { matchId: SALE, due: "2026-11-20", reason: "r", hazardQuote: "q", movedEarlier: false, snapshot: "snap-1" };
 const context = { params: Promise.resolve({ recallNumber: "27040" }) };
 const call = (method: "POST" | "PUT" | "DELETE", handler: typeof POST, body?: object, origin = "https://site.test") =>
   handler(new Request("https://site.test/api/queue/recalls/27040/follow-ups", { method, headers: { origin, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }), context);
@@ -60,7 +61,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     it("returns Claude's advice and the date code set for each sale", async () => {
       const res = await propose();
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, withinDays: 3, snapshot: "snap-1", proposals: [{ saleId: SALE, due: "2026-11-12", movedEarlier: false }], closingSoon: 0 });
+      expect(await res.json()).toEqual({ reason: ADVICE.reason, hazardQuote: ADVICE.hazardQuote, withinDays: 3, snapshot: "snap-1", proposals: [{ saleId: SALE, due: "2026-11-12", movedEarlier: false }], closingSoon: 0, confirmed: [] });
     });
 
     it("asks about the recall by its number and nothing else, so no sale can reach Claude", async () => {
@@ -74,6 +75,17 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     it("doesn't propose again for a sale the owner already confirmed", async () => {
       saved.followUpsFor.mockResolvedValue([{ matchId: SALE, due: "2026-11-20", reason: "r", hazardQuote: "q", movedEarlier: false }]);
       expect((await (await propose()).json()).proposals).toEqual([]);
+    });
+
+    it("hands back what's saved for this recall, so a page that missed a save catches up", async () => {
+      saved.followUpsFor.mockResolvedValue([REMINDER]);
+      expect((await (await propose()).json()).confirmed).toEqual([REMINDER]);
+    });
+
+    it("leaves out a reminder on a sale that no longer needs one", async () => {
+      saved.followUpsFor.mockResolvedValue([REMINDER]);
+      loadQueue.mockResolvedValue({ rows: [row({ notice: { state: "FAMILY_RESPONDED", stopped: false } as never })], shop: { kind: "DEMO" } });
+      expect((await (await propose()).json()).confirmed).toEqual([]);
     });
 
     it("counts the sales too close to the end of their window", async () => {
@@ -179,6 +191,46 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     it("asks to plan again if CPSC changes it as this is saved", async () => {
       saved.saveFollowUp.mockResolvedValue(false);
       expect((await confirm({ saleId: SALE, due: "2026-11-12" })).status).toBe(409);
+    });
+
+    describe("when the save no longer stands, it tells the page what's saved now", () => {
+      it("after CPSC changed the recall", async () => {
+        const res = await confirm({ saleId: SALE, due: "2026-11-12", snapshot: "an-older-one" });
+        expect(res.status).toBe(409);
+        expect((await res.json()).confirmed).toEqual([]);
+      });
+
+      it("after the family answered, leaving that sale's reminder out", async () => {
+        saved.followUpsFor.mockResolvedValue([REMINDER]);
+        loadQueue.mockResolvedValue({ rows: [row({ notice: { state: "FAMILY_RESPONDED", stopped: false } as never })], shop: { kind: "DEMO" } });
+        const res = await confirm({ saleId: SALE, due: "2026-11-12" });
+        expect(res.status).toBe(409);
+        expect((await res.json()).confirmed).toEqual([]);
+      });
+
+      it("after advice went missing", async () => {
+        stored.mockResolvedValue(null);
+        saved.followUpsFor.mockResolvedValue([REMINDER]);
+        expect((await (await confirm({ saleId: SALE, due: "2026-11-12" })).json()).confirmed).toEqual([REMINDER]);
+      });
+
+      it("if CPSC changes it as this is saved", async () => {
+        saved.saveFollowUp.mockResolvedValue(false);
+        expect((await (await confirm({ saleId: SALE, due: "2026-11-12" })).json()).confirmed).toEqual([]);
+      });
+
+      it("for a sale that has gone, keeping the others", async () => {
+        saved.followUpsFor.mockResolvedValue([REMINDER]);
+        const res = await confirm({ saleId: OTHER, due: "2026-11-12" });
+        expect(res.status).toBe(404);
+        expect((await res.json()).confirmed).toEqual([REMINDER]);
+      });
+
+      it("but a date the window can't take changes nothing, so it isn't sent", async () => {
+        const res = await confirm({ saleId: SALE, due: "2026-11-01" });
+        expect(res.status).toBe(422);
+        expect((await res.json()).confirmed).toBeUndefined();
+      });
     });
 
     it("refuses a confirmation with no snapshot", async () => {

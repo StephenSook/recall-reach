@@ -101,6 +101,3 @@ export function oneAtATime() {
     }
   };
 }
-
-/** A plan is read from one CPSC text. Reminders from older text are replaced by it, not shown beside it. */
-export const confirmedForSnapshot = <T extends { snapshot: string }>(confirmed: readonly T[], snapshot: string): T[] => confirmed.filter((f) => f.snapshot === snapshot);

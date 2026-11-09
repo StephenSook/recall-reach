@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFollowUps, checkFollowUpDate, confirmedForSnapshot, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, oneAtATime, placeFollowUps } from "./followUps";
+import { activeFollowUps, checkFollowUpDate, closingSoonLine, dayLabel, followUpLines, latestDay, MOVED_NOTE, oneAtATime, placeFollowUps } from "./followUps";
 import type { TimelineSale } from "./timeline";
 
 const TODAY = "2026-11-09";
@@ -142,17 +142,5 @@ describe("one change at a time", () => {
     const guard = oneAtATime();
     await guard(async () => { throw new Error("no"); }).catch(() => undefined);
     expect(await guard(async () => "next")).toBe("next");
-  });
-});
-
-describe("planning again after CPSC changed the recall", () => {
-  const f = (saleId: string, snapshot: string) => ({ saleId, snapshot });
-
-  it("drops reminders read from older text", () => {
-    expect(confirmedForSnapshot([f("a", "old"), f("b", "new")], "new")).toEqual([f("b", "new")]);
-  });
-
-  it("keeps them all when nothing changed", () => {
-    expect(confirmedForSnapshot([f("a", "same")], "same")).toEqual([f("a", "same")]);
   });
 });

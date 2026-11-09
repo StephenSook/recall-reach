@@ -131,6 +131,32 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
     await page.screenshot({ path: `${SHOTS}/follow-confirmed.png`, fullPage: false });
   }
 
+  // The server says a reminder no longer stands (CPSC changed the recall, here): the page drops it and offers to plan again.
+  await page.route(planUrl, (route) => (route.request().method() === "PUT" ? route.fulfill({ status: 409, json: { error: "CPSC changed this recall. Plan the follow-ups again.", confirmed: [] } }) : route.continue()));
+  await page.getByTestId("follow-ups-confirmed").locator('input[type="date"]').first().fill("2030-01-01");
+  await expect(page.getByTestId("follow-up-message")).toContainText("Plan the follow-ups again");
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Plan follow-ups with Claude" })).toBeVisible();
+  await page.unroute(planUrl);
+  await page.reload();
+
+  // A save that reached the server but whose answer never came back: planning again finds the reminder.
+  await page.getByTestId("follow-ups-confirmed").getByRole("button", { name: "Dismiss" }).first().click();
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(proposals).toContainText(REASON, { timeout: 30_000 });
+  await page.route(planUrl, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await proposals.getByRole("button", { name: "Confirm" }).first().click();
+  await expect(page.getByTestId("follow-up-message")).toContainText("didn't work");
+  await expect(page.getByTestId("follow-ups-confirmed")).toHaveCount(0);
+  await page.unroute(planUrl);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(page.getByTestId("follow-ups-confirmed")).toContainText(REASON, { timeout: 30_000 });
+
   // The queue card shows it. It's a reminder there: nothing was sent.
   await page.goto("/queue");
   await expect(page.getByTestId("follow-up-by").first()).toContainText("Follow up by");

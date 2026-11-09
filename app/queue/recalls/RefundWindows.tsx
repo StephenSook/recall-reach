@@ -4,7 +4,7 @@
 // server. Everything the chart can do, the list under it can do too, so a phone or a keyboard loses nothing.
 import { useMemo, useState } from "react";
 import type { SavedFollowUp } from "@/server/queue/followUps";
-import { closingSoonLine, confirmedForSnapshot, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
+import { closingSoonLine, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
 import { RefundTimelineLoader } from "./RefundTimelineLoader";
 import type { Timeline } from "./timeline";
 
@@ -14,17 +14,18 @@ interface Plan {
   snapshot: string;
   proposals: ProposedFollowUp[];
   closingSoon: number;
+  confirmed: SavedFollowUp[];
 }
 
 const toView = (s: SavedFollowUp): FollowUpView => ({ saleId: s.matchId, due: s.due, state: "confirmed", reason: s.reason, hazardQuote: s.hazardQuote, movedEarlier: s.movedEarlier, snapshot: s.snapshot });
 const DIDNT_WORK = "That didn't work. Please try again.";
 
-async function call(url: string, method: string, body?: object): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+async function call(url: string, method: string, body?: object): Promise<{ ok: boolean; data: Record<string, unknown> }> {
   try {
     const res = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    return { ok: res.ok, status: res.status, data: ((await res.json().catch(() => ({}))) as Record<string, unknown>) ?? {} };
+    return { ok: res.ok, data: ((await res.json().catch(() => ({}))) as Record<string, unknown>) ?? {} };
   } catch {
-    return { ok: false, status: 0, data: {} };
+    return { ok: false, data: {} };
   }
 }
 
@@ -63,7 +64,8 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       const { ok, data } = await call(url, "POST");
       if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
       const next = data as unknown as Plan;
-      setConfirmed((c) => confirmedForSnapshot(c, next.snapshot));
+      // The server's list, not this page's: it holds a reminder saved elsewhere and not one that no longer stands.
+      setConfirmed(next.confirmed.map(toView));
       setPlan(next);
       if (next.proposals.length === 0 && next.closingSoon === 0) setMessage("No sale needs a follow-up date right now.");
     });
@@ -72,13 +74,17 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
 
   /** Saves one. Returns whether it saved, so Confirm all stops at the first it can't. */
   const save = async (f: FollowUpView): Promise<boolean> => {
-    const { ok, status, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot });
+    const { ok, data } = await call(url, "PUT", { saleId: f.saleId, due: f.due, snapshot: f.snapshot });
     if (!ok) {
       setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
-      // CPSC changed the recall, or the sale was resolved: what's proposed no longer stands.
-      if (status === 409) setPlan(null);
-      // A new array, so the chart puts a dragged bar back where it was.
-      setConfirmed((c) => [...c]);
+      if (Array.isArray(data.confirmed)) {
+        // CPSC changed the recall, or the sale was resolved: what's proposed, and any reminder it took, no longer stands.
+        setPlan(null);
+        setConfirmed((data.confirmed as SavedFollowUp[]).map(toView));
+      } else {
+        // A new array, so the chart puts a dragged bar back where it was.
+        setConfirmed((c) => [...c]);
+      }
       return false;
     }
     setMessage(null);

@@ -7,8 +7,8 @@ import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { createRateLimiter } from "@/server/web/rateLimit";
 import { currentSession, fromThisSite, refused } from "@/server/web/http";
-import { checkFollowUpDate, type FollowUpDateCheck, placeFollowUps } from "@/app/queue/recalls/followUps";
-import { timelineFor } from "@/app/queue/recalls/timeline";
+import { activeFollowUps, checkFollowUpDate, type FollowUpDateCheck, placeFollowUps } from "@/app/queue/recalls/followUps";
+import { timelineFor, type TimelineSale } from "@/app/queue/recalls/timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +51,12 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+/** A refusal that says what's saved now, so a page holding a reminder that no longer stands can drop it. */
+async function outOfDate(status: number, error: string, shopId: string, sales: readonly TimelineSale[]): Promise<Response> {
+  const confirmed = activeFollowUps(await followUpsFor(getDb(), shopId), sales);
+  return Response.json({ error, confirmed }, { status, headers: { "cache-control": "no-store" } });
+}
+
 const saleIdOf = (body: Record<string, unknown> | null) => (typeof body?.saleId === "string" && UUID.test(body.saleId) ? body.saleId : null);
 
 const failed = (where: string, err: unknown) => {
@@ -79,9 +85,11 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
       }
       advice = result.advice;
     }
-    const done = new Set((await followUpsFor(getDb(), session.shopId)).map((f) => f.matchId));
+    const saved = await followUpsFor(getDb(), session.shopId);
+    const done = new Set(saved.map((f) => f.matchId));
     const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id)), advice.withinDays, timeline.today);
-    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon }, { headers: { "cache-control": "no-store" } });
+    // What's saved goes back too: this page may have missed a save, from a lost answer or another tab.
+    return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon, confirmed: activeFollowUps(saved, timeline.sales) }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("plan", err);
   }
@@ -101,17 +109,17 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
   try {
     const timeline = await timelineOf(session.shopId, session.sessionId, recallNumber);
     const sale = timeline?.sales.find((s) => s.id === saleId);
-    if (!timeline || !sale) return refused(404, "This shop has no such sale of that recall.");
-    if (!sale.needsReaching) return refused(409, "This family has been reached or answered, so it needs no follow-up.");
+    if (!timeline || !sale) return outOfDate(404, "This shop has no such sale of that recall.", session.shopId, timeline?.sales ?? []);
+    if (!sale.needsReaching) return outOfDate(409, "This family has been reached or answered, so it needs no follow-up.", session.shopId, timeline.sales);
     const checked = checkFollowUpDate(sale, due, timeline.today);
     if (checked !== "OK") return refused(422, DATE_REFUSED[checked]);
     const advice = await storedAdvice(getDb(), recallNumber);
-    if (!advice) return refused(409, "Plan the follow-ups first.");
-    if (advice.snapshot !== snapshot) return refused(409, CPSC_CHANGED);
+    if (!advice) return outOfDate(409, "Plan the follow-ups first.", session.shopId, timeline.sales);
+    if (advice.snapshot !== snapshot) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
     const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier: placed?.due === due && placed.movedEarlier, snapshot });
     // The sale was just found on this shop's timeline, so a refusal here means CPSC changed the recall a moment ago.
-    if (!saved) return refused(409, CPSC_CHANGED);
+    if (!saved) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
     return Response.json({ saved: true }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     return failed("save", err);
