@@ -2,6 +2,8 @@
 
 When a baby product gets recalled after a small resale shop sold it, Recall Reach finds the order, helps the shop reach the family, and refunds the sale through PayPal when the sale came after the recall.
 
+**Who it's for:** the owner of a small kids' resale or consignment shop, who has the sale record, and the family who bought the item, who never heard about the recall.
+
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
 [![CI](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml) [![Newman against the live site](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml)
@@ -181,7 +183,7 @@ Measured on PayPal's sandbox, each with its date. The app is built around these,
 
 Where each number in the film and the write-up comes from: [`docs/SOURCES.md`](docs/SOURCES.md).
 
-- **Nov 5, 2026.** Repeating a refund with the same `PayPal-Request-Id` returned the first refund, HTTP 200 with the same id, so nothing was paid twice. A new request id on a fully refunded payment was refused: HTTP 422, `CAPTURE_FULLY_REFUNDED`.
+- **Nov 5, 2026.** Why the request id matters, in PayPal's own words: "Conversely, when you omit the `PayPal-Request-Id` header from a request, PayPal duplicates the request." ([PayPal REST idempotency](https://developer.paypal.com/api/rest/reference/idempotency/)). Repeating a refund with the same `PayPal-Request-Id` returned the first refund, HTTP 200 with the same id, so nothing was paid twice. A new request id on a fully refunded payment was refused: HTTP 422, `CAPTURE_FULLY_REFUNDED`.
 - **Nov 6, 2026.** Sent again 6.11 hours later, the same request id still returned the first refund, and the total refunded didn't move. One read, on the sandbox. PayPal's docs say only "for a period of time", so the app stops asking again at 6 hours.
 - **Nov 5, 2026.** A new sale wasn't in Transaction Search right after it was made: 0 rows. It was there when read again about 213 minutes later. PayPal documents up to 3 hours. So a shop can't find its newest sales, and the demo reads an older pool of real sandbox sales for its history.
 - **Nov 6, 2026.** `custom_field` came back on no Transaction Search row, even for a payment that set `custom_id`. So the app links sales by invoice id or SKU.
