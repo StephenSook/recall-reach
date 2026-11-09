@@ -17,7 +17,8 @@ export interface RecallCheckArgs {
   model?: string;
 }
 
-const RECALLS_SHOWN = 5;
+/** The check itself returns at most this many, so the owner sees what /check would list. */
+const RECALLS_SHOWN = 10;
 const FAILED = "The check could not run. Please try again.";
 
 /** A broken answer must fail. Read as an answer, its empty lists would say nothing was found. */
@@ -52,8 +53,9 @@ export async function runRecallCheck(args: RecallCheckArgs, ctx: AgAiToolContext
 
 const INSTRUCTIONS = [
   `You check products against CPSC's public recall records for a resale shop owner. Call ${RECALL_TOOL.name} once, with the words the owner gave: the product in title, and any model number in model.`,
-  "Answer from its result and nothing else. Repeat its says sentence, then give each entry in recalls with its number and title and a link to its page, written like [Read recall 27018](/recall/27018). If it has sameKind, gap or further, say those too. If the call fails, say the check didn't run and why.",
+  "Answer from its result and nothing else. Repeat its says sentence, then give each entry in recalls with its number and title and a link to its page, written like [Read recall 27018](/recall/27018). If it has sameKind, gap or further, say those too, and if notShown is above zero, say how many more weren't listed. If the call fails, say the check didn't run and why.",
   "Never say a product is safe, recalled or not recalled. The check compares words with CPSC's records, and only CPSC's notice and the item itself can settle it. You can't change the dashboard.",
+  "When you're done, call complete_task with summary set to your whole answer, word for word: it's the only thing passed on.",
 ].join("\n\n");
 
 export const RECALL_AGENT_ID = "recall-checker";
@@ -72,7 +74,7 @@ export function recallCheckerAgent(tool: AgAiTool): AgAiAgentDefinition {
 
 /** AG's own specialists. Its lead only knows these, so the checker has to be added to who it can hand work to. */
 const AG_SPECIALISTS = ["data", "page", "planning", "widget"] as const;
-const LEAD_ROUTING = `When the owner gives a product title or model number to check, or asks whether a product has been recalled, hand it to ${RECALL_AGENT_ID} with their exact words, and don't answer from the dashboard's data: those rows are one shop's past results, not a check of this product. Then give the checker's answer as it gave it, adding nothing.`;
+const LEAD_ROUTING = `When the owner gives a product title or model number to check, or asks whether a product has been recalled, hand it to ${RECALL_AGENT_ID} with their exact words, and don't answer from the dashboard's data: those rows are one shop's past results, not a check of this product. Then give the checker's summary word for word, adding nothing. If it comes back with no answer, or finished without a summary, say the check didn't run and ask the owner to try again.`;
 
 /** AG's lead agent, able to hand a product to the recall checker. Replaces its delegate tool: Claude refuses two tools with one name. */
 export function leadWithRecallChecker(lead: AgAnyAiAgentDefinition, delegateTo: (targetIds: readonly string[]) => AgAiTool): AgAnyAiAgentDefinition {

@@ -24,6 +24,12 @@ describe("one AG Studio turn, to Claude and back", () => {
   });
 
   describe("to Claude", () => {
+    it("keeps answers short but never drops a recall, link or caution a tool gave", () => {
+      const turn = readTurn({ input: [user("x")], responseFormat: { type: "text" } });
+      if ("error" in turn) throw new Error(turn.error);
+      expect(toClaude(turn).system).toMatch(/in full/i);
+    });
+
     it("pairs each tool call with its result in the next message, as Claude needs", () => {
       const turn = readTurn({
         input: [user("Chart recalls by year"), call("c1", "add_widget", { kind: "chart" }), output("c1", "Added."), user("Thanks")],

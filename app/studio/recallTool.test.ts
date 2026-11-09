@@ -61,8 +61,8 @@ describe("checking a product from the dashboard's assistant", () => {
   it("keeps the answer short when many recalls come up, and says how many it left out", async () => {
     const results = Array.from({ length: 12 }, (_, i) => result({ recallNumber: `2610${i}` }));
     const out = said(await run({ title: "lounger" }, reply(answer({ results })) as unknown as typeof fetch));
-    expect(out.recalls).toHaveLength(5);
-    expect(out.notShown).toBe(7);
+    expect(out.recalls).toHaveLength(10);
+    expect(out.notShown).toBe(2);
   });
 
   it.each([
@@ -201,6 +201,14 @@ describe("the lead agent", () => {
     expect(tools).toContain(dashboardTool);
   });
 
+  it("repeats the checker's answer word for word", () => {
+    expect(wired.instructions?.({} as never, undefined)).toMatch(/word for word/i);
+  });
+
+  it("says the check didn't run when the checker comes back with nothing", () => {
+    expect(wired.instructions?.({} as never, undefined)).toMatch(/didn't run/i);
+  });
+
   it("keeps AG's own instructions, and sends a product check to the checker instead of answering from the dashboard", () => {
     const told = wired.instructions?.({} as never, undefined) ?? "";
     expect(told.startsWith("Plan and delegate.")).toBe(true);
@@ -226,6 +234,16 @@ describe("the recall checker agent", () => {
     const told = agent.instructions?.({} as never, undefined as never) ?? "";
     expect(told).toMatch(/never say a product is safe/i);
     expect(told).toMatch(/says/);
+  });
+
+  it("hands its whole answer back, because the lead only receives what it passes to complete_task", () => {
+    const told = agent.instructions?.({} as never, undefined as never) ?? "";
+    expect(told).toMatch(/complete_task/);
+    expect(told).toMatch(/word for word/i);
+  });
+
+  it("says when some recalls weren't listed", () => {
+    expect(agent.instructions?.({} as never, undefined as never)).toMatch(/notShown/);
   });
 
   it("gives up after a few rounds rather than looping", () => {

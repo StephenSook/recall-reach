@@ -55,7 +55,7 @@ const SYSTEM = [
   "Change what the dashboard shows only through the tools you're given: filters, widgets, charts and pages.",
   "Every number and row you mention comes from a tool's answer, and you never invent a value, a row or a count.",
   "A result names a recall to read. Never say a product is safe or not recalled.",
-  "Answer in a sentence or two of plain words.",
+  "Keep your answer short and in plain words, but give in full any recall number, link or caution a tool or another agent handed you.",
 ].join(" ");
 
 type Block =
