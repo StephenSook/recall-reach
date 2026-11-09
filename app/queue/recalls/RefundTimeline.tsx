@@ -124,6 +124,8 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
     return {
       dragFeature: {
         constrainDragToResource: true,
+        // No copying with Ctrl or Cmd: a copy would be a reminder the server has never heard of.
+        copyKey: "" as const,
         // The date shows in the list as soon as it's dropped, and this tip's own colors don't clear contrast.
         showTooltip: false,
         validatorFn: ({ eventRecords, startDate }: { eventRecords: { id: unknown }[]; startDate: Date }) => {

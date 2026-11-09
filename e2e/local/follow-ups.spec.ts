@@ -85,6 +85,22 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   expect((await moved).status()).toBe(200);
   await expect(confirmed.locator('input[type="date"]').first()).not.toHaveValue(dateBefore);
 
+  // Holding Ctrl or Cmd doesn't copy a bar: a copy would be a reminder the server has never heard of. It's an ordinary move.
+  const remindersBefore = await page.locator(".timeline-follow-confirmed").count();
+  for (const [key, step] of [["Control", 40], ["Meta", -40]] as const) {
+    const box = await bar.boundingBox();
+    if (!box) throw new Error("no bar to drag");
+    const saved = page.waitForResponse((r) => r.request().method() === "PUT", { timeout: 10_000 });
+    await page.keyboard.down(key);
+    await page.mouse.move(box.x + 30, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 30 + step, box.y + box.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await page.keyboard.up(key);
+    expect((await saved).status()).toBe(200);
+    await expect(page.locator(".timeline-follow-confirmed")).toHaveCount(remindersBefore);
+  }
+
   // The Delete key doesn't take a bar off the chart: a reminder goes through Dismiss, which saves.
   const beforeKeys = await page.locator(".b-sch-event-wrap").count();
   await page.locator(".b-sch-event-wrap:has(.timeline-follow-confirmed)").first().click();
