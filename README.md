@@ -8,6 +8,8 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 ![The demo shop's queue on the deployed site: 1,855 recalls checked, 4 matched, 5 can't tell yet, 24 cleared, with each sale's state and why it came up](docs/images/queue.png)
 
+Why a resale shop: I went to Kid to Kid in Kennesaw and talked with two people who work there (not the owner). Before they take anything in, they check "a website called cpsc.gov/recalls". Asked what they'd do if something they had already sold got recalled, they said they'd "call them and let them know and tell them it's unsafe to use." Recall Reach tells them which family to call.
+
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet.
 
 ## How this meets the judging criteria
@@ -126,7 +128,7 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
-| Claude | Nothing. It reads recall text, the shop's own titles and, on `/shopper`, public listing titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| Claude | Move no money. It reads recall text, the shop's own titles and, on `/shopper`, public listing titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
 | A person on `/shopper` | Approve one sandbox test order on PayPal's page, at the price the server read from the listing. Nothing ships and no store is paid |
 | A family | Answer on their phone page. That changes the seller's card, and moves no money |
 
