@@ -274,7 +274,40 @@ describe("what the grid holds", () => {
 
   it("carries nothing a browser should not have", () => {
     const fields = Object.keys(by(build([row({})]), "m1")).sort();
-    expect(fields).toEqual(["anchor", "apart", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "soldOn", "state", "tellCpsc", "verdict",
+    expect(fields).toEqual(["anchor", "apart", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "refundEligible", "saleUsd", "soldOn", "state", "tellCpsc", "verdict",
       "waits", "weak"]);
+  });
+
+  describe("the sale's price and whether it can be refunded", () => {
+    const confirmed = { verdict: "MATCH", strength: "CONFIRMED", salePath: "REFUND_ELIGIBLE", joinState: "IDENTIFIED", refund: null } as const;
+
+    it("turns the shop's own order total into dollars", () => {
+      expect(by(build([row({ saleCents: 1850, saleCurrency: "USD" })]), "m1").saleUsd).toBe(18.5);
+    });
+
+    it("leaves another currency blank, so a sum never mixes them", () => {
+      expect(by(build([row({ saleCents: 1850, saleCurrency: "CAD" })]), "m1").saleUsd).toBeNull();
+    });
+
+    it("leaves a listing with no sale blank", () => {
+      expect(by(build([row({ saleCents: null, saleCurrency: null })]), "m1").saleUsd).toBeNull();
+    });
+
+    it("counts a confirmed sale after the recall with its payment found", () => {
+      expect(by(build([row({ ...confirmed })]), "m1").refundEligible).toBe(true);
+    });
+
+    it("still counts one whose refund failed", () => {
+      expect(by(build([row({ ...confirmed, refund: { id: "r", status: "failed", amountCents: 1, currency: "USD", failure: "no" } })]), "m1").refundEligible).toBe(true);
+    });
+
+    it.each([
+      ["a refund already done", { refund: { id: "r", status: "refunded", amountCents: 1, currency: "USD", failure: null } }],
+      ["a match nobody has confirmed", { strength: "PRODUCT_WORDS" as const }],
+      ["a sale before the recall", { salePath: "NOTICE_ONLY" as const }],
+      ["a sale with no payment found", { joinState: "NO_PAYPAL_RECORD" }],
+    ])("doesn't count %s", (_name, over) => {
+      expect(by(build([row({ ...confirmed, ...over })]), "m1").refundEligible).toBe(false);
+    });
   });
 });

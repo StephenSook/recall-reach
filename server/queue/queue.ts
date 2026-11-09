@@ -46,6 +46,9 @@ export interface QueueRow {
   /** Family-given records have no sale date or payment authority. */
   familyAsked?: boolean;
   orderedOn: string | null;
+  /** The line's total from the shop's own order file, not from PayPal. */
+  saleCents?: number | null;
+  saleCurrency?: string | null;
   verdict: "MATCH" | "SCOPE_GAP" | "CLEARED";
   strength: Strength;
   salePath: "NOTICE_ONLY" | "REVIEW" | "REFUND_ELIGIBLE" | null;
@@ -160,7 +163,7 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
             ar.recall_sha256 as run_recall_sha, ar.item_sha256 as run_item_sha, ar.outcome as run_outcome, ar.finding as run_finding, ar.evidence as run_evidence,
             ar.missing_field as run_missing, ar.reason as run_reason, ar.trace as run_trace, ar.model as run_model, ar.created_at as run_created_at,
             coalesce(l.title, i.title, concat_ws(' ', sr.brand, sr.item, sr.model)) as item_title, coalesce(l.source, i.source) as source, sa.answer as seller_answer, m.recall_sha256 as checked_sha,
-            l.ordered_on, coalesce(i.listed, false) as still_listed,
+            l.ordered_on, l.quantity * l.unit_price_cents - l.discount_cents as sale_cents, l.currency as sale_currency, coalesce(i.listed, false) as still_listed,
             n.id as notice_id, n.kind as notice_kind, n.opened_at, n.sent_at, n.responded_at, n.family_stopped, n.family_passed_on, n.second_prepared_at, floor(extract(epoch from now() - n.sent_at) / 86400)::int as days_since_sent, ${currentCheckResultSql("n", "r")} as check_result,
             (select ${currentCheckResultSql("q", "r")} from notices q where q.match_id = m.id and q.kind = 'CHECK_REQUEST' and n.kind = 'SAFETY_NOTICE') as earlier_question_result,
             a.id as approval_id, a.amount_cents as approval_amount, a.currency as approval_currency, a.expires_at as approval_expires,
@@ -203,6 +206,8 @@ export async function loadQueue(db: Queryable, shopId: string, sessionId: string
       source: r.safety_receipt_id ? FAMILY_ASKED : String(r.source),
       familyAsked: Boolean(r.safety_receipt_id),
       orderedOn: (r.ordered_on as string | null) ?? null,
+      saleCents: r.sale_cents === null || r.sale_cents === undefined ? null : Number(r.sale_cents),
+      saleCurrency: (r.sale_currency as string | null) ?? null,
       verdict: r.verdict as QueueRow["verdict"],
       salePath: (r.sale_path as QueueRow["salePath"]) ?? null,
       joinState: (r.join_state as string | null) ?? null,
