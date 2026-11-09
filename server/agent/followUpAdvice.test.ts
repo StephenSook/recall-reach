@@ -12,7 +12,7 @@ import { DAILY_CAP_MICROS } from "./claude";
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 const NOW = new Date("2026-11-09T15:00:00Z");
 const RECALL = "27040";
-const REASON = "Entrapment can seriously injure a child quickly, so reach this family within three days.";
+const REASON = "This hazard can seriously injure or kill a child quickly, with little warning.";
 
 type Block = Record<string, unknown>;
 type Step = Block[] | { stop: string; content?: Block[] } | number;
@@ -36,7 +36,7 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
   let hazard: string;
   let description: string;
   const call = (input: Record<string, unknown>): Block => ({ type: "tool_use", id: `call-${Math.random().toString(36).slice(2, 8)}`, name: "record_follow_up", input });
-  const good = (over: Record<string, unknown> = {}) => call({ within_days: 3, reason: REASON, hazard_quote: hazard, ...over });
+  const good = (over: Record<string, unknown> = {}) => call({ within_days: 3, severity: "grave_and_fast", hazard_quote: hazard, ...over });
   const lastReply = (request: { body: Record<string, unknown> }) => (request.body.messages as { content: unknown }[]).at(-1)?.content as Block[];
   const advise = (client: Anthropic, recallNumber = RECALL) => adviseFollowUp(db, client, { recallNumber, now: NOW });
 
@@ -113,21 +113,31 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     expect(await storedAdvice(db, RECALL)).toBeNull();
   });
 
-  it.each([
-    ["a long reason", "x ".repeat(120)],
-    ["two sentences", "Entrapment is serious. Reach them soon."],
-    ["calling something safe", "This product is safe to keep for now."],
-    ["saying it isn't recalled", "This product is not recalled, so act soon."],
-    ["saying there's no danger", "There is no danger to the child, so follow up in thirty days."],
-    ["saying nothing is urgent", "No urgent action is needed for this hazard."],
-    ["calling it harmless", "This hazard is harmless, so follow up later."],
-    ["a dash", "Entrapment — reach this family soon."],
-    ["curly quotes", "CPSC says “entrapment” is serious."],
-    ["nothing", " "],
-  ])("sends back %s for another try", async (_name, reason) => {
-    const { client, requests } = fakeClaude([[good({ reason })], [good()]]);
-    expect((await advise(client)).status).toBe("ADVISED");
+  it("sends back a severity it doesn't know, and only ever shows its own sentences", async () => {
+    const { client, requests } = fakeClaude([[good({ severity: "No danger here, it is not recalled." })], [good()]]);
+    const out = await advise(client);
+    expect(out).toMatchObject({ status: "ADVISED", advice: { reason: REASON } });
     expect(lastReply(requests[1])[0]).toMatchObject({ type: "tool_result", is_error: true });
+  });
+
+  it.each([
+    ["grave_and_fast", "This hazard can seriously injure or kill a child quickly, with little warning."],
+    ["serious", "This hazard can cause serious injury."],
+    ["lesser", "This hazard usually gives some warning or causes minor injury."],
+  ])("words %s the same way every time", async (severity, sentence) => {
+    expect(await advise(fakeClaude([[good({ severity })]]).client)).toMatchObject({ advice: { reason: sentence } });
+  });
+
+  it("can't be made to show anything Claude wrote, because a reply carries no sentence", () => {
+    const fields = Object.keys(FOLLOW_UP_TOOLS[0].input_schema.properties).sort();
+    expect(fields).toEqual(["hazard_quote", "severity", "within_days"]);
+  });
+
+  it("gives two requests at once the same advice, the one that was saved", async () => {
+    const a = fakeClaude([[good({ within_days: 3 })]]);
+    const b = fakeClaude([[good({ within_days: 9, severity: "serious" })]]);
+    const [one, two] = await Promise.all([advise(a.client), advise(b.client)]);
+    expect(one).toEqual(two);
   });
 
   it("carries which CPSC text it read, so a saved reminder can be tied to it", async () => {

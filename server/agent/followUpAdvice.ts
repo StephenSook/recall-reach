@@ -11,20 +11,26 @@ import { normalized, quoted } from "./quote";
 import { readRecall } from "./sources";
 
 /** Goes up when the prompt or the checks change, so advice written under older rules is written again. */
-export const FOLLOW_UP_VERSION = "2";
+export const FOLLOW_UP_VERSION = "3";
 
 const MAX_STEPS = 3;
-const MAX_REASON_LENGTH = 160;
 const MAX_QUOTE_LENGTH = 160;
 
 const SYSTEM = `You help a resale shop decide how soon to follow up with a family who bought a recalled product and hasn't answered. You read only CPSC's public text about the recall. You know nothing about the shop, the sale or the family.
 
 Give:
 - within_days: a whole number of days from today, from 1 to 30. Use fewer days for a hazard that can kill or seriously injure a child quickly and without warning, such as drowning, suffocation, strangulation or entrapment. Use more for a hazard that gives warning or causes minor injury.
-- reason: one short plain sentence saying why that many days, naming the hazard in CPSC's terms. Don't say the product is safe or unsafe, whether it is recalled, or that there's no danger or no hurry. Use straight quotes and no dashes.
-- hazard_quote: the few words in CPSC's hazards field that the reason rests on, copied exactly. Keep it to a phrase.
+- severity: grave_and_fast for a hazard that can kill or seriously injure a child quickly with little warning; serious for one that can cause serious injury; lesser for one that usually gives warning or causes minor injury.
+- hazard_quote: the few words in CPSC's hazards field that show this, copied exactly. Keep it to a phrase.
 
 Record your answer with record_follow_up.`;
+
+/** What the owner reads. Fixed sentences, so nothing Claude writes can tell an owner a product is fine. */
+const SEVERITY_SENTENCE = {
+  grave_and_fast: "This hazard can seriously injure or kill a child quickly, with little warning.",
+  serious: "This hazard can cause serious injury.",
+  lesser: "This hazard usually gives some warning or causes minor injury.",
+} as const;
 
 export const FOLLOW_UP_TOOLS = [
   {
@@ -36,35 +42,23 @@ export const FOLLOW_UP_TOOLS = [
       additionalProperties: false,
       properties: {
         within_days: { type: "integer" },
-        reason: { type: "string" },
+        severity: { type: "string", enum: ["grave_and_fast", "serious", "lesser"] },
         hazard_quote: { type: "string" },
       },
-      required: ["within_days", "reason", "hazard_quote"],
+      required: ["within_days", "severity", "hazard_quote"],
     },
   },
 ] satisfies BetaToolUnion[];
 
 const answerInput = z.object({
   within_days: z.number().int().min(1).max(30),
-  reason: z.string().max(1000),
+  severity: z.enum(["grave_and_fast", "serious", "lesser"]),
   hazard_quote: z.string().max(1000),
 });
 type Answer = z.infer<typeof answerInput>;
 
-const NOT_PLAIN = /[–—‘’“”]/;
-/** A reason says how soon and why. It never says a product is fine, or what its recall status is. */
-const ASSURES = /\b(safe|unsafe|harmless|recalled|no (?:danger|risk|hazard|threat|urgent|urgency|need|rush)|not (?:dangerous|urgent|serious|hazardous|a risk|a danger))\b/i;
-/** A full stop with more words after it means a second sentence. */
-const SECOND_SENTENCE = /[.!?]\s+\S/;
-
 function answerProblem(answer: Answer, hazards: string[]): OurText | null {
-  const reason = answer.reason.trim();
-  if (!reason) return ourText("Give one short sentence in reason.");
-  if (reason.length > MAX_REASON_LENGTH) return ourText("Make the reason shorter: one short sentence.");
-  if (SECOND_SENTENCE.test(reason)) return ourText("The reason has to be one sentence.");
-  if (ASSURES.test(reason)) return ourText("Don't say whether the product is safe or recalled, or that there's no danger. Say why this many days, naming the hazard.");
-  if (NOT_PLAIN.test(reason)) return ourText("Use straight quotes and no dashes.");
-  if (answer.hazard_quote.trim().length > MAX_QUOTE_LENGTH) return ourText("Quote fewer words: only the ones the reason rests on.");
+  if (answer.hazard_quote.trim().length > MAX_QUOTE_LENGTH) return ourText("Quote fewer words: only the ones that show the hazard.");
   if (!quoted(hazards, answer.hazard_quote)) return ourText("hazard_quote is not in CPSC's hazards field. Copy the exact words from it.");
   return null;
 }
@@ -113,7 +107,7 @@ async function runLoop(db: Queryable, client: Anthropic, model: string, text: un
     const results: BetaToolResultBlockParam[] = [];
     for (const call of calls) {
       const parsed = answerInput.safeParse(call.input);
-      const problem = call.name !== "record_follow_up" ? ourText("There is no such tool.") : !parsed.success ? ourText("within_days must be a whole number from 1 to 30.") : answerProblem(parsed.data, hazards);
+      const problem = call.name !== "record_follow_up" ? ourText("There is no such tool.") : !parsed.success ? ourText("within_days must be a whole number from 1 to 30, and severity one of the three given.") : answerProblem(parsed.data, hazards);
       if (!problem && parsed.success) return { answer: parsed.data, model: served };
       results.push({ type: "tool_result", tool_use_id: call.id, content: toolResult(problem), is_error: true });
     }
@@ -142,12 +136,13 @@ export async function adviseFollowUp(db: Queryable, client: Anthropic, input: { 
   }
   const a = run.answer;
   if (!a) return { status: "NO_ADVICE" };
-  const advice = { withinDays: a.within_days, reason: a.reason.trim(), hazardQuote: normalized(a.hazard_quote), snapshot: current.raw_sha256 };
+  const advice = { withinDays: a.within_days, reason: SEVERITY_SENTENCE[a.severity], hazardQuote: normalized(a.hazard_quote), snapshot: current.raw_sha256 };
   await db.query(
     `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (recall_sha256, agent_version) do nothing`,
     [current.raw_sha256, FOLLOW_UP_VERSION, current.recall_id, advice.withinDays, advice.reason, advice.hazardQuote, run.model, spent.input, spent.output, spent.cost],
   );
-  return { status: "ADVISED", advice };
+  // Two requests at once can both ask. Only one is stored, so both answer with that one.
+  return { status: "ADVISED", advice: (await storedAdvice(db, input.recallNumber)) ?? advice };
 }

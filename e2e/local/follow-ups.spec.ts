@@ -3,7 +3,7 @@
 import { expect, test } from "@playwright/test";
 import pg from "pg";
 
-const REASON = "This hazard can seriously injure a child quickly, so reach this family within three days.";
+const REASON = "This hazard can seriously injure or kill a child quickly, with little warning.";
 const SHOTS = process.env.FOLLOW_UP_SHOTS;
 
 test("an owner plans a follow-up, confirms it, and it's still there after a reload", async ({ page }) => {
@@ -26,7 +26,7 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
     recallNumber = found.rows[0].n;
     await db.query(
       `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
-       select raw_sha256, '2', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
+       select raw_sha256, '3', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
        on conflict do nothing`,
       [REASON, recallNumber],
     );

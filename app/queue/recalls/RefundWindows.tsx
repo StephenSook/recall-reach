@@ -4,7 +4,7 @@
 // server. Everything the chart can do, the list under it can do too, so a phone or a keyboard loses nothing.
 import { useMemo, useState } from "react";
 import type { SavedFollowUp } from "@/server/queue/followUps";
-import { closingSoonLine, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
+import { closingSoonLine, confirmedForSnapshot, dayLabel, followUpLines, type FollowUpView, latestDay, oneAtATime, type ProposedFollowUp } from "./followUps";
 import { RefundTimelineLoader } from "./RefundTimelineLoader";
 import type { Timeline } from "./timeline";
 
@@ -61,6 +61,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
       const { ok, data } = await call(url, "POST");
       if (!ok) return setMessage(typeof data.error === "string" ? data.error : DIDNT_WORK);
       const next = data as unknown as Plan;
+      setConfirmed((c) => confirmedForSnapshot(c, next.snapshot));
       setPlan(next);
       if (next.proposals.length === 0 && next.closingSoon === 0) setMessage("No sale needs a follow-up date right now.");
     });
