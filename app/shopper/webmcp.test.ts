@@ -183,6 +183,19 @@ describe("shopper site tools", () => {
       expect(h.navigate).not.toHaveBeenCalled();
     });
 
+    it("stays put, and takes another checkout, when the assistant cancels before the move", async () => {
+      const h = harness();
+      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer, { ...offer, id: "bath", slipId: "other-slip" }], refused: [] }));
+      await h.run("search_listings", { query: "tub" });
+      h.open.mockReturnValueOnce(null as never);
+      const controller = new AbortController();
+      expect(await h.tools[2].execute({ listingId: "tub" }, { signal: controller.signal })).toBe(PAYPAL_OPENING);
+      controller.abort();
+      h.waiting[0]();
+      expect(h.navigate).not.toHaveBeenCalled();
+      expect(await h.run("start_checkout", { listingId: "bath" })).toBe(PAYPAL_OPENED);
+    });
+
     it("won't start a second checkout while this tab is about to leave", async () => {
       const h = harness();
       h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer, { ...offer, id: "bath", slipId: "other-slip" }], refused: [] }));

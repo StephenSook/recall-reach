@@ -165,7 +165,11 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
           }
           leaving = true;
           deps.later(() => {
-            if (lifetime.signal.aborted) return;
+            // Cancelled, or this page's tools removed, since answering: stay put.
+            if (signal.aborted) {
+              checkingOut = false;
+              return;
+            }
             deps.navigate(approveUrl);
             deps.later(() => { checkingOut = false; }, STILL_HERE_MS);
           }, SAME_TAB_DELAY_MS);
