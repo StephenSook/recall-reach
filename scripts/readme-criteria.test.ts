@@ -16,7 +16,7 @@ const link = /\[[^\n]*?\]\(([^)\s]+)\)/g;
 const targets = (text: string) => [...text.matchAll(link)].map((match) => match[1]);
 const references = rows.flatMap((row) => row.flatMap(targets));
 const site = "https://recall-reach-web-e022.onrender.com";
-const routes = readdirSync(resolve(root, "app"), { recursive: true })
+const routes = readdirSync(resolve(root, "app"), { recursive: true, encoding: "utf8" })
   .filter((file) => /(?:^|\/)(?:page\.tsx|route\.ts)$/.test(file))
   .map((file) => dirname(file).split(sep).filter((part) => part !== "."));
 
