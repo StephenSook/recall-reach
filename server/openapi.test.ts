@@ -10,6 +10,7 @@ import { testDb } from "../test/pglite";
 import { pullRecalls } from "./cpsc/pull";
 import { migrate } from "./db/migrate";
 import { getHealth } from "./health";
+import { withIntegrations } from "./integrations";
 import { checkText, readPublicRecall } from "./match/textCheck";
 import type { Method, PayPalClient } from "./paypal/client";
 import { latestRecallDay, loadReplay, proveReplay, runReplay } from "./replay/replay";
@@ -152,8 +153,12 @@ describe("openapi.yaml", () => {
       expect(misfits(schemaFor("/api/recalls/today/matches"), { shop: "demo", ...day })).toEqual([]);
     });
 
-    it("/api/health", async () => {
-      expect(misfits(schemaFor("/api/health"), await getHealth(db, { PAYPAL_WEBHOOK_ID: "x", RECORD_HMAC_SECRET: "r".repeat(32) }))).toEqual([]);
+    it("/api/health as the route answers it, integrations included", async () => {
+      const health = await getHealth(db, { PAYPAL_WEBHOOK_ID: "x", RECORD_HMAC_SECRET: "r".repeat(32) });
+      const answer = await withIntegrations(db, health, {}, { newman: async () => null });
+      expect(answer.integrations.rows.length).toBeGreaterThan(5);
+      expect(misfits(schemaFor("/api/health"), JSON.parse(JSON.stringify(answer)))).toEqual([]);
+      expect(misfits(schemaFor("/api/health"), { ...answer, integrations: { summary: {}, rows: [{ id: "x" }] } })).not.toEqual([]);
     });
 
     it("this check can fail: a missing field and a wrong type are both caught", () => {
