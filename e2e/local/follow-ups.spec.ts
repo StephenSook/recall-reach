@@ -55,6 +55,16 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
     await page.screenshot({ path: `${SHOTS}/follow-proposed.png`, fullPage: false });
   }
 
+  // A plan that fails takes the last one off the screen, so nothing out of date can be confirmed.
+  const planUrl = `**/api/queue/recalls/${recallNumber}/follow-ups`;
+  await page.route(planUrl, (route) => (route.request().method() === "POST" ? route.fulfill({ status: 502, json: { error: "Claude couldn't back a date with CPSC's words, so no dates are proposed." } }) : route.continue()));
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(page.getByTestId("follow-up-message")).toContainText("no dates are proposed");
+  await expect(proposals).toHaveCount(0);
+  await page.unroute(planUrl);
+  await page.getByRole("button", { name: "Plan follow-ups with Claude" }).click();
+  await expect(proposals).toContainText(REASON, { timeout: 30_000 });
+
   await proposals.getByRole("button", { name: "Confirm" }).first().click();
   const confirmed = page.getByTestId("follow-ups-confirmed");
   await expect(confirmed).toContainText(REASON);
@@ -74,6 +84,14 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   await page.mouse.up();
   expect((await moved).status()).toBe(200);
   await expect(confirmed.locator('input[type="date"]').first()).not.toHaveValue(dateBefore);
+
+  // The Delete key doesn't take a bar off the chart: a reminder goes through Dismiss, which saves.
+  const beforeKeys = await page.locator(".b-sch-event-wrap").count();
+  await page.locator(".b-sch-event-wrap:has(.timeline-follow-confirmed)").first().click();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await page.waitForTimeout(300);
+  expect(await page.locator(".b-sch-event-wrap").count()).toBe(beforeKeys);
 
   // Dragging across an empty part of the chart adds nothing: every bar here comes from a sale or a saved follow-up.
   const bars = await page.locator(".b-sch-event-wrap").count();

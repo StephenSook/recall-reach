@@ -167,6 +167,7 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
         events={events}
         eventStyle="filled"
         cellEditFeature={false}
+        enableDeleteKey={false}
         eventDragCreateFeature={false}
         eventDragFeature={dragFeature}
         onEventDrop={onDrop}
