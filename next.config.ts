@@ -8,7 +8,10 @@ const PAYPAL_RETURNS = ["/api/demo/buy/paypal/return", "/api/shop/paypal/back", 
 
 const nextConfig: NextConfig = {
   async headers() {
+    // Chrome's WebMCP origin trial, on the one page that offers the tools. Next reads this at build, so a new token needs a redeploy.
+    const webmcpTrial = process.env.WEBMCP_ORIGIN_TRIAL_TOKEN;
     return [
+      ...(webmcpTrial ? [{ source: "/shopper", headers: [{ key: "Origin-Trial", value: webmcpTrial }] }] : []),
       { source: "/", headers: [{ key: "Link", value: '</.well-known/ai-catalog.json>; rel="ai-catalog"' }] },
       { source: "/r/:token", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/s/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "private, no-store" }] },
