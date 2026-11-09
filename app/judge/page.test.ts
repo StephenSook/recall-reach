@@ -6,6 +6,14 @@ import JudgeDoor from "./page";
 const html = renderToStaticMarkup(createElement(JudgeDoor));
 
 describe("the judge's door", () => {
+  it("offers the labelled sandbox late-refund test without a payment id", () => {
+    expect(html).toContain('data-testid="late-refund-test"');
+    expect(html).toContain("Sandbox test: PayPal refuses a late refund");
+    expect(html).toContain("See PayPal refuse a late refund");
+    expect(html).toContain("on a sale already refunded, so no money can move");
+    expect(html).not.toContain("JUDGE_REFUSAL_CAPTURE_ID");
+  });
+
   it("says what to do for the time you have", () => {
     for (const row of ["30 seconds", "3 minutes", "10 minutes"]) expect(html).toContain(`<td>${row}</td>`);
   });

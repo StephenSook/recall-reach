@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { StartDemoButton } from "../StartDemoButton";
 import { LiveNow } from "./LiveNow";
+import { LateRefundTest } from "./LateRefundTest";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,7 @@ export default function JudgeDoor() {
           <span className="quiet">Look for the recall to read, and what it says when nothing names your product.</span>
         </li>
       </ol>
+      <LateRefundTest />
       <h2 className="section-title">From a terminal</h2>
       <pre data-testid="curl">{`curl https://recall-reach-web-e022.onrender.com/api/health
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
