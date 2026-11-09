@@ -68,7 +68,12 @@ describe("the follow-ups a shop has confirmed", () => {
 
   it("keeps what was confirmed", async () => {
     expect(await saveFollowUp(db, input())).toBe(true);
-    expect(await followUpsFor(db, shopA)).toEqual([{ matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha }]);
+    expect(await followUpsFor(db, shopA)).toEqual([{ matchId: match, due: "2026-11-12", reason: "Entrapment is serious.", hazardQuote: "entrapment", movedEarlier: false, snapshot: sha, mostDays: 30 }]);
+  });
+
+  it("gives each reminder the most days its hazard's sentence allows, so the page can't offer a day the server refuses", async () => {
+    await saveFollowUp(db, input({ reason: "This hazard can cause serious injury." }));
+    expect(await followUpsFor(db, shopA)).toMatchObject([{ mostDays: 14 }]);
   });
 
   it("moves the date when it's saved again, and keeps one row", async () => {

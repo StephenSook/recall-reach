@@ -1,6 +1,7 @@
 // The follow-ups an owner has confirmed. Each is a date on their own timeline and queue card. Nothing here sends anything, and
 // none of it comes from PayPal: the date is the owner's and the reason is Claude's reading of CPSC's text. If CPSC changes that
 // text, the reminder drops out, and the sale can be planned again only once it's been checked against the new text.
+import { mostDaysFor } from "../agent/followUpSeverity";
 import type { Db, Queryable } from "../db/types";
 
 export interface SavedFollowUp {
@@ -11,6 +12,8 @@ export interface SavedFollowUp {
   movedEarlier: boolean;
   /** The CPSC text the reason and quote came from. */
   snapshot: string;
+  /** The most days out this hazard's sentence allows. Read from the reason, never stored or sent by the page. */
+  mostDays?: number;
 }
 
 export async function followUpsFor(db: Queryable, shopId: string): Promise<SavedFollowUp[]> {
@@ -21,7 +24,7 @@ export async function followUpsFor(db: Queryable, shopId: string): Promise<Saved
      order by f.due_on, f.match_id`,
     [shopId],
   );
-  return rows.map((r) => ({ matchId: r.match_id, due: r.due, reason: r.reason, hazardQuote: r.hazard_quote, movedEarlier: r.moved_earlier, snapshot: r.recall_sha256 }));
+  return rows.map((r) => ({ matchId: r.match_id, due: r.due, reason: r.reason, hazardQuote: r.hazard_quote, movedEarlier: r.moved_earlier, snapshot: r.recall_sha256, mostDays: mostDaysFor(r.reason) }));
 }
 
 /** This shop's sales matched against the CPSC text with this hash. Two records can share a recall number, and CPSC can edit one after a sale was matched: advice read from other text can't be saved on those sales. */
@@ -52,6 +55,7 @@ export async function nextArrival(db: Queryable): Promise<string> {
 async function claimTurn(tx: Queryable, shopId: string, matchId: string, attempt: string, supersedes: readonly string[], arrival: string | undefined): Promise<true | false | "cancelled"> {
   const { rows: mine } = await tx.query("select 1 from recall_matches where id = $1 and shop_id = $2 for update", [matchId, shopId]);
   if (mine.length === 0) return false;
+  await tx.query(`delete from follow_up_cancels where created_at < now() - interval '${CANCELS_KEPT}'`);
   for (const earlier of supersedes) await tx.query("insert into follow_up_cancels (attempt, shop_id) values ($1, $2) on conflict do nothing", [earlier, shopId]);
   const { rows: cancelled } = await tx.query("select 1 from follow_up_cancels where attempt = $1 and shop_id = $2", [attempt, shopId]);
   if (cancelled.length > 0) return "cancelled";
@@ -88,7 +92,6 @@ export async function dropFollowUp(db: Db, shopId: string, matchId: string, chan
   return db.transaction(async (tx) => {
     const ready = await claimTurn(tx, shopId, matchId, change.attempt, change.supersedes ?? [], change.arrival);
     if (ready !== true) return ready;
-    await tx.query(`delete from follow_up_cancels where created_at < now() - interval '${CANCELS_KEPT}'`);
     const { rows } = await tx.query("delete from follow_ups where match_id = $1 and shop_id = $2 returning 1", [matchId, shopId]);
     return rows.length > 0;
   });

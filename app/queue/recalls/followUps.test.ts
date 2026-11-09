@@ -147,10 +147,32 @@ describe("one change at a time", () => {
 
 describe("sales matched before CPSC changed the recall", () => {
   it("says so for one", () => {
-    expect(textChangedLine(1)).toBe("1 sale: CPSC changed this recall after it was checked, so no date is proposed.");
+    expect(textChangedLine(1)).toBe("1 sale was checked against other CPSC text for this recall, so no date is proposed.");
   });
 
   it("says so for several", () => {
-    expect(textChangedLine(3)).toBe("3 sales: CPSC changed this recall after they were checked, so no date is proposed.");
+    expect(textChangedLine(3)).toBe("3 sales were checked against other CPSC text for this recall, so no date is proposed.");
   });
 });
+
+describe("the hazard's cap on how far out a date can be", () => {
+  it("refuses a day past the cap even inside an open refund window", () => {
+    expect(checkFollowUpDate(sale({ windowEnds: "2027-03-01" }), addDaysFor(TODAY, 15), TODAY, 14)).toBe("TOO_FAR");
+  });
+
+  it("takes the last day the cap allows", () => {
+    expect(checkFollowUpDate(sale({ windowEnds: "2027-03-01" }), addDaysFor(TODAY, 14), TODAY, 14)).toBe("OK");
+  });
+
+  it("offers no later day in the date picker than the cap", () => {
+    expect(latestDay(sale({ windowEnds: "2027-03-01" }), TODAY, 7)).toBe(addDaysFor(TODAY, 7));
+  });
+
+  it("still ends a week before a window that closes sooner than the cap", () => {
+    expect(latestDay(sale({ windowEnds: "2026-11-20" }), TODAY, 30)).toBe("2026-11-13");
+  });
+});
+
+function addDaysFor(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}

@@ -48,11 +48,12 @@ export type FollowUpDateCheck = "OK" | "NOT_A_DATE" | "PAST" | "TOO_LATE" | "TOO
 export const MAX_DAYS_AHEAD = 30;
 
 /** The same rule for a date the owner confirms or drags to. The server runs it again before anything is saved. */
-export function checkFollowUpDate(sale: TimelineSale, day: string, today: string): FollowUpDateCheck {
+export function checkFollowUpDate(sale: TimelineSale, day: string, today: string, mostDays: number = MAX_DAYS_AHEAD): FollowUpDateCheck {
   if (!isCalendarDay(day)) return "NOT_A_DATE";
   if (day < today) return "PAST";
-  if (hasOpenWindow(sale)) return day > lastFollowUpDay(sale.windowEnds) ? "TOO_LATE" : "OK";
-  return day > addDays(today, MAX_DAYS_AHEAD) ? "TOO_FAR" : "OK";
+  if (hasOpenWindow(sale) && day > lastFollowUpDay(sale.windowEnds)) return "TOO_LATE";
+  // The hazard's cap, which is never more than 30 days, holds inside an open window too.
+  return day > addDays(today, Math.min(mostDays, MAX_DAYS_AHEAD)) ? "TOO_FAR" : "OK";
 }
 
 /** One follow-up, as the timeline and the list under it show it. */
@@ -65,6 +66,8 @@ export interface FollowUpView {
   movedEarlier: boolean;
   /** The CPSC text this came from, sent back when it's confirmed. */
   snapshot: string;
+  /** The most days out this hazard's sentence allows, from the server. */
+  mostDays: number;
 }
 
 const LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -77,12 +80,17 @@ export function followUpLines(f: Pick<FollowUpView, "reason" | "hazardQuote" | "
   return [f.reason, `CPSC: "${f.hazardQuote}"`, ...(f.movedEarlier ? [MOVED_NOTE] : [])];
 }
 
-export const textChangedLine = (count: number) => (count === 1 ? "1 sale: CPSC changed this recall after it was checked, so no date is proposed." : `${count} sales: CPSC changed this recall after they were checked, so no date is proposed.`);
+export const textChangedLine = (count: number) => (count === 1 ? "1 sale was checked against other CPSC text for this recall, so no date is proposed." : `${count} sales were checked against other CPSC text for this recall, so no date is proposed.`);
 
 export const closingSoonLine = (count: number) => (count === 1 ? "1 sale: window closes too soon, refund now." : `${count} sales: window closes too soon, refund now.`);
 
 /** The last day the date picker offers. */
-export const latestDay = (sale: TimelineSale, today: string) => (hasOpenWindow(sale) ? lastFollowUpDay(sale.windowEnds) : addDays(today, MAX_DAYS_AHEAD));
+export function latestDay(sale: TimelineSale, today: string, mostDays: number = MAX_DAYS_AHEAD): string {
+  const capped = addDays(today, Math.min(mostDays, MAX_DAYS_AHEAD));
+  if (!hasOpenWindow(sale)) return capped;
+  const windowLast = lastFollowUpDay(sale.windowEnds);
+  return windowLast < capped ? windowLast : capped;
+}
 
 /** The saved reminders still in force: on this timeline, for a family not yet reached. Answered, or refunded, and it retires. */
 export function activeFollowUps<T extends { matchId: string }>(saved: readonly T[], sales: readonly TimelineSale[]): T[] {

@@ -2,6 +2,7 @@
 // can't do. Claude reads CPSC's public text and nothing else: it never sees a shop, a sale or a date, so code sets each sale's
 // date. Its one tool records the advice. It can't send, notify or refund anything.
 import Anthropic from "@anthropic-ai/sdk";
+import { MOST_DAYS, mostDaysFor, SEVERITY_SENTENCE } from "./followUpSeverity";
 import type { BetaContentBlock, BetaMessageParam, BetaToolResultBlockParam, BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
 import type { Queryable } from "../db/types";
@@ -25,20 +26,6 @@ Give:
 
 Record your answer with record_follow_up.`;
 
-/** What the owner reads. Fixed sentences, so nothing Claude writes can tell an owner a product is fine. */
-const SEVERITY_SENTENCE = {
-  grave_and_fast: "This hazard can seriously injure or kill a child quickly, with little warning.",
-  serious: "This hazard can cause serious injury.",
-  lesser: "This hazard usually gives some warning or causes minor injury.",
-} as const;
-
-/** The most days each sentence can sit beside. A date a month out next to "can kill a child quickly" would read as careless. */
-const MOST_DAYS = { grave_and_fast: 7, serious: 14, lesser: 30 } as const;
-
-const mostDaysFor = (reason: string): number => {
-  const severity = (Object.keys(SEVERITY_SENTENCE) as (keyof typeof SEVERITY_SENTENCE)[]).find((key) => SEVERITY_SENTENCE[key] === reason);
-  return severity ? MOST_DAYS[severity] : 30;
-};
 
 export const FOLLOW_UP_TOOLS = [
   {

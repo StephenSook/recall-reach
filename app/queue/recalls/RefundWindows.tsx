@@ -9,6 +9,7 @@ import { RefundTimelineLoader } from "./RefundTimelineLoader";
 import type { Timeline } from "./timeline";
 
 interface Plan {
+  mostDays: number;
   reason: string;
   hazardQuote: string;
   snapshot: string;
@@ -18,7 +19,7 @@ interface Plan {
   confirmed: SavedFollowUp[];
 }
 
-const toView = (s: SavedFollowUp): FollowUpView => ({ saleId: s.matchId, due: s.due, state: "confirmed", reason: s.reason, hazardQuote: s.hazardQuote, movedEarlier: s.movedEarlier, snapshot: s.snapshot });
+const toView = (s: SavedFollowUp): FollowUpView => ({ saleId: s.matchId, due: s.due, state: "confirmed", reason: s.reason, hazardQuote: s.hazardQuote, movedEarlier: s.movedEarlier, mostDays: s.mostDays ?? 30, snapshot: s.snapshot });
 const DIDNT_WORK = "That didn't work. Please try again.";
 
 async function call(url: string, method: string, body?: object): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
@@ -42,7 +43,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
   const titleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId)?.title ?? "This sale";
   const saleOf = (saleId: string) => timeline.sales.find((s) => s.id === saleId);
 
-  const proposed = useMemo<FollowUpView[]>(() => (plan ? plan.proposals.map((p) => ({ saleId: p.saleId, due: p.due, state: "proposed", reason: plan.reason, hazardQuote: plan.hazardQuote, movedEarlier: p.movedEarlier, snapshot: plan.snapshot })) : []), [plan]);
+  const proposed = useMemo<FollowUpView[]>(() => (plan ? plan.proposals.map((p) => ({ saleId: p.saleId, due: p.due, state: "proposed", reason: plan.reason, hazardQuote: plan.hazardQuote, movedEarlier: p.movedEarlier, snapshot: plan.snapshot, mostDays: plan.mostDays })) : []), [plan]);
   const onChart = useMemo(() => [...confirmed, ...proposed], [confirmed, proposed]);
   const anyToPlan = timeline.sales.some((s) => s.needsReaching && !confirmed.some((c) => c.saleId === s.id));
   if (!anyToPlan && confirmed.length === 0) return <RefundTimelineLoader timeline={timeline} />;
@@ -197,7 +198,7 @@ export function RefundWindows({ timeline, saved }: { timeline: Timeline; saved: 
                   <p className="follow-why">{followUpLines(f).join(" ")}</p>
                   <label>
                     Change the date{" "}
-                    <input type="date" value={f.due} min={timeline.today} max={sale ? latestDay(sale, timeline.today) : undefined} disabled={busy} onChange={(e) => move(f.saleId, e.target.value)} />
+                    <input type="date" value={f.due} min={timeline.today} max={sale ? latestDay(sale, timeline.today, f.mostDays) : undefined} disabled={busy} onChange={(e) => move(f.saleId, e.target.value)} />
                   </label>
                   <button type="button" className="btn btn-outline" disabled={busy} onClick={() => void dismissSaved(f.saleId)}>Dismiss</button>
                 </li>

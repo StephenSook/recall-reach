@@ -131,7 +131,7 @@ export default function RefundTimeline({ timeline, followUps = [], onMove }: { t
         validatorFn: ({ eventRecords, startDate }: { eventRecords: { id: unknown }[]; startDate: Date }) => {
           const follow = inFollowUp(eventRecords[0]?.id);
           const sale = current.current.timeline.sales.find((s) => s.id === follow?.saleId);
-          return Boolean(follow && sale) && checkFollowUpDate(sale as TimelineSale, dayOf(startDate), current.current.timeline.today) === "OK";
+          return Boolean(follow && sale) && checkFollowUpDate(sale as TimelineSale, dayOf(startDate), current.current.timeline.today, follow?.mostDays) === "OK";
         },
       },
       tooltipFeature: {
