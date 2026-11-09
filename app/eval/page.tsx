@@ -117,7 +117,7 @@ export default function EvalPage() {
             {/* The limit travels with the number. */}
             <tr>
               <td colSpan={3} className="note" data-testid="eval-labeller">
-                Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller. No person has audited them.
+                Claude labelled all {results.pairs} pairs, from {results.recalls} recalls. One labeller. No person has audited them. A second model from OpenAI (gpt-6.1-sol), blind to Claude&apos;s labels, checked 50 of them: it agreed on 34, said the title can&apos;t settle it on the other 16, and called none of Claude&apos;s look-alikes the recalled product. <a href="https://github.com/StephenSook/recall-reach/blob/main/eval/cross-model/RESULTS.md">The files</a>.
               </td>
             </tr>
             <tr>

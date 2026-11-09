@@ -1,0 +1,360 @@
+{
+ "seed": 20261108,
+ "take": {
+  "NEAR_MISS": 36,
+  "NO_MATCH": 8,
+  "UNSURE": 6
+ },
+ "pairs": [
+  {
+   "pair_id": "25248-4",
+   "recall_number": "25248",
+   "listing_title": "Baseus EnerGeek GX11 MiFi Portable WiFi Power Bank",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25220-1",
+   "recall_number": "25220",
+   "listing_title": "My Bath Seat - Baby Bath Seat",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26058-4",
+   "recall_number": "26058",
+   "listing_title": "Werner Shuna 2 Piece Paddle",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25287-3",
+   "recall_number": "25287",
+   "listing_title": "Darcy Kids Ruffle Lounge Set",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26054-2",
+   "recall_number": "26054",
+   "listing_title": "Polaris Ranger XP 1000",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "27012-1",
+   "recall_number": "27012",
+   "listing_title": "Electric Balloon Pump",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25398-3",
+   "recall_number": "25398",
+   "listing_title": "LED Light-Up Dance Gloves",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26075-4",
+   "recall_number": "26075",
+   "listing_title": "Alpaca Plush",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25705-3",
+   "recall_number": "25705",
+   "listing_title": "Fun Orange Foundation Series Black Twin over Queen Bunk Bed",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26058-1",
+   "recall_number": "26058",
+   "listing_title": "Werner Skagit FG 2 Piece Straight Shaft Kayak Paddle",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25287-4",
+   "recall_number": "25287",
+   "listing_title": "Long Sleeve Tops With Pants Loungewear Pajama Sets",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25220-3",
+   "recall_number": "25220",
+   "listing_title": "Regalo\u00ae Baby Basics\u00ae Bath Seat",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25167-2",
+   "recall_number": "25167",
+   "listing_title": "Guide BT Avalanche Beacon",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26101-4",
+   "recall_number": "26101",
+   "listing_title": "Children's Pajama Set in Pink Flannel",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25167-3",
+   "recall_number": "25167",
+   "listing_title": "Guide BT Beacon",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26054-4",
+   "recall_number": "26054",
+   "listing_title": "Polaris RZR XP 1000 Dune Buggy Blue 1/18 Diecast Model",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25382-4",
+   "recall_number": "25382",
+   "listing_title": "HONGGE 18 Inch Kids Bicycle",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25312-3",
+   "recall_number": "25312",
+   "listing_title": "ConvertMe Swing-2-Seat",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25384-3",
+   "recall_number": "25384",
+   "listing_title": "Non-Waterproof Flat Organic Cotton Flannel Pad Crib",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25287-2",
+   "recall_number": "25287",
+   "listing_title": "Tiny Tumblers - Short Sleeve Loungewear Set",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25135-1",
+   "recall_number": "25135",
+   "listing_title": "Hydronaut Heavy-Duty Jacket",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25461-2",
+   "recall_number": "25461",
+   "listing_title": "Wooden Family Playset",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26054-3",
+   "recall_number": "26054",
+   "listing_title": "Seat Back for Polaris Ranger",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25461-1",
+   "recall_number": "25461",
+   "listing_title": "Wise Elk/cubika Wooden Lacing Toy - Happy Dwarves",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25127-4",
+   "recall_number": "25127",
+   "listing_title": "Self-Propelled Mower",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25186-2",
+   "recall_number": "25186",
+   "listing_title": "Replacement Bearing",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26101-1",
+   "recall_number": "26101",
+   "listing_title": "Family Matching Pajama Sets",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25180-3",
+   "recall_number": "25180",
+   "listing_title": "Silicone Baby Teethers Freezer Safe Gift Set, 2-Piece",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25461-3",
+   "recall_number": "25461",
+   "listing_title": "Bug Hotel Wooden Playset",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25216-4",
+   "recall_number": "25216",
+   "listing_title": "Iris/Siesta Changing Table",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26075-3",
+   "recall_number": "26075",
+   "listing_title": "Alpaca Plush",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26122-4",
+   "recall_number": "26122",
+   "listing_title": "Fox Youth Mainframe MIPS - Kids Helmet",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "27060-1",
+   "recall_number": "27060",
+   "listing_title": "Sensory Swing",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25461-4",
+   "recall_number": "25461",
+   "listing_title": "Geometric Solids, Wooden Shapes Set",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25123-1",
+   "recall_number": "25123",
+   "listing_title": "Upsie Sling Carrier",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26075-1",
+   "recall_number": "26075",
+   "listing_title": "Alpaca Plush",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25290-2",
+   "recall_number": "25290",
+   "listing_title": "Portable Compact Automatic Baby Swing with Music",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26101-3",
+   "recall_number": "26101",
+   "listing_title": "Children's Pajama Set in Petite Petals",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25382-1",
+   "recall_number": "25382",
+   "listing_title": "Glintex 14-Inch Kids Bicycle",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25382-2",
+   "recall_number": "25382",
+   "listing_title": "SUGIFT 18-Inch Kids Sport Bicycle",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25345-4",
+   "recall_number": "25345",
+   "listing_title": "Momcozy Baby Lounger Bedside Sleeper - Green",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25248-2",
+   "recall_number": "25248",
+   "listing_title": "Laptop Power Bank",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25345-2",
+   "recall_number": "25345",
+   "listing_title": "Snuzii 2-In-1 Infant Lounger",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "26075-2",
+   "recall_number": "26075",
+   "listing_title": "Cosy Alpaca Soft Toy",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25127-3",
+   "recall_number": "25127",
+   "listing_title": "Self-Propelled Multi-Blade Mower",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "27012-4",
+   "recall_number": "27012",
+   "listing_title": "Electric Air Balloon Pump",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25384-2",
+   "recall_number": "25384",
+   "listing_title": "Padded Baby Crib Mattress",
+   "label": "NO_MATCH",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25398-4",
+   "recall_number": "25398",
+   "listing_title": "Light up Gloves Fingertips 2026 LED Rave Glove",
+   "label": "UNSURE",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25312-2",
+   "recall_number": "25312",
+   "listing_title": "Joie Miso 2-in-1 Swing and Rocker",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  },
+  {
+   "pair_id": "25705-2",
+   "recall_number": "25705",
+   "listing_title": "Twin Over Full Wooden Bunk Bed with Storage",
+   "label": "NEAR_MISS",
+   "split": "held_out"
+  }
+ ]
+}
