@@ -6,7 +6,7 @@
 import { useMemo } from 'react';
 import { AgStudio, AgStudioProvider, createWidgets } from 'ag-studio-react';
 import type { AgAiToolDisplay, AgGridWidgetOptions } from 'ag-studio-react';
-import { AgStudioAiModule, createAiHarness, directLlmRunner } from 'ag-studio';
+import { AgStudioAiModule, createAiHarness, directLlmRunner, studioTheme } from 'ag-studio';
 import type {
   AgAiHarnessSetup,
   AgAiPromptStarter,
@@ -155,6 +155,51 @@ function OutcomeChip(props: CustomCellRendererProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Theme: every value is one of the site's own tokens from app/globals.css, so Studio reads as part of the page.
+// ---------------------------------------------------------------------------
+
+const token = (name: string) => `var(--${name})`;
+const FONT = token('font-sans');
+const INK = token('color-ink');
+const MUTED = token('color-body');
+const PAPER = token('color-paper');
+const FIELD = token('color-field');
+const RULE = token('color-rule');
+const COBALT = token('color-cobalt');
+const CHART_PALETTE = [COBALT, token('color-needs-review'), token('color-scope-gap'), token('color-cleared'), token('color-lavender')];
+
+const STUDIO_THEME = studioTheme.withParams({
+  fontFamily: FONT,
+  textColor: INK,
+  foregroundColor: INK,
+  subtleTextColor: MUTED,
+  backgroundColor: PAPER,
+  borderColor: RULE,
+  accentColor: COBALT,
+  iconColor: INK,
+  studioWrapperBackgroundColor: FIELD,
+  studioCanvasBackgroundColor: FIELD,
+  studioCanvasFontFamily: FONT,
+  studioWidgetBackgroundColor: PAPER,
+  studioWidgetBorder: { width: 1, color: RULE },
+  studioWidgetBorderRadius: 8,
+  studioWidgetTitleFontFamily: FONT,
+  studioWidgetTitleFontWeight: 700,
+  studioWidgetTitleTextColor: INK,
+  studioPanelHeaderFontFamily: FONT,
+  gridFontFamily: FONT,
+  gridCellTextColor: INK,
+  gridHeaderBackgroundColor: PAPER,
+  gridHeaderTextColor: MUTED,
+  chartFontFamily: FONT,
+  chartTextColor: INK,
+  chartSubtleTextColor: MUTED,
+  chartAxisLineColor: RULE,
+  chartGridLineColor: RULE,
+  ...Object.fromEntries(CHART_PALETTE.flatMap((color, i) => [[`chartPaletteFills${i + 1}Color`, color], [`chartPaletteStrokes${i + 1}Color`, color]])),
+});
+
 const GRID_OPTIONS: AgGridWidgetOptions = {
   createCellRenderer: (field: AgWidgetField) =>
     field.context?.cellRenderer === OUTCOME_CHIP ? OutcomeChip : undefined,
@@ -236,6 +281,7 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
       <AgStudio
         style={{ width: '100%', height: '100%' }}
         mode="edit"
+        theme={STUDIO_THEME}
         panels={PANELS}
         data={data}
         initialState={INITIAL_STATE}
