@@ -58,11 +58,16 @@ async function recentRefundedCaptures(): Promise<string[]> {
  * Whether there's a refunded sandbox sale on hand to test with. The 46-hour purge empties them, so after a quiet couple of days
  * there's none, and /judge offers something else for thirty seconds. PayPal's own check still runs when the button is pressed.
  */
-export async function lateRefundReady(): Promise<boolean> {
+export async function lateRefundReady(deadlineMs = 1000): Promise<boolean> {
+  // The judge page waits on this, so a slow database gives the other row rather than holding the page.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), deadlineMs); });
   try {
-    return (await recentRefundedCaptures()).length > 0;
+    return await Promise.race([recentRefundedCaptures().then((ids) => ids.length > 0), late]);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -181,6 +181,13 @@ describe("whether the late-refund test has a sale to use", () => {
     expect(await lateRefundReady()).toBe(false);
   });
 
+  it("isn't when the records take too long to read, so the judge page doesn't wait on them", async () => {
+    dbQuery.mockImplementationOnce(() => new Promise(() => {}));
+    const started = Date.now();
+    expect(await lateRefundReady(50)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it("isn't when the records can't be read", async () => {
     dbQuery.mockRejectedValueOnce(new Error("database down"));
     expect(await lateRefundReady()).toBe(false);
