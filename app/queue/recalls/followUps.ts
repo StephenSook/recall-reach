@@ -6,7 +6,7 @@ const DAY_MS = 86_400_000;
 /** A follow-up this close to the end of the window would leave no time to act on what the family says. */
 export const DAYS_BEFORE_WINDOW_ENDS = 7;
 
-const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+export const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
 export const lastFollowUpDay = (windowEnds: string) => addDays(windowEnds, -DAYS_BEFORE_WINDOW_ENDS);
 

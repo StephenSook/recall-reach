@@ -58,6 +58,21 @@ describe("how soon Claude says a hazard warrants a follow-up", () => {
     expect(await advise(client)).toMatchObject({ status: "ADVISED", advice: { withinDays: 3, reason: REASON, hazardQuote: hazard } });
   });
 
+  it.each([
+    ["grave_and_fast", 7],
+    ["serious", 14],
+    ["lesser", 30],
+  ])("keeps %s to at most %i days, so a date can't read as careless beside its sentence", async (severity, most) => {
+    const { client } = fakeClaude([[good({ within_days: 30, severity })]]);
+    expect(await advise(client)).toMatchObject({ status: "ADVISED", advice: { withinDays: most, mostDays: most } });
+    expect(await storedAdvice(db, RECALL)).toMatchObject({ withinDays: most, mostDays: most });
+  });
+
+  it("leaves a shorter answer alone", async () => {
+    const { client } = fakeClaude([[good({ within_days: 3, severity: "serious" })]]);
+    expect(await advise(client)).toMatchObject({ advice: { withinDays: 3, mostDays: 14 } });
+  });
+
   it("offers one tool, which can only record the advice", async () => {
     const { client, requests } = fakeClaude([[good()]]);
     await advise(client);

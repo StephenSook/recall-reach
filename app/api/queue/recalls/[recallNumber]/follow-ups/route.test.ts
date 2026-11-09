@@ -20,7 +20,7 @@ import { DELETE, POST, PUT } from "./route";
 const SALE = "00000000-0000-4000-8000-000000000001";
 const OTHER = "00000000-0000-4000-8000-000000000002";
 const row = (over: Partial<QueueRow> = {}) => ({ matchId: SALE, recallNumber: "27040", recallTitle: "A recall", recallDate: "2026-10-15", itemTitle: "A high chair", orderedOn: "2026-11-01", salePath: "REFUND_ELIGIBLE", verdict: "MATCH", strength: "CONFIRMED", joinState: "IDENTIFIED", isListing: false, notice: null, refund: null, ...over }) as QueueRow;
-const ADVICE = { withinDays: 3, reason: "Entrapment can seriously injure a child quickly.", hazardQuote: "entrapment hazard", snapshot: "snap-1" };
+const ADVICE = { withinDays: 3, mostDays: 14, reason: "Entrapment can seriously injure a child quickly.", hazardQuote: "entrapment hazard", snapshot: "snap-1" };
 const REMINDER = { matchId: SALE, due: "2026-11-20", reason: "r", hazardQuote: "q", movedEarlier: false, snapshot: "snap-1" };
 const context = { params: Promise.resolve({ recallNumber: "27040" }) };
 const call = (method: "POST" | "PUT" | "DELETE", handler: typeof POST, body?: object, origin = "https://site.test") =>
@@ -241,6 +241,17 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
         expect(res.status).toBe(422);
         expect((await res.json()).confirmed).toBeUndefined();
       });
+    });
+
+    it("refuses a day later than this hazard's sentence can sit beside, even if the window allows it", async () => {
+      const res = await confirm({ saleId: SALE, due: "2026-11-24" });
+      expect(res.status).toBe(422);
+      expect((await res.json()).error).toMatch(/14 days/);
+      expect(saved.saveFollowUp).not.toHaveBeenCalled();
+    });
+
+    it("takes the last day this hazard allows", async () => {
+      expect((await confirm({ saleId: SALE, due: "2026-11-23" })).status).toBe(200);
     });
 
     it("refuses a confirmation with no snapshot", async () => {

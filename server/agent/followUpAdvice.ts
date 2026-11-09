@@ -32,6 +32,14 @@ const SEVERITY_SENTENCE = {
   lesser: "This hazard usually gives some warning or causes minor injury.",
 } as const;
 
+/** The most days each sentence can sit beside. A date a month out next to "can kill a child quickly" would read as careless. */
+const MOST_DAYS = { grave_and_fast: 7, serious: 14, lesser: 30 } as const;
+
+const mostDaysFor = (reason: string): number => {
+  const severity = (Object.keys(SEVERITY_SENTENCE) as (keyof typeof SEVERITY_SENTENCE)[]).find((key) => SEVERITY_SENTENCE[key] === reason);
+  return severity ? MOST_DAYS[severity] : 30;
+};
+
 export const FOLLOW_UP_TOOLS = [
   {
     name: "record_follow_up",
@@ -65,6 +73,8 @@ function answerProblem(answer: Answer, hazards: string[]): OurText | null {
 
 export interface FollowUpAdvice {
   withinDays: number;
+  /** The latest a reminder can be, in days from today, for this hazard's sentence. */
+  mostDays: number;
   reason: string;
   hazardQuote: string;
   /** Which CPSC text this was read from. A saved reminder is tied to it. */
@@ -83,7 +93,9 @@ export async function storedAdvice(db: Queryable, recallNumber: string): Promise
   if (!recall) return null;
   const { rows } = await db.query<{ within_days: number; reason: string; hazard_quote: string }>("select within_days, reason, hazard_quote from follow_up_advice where recall_sha256 = $1 and agent_version = $2", [recall.raw_sha256, FOLLOW_UP_VERSION]);
   const row = rows[0];
-  return row ? { withinDays: row.within_days, reason: row.reason, hazardQuote: row.hazard_quote, snapshot: recall.raw_sha256 } : null;
+  if (!row) return null;
+  const mostDays = mostDaysFor(row.reason);
+  return { withinDays: Math.min(row.within_days, mostDays), mostDays, reason: row.reason, hazardQuote: row.hazard_quote, snapshot: recall.raw_sha256 };
 }
 
 async function runLoop(db: Queryable, client: Anthropic, model: string, text: unknown, number: string, hazards: string[], now: Date, spent: Spent, capMicros?: number): Promise<{ answer: Answer | null; model: string }> {
@@ -136,7 +148,8 @@ export async function adviseFollowUp(db: Queryable, client: Anthropic, input: { 
   }
   const a = run.answer;
   if (!a) return { status: "NO_ADVICE" };
-  const advice = { withinDays: a.within_days, reason: SEVERITY_SENTENCE[a.severity], hazardQuote: normalized(a.hazard_quote), snapshot: current.raw_sha256 };
+  const mostDays = MOST_DAYS[a.severity];
+  const advice = { withinDays: Math.min(a.within_days, mostDays), mostDays, reason: SEVERITY_SENTENCE[a.severity], hazardQuote: normalized(a.hazard_quote), snapshot: current.raw_sha256 };
   await db.query(
     `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)

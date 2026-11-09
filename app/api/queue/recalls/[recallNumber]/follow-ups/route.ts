@@ -7,7 +7,7 @@ import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { createRateLimiter } from "@/server/web/rateLimit";
 import { currentSession, fromThisSite, refused } from "@/server/web/http";
-import { activeFollowUps, checkFollowUpDate, type FollowUpDateCheck, placeFollowUps } from "@/app/queue/recalls/followUps";
+import { activeFollowUps, addDays, checkFollowUpDate, type FollowUpDateCheck, placeFollowUps } from "@/app/queue/recalls/followUps";
 import { timelineFor, type TimelineSale } from "@/app/queue/recalls/timeline";
 
 export const dynamic = "force-dynamic";
@@ -119,6 +119,7 @@ export async function PUT(request: Request, { params }: Context): Promise<Respon
     const advice = await storedAdvice(getDb(), recallNumber);
     if (!advice) return outOfDate(409, "Plan the follow-ups first.", session.shopId, timeline.sales);
     if (advice.snapshot !== snapshot) return outOfDate(409, CPSC_CHANGED, session.shopId, timeline.sales);
+    if (due > addDays(timeline.today, advice.mostDays)) return refused(422, `Pick a day within ${advice.mostDays} days, given this hazard.`);
     const placed = placeFollowUps([sale], advice.withinDays, timeline.today).proposals[0];
     const movedEarlier = placed?.due === due && placed.movedEarlier;
     const saved = await saveFollowUp(getDb(), { shopId: session.shopId, matchId: saleId, due, reason: advice.reason, hazardQuote: advice.hazardQuote, movedEarlier, snapshot });

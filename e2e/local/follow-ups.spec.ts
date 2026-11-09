@@ -3,7 +3,8 @@
 import { expect, test } from "@playwright/test";
 import pg from "pg";
 
-const REASON = "This hazard can seriously injure or kill a child quickly, with little warning.";
+// The middle severity: at most 14 days, so the drags below have room.
+const REASON = "This hazard can cause serious injury.";
 const SHOTS = process.env.FOLLOW_UP_SHOTS;
 
 test("an owner plans a follow-up, confirms it, and it's still there after a reload", async ({ page }) => {
@@ -27,7 +28,7 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
     await db.query(
       `insert into follow_up_advice (recall_sha256, agent_version, recall_id, within_days, reason, hazard_quote, model, input_tokens, output_tokens, cost_micros)
        select raw_sha256, '3', recall_id, 3, $1, hazards->>0, 'seeded', 0, 0, 0 from recalls where recall_number = $2 order by recall_date desc limit 1
-       on conflict do nothing`,
+       on conflict (recall_sha256, agent_version) do update set reason = excluded.reason, within_days = excluded.within_days`,
       [REASON, recallNumber],
     );
   } finally {
@@ -80,14 +81,14 @@ test("an owner plans a follow-up, confirms it, and it's still there after a relo
   const moved = page.waitForResponse((r) => r.request().method() === "PUT");
   await page.mouse.move(at.x + 30, at.y + at.height / 2);
   await page.mouse.down();
-  await page.mouse.move(at.x + 70, at.y + at.height / 2, { steps: 10 });
+  await page.mouse.move(at.x + 50, at.y + at.height / 2, { steps: 10 });
   await page.mouse.up();
   expect((await moved).status()).toBe(200);
   await expect(confirmed.locator('input[type="date"]').first()).not.toHaveValue(dateBefore);
 
   // Holding Ctrl or Cmd doesn't copy a bar: a copy would be a reminder the server has never heard of. It's an ordinary move.
   const remindersBefore = await page.locator(".timeline-follow-confirmed").count();
-  for (const [key, step] of [["Control", 40], ["Meta", -40]] as const) {
+  for (const [key, step] of [["Control", -20], ["Meta", 20]] as const) {
     const box = await bar.boundingBox();
     if (!box) throw new Error("no bar to drag");
     const saved = page.waitForResponse((r) => r.request().method() === "PUT", { timeout: 10_000 });
