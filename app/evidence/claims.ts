@@ -80,6 +80,9 @@ export const AG_GRID_CLAIMS: Claim[] = [
 export const AG_STUDIO_CLAIMS: Claim[] = [
   { what: "AG Studio 3.1.0 draws the recall dashboard, with its own agents", file: "app/studio/StudioDashboard.tsx", find: "createAiHarness" },
   { what: "The agents run on Claude through this site's route, which drops any tool named for money", file: "server/studio/turn.ts", find: "MONEY.test" },
+  { what: "A recall checker agent of our own, whose one tool reads this site's recall check and can change nothing", file: "app/studio/recallTool.ts", find: "id: RECALL_AGENT_ID" },
+  { what: "AG's lead agent can hand a product to it", file: "app/studio/recallTool.ts", find: "leadWithRecallChecker" },
+  { what: "Each check shows in the chat as its own row, with what the rules said", file: "app/studio/StudioDashboard.tsx", find: "aiToolDisplay={AI_TOOL_DISPLAY}" },
   { what: "The outcome column draws each result as a coloured chip", file: "app/studio/StudioDashboard.tsx", find: "createCellRenderer" },
   { what: "Its rows are CPSC's recalls and the demo shop's own titles, read from no PayPal table", file: "server/studio/dataset.ts", find: "STUDIO_TABLES" },
   { what: "A browser test captures what the agent sends and fails on any value PayPal returned", file: "e2e/local/studio-payload.spec.ts", find: "sends the model no value PayPal returned" },

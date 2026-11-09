@@ -1,14 +1,15 @@
 "use client";
 
-// AG Studio 3.1.0 dashboard of recall outcomes, with AG's built-in AI agents.
+// AG Studio 3.1.0 dashboard of recall outcomes, with AG's built-in AI agents and our own recall checker.
 // Every AG name below is taken from the 3.1.0 .d.ts files.
 
 import { useMemo } from 'react';
 import { AgStudio, AgStudioProvider, createWidgets } from 'ag-studio-react';
-import type { AgGridWidgetOptions } from 'ag-studio-react';
-import { AgStudioAiModule, createAiHarness } from 'ag-studio';
+import type { AgAiToolDisplay, AgGridWidgetOptions } from 'ag-studio-react';
+import { AgStudioAiModule, createAiHarness, directLlmRunner } from 'ag-studio';
 import type {
   AgAiHarnessSetup,
+  AgAiPromptStarter,
   AgDataSourcesDefinition,
   AgFieldDefinition,
   AgPanelConfig,
@@ -19,6 +20,7 @@ import type {
 import type { CustomCellRendererProps } from 'ag-grid-react';
 import type { StudioRow } from '@/server/studio/dataset';
 import { createStudioAdapter } from './adapter';
+import { leadWithRecallChecker, RECALL_TOOL, recallCheckerAgent, recallToolLabel, runRecallCheck, type RecallCheckArgs } from './recallTool';
 import { toStudioRows } from './rows';
 
 export interface StudioDashboardProps {
@@ -159,6 +161,21 @@ const GRID_OPTIONS: AgGridWidgetOptions = {
 };
 
 // ---------------------------------------------------------------------------
+// The assistant's opening suggestions. The first is a real recall from the data on this page.
+// ---------------------------------------------------------------------------
+
+const PROMPT_STARTERS: AgAiPromptStarter[] = [
+  { label: 'Check a product', prompt: 'Check this product against CPSC recalls: ONTHEWEI baby bath seat, model MY002' },
+  { label: "What can't we tell yet?", prompt: "Show only the recalls we can't tell yet, in the grid." },
+  { label: 'Recalls by month', prompt: 'Add a chart of recalls per month.' },
+];
+
+// Without this the chat shows a recall check as the tool's bare name.
+const AI_TOOL_DISPLAY: Record<string, AgAiToolDisplay> = {
+  [RECALL_TOOL.name]: { label: (params) => recallToolLabel(params as Parameters<typeof recallToolLabel>[0]) },
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -185,8 +202,32 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
 
   // `ai` is read once, when Studio is created; a new adapter after that is ignored.
   const ai = useMemo<AgAiHarnessSetup>(
-    // 3.1.0 types this `api` as the core API. It is the same object createAiHarness asks for.
-    () => ({ api }) => createAiHarness(api as AgStudioApi, { adapter, primary: 'lead' }),
+    () => ({ api }) => {
+      // 3.1.0 types this `api` as the core API. It is the same object createAiHarness asks for.
+      const studio = api as AgStudioApi;
+      const recallCheck = studio.defineAiTool<never, never, RecallCheckArgs, unknown>({
+        name: RECALL_TOOL.name,
+        description: RECALL_TOOL.description,
+        params: (s) =>
+          s.object({
+            title: s.string({ description: RECALL_TOOL.titleHelp }).optional(),
+            model: s.string({ description: RECALL_TOOL.modelHelp }).optional(),
+          }),
+        execute: (args, ctx) => runRecallCheck(args, ctx, (input, init) => fetch(input, init)),
+      });
+      return createAiHarness(studio, ({ builtIn, tools }) => ({
+        primary: 'lead',
+        promptStarters: PROMPT_STARTERS,
+        agents: [
+          directLlmRunner({ ...leadWithRecallChecker(builtIn.lead, tools.delegateTo), adapter }),
+          directLlmRunner({ ...builtIn.data, adapter }),
+          directLlmRunner({ ...builtIn.page, adapter }),
+          directLlmRunner({ ...builtIn.planning, adapter }),
+          directLlmRunner({ ...builtIn.widget, adapter }),
+          directLlmRunner({ ...recallCheckerAgent(recallCheck), adapter }),
+        ],
+      }));
+    },
     [adapter],
   );
 
@@ -200,6 +241,7 @@ export function StudioDashboard({ rows, licenseKey }: StudioDashboardProps) {
         initialState={INITIAL_STATE}
         widgets={widgets}
         ai={ai}
+        aiToolDisplay={AI_TOOL_DISPLAY}
       />
     </AgStudioProvider>
   );
