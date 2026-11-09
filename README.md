@@ -170,9 +170,9 @@ The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 min
 
 ## WebMCP on the shopper page
 
-`/shopper` registers `search_listings`, `check_recall`, and `start_checkout` only when
-`document.modelContext.registerTool` exists. Its Agent tools panel shows each call. The
-existing form also works without WebMCP. Listings and prices come from Channel3, recalls
+`/shopper` registers `search_listings`, `check_recall`, and `start_checkout` on
+`document.modelContext` when it has `registerTool`, and otherwise on `navigator.modelContext`, for clients
+that still offer only that. The Agent tools panel says which one each call came through. The existing form also works without WebMCP. Listings and prices come from Channel3, recalls
 from CPSC. The buyer reviews and approves on PayPal's sandbox page. PayPal responses
 stay in the browser's checkout handoff and never enter a tool result or the call log.
 
@@ -184,7 +184,7 @@ only when this variable is set. Never commit the token. A different origin needs
 own registration. Trial enrollment and browser support still need live verification.
 
 For ChatGPT desktop, open Settings > Browser > Enable site tools, then open `/shopper`
-in its browser. Allow pop-ups for this origin if checkout reports they are blocked.
+in its browser. If the browser blocks the new tab, PayPal opens in this same tab instead.
 Ask it to find a listing, check it, and start checkout; the buyer approves on PayPal.
 An unknown listing has no recall number to report, so it is refused with an empty
 recall list. A matched listing reports the actual CPSC number and title.
@@ -194,8 +194,8 @@ and [Chrome's imperative API guide](https://developer.chrome.com/docs/modern-web
 `document.modelContext.registerTool(tool, { signal })`, JSON Schema `inputSchema`,
 `execute(input, { signal })`, and cleanup by aborting the registration signal.
 `provideContext()` is removed; Chrome's guide records `navigator.modelContext` as
-deprecated in Chromium 150. This implementation targets the current document API,
-with no legacy navigator shim. Mocked registration tests do not establish native
+deprecated in Chromium 150. This implementation tries the current document API first,
+and falls back to `navigator.modelContext` with the same call shape. Mocked registration tests do not establish native
 Chrome 149 or ChatGPT desktop compatibility. Run the tools there before claiming it.
 
 ## Run it locally
