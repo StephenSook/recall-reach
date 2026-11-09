@@ -14,7 +14,7 @@ const checkResponse: TextCheckAnswer = {
   checked: { recalls: 1, from: "2022-04-07", to: "2022-04-07", yearsMissing: [2023] }, note: "Read the CPSC notice.",
 };
 
-function harness() {
+function harness(surface: "document" | "navigator" = "document") {
   const tools: ShopperTool[] = [];
   const calls: AgentCall[] = [];
   const popup = { location: { replace: vi.fn() }, close: vi.fn(), opener: {} as unknown };
@@ -25,22 +25,56 @@ function harness() {
   });
   const registerTool = vi.fn(async (tool: ShopperTool, options: { signal: AbortSignal }) => { if (!options.signal.aborted) tools.push(tool); });
   const open = vi.fn(() => popup);
-  const stop = registerShopperTools({ modelContext: { registerTool } }, { fetch: fetcher, open, onCall: (call) => calls.push(call) });
+  const navigate = vi.fn<(url: string) => void>();
+  const waiting: (() => void)[] = [];
+  const later = vi.fn<(run: () => void, ms: number) => void>((run) => { waiting.push(run); });
+  const context = { modelContext: { registerTool } };
+  const stop = registerShopperTools({ document: surface === "document" ? context : {}, navigator: surface === "navigator" ? context : {} }, { fetch: fetcher, open, navigate, later, onCall: (call) => calls.push(call) });
   const run = async (name: string, input: unknown) => {
     const tool = tools.find((tool) => tool.name === name);
     expect(tool).toBeDefined();
     return tool!.execute(input, { signal: new AbortController().signal });
   };
-  return { tools, calls, popup, fetcher, registerTool, open, stop, run };
+  return { tools, calls, popup, fetcher, registerTool, open, navigate, later, waiting, stop, run };
 }
 
-describe("shopper site tools", () => {
-  it("does nothing without document.modelContext, including the legacy navigator-only case", () => {
+const noHelpers = { navigate: vi.fn(), later: vi.fn() };
+
+describe("finding the browser's site-tools API", () => {
+  it("does nothing when neither document nor navigator has it", () => {
     const onCall = vi.fn();
-    expect(() => registerShopperTools({}, { fetch, open: vi.fn(), onCall })()).not.toThrow();
+    expect(() => registerShopperTools({ document: {}, navigator: {} }, { fetch, open: vi.fn(), onCall, ...noHelpers })()).not.toThrow();
     expect(onCall).not.toHaveBeenCalled();
   });
 
+  it("uses document first when both have it", () => {
+    const onDocument = vi.fn(async () => {});
+    const onNavigator = vi.fn(async () => {});
+    registerShopperTools({ document: { modelContext: { registerTool: onDocument } }, navigator: { modelContext: { registerTool: onNavigator } } }, { fetch, open: vi.fn(), onCall: vi.fn(), ...noHelpers })();
+    expect(onDocument).toHaveBeenCalledTimes(3);
+    expect(onNavigator).not.toHaveBeenCalled();
+  });
+
+  it("uses navigator when that is where the client put it", () => {
+    const h = harness("navigator");
+    expect(h.tools.map((t) => t.name)).toEqual(["search_listings", "check_recall", "start_checkout"]);
+  });
+
+  it("uses navigator when document has the name but no registerTool", () => {
+    const onNavigator = vi.fn(async () => {});
+    registerShopperTools({ document: { modelContext: {} as never }, navigator: { modelContext: { registerTool: onNavigator } } }, { fetch, open: vi.fn(), onCall: vi.fn(), ...noHelpers })();
+    expect(onNavigator).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["document", "navigator"] as const)("notes %s in the call log and the panel", async (surface) => {
+    const h = harness(surface);
+    await h.run("search_listings", { query: "tub" });
+    expect(h.calls.at(-1)?.via).toBe(surface);
+    expect(renderToStaticMarkup(createElement(AgentCallPanel, { calls: h.calls }))).toContain(`${surface}.modelContext`);
+  });
+});
+
+describe("shopper site tools", () => {
   it("registers only the three named tools with JSON schemas and aborts registration on unmount", () => {
     const h = harness();
     expect(h.tools.map((t) => t.name)).toEqual(["search_listings", "check_recall", "start_checkout"]);
@@ -101,12 +135,90 @@ describe("shopper site tools", () => {
     expect(JSON.stringify([failed, thrown, invalid, h.calls])).not.toContain("PLANTED-ORDER-ID");
   });
 
-  it("doesn't spend a slip if pop-ups are blocked", async () => {
+  describe("when the browser blocks the new tab", () => {
+    async function blocked() {
+      const h = harness();
+      await h.run("search_listings", { query: "tub" });
+      h.open.mockReturnValueOnce(null as never);
+      return h;
+    }
+
+    it("answers the assistant first, then moves this tab to PayPal", async () => {
+      const h = await blocked();
+      expect(await h.run("start_checkout", { listingId: "tub" })).toBe(PAYPAL_OPENED);
+      expect(h.navigate).not.toHaveBeenCalled();
+      expect(h.later).toHaveBeenCalledOnce();
+      expect(h.later.mock.calls[0][1]).toBeGreaterThan(0);
+      h.waiting[0]();
+      expect(h.navigate).toHaveBeenCalledExactlyOnceWith(secretUrl);
+    });
+
+    it("says so in the call log, with no PayPal data", async () => {
+      const h = await blocked();
+      await h.run("start_checkout", { listingId: "tub" });
+      expect(h.calls.at(-1)?.result).toBe("PayPal opening in this tab");
+      expect(JSON.stringify(h.calls)).not.toContain("PLANTED-ORDER-ID");
+    });
+
+    it("stays put when the checkout is refused", async () => {
+      const h = await blocked();
+      h.fetcher.mockResolvedValueOnce(Response.json({ recalls: [{ recallNumber: "22113", title: refusal.recallTitle }] }, { status: 409 }));
+      expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true, recalls: [{ recallNumber: "22113" }] });
+      expect(h.later).not.toHaveBeenCalled();
+    });
+
+    it("stays put when the approval address isn't PayPal's", async () => {
+      const h = await blocked();
+      h.fetcher.mockResolvedValueOnce(Response.json({ approveUrl: "https://evil.example/checkoutnow?token=x" }));
+      expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
+      expect(h.later).not.toHaveBeenCalled();
+    });
+
+    it("stays put when the page's tools were removed before the move", async () => {
+      const h = await blocked();
+      await h.run("start_checkout", { listingId: "tub" });
+      h.stop();
+      h.waiting[0]();
+      expect(h.navigate).not.toHaveBeenCalled();
+    });
+
+    it("won't start a second checkout while this tab is about to leave", async () => {
+      const h = harness();
+      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer, { ...offer, id: "bath", slipId: "other-slip" }], refused: [] }));
+      await h.run("search_listings", { query: "tub" });
+      h.open.mockReturnValue(null as never);
+      await h.run("start_checkout", { listingId: "tub" });
+      const buys = h.fetcher.mock.calls.length;
+      expect(await h.run("start_checkout", { listingId: "bath" })).toMatchObject({ refused: true });
+      expect(h.fetcher).toHaveBeenCalledTimes(buys);
+    });
+
+    it("can try again after a checkout that didn't start", async () => {
+      const h = await blocked();
+      h.fetcher.mockResolvedValueOnce(Response.json({}, { status: 500 }));
+      await h.run("start_checkout", { listingId: "tub" });
+      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer], refused: [] }));
+      await h.run("search_listings", { query: "tub" });
+      expect(await h.run("start_checkout", { listingId: "tub" })).toBe(PAYPAL_OPENED);
+    });
+  });
+
+  it("won't open a tab on an approval address that isn't PayPal's", async () => {
     const h = harness();
     await h.run("search_listings", { query: "tub" });
-    h.open.mockReturnValueOnce(null as never);
+    h.fetcher.mockResolvedValueOnce(Response.json({ approveUrl: "https://evil.example/checkoutnow?token=x" }));
     expect(await h.run("start_checkout", { listingId: "tub" })).toMatchObject({ refused: true });
-    expect(h.fetcher).toHaveBeenCalledOnce();
+    expect(h.popup.location.replace).not.toHaveBeenCalled();
+    expect(h.popup.close).toHaveBeenCalledOnce();
+  });
+
+  it("uses the new tab, and doesn't move this one, when the browser allows it", async () => {
+    const h = harness();
+    await h.run("search_listings", { query: "tub" });
+    await h.run("start_checkout", { listingId: "tub" });
+    expect(h.popup.location.replace).toHaveBeenCalledWith(secretUrl);
+    expect(h.later).not.toHaveBeenCalled();
+    expect(h.calls.at(-1)?.result).toBe("PayPal opened");
   });
 
   it("shows a call and its recall number in the Agent tools panel", async () => {
@@ -142,9 +254,9 @@ describe("shopper site tools", () => {
   });
 
   it("isolates synchronous and asynchronous registration failures from the page", async () => {
-    const deps = { fetch, open: vi.fn(), onCall: vi.fn() };
-    expect(() => registerShopperTools({ modelContext: { registerTool: () => { throw new Error("disabled"); } } }, deps)).not.toThrow();
-    const stop = registerShopperTools({ modelContext: { registerTool: async () => { throw new Error("disabled"); } } }, deps);
+    const deps = { fetch, open: vi.fn(), onCall: vi.fn(), ...noHelpers };
+    expect(() => registerShopperTools({ document: { modelContext: { registerTool: () => { throw new Error("disabled"); } } }, navigator: {} }, deps)).not.toThrow();
+    const stop = registerShopperTools({ document: { modelContext: { registerTool: async () => { throw new Error("disabled"); } } }, navigator: {} }, deps);
     await Promise.resolve();
     stop();
   });

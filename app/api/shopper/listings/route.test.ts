@@ -117,9 +117,11 @@ describe("WebMCP listing search and the existing buy route", () => {
     const tools: ShopperTool[] = [];
     const logs: unknown[] = [];
     const replace = vi.fn();
-    registerShopperTools({ modelContext: { registerTool: async (tool) => { tools.push(tool); } } }, {
+    registerShopperTools({ document: { modelContext: { registerTool: async (tool) => { tools.push(tool); } } }, navigator: {} }, {
       fetch: (async (path, init) => String(path).startsWith("/api/shopper/listings") ? GET(request()) : buy(new Request(`${ORIGIN}${path}`, { ...init, headers: { ...Object.fromEntries(new Headers(init?.headers)), origin: ORIGIN, "true-client-ip": `10.4.0.${++visitor}` } }))) as typeof fetch,
       open: () => ({ location: { replace }, close: vi.fn(), opener: null }),
+      navigate: vi.fn(),
+      later: vi.fn(),
       onCall: (call) => logs.push(call),
     });
     const options = { signal: new AbortController().signal };

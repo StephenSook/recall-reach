@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { TextCheckAnswer } from "@/server/match/textCheck";
 
 export const PAYPAL_OPENED = "PayPal's page is open for the buyer to review and approve.";
-export interface AgentCall { id: number; name: string; input: string; result: string }
+/** Where the client exposes the tools API. Browsers and desktop clients don't all agree yet. */
+export type ToolSurface = "document" | "navigator";
+export interface AgentCall { id: number; name: string; input: string; result: string; via: ToolSurface }
 export interface ShopperTool {
   name: string;
   description: string;
@@ -12,7 +14,11 @@ export interface ShopperTool {
 }
 interface ModelContext { registerTool: (tool: ShopperTool, options: { signal: AbortSignal }) => Promise<void> }
 interface CheckoutWindow { location: { replace: (url: string) => void }; close: () => void; opener: unknown }
-interface Deps { fetch: typeof fetch; open: () => CheckoutWindow | null; onCall: (call: AgentCall) => void }
+interface Deps { fetch: typeof fetch; open: () => CheckoutWindow | null; navigate: (url: string) => void; later: (run: () => void, ms: number) => void; onCall: (call: AgentCall) => void }
+type Hosts = Record<ToolSurface, { modelContext?: ModelContext }>;
+
+// Long enough for the assistant to get its answer before this page goes away.
+const SAME_TAB_DELAY_MS = 1500;
 
 const searchInput = z.strictObject({ query: z.string().trim().min(2).max(200), maxPrice: z.number().finite().min(1).max(2000).optional() });
 const checkInput = z.strictObject({ title: z.string().trim().min(2).max(200), model: z.string().trim().max(60).optional() });
@@ -34,9 +40,20 @@ const checkAnswer: z.ZodType<TextCheckAnswer> = z.object({
 const refusalAnswer = z.object({ recalls: z.array(recall) });
 const refused = (recalls: z.infer<typeof recall>[] = [], error = "That listing wasn't offered on this page. Search again.") => ({ refused: true, error, recalls });
 
-/** Current document API only. The browser is transport; provider responses never become tool results or log entries. */
-export function registerShopperTools(doc: { modelContext?: ModelContext }, deps: Deps): () => void {
-  if (!doc.modelContext || typeof doc.modelContext.registerTool !== "function") return () => {};
+/** The document API first, then navigator's. Every client that has either gets the same tools. */
+function findModelContext(hosts: Hosts): { context: ModelContext; via: ToolSurface } | null {
+  for (const via of ["document", "navigator"] as const) {
+    const context = hosts[via].modelContext;
+    if (context && typeof context.registerTool === "function") return { context, via };
+  }
+  return null;
+}
+
+/** The browser is transport; provider responses never become tool results or log entries. */
+export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
+  const found = findModelContext(hosts);
+  if (!found) return () => {};
+  const { context, via } = found;
   const lifetime = new AbortController();
   const offers = new Map<string, z.infer<typeof offer>>();
   const refusals = new Map<string, z.infer<typeof recall>[]>();
@@ -50,7 +67,7 @@ export function registerShopperTools(doc: { modelContext?: ModelContext }, deps:
       annotations: { readOnlyHint: name !== "start_checkout", untrustedContentHint: name !== "start_checkout", consequentialHint: name === "start_checkout" },
       async execute(raw, options) {
         const input = schema.safeParse(raw);
-        const call: AgentCall = { id: ++nextCall, name, input: input.success ? JSON.stringify(input.data).slice(0, 240) : "Invalid input", result: "Running" };
+        const call: AgentCall = { id: ++nextCall, name, input: input.success ? JSON.stringify(input.data).slice(0, 240) : "Invalid input", result: "Running", via };
         deps.onCall(call);
         let value: unknown;
         let summary: string;
@@ -118,13 +135,14 @@ export function registerShopperTools(doc: { modelContext?: ModelContext }, deps:
           const recalls = refusals.get(input.listingId) ?? [];
           return { value: refused(recalls), summary: recalls.length ? `Refused under recall ${recalls.map((r) => r.recallNumber).join(", ")}` : "Refused: listing not available" };
         }
+        // A tool call has no click behind it, so a browser may block this. Then this same tab goes to PayPal instead.
         const popup = deps.open();
-        if (!popup) return { value: refused([], "Allow pop-ups for this page, then try again."), summary: "Refused: allow pop-ups" };
         checkingOut = true;
         offers.delete(input.listingId);
         let opened = false;
+        let leaving = false;
         try {
-          popup.opener = null;
+          if (popup) popup.opener = null;
           const res = await deps.fetch("/api/shopper/buy", { method: "POST", headers: { accept: "application/json" }, body: new URLSearchParams({ slip: item.slipId }), signal });
           signal.throwIfAborted();
           if (!res.ok) {
@@ -137,18 +155,24 @@ export function registerShopperTools(doc: { modelContext?: ModelContext }, deps:
           const url = new URL(approveUrl);
           if (url.protocol !== "https:" || !["www.paypal.com", "www.sandbox.paypal.com"].includes(url.hostname) || url.username || url.password || url.port || url.pathname !== "/checkoutnow") throw new Error("invalid approval destination");
           signal.throwIfAborted();
-          popup.location.replace(approveUrl);
-          opened = true;
-          return { value: PAYPAL_OPENED, summary: "PayPal opened" };
+          if (popup) {
+            popup.location.replace(approveUrl);
+            opened = true;
+            return { value: PAYPAL_OPENED, summary: "PayPal opened" };
+          }
+          leaving = true;
+          deps.later(() => { if (!lifetime.signal.aborted) deps.navigate(approveUrl); }, SAME_TAB_DELAY_MS);
+          return { value: PAYPAL_OPENED, summary: "PayPal opening in this tab" };
         } finally {
-          checkingOut = false;
-          if (!opened) popup.close();
+          // A tab about to leave for PayPal takes no second checkout.
+          if (!leaving) checkingOut = false;
+          if (popup && !opened) popup.close();
         }
       }),
   ];
   for (const definition of tools) {
     try {
-      void Promise.resolve(doc.modelContext.registerTool(definition, { signal: lifetime.signal })).catch(() => lifetime.abort());
+      void Promise.resolve(context.registerTool(definition, { signal: lifetime.signal })).catch(() => lifetime.abort());
     } catch {
       lifetime.abort();
       break;

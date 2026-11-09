@@ -20,6 +20,45 @@ test("the ordinary form works without site tools and the token belongs only to /
   expect(errors).toEqual([]);
 });
 
+test("the origin-trial header is on /shopper and no other page", async ({ page }) => {
+  expect((await page.goto("/shopper"))?.headers()["origin-trial"]).toBe("test-origin-trial-token");
+  expect((await page.goto("/privacy"))?.headers()["origin-trial"]).toBeUndefined();
+});
+
+test("a client that offers navigator.modelContext gets the same tools, and the log says so", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "modelContext", { value: undefined, configurable: true });
+    const tools: ShopperTool[] = [];
+    window.shopperTools = tools;
+    Object.defineProperty(navigator, "modelContext", { configurable: true, value: { async registerTool(tool: ShopperTool) { tools.push(tool); } } });
+  });
+  await page.goto("/shopper");
+  await expect.poll(() => page.evaluate(() => window.shopperTools.length)).toBe(3);
+  await page.route("**/api/shopper/listings?**", (route) => route.fulfill({ json: { offerable: [], refused: [] } }));
+  await page.evaluate(() => window.shopperTools[0].execute({ query: "tub" }, { signal: new AbortController().signal }));
+  await expect(page.getByTestId("agent-tools")).toContainText("navigator.modelContext");
+});
+
+test("when the browser blocks the new tab, the assistant is answered and this tab goes to PayPal", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const tools: ShopperTool[] = [];
+    window.shopperTools = tools;
+    window.open = () => null;
+    Object.defineProperty(document, "modelContext", { configurable: true, value: { async registerTool(tool: ShopperTool) { tools.push(tool); } } });
+  });
+  await page.goto("/shopper");
+  await expect.poll(() => page.evaluate(() => window.shopperTools.length)).toBe(3);
+  await page.route("**/api/shopper/listings?**", (route) => route.fulfill({ json: { offerable: [{ id: "tub", title: "Folding Tub", price: 24.99, retailer: "store.example", slipId: "private-slip" }], refused: [] } }));
+  await page.route("**/api/shopper/buy", (route) => route.fulfill({ json: { approveUrl: "https://www.sandbox.paypal.com/checkoutnow?token=PLANTED-ORDER" } }));
+  await context.route("https://www.sandbox.paypal.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Mock PayPal buyer approval page</h1>" }));
+  await page.evaluate(() => window.shopperTools[0].execute({ query: "tub" }, { signal: new AbortController().signal }));
+  const result = await page.evaluate(() => window.shopperTools[2].execute({ listingId: "tub" }, { signal: new AbortController().signal }));
+  expect(result).toBe("PayPal's page is open for the buyer to review and approve.");
+  await expect(page.getByTestId("agent-tools")).toContainText("PayPal opening in this tab");
+  await expect(page.getByRole("heading", { name: "Mock PayPal buyer approval page" })).toBeVisible({ timeout: 10_000 });
+  expect(context.pages()).toHaveLength(1);
+});
+
 test("mock document tools run, update the panel, refuse recall 22113 and open a private PayPal handoff", async ({ page, context }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
