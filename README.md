@@ -185,8 +185,8 @@ Render web service, then redeploy. Only `/shopper` emits the origin-trial meta t
 only when this variable is set. Never commit the token. A different origin needs its
 own registration. Trial enrollment and browser support still need live verification.
 
-For ChatGPT desktop, open Settings > Browser > Enable site tools, then open `/shopper`
-in its browser. If the browser blocks the new tab, the tool answers that PayPal's page is opening in this tab, and
+For ChatGPT desktop, open Settings > Browser > Enable site tools, switch to Work mode (Chat mode can't use site
+tools), then open `/shopper` in its browser. If the browser blocks the new tab, the tool answers that PayPal's page is opening in this tab, and
 moves this tab there a moment later. A cancel after that answer doesn't stop the move, because the call is over and a
 client may cancel as cleanup; moving there moves no money, since the buyer still approves on PayPal. A newer search
 before the move does stop it, and the Agent tools panel says so.
