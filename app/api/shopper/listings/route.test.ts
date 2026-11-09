@@ -111,6 +111,17 @@ describe("WebMCP listing search and the existing buy route", () => {
     expect(paths.check).toHaveBeenCalledWith({}, listing, expect.any(String));
   });
 
+  it("names no recall when the check only couldn't rule the listing out", async () => {
+    paths.check.mockResolvedValue({ ...flagged, results: flagged.results.map((result) => ({ ...result, tiedToRecall: false })) });
+    paths.start.mockImplementation(async (_db, _client, _input, deps) => {
+      await deps.check(listing);
+      throw new SlipRefused("NOW_FLAGGED", "PLANTED-PAYPAL-SECRET");
+    });
+    const res = await buy(buying());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ refused: true, recalls: [] });
+  });
+
   it("mocked startShopperOrder's PayPal order, URL, payer and amount never reach ANY tool result or log", async () => {
     const url = "https://www.sandbox.paypal.com/checkoutnow?token=PLANTED-ORDER";
     paths.start.mockResolvedValue({ approveUrl: url, orderId: "PLANTED-ORDER", payer: "PLANTED-PAYER", amount: "PLANTED-AMOUNT" });

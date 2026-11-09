@@ -1,5 +1,5 @@
 import { getDb } from "@/server/db/pg";
-import { checkListing } from "@/server/match/textCheck";
+import { checkListing, namingResults } from "@/server/match/textCheck";
 import { payPalClientFromEnv } from "@/server/paypal/client";
 import { SlipRefused, startShopperOrder } from "@/server/paypal/shopperOrder";
 import { recordKeyFromEnv } from "@/server/privacy/recordKey";
@@ -39,7 +39,8 @@ export async function POST(request: Request): Promise<Response> {
   } catch (err) {
     if (forTools) {
       // No exception text, provider fields, order identifiers or amounts leave through the tool's refusal path.
-      const recalls = err instanceof SlipRefused && err.code === "NOW_FLAGGED" ? (answer?.results ?? []).map((r) => ({ recallNumber: r.recallNumber, title: r.title })) : [];
+      // Only a recall the listing's words are tied to is named: "couldn't rule it out" is not "refused under this recall".
+      const recalls = err instanceof SlipRefused && err.code === "NOW_FLAGGED" && answer ? namingResults(answer).map((r) => ({ recallNumber: r.recallNumber, title: r.title })) : [];
       return Response.json({ refused: true, error: "Checkout could not start. Search again or read the CPSC recall.", recalls }, { status: err instanceof SlipRefused ? 409 : 503, headers: { "cache-control": "no-store" } });
     }
     if (err instanceof SlipRefused) return seeOther(request, `/shopper?error=${err.code}`);
