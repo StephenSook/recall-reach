@@ -28,6 +28,8 @@ export interface GridRow {
   listedOnShelf: boolean;
   /** The window this row opens. Null when there is nothing to do on it: its row already says why it cleared. */
   anchor: string | null;
+  /** Which sale this is. One sale can match several recalls, and is still one sale to add up or refund. */
+  saleId: string | null;
   /** The sale's total in dollars from the shop's own order file. Null for another currency, so a sum never mixes them. */
   saleUsd: number | null;
   /** A confirmed match sold after the recall with a payment found, and no refund done or under way. */
@@ -88,6 +90,7 @@ export function gridRows(rows: QueueRow[], cards: QueueCard[], opts: { sharedWor
       tellCpsc: r.verdict === "MATCH" && r.salePath === "REFUND_ELIGIBLE",
       listedOnShelf: r.isListing && r.stillListed && r.verdict !== "CLEARED" && !sharedWordOnly(r),
       anchor: card ? `#sale-${card}` : null,
+      saleId: r.recordId,
       saleUsd: r.saleCents !== null && r.saleCents !== undefined && r.saleCurrency === "USD" ? r.saleCents / 100 : null,
       refundEligible: r.verdict === "MATCH" && r.strength === "CONFIRMED" && r.salePath === "REFUND_ELIGIBLE" && r.joinState === "IDENTIFIED" && (!r.refund || r.refund.status === "failed"),
     };
@@ -116,6 +119,7 @@ export function unidentifiedRows(payments: UnidentifiedPayment[]): GridRow[] {
     tellCpsc: false,
     listedOnShelf: false,
     anchor: null,
+    saleId: null,
     saleUsd: null,
     refundEligible: false,
   }));

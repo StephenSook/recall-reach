@@ -1,11 +1,11 @@
 "use client";
 
-import type { ChartRef, ColDef, GridApi, ICellRendererParams, IRowNode, SideBarDef, StatusPanelDef } from "ag-grid-community";
+import type { ChartRef, ColDef, DefaultMenuItem, GridApi, IAggFuncParams, ICellRendererParams, IRowNode, ProcessCellForExportParams, ShouldRowBeSkippedParams, SideBarDef, StatusPanelDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { useMemo, useRef, useState } from "react";
 import { licenseGrid } from "@/app/gridEnterprise";
 import { gridTheme } from "@/app/gridSetup";
-import { excelColumns, grouped, refundTotal, usd } from "./gridFeatures";
+import { excelColumns, grouped, refundTotal, saleLabel, saleSum, usd } from "./gridFeatures";
 import { hiddenColumns, inTab, soldLabel, TELL_CPSC_COLUMNS, type GridRow, type GridTab } from "./gridRows";
 import { chipClass } from "./labels";
 
@@ -45,6 +45,29 @@ function OpenCell({ data }: ICellRendererParams<Row>) {
   return data?.anchor ? <a href={data.anchor}>Open</a> : null;
 }
 
+function leavesOf(node: IRowNode<Row>): Row[] {
+  if (node.data) return [node.data];
+  return (node.childrenAfterFilter ?? []).flatMap(leavesOf);
+}
+
+/** A group's sales, each counted once. The object is how AG Grid takes a total that's a number with words beside it. */
+function saleTotal({ rowNode }: IAggFuncParams<Row>) {
+  const sum = saleSum(leavesOf(rowNode));
+  return { value: sum.usd, unpriced: sum.unpriced, toString: () => saleLabel(sum), toNumber: () => sum.usd };
+}
+
+const saleWords = (value: unknown) => (value !== null && typeof value === "object" ? String(value) : usd(value as number | null | undefined));
+
+/** A payment nobody could identify is PayPal's record, not the shop's, so no way out of this table carries it. */
+const keepsOutUnidentified = (p: ShouldRowBeSkippedParams<Row>) => p.node.data?.verdict === "UNIDENTIFIED";
+// AG Grid's type says string, and Excel only gets a number cell from a number, so a number goes through as one.
+const numberForExport = (p: ProcessCellForExportParams<Row>): string => {
+  const value: unknown = p.value;
+  return (value !== null && typeof value === "object" && "toNumber" in value ? (value as { toNumber: () => number }).toNumber() : value) as string;
+};
+// The right-click menu has its own export entries, which would skip the rule above.
+const MENU_ITEMS: DefaultMenuItem[] = ["copy", "copyWithHeaders", "separator", "chartRange"];
+
 const SET_FILTER = "agSetColumnFilter";
 
 const columns: ColDef<Row>[] = [
@@ -54,12 +77,13 @@ const columns: ColDef<Row>[] = [
   { field: "state", headerName: "State", width: 136, cellRenderer: StateCell, cellClass: "chip-cell", wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "path", headerName: "Path", width: 144, cellRenderer: PathCell, cellClass: "chip-cell", filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "soldOn", headerName: "Sold", width: 96, cellDataType: "dateString", filter: "agDateColumnFilter", cellRenderer: SoldCell, chartDataType: "excluded" },
-  { field: "saleUsd", headerName: "Sale", width: 92, type: "rightAligned", valueFormatter: (p) => usd(p.value as number | null), aggFunc: "sum", filter: "agNumberColumnFilter", chartDataType: "series" },
+  { field: "saleUsd", headerName: "Sale (USD)", width: 124, type: "rightAligned", valueFormatter: (p) => saleWords(p.value), aggFunc: saleTotal, filter: "agNumberColumnFilter", chartDataType: "series" },
   { field: "noticeState", headerName: "Message", width: 92, wrapText: true, autoHeight: true, filter: SET_FILTER, chartDataType: "category", enableRowGroup: true },
   { field: "reason", headerName: "Why", flex: 3, minWidth: 170, wrapText: true, autoHeight: true, filter: true, chartDataType: "excluded" },
   { colId: "open", headerName: "Open", headerClass: "header-for-readers", width: 52, cellRenderer: OpenCell, sortable: false, resizable: false, suppressColumnsToolPanel: true },
 ];
 
+const EXPORT_RULES = { shouldRowBeSkipped: keepsOutUnidentified };
 const DEFAULT_COL: ColDef<Row> = { sortable: true, resizable: true };
 const AUTO_GROUP: ColDef<Row> = { headerName: "Group", minWidth: 180 };
 const SIDE_BAR: SideBarDef = { toolPanels: ["columns", "filters"], hiddenByDefault: false };
@@ -85,6 +109,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
   // What this tab could cost in refunds. The prices are the shop's own, from its order file.
   const refund = useMemo(() => refundTotal(rows.filter((r) => inTab(r, tab))), [rows, tab]);
   const hasTellCpsc = rows.some((r) => r.tellCpsc);
+  const priceInOtherCurrency = rows.some((r) => r.soldOn && r.saleUsd === null);
   const shownColumns = useMemo(() => {
     const hidden = hiddenColumns(rows, listings);
     return grouped(columns.filter((c) => !hidden.has(String(c.field))), groupBy);
@@ -102,8 +127,8 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
     grid.exportDataAsExcel({
       fileName: "recall-queue.xlsx",
       columnKeys: excelColumns((grid.getAllDisplayedColumns() ?? []).map((c) => c.getColId())),
-      // A payment nobody could identify is PayPal's record, not the shop's, so it doesn't leave in a file.
-      shouldRowBeSkipped: (p) => p.node.data?.verdict === "UNIDENTIFIED",
+      shouldRowBeSkipped: keepsOutUnidentified,
+      processCellCallback: numberForExport,
     });
   };
 
@@ -119,9 +144,10 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
     chartRef.current = api.current?.createCrossFilterChart({
       chartType: "column",
       chartContainer: chartBox.current,
-      cellRange: { columns: [groupBy === "state" ? "state" : "recallNumber", "saleUsd"] },
+      // By recall only. A sale matching two recalls belongs to each, but would count twice in a state.
+      cellRange: { columns: ["recallNumber", "saleUsd"] },
       aggFunc: "sum",
-      chartThemeOverrides: { common: { title: { enabled: true, text: groupBy === "state" ? "Sales by state" : "Sales by recall" } } },
+      chartThemeOverrides: { common: { title: { enabled: true, text: "Sales in USD by recall" } } },
     }) ?? null;
     setCharted(chartRef.current !== null);
   };
@@ -169,6 +195,9 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         sideBar={SIDE_BAR}
         enableCharts
         suppressAggFuncInHeader
+        getContextMenuItems={() => MENU_ITEMS}
+        defaultExcelExportParams={EXPORT_RULES}
+        defaultCsvExportParams={EXPORT_RULES}
         cellSelection
         rowSelection={listings ? undefined : { mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false, isRowSelectable: (n: IRowNode<Row>) => Boolean(n.data?.approvable) }}
         selectionColumnDef={{ width: 44, minWidth: 44, maxWidth: 44, resizable: false, sortable: false }}
@@ -216,6 +245,7 @@ export default function MatchGrid({ rows, startOn = "needs", listings = false, l
         </button>
       </div>}
       <div ref={chartBox} className={charted ? "grid-chart" : undefined} data-testid="grid-chart" />
+      {charted && priceInOtherCurrency ? <p className="note" data-testid="chart-note">Sales priced in another currency aren&apos;t in this chart.</p> : null}
     </section>
   );
 }

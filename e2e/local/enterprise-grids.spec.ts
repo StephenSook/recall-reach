@@ -39,6 +39,23 @@ test("the queue groups, filters, totals, exports and charts", async ({ page }) =
   await group.locator(".ag-group-contracted").first().click();
   await expect(grid.locator(".ag-row[row-id]:not(.ag-row-group)").first()).toBeVisible();
 
+  // Changing the group replaces it: the grid keeps a group the columns don't mention unless it's told otherwise.
+  await grid.getByRole("button", { name: "By state", exact: true }).click();
+  await expect(grid.locator('.ag-row-group[aria-level="1"]').first()).toBeVisible();
+  await expect(grid.locator('.ag-row-group[aria-level="2"]')).toHaveCount(0);
+  await expect(grid.locator(".ag-header-cell", { hasText: "Recall" }).first()).toBeVisible();
+  await grid.getByRole("button", { name: "No groups" }).click();
+  await expect(grid.locator(".ag-row-group")).toHaveCount(0);
+  await grid.getByRole("button", { name: "By recall", exact: true }).click();
+  await expect(grid.locator(".ag-row-group").first()).toBeVisible();
+
+  // The right-click menu doesn't offer a way round the export rules.
+  await grid.locator(".ag-row-group").first().locator(".ag-cell").first().click({ button: "right" });
+  const menu = page.locator(".ag-menu").first();
+  await expect(menu).toContainText("Copy");
+  await expect(menu).not.toContainText("Export");
+  await page.keyboard.press("Escape");
+
   const download = page.waitForEvent("download");
   await grid.getByRole("button", { name: "Export to Excel" }).click();
   expect((await download).suggestedFilename()).toBe("recall-queue.xlsx");

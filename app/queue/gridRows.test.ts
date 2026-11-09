@@ -274,7 +274,7 @@ describe("what the grid holds", () => {
 
   it("carries nothing a browser should not have", () => {
     const fields = Object.keys(by(build([row({})]), "m1")).sort();
-    expect(fields).toEqual(["anchor", "apart", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "refundEligible", "saleUsd", "soldOn", "state", "tellCpsc", "verdict",
+    expect(fields).toEqual(["anchor", "apart", "approvable", "isLead", "itemTitle", "listedOnShelf", "matchId", "noticeState", "path", "product", "reason", "recallDate", "recallNumber", "refundEligible", "saleId", "saleUsd", "soldOn", "state", "tellCpsc", "verdict",
       "waits", "weak"]);
   });
 
