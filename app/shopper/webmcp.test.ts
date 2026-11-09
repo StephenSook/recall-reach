@@ -248,6 +248,43 @@ describe("shopper site tools", () => {
     expect(h.popup.close).toHaveBeenCalledOnce();
   });
 
+  describe("when a newer search lands while the order is being made", () => {
+    async function pendingBuy(h: ReturnType<typeof harness>) {
+      await h.run("search_listings", { query: "tub" });
+      let answerBuy: (response: Response) => void = () => {};
+      h.fetcher.mockImplementationOnce(() => new Promise((resolve) => { answerBuy = resolve; }));
+      return { started: () => h.run("start_checkout", { listingId: "tub" }), finish: () => answerBuy(Response.json({ approveUrl: secretUrl })) };
+    }
+    const newerRefuses = (h: ReturnType<typeof harness>) => {
+      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [], refused: [{ ...refusal, id: "tub" }] }));
+      return h.run("search_listings", { query: "tub" });
+    };
+
+    it("doesn't open PayPal in the new tab, and closes it", async () => {
+      const h = harness();
+      const buy = await pendingBuy(h);
+      const started = buy.started();
+      await vi.waitFor(() => expect(h.open).toHaveBeenCalledOnce());
+      await newerRefuses(h);
+      buy.finish();
+      expect(await started).toMatchObject({ refused: true });
+      expect(h.popup.location.replace).not.toHaveBeenCalled();
+      expect(h.popup.close).toHaveBeenCalledOnce();
+    });
+
+    it("doesn't move this tab either", async () => {
+      const h = harness();
+      const buy = await pendingBuy(h);
+      h.open.mockReturnValueOnce(null as never);
+      const started = buy.started();
+      await vi.waitFor(() => expect(h.open).toHaveBeenCalledOnce());
+      await newerRefuses(h);
+      buy.finish();
+      expect(await started).toMatchObject({ refused: true });
+      expect(h.later).not.toHaveBeenCalled();
+    });
+  });
+
   it("won't send the buyer to live PayPal: this is sandbox only", async () => {
     const h = harness();
     await h.run("search_listings", { query: "tub" });

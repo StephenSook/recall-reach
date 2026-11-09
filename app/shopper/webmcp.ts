@@ -138,6 +138,8 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
           const recalls = refusals.get(input.listingId) ?? [];
           return { value: refused(recalls), summary: recalls.length ? `Refused under recall ${recalls.map((r) => r.recallNumber).join(", ")}` : "Refused: listing not available" };
         }
+        // A newer search may refuse this listing, so the offer only stands while its search is the latest.
+        const offeredBy = nextSearch;
         // A tool call has no click behind it, so a browser may block this. Then this same tab goes to PayPal instead.
         const popup = deps.open();
         checkingOut = true;
@@ -158,16 +160,16 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
           const url = new URL(approveUrl);
           if (url.protocol !== "https:" || url.hostname !== "www.sandbox.paypal.com" || url.username || url.password || url.port || url.pathname !== "/checkoutnow") throw new Error("invalid approval destination");
           signal.throwIfAborted();
+          if (nextSearch !== offeredBy) return { value: refused([], "A newer search replaced this listing. Search again."), summary: "Refused: search replaced" };
           if (popup) {
             popup.location.replace(approveUrl);
             opened = true;
             return { value: PAYPAL_OPENED, summary: "PayPal opened" };
           }
           leaving = true;
-          const searchWhenAnswered = nextSearch;
           deps.later(() => {
             // Cancelled, this page's tools removed, or a newer search that may refuse this listing: stay put.
-            if (signal.aborted || nextSearch !== searchWhenAnswered) {
+            if (signal.aborted || nextSearch !== offeredBy) {
               checkingOut = false;
               return;
             }
