@@ -2,7 +2,7 @@ import { agentClientFromEnv, OWN_SHOP_CAP_MICROS } from "@/server/agent/claude";
 import { adviseFollowUp, storedAdvice } from "@/server/agent/followUpAdvice";
 import { getDb } from "@/server/db/pg";
 import { readCappedBody } from "@/server/http/body";
-import { dropFollowUp, followUpsFor, saveFollowUp } from "@/server/queue/followUps";
+import { dropFollowUp, followUpsFor, saleIdsOnText, saveFollowUp } from "@/server/queue/followUps";
 import { loadQueue } from "@/server/queue/queue";
 import { businessDay } from "@/server/time/businessDay";
 import { createRateLimiter } from "@/server/web/rateLimit";
@@ -87,7 +87,8 @@ export async function POST(request: Request, { params }: Context): Promise<Respo
     }
     const saved = await followUpsFor(getDb(), session.shopId);
     const done = new Set(saved.map((f) => f.matchId));
-    const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id)), advice.withinDays, timeline.today);
+    const onThisText = await saleIdsOnText(getDb(), session.shopId, advice.snapshot);
+    const { proposals, closingSoon } = placeFollowUps(timeline.sales.filter((s) => !done.has(s.id) && onThisText.has(s.id)), advice.withinDays, timeline.today);
     // What's saved goes back too: this page may have missed a save, from a lost answer or another tab.
     return Response.json({ reason: advice.reason, hazardQuote: advice.hazardQuote, withinDays: advice.withinDays, snapshot: advice.snapshot, proposals, closingSoon, confirmed: activeFollowUps(saved, timeline.sales) }, { headers: { "cache-control": "no-store" } });
   } catch (err) {

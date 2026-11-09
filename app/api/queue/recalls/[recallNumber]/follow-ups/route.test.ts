@@ -12,7 +12,7 @@ const stored = vi.hoisted(() => vi.fn());
 vi.mock("@/server/agent/followUpAdvice", () => ({ adviseFollowUp: advise, storedAdvice: stored }));
 const client = vi.hoisted(() => vi.fn());
 vi.mock("@/server/agent/claude", async (real) => ({ ...(await real<typeof import("@/server/agent/claude")>()), agentClientFromEnv: client }));
-const saved = vi.hoisted(() => ({ followUpsFor: vi.fn(), saveFollowUp: vi.fn(), dropFollowUp: vi.fn() }));
+const saved = vi.hoisted(() => ({ followUpsFor: vi.fn(), saveFollowUp: vi.fn(), dropFollowUp: vi.fn(), saleIdsOnText: vi.fn() }));
 vi.mock("@/server/queue/followUps", () => saved);
 
 import { DELETE, POST, PUT } from "./route";
@@ -39,6 +39,7 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     saved.followUpsFor.mockResolvedValue([]);
     saved.saveFollowUp.mockResolvedValue(true);
     saved.dropFollowUp.mockResolvedValue(true);
+    saved.saleIdsOnText.mockResolvedValue(new Set([SALE]));
   });
   afterEach(() => {
     vi.resetAllMocks();
@@ -75,6 +76,12 @@ describe("/api/queue/recalls/[recallNumber]/follow-ups", () => {
     it("doesn't propose again for a sale the owner already confirmed", async () => {
       saved.followUpsFor.mockResolvedValue([{ matchId: SALE, due: "2026-11-20", reason: "r", hazardQuote: "q", movedEarlier: false }]);
       expect((await (await propose()).json()).proposals).toEqual([]);
+    });
+
+    it("proposes nothing for a sale matched to another CPSC record with this number, since it couldn't be saved", async () => {
+      saved.saleIdsOnText.mockResolvedValue(new Set());
+      expect((await (await propose()).json()).proposals).toEqual([]);
+      expect(saved.saleIdsOnText).toHaveBeenCalledWith({}, "shop-1", "snap-1");
     });
 
     it("hands back what's saved for this recall, so a page that missed a save catches up", async () => {

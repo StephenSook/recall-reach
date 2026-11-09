@@ -4,7 +4,7 @@ import { testDb } from "../../test/pglite";
 import { pullRecalls } from "../cpsc/pull";
 import { migrate } from "../db/migrate";
 import { createShop } from "../import/store";
-import { dropFollowUp, followUpsFor, saveFollowUp } from "./followUps";
+import { dropFollowUp, followUpsFor, saleIdsOnText, saveFollowUp } from "./followUps";
 
 const fixtureText = readFileSync(new URL("../../test/fixtures/cpsc/recalls_2026-10-01_to_2026-11-05.json", import.meta.url), "utf8");
 
@@ -36,6 +36,15 @@ describe("the follow-ups a shop has confirmed", () => {
   });
   afterEach(async () => {
     await db.close();
+  });
+
+  it("finds this shop's sales matched to the CPSC text a plan read, and no other shop's", async () => {
+    await newMatch(shopB);
+    expect(await saleIdsOnText(db, shopA, sha)).toEqual(new Set([match]));
+  });
+
+  it("leaves out a sale matched to another record of the recall, which that plan's text can't be saved against", async () => {
+    expect(await saleIdsOnText(db, shopA, "text-of-another-record")).toEqual(new Set());
   });
 
   it("keeps what was confirmed", async () => {

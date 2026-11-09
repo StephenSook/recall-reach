@@ -24,6 +24,15 @@ export async function followUpsFor(db: Queryable, shopId: string): Promise<Saved
   return rows.map((r) => ({ matchId: r.match_id, due: r.due, reason: r.reason, hazardQuote: r.hazard_quote, movedEarlier: r.moved_earlier, snapshot: r.recall_sha256 }));
 }
 
+/** This shop's sales matched to the CPSC text with this hash. Two records can share a recall number, and advice read from one can't be saved on the other's sales. */
+export async function saleIdsOnText(db: Queryable, shopId: string, snapshot: string): Promise<Set<string>> {
+  const { rows } = await db.query<{ id: string }>(
+    "select m.id from recall_matches m join recalls r on r.recall_id = m.recall_id where m.shop_id = $1 and r.raw_sha256 = $2",
+    [shopId, snapshot],
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
 /** False when the match isn't this shop's, or CPSC has changed the recall since this advice was read: it saves only against the text it came from. */
 export async function saveFollowUp(db: Queryable, input: { shopId: string } & SavedFollowUp): Promise<boolean> {
   const { rows } = await db.query(
