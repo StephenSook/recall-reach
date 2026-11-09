@@ -64,7 +64,7 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
   let nextSearch = 0;
   let checkingOut = false;
 
-  function tool<T>(name: string, description: string, schema: z.ZodType<T>, inputSchema: Record<string, unknown>, execute: (input: T, signal: AbortSignal) => Promise<{ value: unknown; summary: string }>): ShopperTool {
+  function tool<T>(name: string, description: string, schema: z.ZodType<T>, inputSchema: Record<string, unknown>, execute: (input: T, signal: AbortSignal, note: (summary: string) => void) => Promise<{ value: unknown; summary: string }>): ShopperTool {
     return {
       name, description, inputSchema,
       annotations: { readOnlyHint: name !== "start_checkout", untrustedContentHint: name !== "start_checkout", consequentialHint: name === "start_checkout" },
@@ -81,7 +81,9 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
             value = refused([], "Use only the fields and limits in this tool's schema.");
             summary = "Refused: invalid input";
           } else {
-            ({ value, summary } = await execute(input.data, signal));
+            // A later change to what this call did, such as a move to PayPal that was dropped, rewrites its line in the log.
+            const note = (later: string) => { if (!lifetime.signal.aborted) deps.onCall({ ...call, result: later }); };
+            ({ value, summary } = await execute(input.data, signal, note));
           }
         } catch {
           value = refused([], "The tool could not finish. Try again.");
@@ -135,9 +137,10 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
       }),
     tool("start_checkout", "Open an offered listing on PayPal's page for the buyer to review and approve. The assistant cannot approve payment.", checkoutInput,
       object({ listingId: { type: "string", minLength: 1, maxLength: 64 } }, ["listingId"]),
-      async (input, signal) => {
+      async (input, signal, note) => {
         const item = offers.get(input.listingId);
-        if (!item || checkingOut) {
+        if (item && checkingOut) return { value: refused([], "A checkout is already under way in this tab. Wait for PayPal's page."), summary: "Refused: checkout in progress" };
+        if (!item) {
           const recalls = refusals.get(input.listingId) ?? [];
           return { value: refused(recalls), summary: recalls.length ? `Refused under recall ${recalls.map((r) => r.recallNumber).join(", ")}` : "Refused: listing not available" };
         }
@@ -171,9 +174,12 @@ export function registerShopperTools(hosts: Hosts, deps: Deps): () => void {
           }
           leaving = true;
           deps.later(() => {
-            // Cancelled, this page's tools removed, or a newer search that may refuse this listing: stay put.
-            if (signal.aborted || nextSearch !== offeredBy) {
+            // This call has answered, so it's over: a client may abort its signal as cleanup, and that can't strand the buyer.
+            // This page's tools being removed, or a newer search that may refuse this listing, does stop the move.
+            if (lifetime.signal.aborted) return;
+            if (nextSearch !== offeredBy) {
               checkingOut = false;
+              note("PayPal not opened: a newer search replaced this listing");
               return;
             }
             deps.navigate(approveUrl);

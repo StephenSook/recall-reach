@@ -183,17 +183,13 @@ describe("shopper site tools", () => {
       expect(h.navigate).not.toHaveBeenCalled();
     });
 
-    it("stays put, and takes another checkout, when the assistant cancels before the move", async () => {
-      const h = harness();
-      h.fetcher.mockResolvedValueOnce(Response.json({ offerable: [offer, { ...offer, id: "bath", slipId: "other-slip" }], refused: [] }));
-      await h.run("search_listings", { query: "tub" });
-      h.open.mockReturnValueOnce(null as never);
+    it("still moves after a cancel that comes once it has answered: that call is over, and a client may abort as cleanup", async () => {
+      const h = await blocked();
       const controller = new AbortController();
       expect(await h.tools[2].execute({ listingId: "tub" }, { signal: controller.signal })).toBe(PAYPAL_OPENING);
       controller.abort();
       h.waiting[0]();
-      expect(h.navigate).not.toHaveBeenCalled();
-      expect(await h.run("start_checkout", { listingId: "bath" })).toBe(PAYPAL_OPENED);
+      expect(h.navigate).toHaveBeenCalledExactlyOnceWith(secretUrl);
     });
 
     it("stays put, and takes another checkout, when a newer search comes in before the move", async () => {
@@ -203,6 +199,7 @@ describe("shopper site tools", () => {
       await h.run("search_listings", { query: "tub" });
       h.waiting[0]();
       expect(h.navigate).not.toHaveBeenCalled();
+      expect(h.calls.filter((c) => c.name === "start_checkout").at(-1)?.result).toBe("PayPal not opened: a newer search replaced this listing");
       expect(await h.run("start_checkout", { listingId: "bath" })).toBe(PAYPAL_OPENED);
     });
 
@@ -213,7 +210,8 @@ describe("shopper site tools", () => {
       h.open.mockReturnValue(null as never);
       await h.run("start_checkout", { listingId: "tub" });
       const buys = h.fetcher.mock.calls.length;
-      expect(await h.run("start_checkout", { listingId: "bath" })).toMatchObject({ refused: true });
+      expect(await h.run("start_checkout", { listingId: "bath" })).toMatchObject({ refused: true, error: "A checkout is already under way in this tab. Wait for PayPal's page." });
+      expect(h.calls.at(-1)?.result).toBe("Refused: checkout in progress");
       expect(h.fetcher).toHaveBeenCalledTimes(buys);
     });
 

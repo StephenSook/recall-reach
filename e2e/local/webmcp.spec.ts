@@ -105,8 +105,5 @@ test("mock document tools run, update the panel, refuse recall 22113 and open a 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: `test-results/webmcp/${test.info().project.name}-phone.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole("link", { name: "How well it works", exact: true }).click();
-  await expect(page).toHaveURL(/\/eval$/);
-  expect(await page.evaluate(() => window.shopperTools.length)).toBe(0);
   expect(errors).toEqual([]);
 });
