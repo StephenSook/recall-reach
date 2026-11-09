@@ -1,5 +1,5 @@
 import { getDb } from "@/server/db/pg";
-import { checkListing, readListingCheck } from "@/server/match/textCheck";
+import { checkListing, namingResults, readListingCheck } from "@/server/match/textCheck";
 import { createSlip } from "@/server/paypal/shopperOrder";
 import { channel3Listings } from "@/server/sweep/channel3";
 import { businessDay } from "@/server/time/businessDay";
@@ -41,7 +41,8 @@ export async function GET(request: Request): Promise<Response> {
         const slip = await createSlip(db, listing, new Date());
         offerable.push({ id: listing.id, title: listing.title, price: listing.priceCents / 100, retailer: listing.retailer ?? null, slipId: slip.id });
       } else {
-        const recalls = result === "NAMES_A_RECALL" ? answer.results.filter((r) => r.tiedToRecall) : answer.results;
+        // Only a recall the listing's words are tied to is named. "Couldn't rule it out" stays that, with no recall pinned on it.
+        const recalls = namingResults(answer);
         const why = result === "NAMES_A_RECALL" ? "Its words name a recall; read the CPSC notice." : "The recall check could not rule this listing out; a person must review it.";
         for (const recall of recalls.length ? recalls : [null]) blocked.push({ id: listing.id, title: listing.title, recallNumber: recall?.recallNumber ?? null, recallTitle: recall?.title ?? null, why });
       }

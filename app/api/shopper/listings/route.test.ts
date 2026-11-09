@@ -111,6 +111,25 @@ describe("WebMCP listing search and the existing buy route", () => {
     expect(paths.check).toHaveBeenCalledWith({}, listing, expect.any(String));
   });
 
+  it("pins no recall on a listing the check only couldn't rule out, through to the purchase", async () => {
+    paths.check.mockResolvedValue({ ...flagged, heldByMaker: 1, results: flagged.results.map((result) => ({ ...result, tiedToRecall: false })) });
+    const direct = await (await GET(request())).json();
+    expect(direct.refused).toEqual([{ id: "clikk", title: listing.title, recallNumber: null, recallTitle: null, why: expect.stringContaining("could not rule") }]);
+    const tools: ShopperTool[] = [];
+    const logs: unknown[] = [];
+    registerShopperTools({ document: { modelContext: { registerTool: async (tool) => { tools.push(tool); } } }, navigator: {} }, {
+      fetch: (async () => GET(request())) as typeof fetch,
+      open: vi.fn(),
+      navigate: vi.fn(),
+      later: vi.fn(),
+      onCall: (call) => logs.push(call),
+    });
+    const options = { signal: new AbortController().signal };
+    await tools[0].execute({ query: "chair", maxPrice: 50 }, options);
+    expect(await tools[2].execute({ listingId: "clikk" }, options)).toMatchObject({ refused: true, recalls: [] });
+    expect(JSON.stringify(logs)).not.toContain("under recall");
+  });
+
   it("names no recall when the check only couldn't rule the listing out", async () => {
     paths.check.mockResolvedValue({ ...flagged, results: flagged.results.map((result) => ({ ...result, tiedToRecall: false })) });
     paths.start.mockImplementation(async (_db, _client, _input, deps) => {
