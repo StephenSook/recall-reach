@@ -59,7 +59,7 @@ export default async function JudgeDoor() {
       </div>
       <ol className="window cleared-list numbered-steps" data-testid="itinerary">
         <li>
-          <strong>Tell a family.</strong> Open the card for recall 27072, press Approve this notice, then open it in mail and follow its link to the family&apos;s page.
+          <strong>Tell a family.</strong> Open the card for recall 27072, press Approve this notice, then open it in mail and follow its link to the family&apos;s page. No mail app? Read the message shows its text and the link.
           <span className="quiet">Look for CPSC&apos;s own words in the message, and that it opens in your mail, not ours.</span>
         </li>
         <li>
