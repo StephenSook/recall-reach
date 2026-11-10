@@ -63,7 +63,7 @@ export default async function JudgeDoor() {
           <span className="quiet">Look for CPSC&apos;s own words in the message, and that it opens in your mail, not ours.</span>
         </li>
         <li>
-          <strong>Refund a sale made after a recall.</strong> On the card for recall 27027, press Review refund, then the refund button, then Check it against PayPal.
+          <strong>Refund a sale made after a recall.</strong> On the card for recall 27027 with the bedside sleeper in gray stars and moon (not the &quot;like new&quot; one), press Review refund, then Refund 90.00 USD, then Check it against PayPal.
           <span className="quiet">Look for five records side by side, and whether they agree, with PayPal&apos;s own check of its webhook beside ours. If PayPal hasn&apos;t finished the refund, the page says so.</span>
         </li>
         <li>

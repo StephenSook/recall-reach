@@ -9,6 +9,7 @@ import { runShopCheck } from "../match/run";
 import { createContactCipher } from "../privacy/contactCipher";
 import { createRecordKey } from "../privacy/recordKey";
 import { createPayPalClient, type PayPalClient } from "./client";
+import { fullyRefundedCaptures } from "./judgeRefusal";
 import { valueToCents } from "./orders";
 import { approveRefund, askPayPalAgain, executeRefund, readRefund, reconcileRefund, refundedAmount, RefundRefused, refundAmountCents, sendSellerToPayPal } from "./refunds";
 
@@ -1783,6 +1784,17 @@ describe("refunds", () => {
       expect(rec.ledger.status).toBe("unconfirmed");
       expect(rec.canAskAgain).toBe(true);
       expect((await again(r.refundId, pp.client, later)).status).toBe("refunded");
+    });
+  });
+
+  describe("the late-refund test's sales", () => {
+    it("are only refunds of a whole payment: a refunded line from a bigger order leaves the payment partly refunded", async () => {
+      const partial = await setUp(line(), { amountCents: 11000 });
+      const a = await approve(partial.id);
+      expect((await execute(a.approvalId, fakePayPal().client)).status).toBe("refunded");
+      expect(await fullyRefundedCaptures(db)).toEqual([]);
+      await db.query("update paypal_payments set amount_cents = 9000");
+      expect(await fullyRefundedCaptures(db)).toEqual(["CAP-1"]);
     });
   });
 
