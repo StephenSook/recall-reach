@@ -2,14 +2,31 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { StartDemoButton } from "../StartDemoButton";
 import { LiveNow } from "./LiveNow";
+import { getDb } from "@/server/db/pg";
+import { readPublicRecall } from "@/server/match/textCheck";
 import { lateRefundReady } from "@/server/paypal/judgeRefusal";
+import { businessDay } from "@/server/time/businessDay";
 import { LateRefundTest } from "./LateRefundTest";
+import { WhatIf } from "./WhatIf";
 
 export const dynamic = "force-dynamic";
 
+/** The demo's bedside sleeper is sold today, after recall 27027. Its date, or null if it isn't held or takes too long. */
+async function whatIfRecallDate(deadlineMs = 1000): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), deadlineMs); });
+  try {
+    return await Promise.race([readPublicRecall(getDb(), "27027").then((r) => (r.found ? r.recallDate : null)), late]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default async function JudgeDoor() {
   // The late-refund test needs a refunded sandbox sale from the last two days. Without one, thirty seconds goes to Replay.
-  const lateRefund = await lateRefundReady();
+  const [lateRefund, recallDate] = await Promise.all([lateRefundReady(), whatIfRecallDate()]);
   return (
     <main className="page">
       <header className="page-head">
@@ -98,6 +115,13 @@ export default async function JudgeDoor() {
             <strong>Type a product you know.</strong> <Link href="/check">Check one item</Link> takes what&apos;s on a label and a model number, or <Link href="/check?title=Baby+Brezza+sterilizer&amp;model=BRZ0083">see one name a recall</Link>.
             <span className="quiet">Look for the recall to read, and what it says when nothing names your product.</span>
           </li>
+          {recallDate ? (
+            <li>
+              <strong>Change one fact.</strong> Move the bedside sleeper&apos;s sale date before recall 27027.
+              <WhatIf soldOn={businessDay()} recallDate={recallDate} />
+              <span className="quiet">Look for the verdict changing beside the original, by the queue&apos;s own date rule. Nothing is saved.</span>
+            </li>
+          ) : null}
         </ol>
       </details>
       <LateRefundTest />
