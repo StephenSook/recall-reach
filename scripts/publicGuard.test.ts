@@ -19,6 +19,10 @@ describe("findViolations", () => {
   it.each([
     ["a home directory", "see /Users/someone/dev/notes"],
     ["a Linux home directory", "see /home/someone/notes"],
+    ["a home directory with nothing after it", "cd /Users/someone"],
+    ["a home directory at the end of a line", "it lives in /home/someone\nand nowhere else"],
+    ["a home directory written with backslashes", "see \\Users\\someone\\notes"],
+    ["a home directory with escaped slashes, as in JSON", '"path": "\\/Users\\/someone\\/notes"'],
     ["a private brief", "as BUILD-BRIEF-3 says"],
     ["local instructions", "see CLAUDE.local for this"],
     ["the research folder", "wording from research/NOTES.md"],
