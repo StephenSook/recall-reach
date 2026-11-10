@@ -19,6 +19,8 @@ Why a resale shop: I went to Kid to Kid in Kennesaw and talked with two people w
 
 There are more than 25,000 resale, consignment and nonprofit resale shops in the US (NARTS, via the [Census Bureau](https://www.census.gov/newsroom/stories/thrift-store-day.html); see [docs/SOURCES.md](docs/SOURCES.md)).
 
+MEASURED: our identifier search found no model number or code in 292 of 934 CPSC API records (recall dates 2025-01-01 to 2026-11-05). This is the output of a regex rule, not proof that those records contain no identifier.
+
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet. Built during the submission period: first commit 2bbb324, Nov 5, 2026 ([docs/BUILT-DURING.md](docs/BUILT-DURING.md)).
 
 ## How this meets the judging criteria
