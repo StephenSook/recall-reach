@@ -107,8 +107,10 @@ export async function sendPayout(
     if (found[0] && found[0].status !== "reviewed" && found[0].status !== "failed") throw new PayoutRefused("ALREADY_SENT", "This payment has already gone to PayPal. Check it against PayPal.");
     throw invalid();
   }
+  // Every write after the send is for this approval only. While PayPal answers, its failure webhook can free the row,
+  // and the owner can review and send a new payment. This answer must not touch that one.
   const settle = async (status: PayoutStatus, paypalStatus: string | null) => {
-    await moveStatus(db, status, paypalStatus, "id = $4", [row.id]);
+    await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
     return { id: row.id, ...(await currentStatus(db, row.id)) };
   };
   try {
@@ -129,13 +131,28 @@ export async function sendPayout(
       },
     });
     const batchId = data.batch_header.payout_batch_id;
-    await db.query("update payouts set batch_ref_hmac = $2 where id = $1", [row.id, input.recordKey("paypal-resource", batchId)]);
-    await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do update set batch_id = excluded.batch_id", [row.id, batchId]);
+    await recordBatch(db, { id: row.id, approval: row.request_id, batchId, batchHash: input.recordKey("paypal-resource", batchId), replace: true });
     return await settle("unconfirmed", data.batch_header.batch_status);
   } catch (err) {
     if (clearlyRefused(err)) return settle("failed", err.issue ?? `HTTP ${err.status}`);
     return settle("unconfirmed", null);
   }
+}
+
+/**
+ * Keeps a batch's keyed hash and its PayPal id, in one statement, only while this approval is still the row's. A new review
+ * deletes the refs and changes the approval, so either it comes first and nothing is written, or it comes after and clears this.
+ * replace: the send's own answer overrides; an event fills in only a batch not yet known.
+ */
+async function recordBatch(db: Queryable, b: { id: string; approval: string; batchId: string; batchHash: string; replace: boolean }): Promise<void> {
+  await db.query(
+    `with ours as (
+       update payouts set batch_ref_hmac = $2 where id = $1 and request_id = $3::uuid ${b.replace ? "" : "and batch_ref_hmac is null"} returning id
+     )
+     insert into paypal_payout_refs (payout_row_id, batch_id) select id, $4 from ours
+     on conflict (payout_row_id) do ${b.replace ? "update set batch_id = excluded.batch_id" : "nothing"}`,
+    [b.id, b.batchHash, b.approval, b.batchId],
+  );
 }
 
 /** What PayPal's item status means here. Anything it doesn't know stays unconfirmed, never paid. */
@@ -179,8 +196,7 @@ export async function recordPayoutItemEvent(
   const { rows } = await db.query<{ id: string; request_id: string }>("select id, request_id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
   if (!rows[0]) return false;
   // Each step is for the approval found above: the owner may review a new payment while this runs.
-  const first = await db.query("update payouts set batch_ref_hmac = $2 where id = $1 and request_id = $3::uuid and batch_ref_hmac is null returning id", [rows[0].id, batchHash, rows[0].request_id]);
-  if (first.rows.length > 0) await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do nothing", [rows[0].id, resource.payout_batch_id]);
+  await recordBatch(db, { id: rows[0].id, approval: rows[0].request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
   await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return true;
 }
