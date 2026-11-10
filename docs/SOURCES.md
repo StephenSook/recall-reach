@@ -40,6 +40,7 @@ One read each unless it says otherwise, so they show what happened, not what alw
 |---|---|---|
 | 6.11 hours | A repeat of the same request id still returned the first refund, and the total refunded didn't move | Nov 6, 2026 |
 | 213 minutes | A new sale wasn't in Transaction Search at first, and was there this long after | Nov 5, 2026 |
+| About 3 minutes | On the deployed site (build 04ed5dc), a sandbox buyer filed a dispute on an 18.00 USD sale at 9:11 PM ET. PayPal's Disputes API listed it, and held the payment for the buyer's complaint, by 9:14 PM. Review refund then answered "PayPal shows a dispute on this payment. Check it in PayPal first." The database showed 0 approvals and 0 refunds for that demo shop, and PayPal still showed the payment held, with no refund. `server/paypal/refunds.test.ts` pins the message | Nov 9, 2026 |
 
 ## Rules this app holds to
 
