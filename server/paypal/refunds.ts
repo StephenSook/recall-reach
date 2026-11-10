@@ -677,8 +677,11 @@ export interface Reconciliation {
   /** No clear answer, and it is still safe to repeat the stored request. */
   canAskAgain: boolean;
   /** No clear answer and no PayPal refund id. Only PayPal itself can say what happened. */
-  /** With a dispute on the payment, the owner must not be told to refund by hand: PayPal may already have paid the buyer. */
-  stuck: { orderNumber: string; sentToPayPal: boolean; disputed: boolean } | null;
+  /**
+   * With a dispute on the payment, the owner must not be told to refund by hand: PayPal may already have paid the buyer.
+   * disputeUnchecked: PayPal couldn't be asked about a dispute, so the page can't say there is none.
+   */
+  stuck: { orderNumber: string; sentToPayPal: boolean; disputed: boolean; disputeUnchecked: boolean } | null;
   /** What PayPal's answer says this row should now be, while a read has not changed it. */
   newerAnswer: RefundOutcome["status"] | null;
   ledger: { status: string; amountCents: number; currency: string };
@@ -792,16 +795,19 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld && !disputed;
   const showStuck = noAnswer && !sendMayBeRunning && !canAskAgain;
   // Before the page sends the seller to refund by hand, PayPal's own facts must show no dispute. Past the repeat window
-  // nothing else would have looked. Only read here, never stored: opening the page changes nothing.
-  if (showStuck && !disputed && row.capture_id && captureFacts) {
-    if (heldForDisputeReason(captureFacts)) disputed = true;
+  // nothing else would have looked. Only read here, never stored: opening the page changes nothing. Once PayPal's record
+  // of the payment is no longer held here, or its disputes can't be read, there is no answer, and the page must say so.
+  let disputeUnchecked = false;
+  if (showStuck && !disputed) {
+    if (!row.capture_id || !captureFacts) disputeUnchecked = true;
+    else if (heldForDisputeReason(captureFacts)) disputed = true;
     else {
       const dispute = await disputeOnCapture(client, row.capture_id);
       if (dispute === "DISPUTED") disputed = true;
-      if (dispute === "UNREADABLE") exceptions.push("PayPal's disputes could not be read. Look for a dispute in PayPal before refunding it there.");
+      if (dispute === "UNREADABLE") disputeUnchecked = true;
     }
   }
-  const stuck = showStuck ? { orderNumber: row.order_number, sentToPayPal, disputed } : null;
+  const stuck = showStuck ? { orderNumber: row.order_number, sentToPayPal, disputed, disputeUnchecked } : null;
   if (noAnswer && row.capture_id !== null && tooOld) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");

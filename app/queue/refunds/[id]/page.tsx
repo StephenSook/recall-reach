@@ -87,6 +87,10 @@ function Records({ rec, id }: { rec: Reconciliation; id: string }) {
         <section data-testid="stuck">
           {rec.stuck.disputed ? (
             <p>Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. It has a dispute, and PayPal may already have paid the buyer, so settle the dispute there and don&apos;t refund it by hand.</p>
+          ) : rec.stuck.disputeUnchecked ? (
+            <p>
+              Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. This page couldn&apos;t check it for a dispute. If PayPal shows one, settle it there and don&apos;t refund it by hand.
+            </p>
           ) : (
             <p>
               Check this payment in PayPal: order {rec.stuck.orderNumber}, {money(rec.ledger)}. If no refund shows, refund it there.

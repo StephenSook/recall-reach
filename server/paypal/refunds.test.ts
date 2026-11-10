@@ -443,14 +443,19 @@ describe("refunds", () => {
     });
 
     describe("never tells the seller to refund by hand on a disputed payment, even once it's too old to ask again", () => {
-      const NO_DISPUTE_READ = "PayPal's disputes could not be read. Look for a dispute in PayPal before refunding it there.";
+      const peek = (refundId: string, client: PayPalClient) => readRefund(db, client, { shopId, refundId, recordKey: key, now: TOO_OLD });
+
+      it("says PayPal showed no dispute only once it asked", async () => {
+        const { r } = await noAnswer();
+        const pp = fakePayPal({ disputes: [] });
+        expect((await peek(r.refundId, pp.client)).stuck).toEqual({ orderNumber: "#R1", sentToPayPal: false, disputed: false, disputeUnchecked: false });
+        expect(pp.calls.filter((c) => c.path.startsWith("/v1/customer/disputes"))).toHaveLength(1);
+      });
 
       it.each(["BUYER_COMPLAINT", "CHARGEBACK"])("when PayPal holds the payment for a dispute (%s), with no Disputes API answer", async (reason) => {
         const { r } = await noAnswer();
         const held = fakePayPal({ status: "PENDING", reason, disputes: "down" });
-        const rec = await readRefund(db, held.client, { shopId, refundId: r.refundId, recordKey: key, now: TOO_OLD });
-        expect(rec).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1", disputed: true } });
-        expect(rec.exceptions).not.toContain(NO_DISPUTE_READ);
+        expect(await peek(r.refundId, held.client)).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1", disputed: true, disputeUnchecked: false } });
       });
 
       it("when PayPal's Disputes API lists one on the payment", async () => {
@@ -459,20 +464,26 @@ describe("refunds", () => {
         expect((await read(r.refundId, disputed.client, TOO_OLD)).stuck).toMatchObject({ disputed: true });
       });
 
-      it("and says so when the disputes can't be read", async () => {
+      it("says it couldn't check when the disputes can't be read", async () => {
         const { r } = await noAnswer();
-        const rec = await read(r.refundId, fakePayPal({ disputes: "down" }).client, TOO_OLD);
-        expect(rec.stuck).toMatchObject({ disputed: false });
-        expect(rec.exceptions).toContain(NO_DISPUTE_READ);
+        expect((await read(r.refundId, fakePayPal({ disputes: "down" }).client, TOO_OLD)).stuck).toMatchObject({ disputed: false, disputeUnchecked: true });
+      });
+
+      it("says it couldn't check once PayPal's record of the payment is no longer held here, and asks PayPal nothing", async () => {
+        const { r } = await noAnswer();
+        await db.query("delete from paypal_refund_refs where refund_row_id = $1", [r.refundId]);
+        for (const look of [peek, (id: string, c: PayPalClient) => read(id, c, TOO_OLD)]) {
+          const pp = fakePayPal({ disputes: [{ status: "OPEN" }] });
+          expect((await look(r.refundId, pp.client)).stuck).toMatchObject({ disputed: false, disputeUnchecked: true });
+          expect(pp.calls).toEqual([]);
+        }
       });
 
       it("reads no disputes while the refund page sends the seller nowhere", async () => {
         const { r } = await noAnswer();
         const pp = fakePayPal({ disputes: "down" });
-        const rec = await read(r.refundId, pp.client, SOON);
-        expect(rec).toMatchObject({ canAskAgain: true, stuck: null });
+        expect(await read(r.refundId, pp.client, SOON)).toMatchObject({ canAskAgain: true, stuck: null });
         expect(pp.calls.filter((c) => c.path.startsWith("/v1/customer/disputes"))).toEqual([]);
-        expect(rec.exceptions).not.toContain(NO_DISPUTE_READ);
       });
     });
 

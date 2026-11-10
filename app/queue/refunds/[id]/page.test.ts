@@ -133,12 +133,19 @@ describe("the refund page", () => {
   });
 
   it("with a dispute on the payment, never tells the owner to refund it by hand", async () => {
-    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: true } }));
+    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: true, disputeUnchecked: false } }));
     const page = (await render()).replace(/<!-- -->/g, "");
     expect(page).toContain("settle the dispute there and don&#x27;t refund it by hand");
     expect(page).not.toContain("refund it there");
-    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: false } }));
+    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: false, disputeUnchecked: false } }));
     expect((await render()).replace(/<!-- -->/g, "")).toContain("If no refund shows, refund it there.");
+  });
+
+  it("when it couldn't check the payment for a dispute, sends the owner to look in PayPal and never to refund it by hand", async () => {
+    readRefund.mockResolvedValue(record({ stuck: { orderNumber: "#1", sentToPayPal: false, disputed: false, disputeUnchecked: true } }));
+    const page = (await render()).replace(/<!-- -->/g, "");
+    expect(page).toContain("This page couldn&#x27;t check it for a dispute. If PayPal shows one, settle it there and don&#x27;t refund it by hand.");
+    expect(page).not.toContain("refund it there");
   });
 
   it("says plainly that PayPal can't be asked when a real shop's PayPal isn't connected, and doesn't keep looking", async () => {
