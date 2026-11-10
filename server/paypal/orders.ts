@@ -10,6 +10,15 @@ import type { PayPalClient } from "./client";
 
 const money = z.object({ currency_code: z.string(), value: z.string() });
 
+const captureSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  // Why PayPal holds a PENDING capture, e.g. BUYER_COMPLAINT or ECHECK.
+  status_details: z.object({ reason: z.string().optional() }).optional(),
+  create_time: z.string().optional(),
+  amount: money,
+});
+
 const orderSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -24,23 +33,12 @@ const orderSchema = z.object({
           .optional(),
         payments: z
           .object({
-            captures: z
-              .array(z.object({ id: z.string(), status: z.string(), create_time: z.string().optional(), amount: money }))
-              .optional(),
+            captures: z.array(captureSchema).optional(),
           })
           .optional(),
       }),
     )
     .min(1),
-});
-
-const captureSchema = z.object({
-  id: z.string(),
-  status: z.string(),
-  // Why PayPal holds a PENDING capture, e.g. BUYER_COMPLAINT or ECHECK.
-  status_details: z.object({ reason: z.string().optional() }).optional(),
-  create_time: z.string().optional(),
-  amount: money,
 });
 
 export interface CaptureFacts {

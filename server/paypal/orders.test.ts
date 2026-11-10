@@ -70,6 +70,13 @@ describe("getOrder", () => {
     expect(calls[0]).toMatchObject({ method: "GET", path: "/v2/checkout/orders/ORDER-1" });
   });
 
+  it("reads why PayPal holds the order's capture, as getCapture does", async () => {
+    const unit = ORDER.purchase_units[0];
+    const held = { ...unit.payments.captures[0], status: "PENDING", status_details: { reason: "BUYER_COMPLAINT" } };
+    const { client } = fakeClient(() => ({ ...ORDER, purchase_units: [{ ...unit, payments: { captures: [held] } }] }));
+    expect((await getOrder(client, "ORDER-1")).capture).toMatchObject({ status: "PENDING", statusReason: "BUYER_COMPLAINT" });
+  });
+
   it("returns no payer details at all", async () => {
     const { client } = fakeClient(() => ORDER);
     const text = JSON.stringify(await getOrder(client, "ORDER-1"));

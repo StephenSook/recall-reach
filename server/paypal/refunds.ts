@@ -519,16 +519,21 @@ async function refuseDisputed(client: PayPalClient, captureId: string): Promise<
 
 const DISPUTED_MESSAGE = "PayPal shows a dispute on this payment. Check it in PayPal first.";
 
+const HELD_MESSAGE = "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.";
+
 /**
- * A payment PayPal won't refund as it stands. If the reason is a dispute, say so. A payment PayPal holds for
- * the buyer's complaint (PENDING, BUYER_COMPLAINT) names it alone, without waiting on the Disputes API.
+ * Whether a payment PayPal holds is held for a dispute. A hold for the buyer's complaint (PENDING, BUYER_COMPLAINT)
+ * says so alone, without waiting on the Disputes API. Unreadable disputes count as none: the hold refuses anyway.
  */
+async function heldForDispute(client: PayPalClient, captureId: string, capture: CaptureFacts): Promise<boolean> {
+  if (capture.status === "PENDING" && capture.statusReason === "BUYER_COMPLAINT") return true;
+  return (await disputeOnCapture(client, captureId)) === "DISPUTED";
+}
+
+/** A payment PayPal won't refund as it stands. If the reason is a dispute, say so. */
 async function refuseHeld(client: PayPalClient, captureId: string, capture: CaptureFacts): Promise<never> {
-  const disputed = new RefundRefused("PAYMENT_DISPUTED", DISPUTED_MESSAGE);
-  if (capture.status === "PENDING" && capture.statusReason === "BUYER_COMPLAINT") throw disputed;
-  // Unreadable disputes change nothing here: the status already refuses.
-  if ((await disputeOnCapture(client, captureId)) === "DISPUTED") throw disputed;
-  throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
+  if (await heldForDispute(client, captureId, capture)) throw new RefundRefused("PAYMENT_DISPUTED", DISPUTED_MESSAGE);
+  throw new RefundRefused("PAYPAL_FACTS_CHANGED", HELD_MESSAGE);
 }
 
 export async function askPayPalAgain(
@@ -573,7 +578,10 @@ export async function askPayPalAgain(
   // Another send may be on its way to PayPal, so wait for it. Reading PayPal now would act on an answer it could overtake.
   if (row.send_lease_until && row.send_lease_until.getTime() > now.getTime()) throw new RefundRefused("REFUND_BEING_SENT", "PayPal is still being asked. Try again in a few minutes.");
   const checkInPayPal = () => new RefundRefused("CHECK_IN_PAYPAL", "This one is with PayPal now. Check the payment there.");
-  const disputedAgain = () => new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+  const disputedAgain = () => new RefundRefused("PAYMENT_DISPUTED", DISPUTED_MESSAGE);
+  // Once a dispute shows, this refund is never sent again and the owner is never told to refund it by hand.
+  const markDisputed = () =>
+    db.query("update refunds set dispute_seen_at = coalesce(dispute_seen_at, $2::timestamptz) where id = $1 and status = 'unconfirmed'", [input.refundId, now.toISOString()]);
   if (row.dispute_seen_at) throw disputedAgain();
   // A person may have refunded it by hand from here on, and a repeat could then make a second refund.
   if (row.seller_sent_to_paypal_at || row.repeat_refused_at) throw checkInPayPal();
@@ -590,14 +598,18 @@ export async function askPayPalAgain(
   const capture = await readCapture(client, row.capture_id);
   if (capture.currency !== row.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one. Check the payment in PayPal.");
   if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED" && capture.status !== "REFUNDED") {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
+    if (await heldForDispute(client, row.capture_id, capture)) {
+      await markDisputed();
+      throw disputedAgain();
+    }
+    throw new RefundRefused("PAYPAL_FACTS_CHANGED", HELD_MESSAGE);
   }
   refusePaymentDates(capture, recallDate, now);
   // The first request may have landed, so this can't say nothing was refunded. A dispute settles it: the owner looks in PayPal.
   const dispute = await disputeOnCapture(client, row.capture_id);
   if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so this wasn't sent again. Please try again.");
   if (dispute === "DISPUTED") {
-    await db.query("update refunds set dispute_seen_at = coalesce(dispute_seen_at, $2::timestamptz) where id = $1 and status = 'unconfirmed'", [input.refundId, now.toISOString()]);
+    await markDisputed();
     throw disputedAgain();
   }
 

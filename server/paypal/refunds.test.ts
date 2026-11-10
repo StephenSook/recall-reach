@@ -871,6 +871,11 @@ describe("refunds", () => {
       expect((await db.query("select 1 from approvals")).rows).toEqual([]);
     });
 
+    it("names the dispute from the hold alone even when the Disputes API can't be read", async () => {
+      const { id: matchId } = await setUp();
+      await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: "down" }).client)).rejects.toMatchObject(DISPUTED);
+    });
+
     it("names the dispute on a held payment when the Disputes API lists one, whatever the hold's reason", async () => {
       const { id: matchId } = await setUp();
       const held = fakePayPal({ status: "PENDING", disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
@@ -1420,6 +1425,40 @@ describe("refunds", () => {
       const later = fakePayPal();
       expect(await refusal(again(r.refundId, later.client, LATER))).toBe("PAYMENT_DISPUTED");
       expect(later.calls).toEqual([]);
+    });
+
+    describe("on a payment PayPal now holds", () => {
+      const disputeSeen = async (refundId: string) => (await db.query<{ dispute_seen_at: Date | null }>("select dispute_seen_at from refunds where id = $1", [refundId])).rows[0].dispute_seen_at;
+
+      it("counts a hold for the buyer's complaint as a dispute, and never tells the owner to refund by hand", async () => {
+        const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+        const held = fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: [] });
+        await expect(again(r.refundId, held.client, LATER)).rejects.toMatchObject({ code: "PAYMENT_DISPUTED", message: "PayPal shows a dispute on this payment. Check it in PayPal first." });
+        expect(held.posts()).toEqual([]);
+        expect(await disputeSeen(r.refundId)).not.toBeNull();
+        const after = await readRefund(db, held.client, { shopId, refundId: r.refundId, recordKey: key, now: LATER });
+        expect(after.canAskAgain).toBe(false);
+        expect(after.stuck).toMatchObject({ disputed: true });
+      });
+
+      it("counts a dispute the Disputes API lists on a held payment, whatever the hold's reason", async () => {
+        const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+        const held = fakePayPal({ status: "PENDING", disputes: [{ status: "OPEN" }] });
+        expect(await refusal(again(r.refundId, held.client, LATER))).toBe("PAYMENT_DISPUTED");
+        expect(held.posts()).toEqual([]);
+        expect(await disputeSeen(r.refundId)).not.toBeNull();
+      });
+
+      it.each([
+        ["no dispute listed", [] as { status?: string }[]],
+        ["the disputes can't be read", "down" as const],
+      ])("keeps the status sentence for a hold for another reason, %s, and marks no dispute", async (_, disputes) => {
+        const { r } = await noClearAnswer(["lost", "lost", "lost"]);
+        const held = fakePayPal({ status: "PENDING", reason: "ECHECK", disputes });
+        await expect(again(r.refundId, held.client, LATER)).rejects.toMatchObject({ code: "PAYPAL_FACTS_CHANGED", message: "PayPal's status for this payment does not allow a refund. Check the payment in PayPal." });
+        expect(held.posts()).toEqual([]);
+        expect(await disputeSeen(r.refundId)).toBeNull();
+      });
     });
 
     it("while another send holds the lease it refuses first, and reads nothing from PayPal", async () => {
