@@ -82,6 +82,9 @@ export default async function JudgeDoor() {
         <li>
           <strong>Refund a sale made after a recall.</strong> On the card for recall 27027 with the bedside sleeper in gray stars and moon (not the &quot;like new&quot; one), press Review refund, then Refund 90.00 USD, then Check it against PayPal.
           <span className="quiet">Look for five records side by side, and whether they agree, with PayPal&apos;s own check of its webhook beside ours. If PayPal hasn&apos;t finished the refund, the page says so.</span>
+          <span className="quiet" data-testid="refund-tool">
+            Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.
+          </span>
         </li>
         <li>
           <strong>Catch a sale as it happens.</strong> On the bath seat&apos;s card, press Buy this as a family, and wait for it to reach the queue. In five sandbox runs on Nov 8 and 9 it took 13 to 99 seconds; four of the five took 20 seconds or less. With a PayPal sandbox buyer login, Buy with a PayPal sandbox login does the same on PayPal&apos;s own page.
