@@ -25,7 +25,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 
 | Criterion | Open this | What it shows | In the code |
 |---|---|---|---|
-| Technological Implementation | [/evidence/paypal](https://recall-reach-web-e022.onrender.com/evidence/paypal) | Sandbox refunds through PayPal Agent Toolkit and verified capture webhooks. | [server/paypal/toolkitRefund.ts](server/paypal/toolkitRefund.ts), [server/paypal/webhookHandler.ts](server/paypal/webhookHandler.ts) |
+| Technological Implementation | [/evidence/paypal](https://recall-reach-web-e022.onrender.com/evidence/paypal) | The demo shop's sandbox refunds through PayPal Agent Toolkit, and verified capture webhooks. | [server/paypal/toolkitRefund.ts](server/paypal/toolkitRefund.ts), [server/paypal/webhookHandler.ts](server/paypal/webhookHandler.ts) |
 | Technological Implementation | [/studio](https://recall-reach-web-e022.onrender.com/studio) | AG Studio agents on Claude, with a recall-checking tool. | [app/studio/StudioDashboard.tsx](app/studio/StudioDashboard.tsx), [app/studio/recallTool.ts](app/studio/recallTool.ts) |
 | Technological Implementation | [/evidence/api](https://recall-reach-web-e022.onrender.com/evidence/api) | Our MCP server's two tools, check_recall and get_recall, with the calls to try. | [app/api/mcp/route.ts](app/api/mcp/route.ts) |
 | Technological Implementation | [/judge](https://recall-reach-web-e022.onrender.com/judge) | PayPal's own refusal: its sandbox test header on an already refunded sale returns REFUND_TIME_LIMIT_EXCEEDED, and no money can move. | [server/paypal/judgeRefusal.ts](server/paypal/judgeRefusal.ts), [app/api/judge/late-refund/route.ts](app/api/judge/late-refund/route.ts) |
@@ -34,7 +34,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | Design | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop, then on a recall's refund windows press Plan follow-ups with Claude. It proposes when to follow up on each sale, and nothing is set until the owner confirms. | [server/agent/followUpAdvice.ts](server/agent/followUpAdvice.ts), [app/queue/recalls/RefundWindows.tsx](app/queue/recalls/RefundWindows.tsx) |
 | Potential Impact | [/eval](https://recall-reach-web-e022.onrender.com/eval) | Held-out results beside a word-match baseline, with limits on what they prove. | [app/eval/page.tsx](app/eval/page.tsx), [server/eval/measure.ts](server/eval/measure.ts) |
 | Potential Impact | [/replay](https://recall-reach-web-e022.onrender.com/replay) | Real CPSC recalls checked against the demo shop, with a recount. | [app/replay/page.tsx](app/replay/page.tsx), [server/replay/replay.ts](server/replay/replay.ts) |
-| Potential Impact | [server/paypal/refunds.test.ts](server/paypal/refunds.test.ts) | On the live sandbox on Nov 9, 2026, a buyer's dispute held the payment, and Review refund answered "PayPal shows a dispute on this payment. Check it in PayPal first." No refund was created. | [server/paypal/refunds.ts](server/paypal/refunds.ts) |
+| Potential Impact | [docs/SOURCES.md](docs/SOURCES.md) | On the live sandbox on Nov 9, 2026, a buyer's dispute held the payment, and Review refund answered "PayPal shows a dispute on this payment. Check it in PayPal first." No refund was created. The record is under "Measured on the sandbox", and a test pins the message. | [server/paypal/refunds.ts](server/paypal/refunds.ts), [server/paypal/refunds.test.ts](server/paypal/refunds.test.ts) |
 | Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | A shopping agent checks listings against recalls before offering one. | [server/agent/shopper.ts](server/agent/shopper.ts), [app/shopper/ShopperForm.tsx](app/shopper/ShopperForm.tsx) |
 | Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | WebMCP: the page registers search_listings, check_recall and start_checkout for an agent in the browser, and the buyer still approves on PayPal. On Nov 9 ChatGPT's desktop app used them on the live page and stopped at PayPal's approval page. | [app/shopper/webmcp.ts](app/shopper/webmcp.ts) |
 | Innovation/Idea | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop from step 1. The queue starts from the shop's own sale, Claude's questions rest on CPSC's words, and the owner approves before sending. | [server/agent/recallQuestion.ts](server/agent/recallQuestion.ts), [server/notice/compose.ts](server/notice/compose.ts) |
@@ -42,7 +42,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | Presentation | [/evidence/defects](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found, what changed, and how we checked again. | [app/evidence/defects/page.tsx](app/evidence/defects/page.tsx), [app/evidence/defects/defects.ts](app/evidence/defects/defects.ts) |
 | Presentation | [/api/health](https://recall-reach-web-e022.onrender.com/api/health) | Each outside service's state on the deployed build, each read from its own check. | [server/integrations.ts](server/integrations.ts), [app/api/health/route.ts](app/api/health/route.ts) |
 | AG Grid | [/evidence/ag-grid](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Queue filters, row groups, exports and charts. | [app/queue/MatchGrid.tsx](app/queue/MatchGrid.tsx) |
-| APIMatic | [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md) | The PayPal Server SDK Context Plugin moved our refund read-back onto the SDK's getRefund. APIMatic's CLI generated our TypeScript SDK and the docs at /api-docs. | [server/paypal/sdkRefundRead.ts](server/paypal/sdkRefundRead.ts), [scripts/sdk.test.ts](scripts/sdk.test.ts) |
+| APIMatic | [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md) | The PayPal Server SDK Context Plugin moved the demo shop's refund read-back onto the SDK's getRefund. APIMatic's CLI generated our TypeScript SDK and the docs at /api-docs. | [server/paypal/sdkRefundRead.ts](server/paypal/sdkRefundRead.ts), [scripts/sdk.test.ts](scripts/sdk.test.ts) |
 | Bryntum | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop, then open a recall from the queue: each sale's 180-day refund window against the recall date and today. | [app/queue/recalls/RefundTimeline.tsx](app/queue/recalls/RefundTimeline.tsx), [app/queue/recalls/timeline.ts](app/queue/recalls/timeline.ts) |
 | Channel3 | [/evidence/channel3](https://recall-reach-web-e022.onrender.com/evidence/channel3) | Public product names searched through Channel3's MCP, with cached candidates to review. | [server/sweep/channel3.ts](server/sweep/channel3.ts), [server/sweep/sweep.ts](server/sweep/sweep.ts) |
 | Postman | [postman/recall-reach.postman_collection.json](postman/recall-reach.postman_collection.json) | Public API requests with answer checks, run by Newman against the live site. | [scripts/postman.test.ts](scripts/postman.test.ts), [.github/workflows/newman.yml](.github/workflows/newman.yml) |
@@ -145,9 +145,9 @@ Real shops can optionally subscribe to "Recall Reach for shops" through PayPal S
 | `POST /v2/checkout/orders`, then capture and `GET` (Orders v2) | Makes the demo shop's sandbox sales and reads them back | `server/paypal/orders.ts` |
 | `GET /v2/payments/captures/{id}` (Payments) | Reads a payment before anything is refunded | `server/paypal/orders.ts` |
 | `GET /v1/customer/disputes` (Customer Disputes) | Holds a refund if the payment has a dispute | `server/paypal/disputes.ts` |
-| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved, from the app's own code | `server/paypal/toolkitRefund.ts` |
+| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved for the demo shop, from the app's own code. A connected shop's refund is the same call through our own client with PayPal-Auth-Assertion, which neither the Toolkit nor the Server SDK sends | `server/paypal/toolkitRefund.ts` |
 | `GET /v2/payments/refunds/{id}` (Server SDK `getRefund`) | Reads the refund back so the records can be compared | `server/paypal/sdkRefundRead.ts` |
-| `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is verified | `server/paypal/webhookHandler.ts` |
+| `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is checked against a certificate fetched only from PayPal's sandbox certificate host | `server/paypal/webhookHandler.ts` |
 
 ## Who can move money
 
@@ -156,7 +156,7 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
-| Claude | Move no money. It reads recall text, the shop's own titles and, on `/shopper`, public listing titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| Claude | Move no money. It reads recall text, the shop's own titles, on `/shopper` public listing titles, and on `/studio` Recall Replay's rows (CPSC's records and the demo shop's item titles). A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
 | A person on `/shopper` | Approve one sandbox test order on PayPal's page, at the price the server read from the listing. Nothing ships and no store is paid |
 | A family | Answer on their phone page. That changes the seller's card, and moves no money |
 
@@ -171,10 +171,10 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 
 ## What stays where
 
-- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles and, on `/shopper`, public listing words. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
+- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles, on `/shopper` public listing words, and on `/studio` Recall Replay's rows, which hold only CPSC's records and the demo shop's item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
 - **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - **The app never emails anyone.** Messages open in the shop's own mail.
-- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days. An owner who links a PayPal login keeps the shop and its file until they delete it, or a year passes with no sign-in. Only an HMAC of the PayPal account id is kept.
+- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days. An owner who links a PayPal login keeps the shop and its file until they delete it, or a year passes with no sign-in. For that login, only an HMAC of its PayPal account id is kept. A shop connected through PayPal's partner flow has its merchant id stored encrypted with the shop's own key, because refund calls made for that shop need it, with an HMAC to find it when the seller revokes consent.
 - **Safety receipts let a family opt in at checkout.** A shop's queue has a printable QR and signed link. The family gives the tag words and an email, then bookmarks the delete link shown on screen. Receipts use the existing queue and owner-approved mail flow, with no refund authority. A receipt is deleted when the family or the shop deletes it, after at most 3 years, or with the shop's data: 7 days after a real shop joined, or a year after the last PayPal sign-in for a shop whose owner signs in at least once a year, within 48 hours for a demo shop. The receipt page and the queue show the exact date. Family data stays out of Claude and Channel3.
 
 ### Every call to Claude
@@ -184,6 +184,8 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Check with Claude, on a card | CPSC's recall text, and the shop's own titles, SKUs and listing descriptions | A verdict, a notice, a refund, anything from PayPal | The card stays as it was and says so |
 | The question for a family | One recall's text from CPSC | A sale, a shop, a family. The question is used only while the words it rests on are in CPSC's record | A family gets CPSC's model numbers or a plain question |
 | The shopping agent | What the person typed, public listing titles and brands with any price taken out, and the recalls its check found | A price, an order, PayPal | The page says the agent isn't available |
+| The dashboard agent, on `/studio` (AG Studio) | What the visitor typed, and what the dashboard's own tools answered from Recall Replay's rows: CPSC's records and the demo shop's item titles | The database, PayPal, any amount. Its tools only arrange the dashboard | It says Claude didn't answer, or that today's limit is used up, and the dashboard still works by hand |
+| Plan follow-ups, on a recall's refund windows | One recall's public text from CPSC | A shop, a sale, a date: code places each date. Its one tool records the advice, and nothing is set until the owner confirms | It says Claude isn't available, and the list still works |
 | The daily call | "Say ok." | Everything | `/status` shows the last good answer getting older |
 
 All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-haiku-5-5` when the main model is down. The daily call asks both, so `/status` can show the main model stopping. Matching, notices and refunds don't need Claude: without it, the rules still run and the app still works. What Claude adds is a reading of a card a person would otherwise read alone, a question specific to one recall, and a shopping agent that checks first.
@@ -194,7 +196,7 @@ All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-hai
 - Shops are checked against CPSC recalls from 2022 on. The queue says the real number and dates it checked, and names any year that didn't load.
 - The matcher reads words. It can't see a label on a real product, so a look-alike can still reach a seller as a card to review.
 - `/eval`'s labels were written by Claude and aren't independent. The page says so.
-- Sandbox PayPal only. A real shop's file alone can't refund. A refund goes from the shop's own PayPal account, only once PayPal says it's connected and the latest read of its sales covered every window. A sandbox refund from a connected shop's own account ran end to end on Nov 8, 2026: PayPal reported the refund COMPLETED and the payment REFUNDED, and its refund event arrived and passed PayPal's own check. That seller is our own sandbox account, and the event came through that account's webhook. The platform app's webhook received none, so another connected seller's refund page may show the event as not yet.
+- Sandbox PayPal only. A real shop's file alone can't refund. A refund goes from the shop's own PayPal account, only once PayPal says it's connected and the latest read of its sales covered every window. A sandbox refund from a connected shop's own account ran end to end on Nov 8, 2026: PayPal reported the refund COMPLETED and the payment REFUNDED, and its refund event arrived and passed PayPal's own check. That seller is our own sandbox account, and the event came through that account's webhook, not the platform app's. On Nov 9, 2026, a second connected seller's refund event came through the platform app's own webhook (19:43:36 UTC in the service log). Each is one run.
 - A refund already being sent can still finish if, at that moment, its owner presses Disconnect or a new read of the shop's sales stops partway. Stopping it would mean holding a database transaction open across PayPal's reply, which breaks how the ledger survives a crash. Disconnect says so, and PayPal's own permission stays until the seller removes it in PayPal.
 - The store address on `/check` reads Shopify's public `/products.json` only, so it sees what's listed today and no sales. Its results say "need a check". A listing can't confirm a recall.
 - This checks CPSC recalls. Car seats are recalled through NHTSA, so check nhtsa.gov/recalls.
@@ -221,7 +223,7 @@ Where each number in the write-up comes from: [`docs/SOURCES.md`](docs/SOURCES.m
 
 ![How Recall Reach works: a shop's order file and PayPal account, Recall Reach on Render, the PayPal sandbox calls behind each step, and what the family gets. Every blue label is in the shipped code.](docs/images/architecture.png)
 
-Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Enterprise for the queue and Recall Replay (trial licence through Dec 9, 2026, after which AG's watermark can show) and the free edition on the eval page. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
+Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Enterprise for the queue and Recall Replay (trial licence through Dec 9, 2026, after which AG's watermark can show) and the free edition on the eval page. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the demo shop's refunds. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
 
 The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 minutes. It touches the database only when the answer changes or on the hourly heartbeat, because a query every 15 minutes would keep a free-tier database awake around the clock.
 
@@ -298,6 +300,8 @@ An axe-core pass, `e2e/local/axe.spec.ts`, checks 13 public pages a judge is sen
 ## Deploy
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/StephenSook/recall-reach)
+
+On a fresh deploy, first change the four `fromService` names in `render.yaml` (lines 62, 67, 72 and 77) to `recall-reach-web`. They name the live service, which Render created as `recall-reach-web-e022`.
 
 `render.yaml` defines the service. Migrations run during the build, a deploy waits for CI on its commit, and Render's health check uses `/api/live`. Past recall years load on the first tick after a deploy and retry hourly.
 

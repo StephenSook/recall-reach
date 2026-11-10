@@ -1,6 +1,6 @@
 # What the APIMatic Context Plugin did here
 
-The [PayPal Server SDK context plugin](https://github.com/paypaldev/server-sdk-context-plugin-preview) teaches a coding agent the APIMatic-generated `@paypal/paypal-server-sdk`. It was used for one thing: moving the refund read in `server/paypal/sdkRefundRead.ts` onto that SDK. Sending a refund stays on the PayPal Agent Toolkit.
+The [PayPal Server SDK context plugin](https://github.com/paypaldev/server-sdk-context-plugin-preview) teaches a coding agent the APIMatic-generated `@paypal/paypal-server-sdk`. It was used for one thing: moving the refund read in `server/paypal/sdkRefundRead.ts` onto that SDK. Sending the demo shop's refunds stays on the PayPal Agent Toolkit. A connected shop's refunds and reads go through our own client with PayPal-Auth-Assertion, which neither the Toolkit nor the Server SDK sends.
 
 Its eight TypeScript skills were copied into this project only. Its files are Markdown, so nothing had to run to use them.
 
