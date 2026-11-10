@@ -31,6 +31,8 @@ describe("findViolations", () => {
     ["a research folder ending in a slash", "See research/raw/ for the answers"],
     ["a research file with a space, in backticks", "See `research/Market analysis.md`"],
     ["a research folder with a space, in quotes", 'See "research/market analysis/results.json"'],
+    ["a relative research path with a space, in backticks", "See `../research/Market analysis.md`"],
+    ["a relative research path with a space, in quotes", 'See "./research/Market analysis.md"'],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
@@ -44,6 +46,8 @@ describe("findViolations", () => {
   it("doesn't mistake an ordinary word for the folder", () => {
     expect(findViolations([file("server/a.ts", "We did our research/review before this. It's a search.")])).toEqual([]);
     expect(findViolations([file("server/a.ts", "That took research/review.")])).toEqual([]);
+    expect(findViolations([file("server/a.ts", 'That took "research/review".')])).toEqual([]);
+    expect(findViolations([file("server/a.ts", "That took `research/review`.")])).toEqual([]);
   });
 
   it("lets .gitignore name what it keeps out", () => {

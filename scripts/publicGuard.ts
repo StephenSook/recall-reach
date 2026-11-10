@@ -9,8 +9,9 @@ export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
 const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, /(?:^|[\s("'`./])research\/(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
-  // Inside backticks or quotes a path can hold spaces: "research/Market analysis.md".
-  /[`"']research\/[^`"'\n]*[^\s`"'][^`"'\n]*[`"']/, /Obsidian (?:vault|note)/i, /\.claude\//];
+  // Inside backticks or quotes a path can hold spaces: "research/Market analysis.md". It still needs a path's shape, a file
+  // extension or a second folder, so quoted prose like "research/review" passes.
+  /[`"'](?:\.{1,2}\/)*research\/[^`"'\n/]*?(?:\/[^`"'\n]*|\.\w+)[`"']/, /Obsidian (?:vault|note)/i, /\.claude\//];
 /** Its job is to name what it keeps out. */
 const MAY_NAME_THEM = new Set([".gitignore"]);
 const OWN_PATHS = ["scripts/publicGuard.ts", "scripts/publicGuard.test.ts"];
