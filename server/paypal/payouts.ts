@@ -1,5 +1,6 @@
 // A separate sandbox payment for a sale past PayPal's 180-day refund window. A refund can't reach it, so an owner can choose to
-// send one. Approved twice, for one exact amount, only to an email the owner typed, never PayPal's payer email. It never reads
+// send one. Approved twice, for one exact amount, only to the demo's own sandbox buyer (DEMO_PAYOUT_RECEIVER, set on the server;
+// nobody types an address), never PayPal's payer email. It never reads
 // as paid until PayPal's item says so. Demo shops only: the sandbox app is shared, so no other shop may spend from it.
 import type { Queryable } from "../db/types";
 import type { ContactCipher } from "../privacy/contactCipher";
@@ -54,7 +55,7 @@ export async function reviewPayout(
     throw new PayoutRefused("BAD_AMOUNT", `Enter an amount up to ${centsToValue(PAST_WINDOW_SAMPLE.priceCents)} ${PAST_WINDOW_SAMPLE.currency}, what this sale was paid.`);
   }
   const email = input.email.trim();
-  if (!EMAIL.test(email)) throw new PayoutRefused("BAD_EMAIL", "Enter the email the shop collected for this buyer.");
+  if (!EMAIL.test(email)) throw new PayoutRefused("BAD_EMAIL", "This demo's sandbox buyer email isn't valid, so nothing was set up to send.");
   // One statement. A new approval is a new payment, so what PayPal said about the old batch goes with it, and no send can fall between.
   const { rows } = await db.query<{ id: string }>(
     `with up as (
