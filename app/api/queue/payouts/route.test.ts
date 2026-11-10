@@ -72,10 +72,10 @@ describe("POST /api/queue/payouts", () => {
   });
 
   it("passes a refusal's words back", async () => {
-    paths.review.mockRejectedValue(new PayoutRefused("BAD_EMAIL", "Enter the email the shop collected for this buyer."));
+    paths.review.mockRejectedValue(new PayoutRefused("BAD_EMAIL", "This demo's sandbox buyer email isn't valid, so nothing was set up to send."));
     const res = await post({ action: "review" });
     expect(res.status).toBe(303);
-    expect(new URL(res.headers.get("location") ?? "").searchParams.get("message")).toBe("Enter the email the shop collected for this buyer.");
+    expect(new URL(res.headers.get("location") ?? "").searchParams.get("message")).toBe("This demo's sandbox buyer email isn't valid, so nothing was set up to send.");
   });
 
   it("refuses what it doesn't know", async () => {

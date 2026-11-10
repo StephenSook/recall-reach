@@ -161,7 +161,7 @@ components:
           format: date-time
         paypal:
           type: object
-          description: PayPal's sandbox, and the Agent Toolkit that sends each refund.
+          description: PayPal's sandbox, and the Agent Toolkit that sends the demo shop's refunds.
           required:
             - environment
             - webhookConfigured

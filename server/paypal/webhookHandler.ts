@@ -1,5 +1,4 @@
 import { valueToCents } from "./orders";
-import { recordPayoutItemEvent } from "./payouts";
 import { BILLING_EVENTS } from "../shop/subscription";
 import { createHash } from "node:crypto";
 import type { Queryable } from "../db/types";
@@ -75,6 +74,8 @@ export async function handleWebhookDelivery(input: {
   fetchCert?: CertFetcher;
   now?: () => number;
   onCaptureCompleted?: (captureId: string) => Promise<unknown>;
+  /** A payout item event, verified. Must read the batch from PayPal before it moves anything, and be safe to repeat. */
+  onPayoutItem?: (resource: unknown, recordKey: RecordKey) => Promise<unknown>;
   /** Demo app only. Reads the current subscription at PayPal so delayed events cannot rewind it. */
   onSubscriptionChanged?: (subscriptionId: string) => Promise<unknown>;
   /** PayPal's verify-webhook-signature, given the exact bytes. Asked only about a new event our check verified. */
@@ -203,7 +204,8 @@ export async function handleWebhookDelivery(input: {
   if (fromPlatform && event.event_type === "MERCHANT.PARTNER-CONSENT.REVOKED" && typeof revokedMerchant === "string" && MERCHANT_ID.test(revokedMerchant)) {
     await input.platform?.onConsentRevoked?.(revokedMerchant);
   }
-  if (event.event_type?.startsWith("PAYMENT.PAYOUTS-ITEM.") && event.resource) await recordPayoutItemEvent(input.db, key, event.resource as { payout_batch_id?: unknown; transaction_status?: unknown });
+  // Like a capture, a payout's state is confirmed through the API: the event says only which batch to read.
+  if (event.event_type?.startsWith("PAYMENT.PAYOUTS-ITEM.") && event.resource) await input.onPayoutItem?.(event.resource, key);
   // Asked once, for a new event, after PayPal has its answer. Whatever goes wrong is recorded as no answer, never a pass.
   const followUp =
     check && !duplicate

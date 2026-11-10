@@ -22,7 +22,7 @@ export type Health = {
   /** Set when CPSC is the only thing failing. */
   degraded?: Degraded | null;
   checkedAt: Date;
-  /** PayPal's sandbox, and the Agent Toolkit that sends each refund. */
+  /** PayPal's sandbox, and the Agent Toolkit that sends the demo shop's refunds. */
   paypal?: Paypal;
   /**
    * The search of the wider market. Not part of ok. Fresh means a search worked in the last 8 days.

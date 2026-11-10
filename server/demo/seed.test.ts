@@ -219,6 +219,19 @@ describe("seedDemoShop", () => {
       expect(rows[0].rows_read).toBeGreaterThan(0);
     });
 
+    it("gives PayPal's search about 20 seconds, so a hung sandbox can't hold up the demo shop", async () => {
+      const pp = fakePayPal();
+      const started = Date.now();
+      await seed(pp.client);
+      const searches = pp.calls.filter((c) => c.path.startsWith("/v1/reporting"));
+      expect(searches.length).toBeGreaterThan(0);
+      for (const { opts } of searches) {
+        expect(opts.notAfter, "no request starts after it").toBeGreaterThanOrEqual(started + 15_000);
+        expect(opts.notAfter).toBeLessThanOrEqual(Date.now() + 20_000);
+        expect(opts.abortAfter, "and one in flight is cut at it").toBe(opts.notAfter);
+      }
+    });
+
     it("searches the dates it says it searched", async () => {
       const pp = fakePayPal();
       const { shopId } = await seedDemoShop(db, pp.client, { today: TODAY, secret: SECRET, now: new Date(`${TODAY}T15:00:00Z`) });

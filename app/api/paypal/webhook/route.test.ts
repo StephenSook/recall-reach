@@ -8,6 +8,16 @@ vi.mock("@/server/paypal/webhookHandler", async (original) => ({
   ...(await original<typeof import("@/server/paypal/webhookHandler")>()),
   handleWebhookDelivery: handle,
 }));
+const recorded = vi.hoisted(() => vi.fn(async () => true));
+const reader = vi.hoisted(() => async () => ({ status: "SUCCESS", batchStatus: null, senderBatchId: null, senderItemId: null }));
+const readerFor = vi.hoisted(() => vi.fn(() => reader));
+vi.mock("@/server/paypal/payouts", async (original) => ({
+  ...(await original<typeof import("@/server/paypal/payouts")>()),
+  recordPayoutItemEvent: recorded,
+  readPayoutBatch: readerFor,
+}));
+vi.mock("@/server/paypal/callLog", () => ({ withCallLog: (_db: unknown, _shop: unknown, run: () => unknown) => run() }));
+vi.mock("@/server/paypal/client", async (original) => ({ ...(await original<typeof import("@/server/paypal/client")>()), payPalClientFromEnv: () => ({ request: vi.fn() }) }));
 
 import { MAX_WEBHOOK_BYTES } from "@/server/paypal/webhookHandler";
 import { POST } from "./route";
@@ -48,6 +58,18 @@ describe("POST /api/paypal/webhook", () => {
     later.mockReset();
     await post();
     expect(later).not.toHaveBeenCalled();
+  });
+
+  it("hands the handler a payout step that reads the batch from PayPal before it records anything", async () => {
+    handle.mockResolvedValue({ status: 200, body: { received: true, duplicate: false } });
+    await post();
+    const onPayoutItem = handle.mock.calls[0][0].onPayoutItem;
+    expect(onPayoutItem).toEqual(expect.any(Function));
+    const resource = { payout_batch_id: "BATCH-1", transaction_status: "SUCCESS" };
+    const key = () => "hash";
+    await onPayoutItem(resource, key);
+    expect(readerFor).toHaveBeenCalledTimes(1);
+    expect(recorded).toHaveBeenCalledWith(expect.anything(), key, resource, reader);
   });
 
   it("gives the handler the exact bytes it was sent, unparsed", async () => {

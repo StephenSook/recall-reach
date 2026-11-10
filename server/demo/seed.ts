@@ -26,6 +26,8 @@ export const SANDBOX_TEST_CARD = { number: "4111111111111111", expiry: "2030-12"
 
 /** Far enough back to hold the standing pool, and two or three 31-day windows of PayPal's search. */
 const LOOK_BACK_DAYS = 62;
+/** How long the demo's start may spend reading PayPal's history. */
+const SEARCH_MS = 20_000;
 const SEEDED = "order date seeded";
 
 interface DemoLine {
@@ -123,7 +125,8 @@ export async function seedDemoShop(
   const cases = CASES.filter((c) => recallDate.has(c.recallNumber));
   const leftOutSkus = new Set(CASES.filter((c) => !recallDate.has(c.recallNumber)).flatMap((c) => c.lines.map((l) => l.sku)));
 
-  const { payments, coverage } = await searchTransactions(client, { from: new Date(now.getTime() - LOOK_BACK_DAYS * 86_400_000), to: now });
+  // A hung sandbox can't hold "Try it as a demo shop": windows it can't finish in time count as failed, and the queue says so.
+  const { payments, coverage } = await searchTransactions(client, { from: new Date(now.getTime() - LOOK_BACK_DAYS * 86_400_000), to: now }, { notAfter: Date.now() + SEARCH_MS });
   const pool = poolPayments(payments).filter((p) => !p.items.some((i) => i.sku !== null && leftOutSkus.has(i.sku)));
 
   // PayPal refuses a repeated invoice id, so a new sale gets a number of its own.

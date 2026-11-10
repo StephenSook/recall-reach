@@ -776,6 +776,9 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
     let answer: RefundOutcome["status"] = status;
     if (refund?.status === "COMPLETED") answer = "refunded";
     else if (refund?.status === "FAILED" || refund?.status === "CANCELLED") answer = "failed";
+    // PayPal reading the refund as PENDING is a clear answer, even for a row an older rule had already called unconfirmed.
+    // The ten-minute rule is only for no answer at all.
+    else if (refund?.status === "PENDING") answer = "pending";
     else if (!webhookSeen && now.getTime() - row.created_at.getTime() > UNCONFIRMED_AFTER_MS) answer = "unconfirmed";
     if (write) status = await moveLedger(db, input.refundId, answer, now);
     else if (answer !== status) newerAnswer = answer;

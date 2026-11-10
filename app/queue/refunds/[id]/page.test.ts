@@ -27,10 +27,12 @@ vi.mock("../../LookAgain", async () => {
 
 import { PayPalApiError } from "@/server/paypal/client";
 import { RefundRefused } from "@/server/paypal/refunds";
+import type { Reconciliation } from "@/server/paypal/refunds";
 import RefundPage from "./page";
 
 const render = async () => renderToStaticMarkup(createElement("div", null, await RefundPage({ params: Promise.resolve({ id: "r1" }) })));
-const record = (over: object = {}) => ({
+// Built as the producer's own type, so a renamed or reshaped field fails the typecheck here.
+const record = (over: Partial<Reconciliation> = {}): Reconciliation => ({
   matchId: "m1",
   canAskAgain: false,
   stuck: null,
@@ -42,7 +44,9 @@ const record = (over: object = {}) => ({
   exceptions: [],
   ...over,
 });
-const arrived = (paypalCheck: string, event = { status: "COMPLETED", amountCents: 9000, currency: "USD" }) => ({ webhook: { seen: true, paypalCheck, event } });
+const arrived = (paypalCheck: Reconciliation["webhook"]["paypalCheck"], event = { status: "COMPLETED", amountCents: 9000, currency: "USD" }): Partial<Reconciliation> => ({
+  webhook: { seen: true, paypalCheck, event },
+});
 
 describe("the refund page", () => {
   const logged = vi.fn();

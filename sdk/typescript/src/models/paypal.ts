@@ -2,7 +2,7 @@ import * as s from "../core/validation/index.js";
 import type { Schema } from "../core/validation/schema.js";
 import { toolkitSchema, type Toolkit } from "./toolkit.js";
 
-/** PayPal's sandbox, and the Agent Toolkit that sends each refund. */
+/** PayPal's sandbox, and the Agent Toolkit that sends the demo shop's refunds. */
 export type Paypal = {
   /** @default "sandbox" */
   environment?: "sandbox";

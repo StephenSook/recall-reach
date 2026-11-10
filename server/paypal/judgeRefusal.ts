@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/server/db/pg";
+import type { Queryable } from "@/server/db/types";
 import { createTokenProvider, PAYPAL_SANDBOX_BASE } from "./token";
 
 const LATE = "REFUND_TIME_LIMIT_EXCEEDED";
@@ -43,16 +44,20 @@ function detailsOf(body: unknown, privateIds: string[]): JudgeRefusalResult["det
 const CANDIDATES = 5;
 
 /**
- * Captures of sandbox refunds that completed, newest first, from paypal_refund_refs, which the
- * 46-hour purge empties: no PayPal id is kept longer than that rule allows. Read-only.
+ * Captures of sandbox refunds that completed for the whole payment, newest first, from paypal_refund_refs, which the
+ * 46-hour purge empties: no PayPal id is kept longer than that rule allows. Read-only. A refunded line from a bigger
+ * order leaves its payment partly refunded, and PayPal wouldn't call that sale fully refunded, so it doesn't count.
  */
-async function recentRefundedCaptures(): Promise<string[]> {
-  const { rows } = await getDb().query<{ capture_id: string }>(
+export async function fullyRefundedCaptures(db: Queryable): Promise<string[]> {
+  const { rows } = await db.query<{ capture_id: string }>(
     `select p.capture_id from paypal_refund_refs p join refunds r on r.id = p.refund_row_id
-     where r.status = 'refunded' order by p.received_at desc limit ${CANDIDATES}`,
+       join paypal_payments pay on pay.capture_id = p.capture_id and pay.shop_id = r.shop_id
+     where r.status = 'refunded' and r.amount_cents = pay.amount_cents order by p.received_at desc limit ${CANDIDATES}`,
   );
   return rows.map((row) => row.capture_id);
 }
+
+const recentRefundedCaptures = () => fullyRefundedCaptures(getDb());
 
 /**
  * Whether there's a refunded sandbox sale on hand to test with. The 46-hour purge empties them, so after a quiet couple of days

@@ -17,7 +17,12 @@ describe("findViolations", () => {
   });
 
   it.each([
-    ["a home directory", "see /Users/stephensookra/dev/notes"],
+    ["a home directory", "see /Users/someone/dev/notes"],
+    ["a Linux home directory", "see /home/someone/notes"],
+    ["a home directory with nothing after it", "cd /Users/someone"],
+    ["a home directory at the end of a line", "it lives in /home/someone\nand nowhere else"],
+    ["a home directory written with backslashes", "see \\Users\\someone\\notes"],
+    ["a home directory with escaped slashes, as in JSON", '"path": "\\/Users\\/someone\\/notes"'],
     ["a private brief", "as BUILD-BRIEF-3 says"],
     ["local instructions", "see CLAUDE.local for this"],
     ["the research folder", "wording from research/NOTES.md"],
@@ -64,6 +69,30 @@ describe("findViolations", () => {
 
   it("leaves a web address alone, even one with a research folder in it", () => {
     expect(findViolations([file("docs/a.md", "See https://example.org/research/report.pdf and https://example.org/research/recalled-products/")])).toEqual([]);
+  });
+
+  it("leaves a web address alone, even one with a home folder in it", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/home/someone and [a guide](https://example.org/Users/someone/notes)")])).toEqual([]);
+  });
+
+  it("still catches a home directory in a local file link: only a web address is exempt", () => {
+    expect(findViolations([file("docs/a.md", "See file:///Users/someone/dev/private-notes.md")])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "[notes](file:///home/someone/notes.md)")])).toHaveLength(1);
+  });
+
+  it("still catches a home directory with JSON-doubled backslashes or a percent-encoded name", () => {
+    expect(findViolations([file("a.json", JSON.stringify({ path: "C:\\Users\\someone\\notes" }))])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "file:///Users/%73omeone/private-notes.md")])).toHaveLength(1);
+  });
+
+  it("still catches a home directory after a shell separator that ends a web address", () => {
+    expect(findViolations([file("docs/a.md", "curl https://example.org;/Users/someone/bin/check")])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "curl https://example.org&&/home/someone/bin/check")])).toHaveLength(1);
+  });
+
+  it("still catches a home directory written next to a web address", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/docs and /Users/someone/notes")])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "|[link](https://example.org/)|/home/someone|")])).toHaveLength(1);
   });
 
   it("lets .gitignore name what it keeps out", () => {
