@@ -100,10 +100,15 @@ On `/judge`, "See PayPal refuse a late refund" sends PayPal's sandbox test heade
 From a terminal:
 
 ```bash
+# Each "returns" line is from a run against the live site on Nov 10, 2026, trimmed to the part that matters.
 curl https://recall-reach-web-e022.onrender.com/api/health
+# returns {"ok":true,"build":"6835d04", ...}: the commit the site runs
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/today/matches?shop=demo"
+# returns {"shop":"demo","recallDate":"2026-11-05","recalls":[ ... ]}: 12 recalls, 1 MATCH (27072) and 11 NOT_NEAR
 curl "https://recall-reach-web-e022.onrender.com/api/check?title=Baby%20Brezza%20sterilizer&model=BRZ0083"
+# returns {"results":[{"recallNumber":"27072","title":"Baby Brezza Enterprises Recalls SuperFast Sterilizer Dryers Due to Overheating and Burn Hazards", ...}], ...}
 curl "https://recall-reach-web-e022.onrender.com/api/recalls/27072"
+# returns {"found":true,"recallNumber":"27072", ...,"recallDate":"2026-11-05", ...}
 ```
 
 `/api/health` also lists each outside service under `integrations`: an id, a name, a mode (`live`, `fallback`, `off`, or `client` for what only runs in the browser), a line of detail and when it was checked. A row says `live` only after its own check passed.
