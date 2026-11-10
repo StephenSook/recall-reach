@@ -445,7 +445,7 @@ describe("refunds", () => {
     describe("never tells the seller to refund by hand on a disputed payment, even once it's too old to ask again", () => {
       const NO_DISPUTE_READ = "PayPal's disputes could not be read. Look for a dispute in PayPal before refunding it there.";
 
-      it.each(["BUYER_COMPLAINT"])("when PayPal holds the payment for a dispute (%s), with no Disputes API answer", async (reason) => {
+      it.each(["BUYER_COMPLAINT", "CHARGEBACK"])("when PayPal holds the payment for a dispute (%s), with no Disputes API answer", async (reason) => {
         const { r } = await noAnswer();
         const held = fakePayPal({ status: "PENDING", reason, disputes: "down" });
         const rec = await readRefund(db, held.client, { shopId, refundId: r.refundId, recordKey: key, now: TOO_OLD });
@@ -908,6 +908,13 @@ describe("refunds", () => {
     it("names the dispute from the hold alone even when the Disputes API can't be read", async () => {
       const { id: matchId } = await setUp();
       await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: "down" }).client)).rejects.toMatchObject(DISPUTED);
+    });
+
+    it("names the dispute for a payment held for a chargeback, the card issuer's dispute", async () => {
+      // CHARGEBACK is the other dispute reason in PayPal's capture_status_details.reason (payments_payment_v2.json).
+      const { id: matchId } = await setUp();
+      await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "PENDING", reason: "CHARGEBACK", disputes: "down" }).client)).rejects.toMatchObject(DISPUTED);
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
     });
 
     it("names the dispute on a held payment when the Disputes API lists one, whatever the hold's reason", async () => {

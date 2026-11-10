@@ -522,9 +522,9 @@ const DISPUTED_MESSAGE = "PayPal shows a dispute on this payment. Check it in Pa
 const HELD_MESSAGE = "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.";
 
 /** The reasons PayPal holds a capture (payments_payment_v2.json, capture_status_details.reason) that are disputes. */
-const DISPUTE_HOLDS = new Set(["BUYER_COMPLAINT"]);
+const DISPUTE_HOLDS = new Set(["BUYER_COMPLAINT", "CHARGEBACK"]);
 
-/** PayPal holds this payment for the buyer's complaint. That says dispute alone, with no Disputes API read. */
+/** PayPal holds this payment for the buyer's complaint or a chargeback. That says dispute alone, with no Disputes API read. */
 const heldForDisputeReason = (capture: CaptureFacts) => capture.status === "PENDING" && capture.statusReason !== null && DISPUTE_HOLDS.has(capture.statusReason);
 
 /** Whether a payment PayPal holds is held for a dispute. Unreadable disputes count as none: the hold refuses anyway. */
