@@ -9,12 +9,12 @@ vi.mock("@/server/paypal/webhookHandler", async (original) => ({
   handleWebhookDelivery: handle,
 }));
 const recorded = vi.hoisted(() => vi.fn(async () => true));
-const reader = vi.hoisted(() => async () => "SUCCESS");
+const reader = vi.hoisted(() => async () => ({ status: "SUCCESS", senderBatchId: null, senderItemId: null }));
 const readerFor = vi.hoisted(() => vi.fn(() => reader));
 vi.mock("@/server/paypal/payouts", async (original) => ({
   ...(await original<typeof import("@/server/paypal/payouts")>()),
   recordPayoutItemEvent: recorded,
-  payoutItemStatus: readerFor,
+  readPayoutBatch: readerFor,
 }));
 vi.mock("@/server/paypal/callLog", () => ({ withCallLog: (_db: unknown, _shop: unknown, run: () => unknown) => run() }));
 vi.mock("@/server/paypal/client", async (original) => ({ ...(await original<typeof import("@/server/paypal/client")>()), payPalClientFromEnv: () => ({ request: vi.fn() }) }));

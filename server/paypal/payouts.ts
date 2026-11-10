@@ -4,6 +4,7 @@
 import type { Queryable } from "../db/types";
 import type { ContactCipher } from "../privacy/contactCipher";
 import type { RecordKey } from "../privacy/recordKey";
+import { callsBelongTo } from "./callLog";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { centsToValue } from "./orders";
 
@@ -172,42 +173,64 @@ export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, 
   if (!rows[0]) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
   if (!rows[0].batch_id && !rows[0].batch_ref_hmac) throw new PayoutRefused("NO_ANSWER", "PayPal gave no clear answer to this payment, and it wasn't sent again. Check the shop's PayPal activity.");
   if (!rows[0].batch_id) throw new PayoutRefused("AGED_OUT", "PayPal's record of this payment is no longer held here. Check PayPal directly.");
-  const paypalStatus = await payoutItemStatus(client)(rows[0].batch_id);
+  const paypalStatus = (await readPayoutBatch(client)(rows[0].batch_id)).status;
   const status = paypalStatus ? fromItemStatus(paypalStatus) : "unconfirmed";
   // Only for the approval this read began with: the owner may have reviewed a new payment since.
   await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return currentStatus(db, rows[0].id);
 }
 
-/** PayPal's own answer for a batch's one item: its transaction_status, or null when it names none. */
-export function payoutItemStatus(client: PayPalClient): (batchId: string) => Promise<string | null> {
+/** PayPal's read of a batch: its one item's status, and who sent it. A send sets both sender ids to its approval's request id. */
+export interface PayoutBatchRead {
+  status: string | null;
+  senderBatchId: string | null;
+  senderItemId: string | null;
+}
+
+export function readPayoutBatch(client: PayPalClient): (batchId: string) => Promise<PayoutBatchRead> {
   return async (batchId) => {
-    const { data } = await client.request<{ items?: { transaction_status?: string }[] }>("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
-    return data.items?.[0]?.transaction_status ?? null;
+    const { data } = await client.request<{
+      batch_header?: { sender_batch_header?: { sender_batch_id?: string } };
+      items?: { transaction_status?: string; payout_item?: { sender_item_id?: string } }[];
+    }>("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
+    const item = data.items?.[0];
+    return { status: item?.transaction_status ?? null, senderBatchId: data.batch_header?.sender_batch_header?.sender_batch_id ?? null, senderItemId: item?.payout_item?.sender_item_id ?? null };
   };
 }
 
 /**
  * PayPal's item webhook, once its signature is verified. Found by the batch's keyed hash, or by the approval the item carries
- * when the send's own answer was lost, in which case this is the first we hear of the batch. The status comes from PayPal's own
- * read of the batch, never from the event's body. If that read fails it throws, the delivery fails, and PayPal sends it again.
+ * when the send's own answer was lost, in which case this is the first we hear of the batch. The event only says which batch to
+ * read: nothing is recorded or moved until PayPal's own read shows this approval sent that batch, and its status comes from that
+ * read. A read that fails, or names no status yet, throws, so the delivery fails and PayPal sends it again.
  */
 export async function recordPayoutItemEvent(
   db: Queryable,
   recordKey: RecordKey,
   resource: { payout_batch_id?: unknown; transaction_status?: unknown; payout_item?: { sender_item_id?: unknown } },
-  readStatus: (batchId: string) => Promise<string | null>,
+  readBatch: (batchId: string) => Promise<PayoutBatchRead>,
 ): Promise<boolean> {
   if (typeof resource.payout_batch_id !== "string" || typeof resource.transaction_status !== "string") return false;
   const batchHash = recordKey("paypal-resource", resource.payout_batch_id);
   const carried = resource.payout_item?.sender_item_id;
   const approval = typeof carried === "string" && UUID.test(carried) ? carried : null;
-  const { rows } = await db.query<{ id: string; request_id: string }>("select id, request_id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
-  if (!rows[0]) return false;
+  const { rows } = await db.query<{ id: string; request_id: string; shop_id: string; batch_ref_hmac: string | null }>(
+    "select id, request_id, shop_id, batch_ref_hmac from payouts where batch_ref_hmac = $1 or request_id = $2::uuid",
+    [batchHash, approval],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  // An approval sends one batch. One it already has settles which, so another batch's event is not about it.
+  if (row.batch_ref_hmac !== null && row.batch_ref_hmac !== batchHash) return false;
+  // The webhook didn't know the shop; the read below is kept in this one's call log.
+  callsBelongTo(row.shop_id);
+  const read = await readBatch(resource.payout_batch_id);
+  // PayPal must name this approval as the batch's sender, or the batch is someone else's, whatever the event paired it with.
+  if (read.senderBatchId !== row.request_id || read.senderItemId !== row.request_id) return false;
+  if (!read.status) throw new Error("PayPal's read of the payout batch named no status yet");
   // Each step is for the approval found above: the owner may review a new payment while this runs.
-  await recordBatch(db, { id: rows[0].id, approval: rows[0].request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
-  const paypalStatus = await readStatus(resource.payout_batch_id);
-  if (paypalStatus) await moveStatus(db, fromItemStatus(paypalStatus), paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
+  await recordBatch(db, { id: row.id, approval: row.request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
+  await moveStatus(db, fromItemStatus(read.status), read.status, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
   return true;
 }
 

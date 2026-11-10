@@ -5,6 +5,7 @@ import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createRecordKey } from "../privacy/recordKey";
 import { purgePayPalData } from "../privacy/retention";
+import { recordPayoutItemEvent } from "./payouts";
 import { handleWebhookDelivery } from "./webhookHandler";
 
 const WEBHOOK_ID = "TEST-WEBHOOK-ID";
@@ -57,6 +58,18 @@ describe("handleWebhookDelivery", () => {
       const again = item("FAILED");
       expect((await deliverItem(again, paypalHeaders(again, WEBHOOK_ID, "t-2"))).status).toBe(200);
       expect(await statusNow()).toBe("unconfirmed");
+    });
+
+    it("fails a delivery whose batch read names no status yet, and PayPal's redelivery settles it", async () => {
+      const approval = (await db.query<{ request_id: string }>("select request_id from payouts")).rows[0].request_id;
+      const answers: (string | null)[] = [null, "SUCCESS"];
+      const onPayoutItem = (resource: unknown, k: typeof key) =>
+        recordPayoutItemEvent(db, k, resource as never, async () => ({ status: answers.shift() ?? null, senderBatchId: approval, senderItemId: approval }));
+      const raw = item("SUCCESS");
+      await expect(deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).rejects.toThrow(/no status/);
+      expect(await statusNow()).toBe("unconfirmed");
+      expect((await deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).status).toBe(200);
+      expect(await statusNow()).toBe("paid");
     });
 
     it("ignores one whose signature fails", async () => {
