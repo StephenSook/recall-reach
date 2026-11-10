@@ -1,6 +1,6 @@
 # Where each number comes from
 
-Every number in the film and the write-up, with the run or dated source behind it, so it can be checked without asking us. CPSC's numbers change as recalls arrive. Everything here is sandbox unless it says otherwise.
+Every number in the write-up, with the run or dated source behind it, so it can be checked without asking us. CPSC's numbers change as recalls arrive. Everything here is sandbox unless it says otherwise.
 
 ## Recall Replay
 
@@ -13,8 +13,6 @@ Run `94124fd5-1049-4546-929b-b25b086c66b3`, made Nov 6, 2026, 12:38 PM ET. A sav
 | 18 | Can't tell yet |
 | 11 | Came near and were cleared |
 | 902 | Nothing near |
-
-The filmed run: to be filled in at the take.
 
 ## Recalls held
 
@@ -68,7 +66,3 @@ Each one says only what's quoted or stated here.
 | CPSC's Spanish site, and its phone number 800-638-2772 | [cpsc.gov/es](https://www.cpsc.gov/es), in its footer | Read Nov 7, 2026 |
 | 18,640 used merchandise stores in 2021, and NARTS's more than 25,000 resale, consignment and nonprofit resale shops. Neither counts only kids' shops | [Census Bureau](https://www.census.gov/newsroom/stories/thrift-store-day.html) | Aug 17, 2023 |
 | About 37% of cribs and 27% of strollers are handed down or bought secondhand, a 2010 estimate. Recalls of 32 cribs and strollers reached a 15% correction rate, 20% adjusted | [CPSC staff report to Congress](https://www.cpsc.gov/s3fs-public/pdfs/blk_pdf_ReporttoCongressPursuantSection104%28e%29RecallNotificationEffectiveness.pdf) | Mar 30, 2012 |
-
-## The film
-
-To be filled in at the take: each number on screen, and the run it came from.

@@ -10,4 +10,4 @@ NOT a human audit. A second model family checked Claude's eval labels blind. "No
 - All 16 disagreements are Claude "look-alike" against gpt-6.1-sol "the title can't settle it". gpt-6.1-sol called none of Claude's look-alikes the recalled product (0 of 44), so nothing here would raise the published "could reach a family 2 times in 83".
 - Files: blind-pairs.json (input), PROMPT.md, codex-answers.raw (output as returned), codex-answers.json (parsed).
 
-Safe public sentence: "A second model (gpt-6.1-sol), blind to Claude's labels, agreed on 34 of 50 sampled pairs. On the other 16 it said the title can't settle it, and it called none of Claude's look-alikes the recalled product."
+Summary: "A second model (gpt-6.1-sol), blind to Claude's labels, agreed on 34 of 50 sampled pairs. On the other 16 it said the title can't settle it, and it called none of Claude's look-alikes the recalled product."

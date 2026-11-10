@@ -1,6 +1,6 @@
 // Reads the sale window and stated prices from a CPSC recall's Retailers text, for example
 // "Sold Online At: Amazon.com from April 2023 through August 2026 for between $90 and $130."
-// Ported from the EDA script (research/eda/analysis.py: sale_window, prices); a test checks this
+// Ported from our data-exploration script (its sale_window and prices steps), which isn't in this repo; a test checks this
 // port against that script's output for all 934 recalls of 2025 and 2026.
 
 const MON = "(January|February|March|April|May|June|July|August|September|October|November|December)";

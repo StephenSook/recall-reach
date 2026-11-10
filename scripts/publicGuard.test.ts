@@ -24,6 +24,27 @@ describe("findViolations", () => {
     ["the research folder, one level up", "read ../research/NOTES.md"],
     ["a nested research path", "See research/a/NOTES.md"],
     ["a research file with a digit", "See research/NOTES-2.md"],
+    ["a research script, any extension", "Ported from the EDA script (research/eda/analysis.py: sale_window)"],
+    ["a research folder, no file named", "Shaped as Channel3 answered (research/raw/channel3), with invented products"],
+    ["a hidden research file", "See research/.notes.md"],
+    ["a file in a hidden research folder", "See research/.private/notes.md"],
+    ["a research path through a ./ segment", "See research/./PLAN.md"],
+    ["a research path through a ../ segment", "See research/../research/PLAN.md"],
+    ["a research path through ./ segments in a nested folder", "See research/././briefs/NOTES.md"],
+    ["a research folder ending in a slash", "See research/raw/ for the answers"],
+    ["a research file with a space, in backticks", "See `research/Market analysis.md`"],
+    ["a research folder with a space, in quotes", 'See "research/market analysis/results.json"'],
+    ["a relative research path with a space, in backticks", "See `../research/Market analysis.md`"],
+    ["a relative research path with a space, in quotes", 'See "./research/Market analysis.md"'],
+    ["a research path in bold", "See **research/PLAN.md** for the plan"],
+    ["a research path in brackets", "[research/G1-SANDBOX-CHECKS.md]"],
+    ["a research path in a tight table cell", "|research/PLAN.md|"],
+    ["a research path after a flag", "--pairs=research/eval-labels/pairs.csv"],
+    ["a research path as an autolink", "<research/PLAN.md>"],
+    ["the research folder itself, one level up", "The plan lives in ../research/ next to this repo."],
+    ["the research folder itself, in backticks", "See `./research/` for the briefs."],
+    ["a research file after a link, in a tight table", "|[CPSC](https://www.cpsc.gov)|[checks](../research/G1-SANDBOX-CHECKS.md)|"],
+    ["the research folder after a link, in a tight table", "|[CPSC](https://www.cpsc.gov)|[briefs](../research/)|"],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
@@ -36,6 +57,13 @@ describe("findViolations", () => {
 
   it("doesn't mistake an ordinary word for the folder", () => {
     expect(findViolations([file("server/a.ts", "We did our research/review before this. It's a search.")])).toEqual([]);
+    expect(findViolations([file("server/a.ts", "That took research/review.")])).toEqual([]);
+    expect(findViolations([file("server/a.ts", 'That took "research/review".')])).toEqual([]);
+    expect(findViolations([file("server/a.ts", "That took `research/review`.")])).toEqual([]);
+  });
+
+  it("leaves a web address alone, even one with a research folder in it", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/research/report.pdf and https://example.org/research/recalled-products/")])).toEqual([]);
   });
 
   it("lets .gitignore name what it keeps out", () => {

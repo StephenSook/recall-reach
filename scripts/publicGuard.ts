@@ -8,7 +8,14 @@ import { readFileSync } from "node:fs";
 export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
-const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, /(?:^|[\s("'`./])research\/[\w/.-]+\.(?:md|csv|json|pdf)/, /Obsidian (?:vault|note)/i, /\.claude\//];
+const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
+  // "./" and "../" segments after the folder still lead into it: "research/./PLAN.md".
+  /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.{1,2}\/)*(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
+  // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.
+  /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w.-])\.{1,2}\/research\/(?![\w.-])/,
+  // Inside backticks or quotes a path can hold spaces: "research/Market analysis.md". It still needs a path's shape, a file
+  // extension or a second folder, so quoted prose like "research/review" passes.
+  /[`"'](?:\.{1,2}\/)*research\/[^`"'\n/]*?(?:\/[^`"'\n]*|\.\w+)[`"']/, /Obsidian (?:vault|note)/i, /\.claude\//];
 /** Its job is to name what it keeps out. */
 const MAY_NAME_THEM = new Set([".gitignore"]);
 const OWN_PATHS = ["scripts/publicGuard.ts", "scripts/publicGuard.test.ts"];

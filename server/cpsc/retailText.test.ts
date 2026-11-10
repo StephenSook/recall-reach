@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { firstSaleMonth, saleWindow, statedPrices } from "./retailText";
 
 // For all 934 recalls of 2025 and 2026 (to Nov 5): the Retailers text from the CPSC API and what the
-// EDA script (research/eda/analysis.py) parsed from it. The TypeScript parser must agree exactly.
+// data-exploration script (not in this repo) parsed from it. The TypeScript parser must agree exactly.
 const fixture: {
   records: {
     recallNumber: string;
