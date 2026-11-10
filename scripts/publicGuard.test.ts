@@ -75,6 +75,11 @@ describe("findViolations", () => {
     expect(findViolations([file("docs/a.md", "See https://example.org/home/someone and [a guide](https://example.org/Users/someone/notes)")])).toEqual([]);
   });
 
+  it("still catches a home directory in a local file link: only a web address is exempt", () => {
+    expect(findViolations([file("docs/a.md", "See file:///Users/someone/dev/private-notes.md")])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "[notes](file:///home/someone/notes.md)")])).toHaveLength(1);
+  });
+
   it("still catches a home directory written next to a web address", () => {
     expect(findViolations([file("docs/a.md", "See https://example.org/docs and /Users/someone/notes")])).toHaveLength(1);
     expect(findViolations([file("docs/a.md", "|[link](https://example.org/)|/home/someone|")])).toHaveLength(1);
