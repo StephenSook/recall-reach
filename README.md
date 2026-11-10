@@ -151,7 +151,7 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
-| Claude | Move no money. It reads recall text, the shop's own titles and, on `/shopper`, public listing titles. A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| Claude | Move no money. It reads recall text, the shop's own titles, on `/shopper` public listing titles, and on `/studio` Recall Replay's rows (CPSC's records and the demo shop's item titles). A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
 | A person on `/shopper` | Approve one sandbox test order on PayPal's page, at the price the server read from the listing. Nothing ships and no store is paid |
 | A family | Answer on their phone page. That changes the seller's card, and moves no money |
 
@@ -166,10 +166,10 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 
 ## What stays where
 
-- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles and, on `/shopper`, public listing words. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
+- **Nothing PayPal returns goes to Claude or any other third party.** Claude reads CPSC's public text, the shop's own item titles, on `/shopper` public listing words, and on `/studio` Recall Replay's rows, which hold only CPSC's records and the demo shop's item titles. Sales join to those items in the app, by order number, SKU or exact title. Tests plant PayPal values in the database and check they are in no request Claude would receive. They stop at the wire: they read what the SDK would send, and make no network call.
 - **Built to follow PayPal's 48-hour deletion rule.** PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - **The app never emails anyone.** Messages open in the shop's own mail.
-- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days. An owner who links a PayPal login keeps the shop and its file until they delete it, or a year passes with no sign-in. Only an HMAC of the PayPal account id is kept.
+- **A shop's buyer emails are encrypted**, and a file is deleted on request or after 7 days. An owner who links a PayPal login keeps the shop and its file until they delete it, or a year passes with no sign-in. For that login, only an HMAC of its PayPal account id is kept. A shop connected through PayPal's partner flow has its merchant id stored encrypted with the shop's own key, because refund calls made for that shop need it, with an HMAC to find it when the seller revokes consent.
 - **Safety receipts let a family opt in at checkout.** A shop's queue has a printable QR and signed link. The family gives the tag words and an email, then bookmarks the delete link shown on screen. Receipts use the existing queue and owner-approved mail flow, with no refund authority. A receipt is deleted when the family or the shop deletes it, after at most 3 years, or with the shop's data: 7 days after a real shop joined, or a year after the last PayPal sign-in for a shop whose owner signs in at least once a year, within 48 hours for a demo shop. The receipt page and the queue show the exact date. Family data stays out of Claude and Channel3.
 
 ### Every call to Claude
@@ -179,6 +179,8 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Check with Claude, on a card | CPSC's recall text, and the shop's own titles, SKUs and listing descriptions | A verdict, a notice, a refund, anything from PayPal | The card stays as it was and says so |
 | The question for a family | One recall's text from CPSC | A sale, a shop, a family. The question is used only while the words it rests on are in CPSC's record | A family gets CPSC's model numbers or a plain question |
 | The shopping agent | What the person typed, public listing titles and brands with any price taken out, and the recalls its check found | A price, an order, PayPal | The page says the agent isn't available |
+| The dashboard agent, on `/studio` (AG Studio) | What the visitor typed, and what the dashboard's own tools answered from Recall Replay's rows: CPSC's records and the demo shop's item titles | The database, PayPal, any amount. Its tools only arrange the dashboard | It says Claude didn't answer, or that today's limit is used up, and the dashboard still works by hand |
+| Plan follow-ups, on a recall's refund windows | One recall's public text from CPSC | A shop, a sale, a date: code places each date. Its one tool records the advice, and nothing is set until the owner confirms | It says Claude isn't available, and the list still works |
 | The daily call | "Say ok." | Everything | `/status` shows the last good answer getting older |
 
 All but the daily call start on `claude-sonnet-5-5` and fall back to `claude-haiku-5-5` when the main model is down. The daily call asks both, so `/status` can show the main model stopping. Matching, notices and refunds don't need Claude: without it, the rules still run and the app still works. What Claude adds is a reading of a card a person would otherwise read alone, a question specific to one recall, and a shopping agent that checks first.
