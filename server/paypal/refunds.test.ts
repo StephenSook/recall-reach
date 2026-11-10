@@ -442,6 +442,40 @@ describe("refunds", () => {
       expect(await read(r.refundId, pp.client, TOO_OLD)).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1", sentToPayPal: false } });
     });
 
+    describe("never tells the seller to refund by hand on a disputed payment, even once it's too old to ask again", () => {
+      const NO_DISPUTE_READ = "PayPal's disputes could not be read. Look for a dispute in PayPal before refunding it there.";
+
+      it.each(["BUYER_COMPLAINT"])("when PayPal holds the payment for a dispute (%s), with no Disputes API answer", async (reason) => {
+        const { r } = await noAnswer();
+        const held = fakePayPal({ status: "PENDING", reason, disputes: "down" });
+        const rec = await readRefund(db, held.client, { shopId, refundId: r.refundId, recordKey: key, now: TOO_OLD });
+        expect(rec).toMatchObject({ canAskAgain: false, stuck: { orderNumber: "#R1", disputed: true } });
+        expect(rec.exceptions).not.toContain(NO_DISPUTE_READ);
+      });
+
+      it("when PayPal's Disputes API lists one on the payment", async () => {
+        const { r } = await noAnswer();
+        const disputed = fakePayPal({ disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
+        expect((await read(r.refundId, disputed.client, TOO_OLD)).stuck).toMatchObject({ disputed: true });
+      });
+
+      it("and says so when the disputes can't be read", async () => {
+        const { r } = await noAnswer();
+        const rec = await read(r.refundId, fakePayPal({ disputes: "down" }).client, TOO_OLD);
+        expect(rec.stuck).toMatchObject({ disputed: false });
+        expect(rec.exceptions).toContain(NO_DISPUTE_READ);
+      });
+
+      it("reads no disputes while the refund page sends the seller nowhere", async () => {
+        const { r } = await noAnswer();
+        const pp = fakePayPal({ disputes: "down" });
+        const rec = await read(r.refundId, pp.client, SOON);
+        expect(rec).toMatchObject({ canAskAgain: true, stuck: null });
+        expect(pp.calls.filter((c) => c.path.startsWith("/v1/customer/disputes"))).toEqual([]);
+        expect(rec.exceptions).not.toContain(NO_DISPUTE_READ);
+      });
+    });
+
     it("turns to PayPal itself once a repeat was refused, shows PayPal's answer, and repeats no more", async () => {
       const { r } = await noAnswer();
       await again(r.refundId, fakePayPal({ refundSteps: [422] }).client, SOON);

@@ -521,12 +521,15 @@ const DISPUTED_MESSAGE = "PayPal shows a dispute on this payment. Check it in Pa
 
 const HELD_MESSAGE = "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.";
 
-/**
- * Whether a payment PayPal holds is held for a dispute. A hold for the buyer's complaint (PENDING, BUYER_COMPLAINT)
- * says so alone, without waiting on the Disputes API. Unreadable disputes count as none: the hold refuses anyway.
- */
+/** The reasons PayPal holds a capture (payments_payment_v2.json, capture_status_details.reason) that are disputes. */
+const DISPUTE_HOLDS = new Set(["BUYER_COMPLAINT"]);
+
+/** PayPal holds this payment for the buyer's complaint. That says dispute alone, with no Disputes API read. */
+const heldForDisputeReason = (capture: CaptureFacts) => capture.status === "PENDING" && capture.statusReason !== null && DISPUTE_HOLDS.has(capture.statusReason);
+
+/** Whether a payment PayPal holds is held for a dispute. Unreadable disputes count as none: the hold refuses anyway. */
 async function heldForDispute(client: PayPalClient, captureId: string, capture: CaptureFacts): Promise<boolean> {
-  if (capture.status === "PENDING" && capture.statusReason === "BUYER_COMPLAINT") return true;
+  if (heldForDisputeReason(capture)) return true;
   return (await disputeOnCapture(client, captureId)) === "DISPUTED";
 }
 
@@ -785,9 +788,20 @@ async function reconcile(db: Queryable, client: PayPalClient, input: ReconcileIn
   const refusedRepeat = row.repeat_refused_at !== null;
   const sentToPayPal = row.seller_sent_to_paypal_at !== null;
   const tooOld = tooOldToRepeat(row.created_at, now.getTime());
-  const disputed = row.dispute_seen_at !== null;
+  let disputed = row.dispute_seen_at !== null;
   const canAskAgain = noAnswer && row.capture_id !== null && !sendMayBeRunning && !refusedRepeat && !sentToPayPal && !tooOld && !disputed;
-  const stuck = noAnswer && !sendMayBeRunning && !canAskAgain ? { orderNumber: row.order_number, sentToPayPal, disputed } : null;
+  const showStuck = noAnswer && !sendMayBeRunning && !canAskAgain;
+  // Before the page sends the seller to refund by hand, PayPal's own facts must show no dispute. Past the repeat window
+  // nothing else would have looked. Only read here, never stored: opening the page changes nothing.
+  if (showStuck && !disputed && row.capture_id && captureFacts) {
+    if (heldForDisputeReason(captureFacts)) disputed = true;
+    else {
+      const dispute = await disputeOnCapture(client, row.capture_id);
+      if (dispute === "DISPUTED") disputed = true;
+      if (dispute === "UNREADABLE") exceptions.push("PayPal's disputes could not be read. Look for a dispute in PayPal before refunding it there.");
+    }
+  }
+  const stuck = showStuck ? { orderNumber: row.order_number, sentToPayPal, disputed } : null;
   if (noAnswer && row.capture_id !== null && tooOld) exceptions.push("This request is too old to send again safely. Check PayPal directly.");
   if (status === "reserved") exceptions.push("This refund has not been sent to PayPal yet.");
   if (status === "unconfirmed") exceptions.push("No clear answer from PayPal yet. Check it before trying again.");
