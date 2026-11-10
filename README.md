@@ -25,7 +25,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 
 | Criterion | Open this | What it shows | In the code |
 |---|---|---|---|
-| Technological Implementation | [/evidence/paypal](https://recall-reach-web-e022.onrender.com/evidence/paypal) | Sandbox refunds through PayPal Agent Toolkit and verified capture webhooks. | [server/paypal/toolkitRefund.ts](server/paypal/toolkitRefund.ts), [server/paypal/webhookHandler.ts](server/paypal/webhookHandler.ts) |
+| Technological Implementation | [/evidence/paypal](https://recall-reach-web-e022.onrender.com/evidence/paypal) | The demo shop's sandbox refunds through PayPal Agent Toolkit, and verified capture webhooks. | [server/paypal/toolkitRefund.ts](server/paypal/toolkitRefund.ts), [server/paypal/webhookHandler.ts](server/paypal/webhookHandler.ts) |
 | Technological Implementation | [/studio](https://recall-reach-web-e022.onrender.com/studio) | AG Studio agents on Claude, with a recall-checking tool. | [app/studio/StudioDashboard.tsx](app/studio/StudioDashboard.tsx), [app/studio/recallTool.ts](app/studio/recallTool.ts) |
 | Technological Implementation | [/evidence/api](https://recall-reach-web-e022.onrender.com/evidence/api) | Our MCP server's two tools, check_recall and get_recall, with the calls to try. | [app/api/mcp/route.ts](app/api/mcp/route.ts) |
 | Technological Implementation | [/judge](https://recall-reach-web-e022.onrender.com/judge) | PayPal's own refusal: its sandbox test header on an already refunded sale returns REFUND_TIME_LIMIT_EXCEEDED, and no money can move. | [server/paypal/judgeRefusal.ts](server/paypal/judgeRefusal.ts), [app/api/judge/late-refund/route.ts](app/api/judge/late-refund/route.ts) |
@@ -42,7 +42,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | Presentation | [/evidence/defects](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found, what changed, and how we checked again. | [app/evidence/defects/page.tsx](app/evidence/defects/page.tsx), [app/evidence/defects/defects.ts](app/evidence/defects/defects.ts) |
 | Presentation | [/api/health](https://recall-reach-web-e022.onrender.com/api/health) | Each outside service's state on the deployed build, each read from its own check. | [server/integrations.ts](server/integrations.ts), [app/api/health/route.ts](app/api/health/route.ts) |
 | AG Grid | [/evidence/ag-grid](https://recall-reach-web-e022.onrender.com/evidence/ag-grid) | Queue filters, row groups, exports and charts. | [app/queue/MatchGrid.tsx](app/queue/MatchGrid.tsx) |
-| APIMatic | [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md) | The PayPal Server SDK Context Plugin moved our refund read-back onto the SDK's getRefund. APIMatic's CLI generated our TypeScript SDK and the docs at /api-docs. | [server/paypal/sdkRefundRead.ts](server/paypal/sdkRefundRead.ts), [scripts/sdk.test.ts](scripts/sdk.test.ts) |
+| APIMatic | [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md) | The PayPal Server SDK Context Plugin moved the demo shop's refund read-back onto the SDK's getRefund. APIMatic's CLI generated our TypeScript SDK and the docs at /api-docs. | [server/paypal/sdkRefundRead.ts](server/paypal/sdkRefundRead.ts), [scripts/sdk.test.ts](scripts/sdk.test.ts) |
 | Bryntum | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop, then open a recall from the queue: each sale's 180-day refund window against the recall date and today. | [app/queue/recalls/RefundTimeline.tsx](app/queue/recalls/RefundTimeline.tsx), [app/queue/recalls/timeline.ts](app/queue/recalls/timeline.ts) |
 | Channel3 | [/evidence/channel3](https://recall-reach-web-e022.onrender.com/evidence/channel3) | Public product names searched through Channel3's MCP, with cached candidates to review. | [server/sweep/channel3.ts](server/sweep/channel3.ts), [server/sweep/sweep.ts](server/sweep/sweep.ts) |
 | Postman | [postman/recall-reach.postman_collection.json](postman/recall-reach.postman_collection.json) | Public API requests with answer checks, run by Newman against the live site. | [scripts/postman.test.ts](scripts/postman.test.ts), [.github/workflows/newman.yml](.github/workflows/newman.yml) |
@@ -140,9 +140,9 @@ Real shops can optionally subscribe to "Recall Reach for shops" through PayPal S
 | `POST /v2/checkout/orders`, then capture and `GET` (Orders v2) | Makes the demo shop's sandbox sales and reads them back | `server/paypal/orders.ts` |
 | `GET /v2/payments/captures/{id}` (Payments) | Reads a payment before anything is refunded | `server/paypal/orders.ts` |
 | `GET /v1/customer/disputes` (Customer Disputes) | Holds a refund if the payment has a dispute | `server/paypal/disputes.ts` |
-| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved, from the app's own code | `server/paypal/toolkitRefund.ts` |
+| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved for the demo shop, from the app's own code. A connected shop's refund is the same call through our own client with PayPal-Auth-Assertion, which neither the Toolkit nor the Server SDK sends | `server/paypal/toolkitRefund.ts` |
 | `GET /v2/payments/refunds/{id}` (Server SDK `getRefund`) | Reads the refund back so the records can be compared | `server/paypal/sdkRefundRead.ts` |
-| `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is verified | `server/paypal/webhookHandler.ts` |
+| `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is checked against a certificate fetched only from PayPal's sandbox certificate host | `server/paypal/webhookHandler.ts` |
 
 ## Who can move money
 
@@ -218,7 +218,7 @@ Where each number in the write-up comes from: [`docs/SOURCES.md`](docs/SOURCES.m
 
 ![How Recall Reach works: a shop's order file and PayPal account, Recall Reach on Render, the PayPal sandbox calls behind each step, and what the family gets. Every blue label is in the shipped code.](docs/images/architecture.png)
 
-Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Enterprise for the queue and Recall Replay (trial licence through Dec 9, 2026, after which AG's watermark can show) and the free edition on the eval page. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the refund. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
+Next.js (App Router) and TypeScript, Postgres on Neon, hosted as one Render web service. AG Grid Enterprise for the queue and Recall Replay (trial licence through Dec 9, 2026, after which AG's watermark can show) and the free edition on the eval page. `claude-sonnet-5-5` with `claude-haiku-5-5` as its fallback, through the Anthropic SDK. `@paypal/agent-toolkit` for the demo shop's refunds. Vitest for unit and database tests (Postgres runs in-process through PGlite), Playwright for the golden path on the deployed site.
 
 The one background job (`instrumentation.ts`) asks CPSC for recalls every 15 minutes. It touches the database only when the answer changes or on the hourly heartbeat, because a query every 15 minutes would keep a free-tier database awake around the clock.
 
