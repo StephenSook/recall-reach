@@ -1803,6 +1803,22 @@ describe("refunds", () => {
       expect(await stored(r.refundId)).toEqual(before);
     });
 
+    it("a refund PayPal still reads as PENDING stays pending past ten minutes, with no webhook yet", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
+      const later = new Date(NOW.getTime() + 15 * 60_000);
+      const read = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(read.refund?.status).toBe("PENDING");
+      expect(read.ledger.status).toBe("pending");
+      expect(read.newerAnswer).toBeNull();
+      expect(read.exceptions).toContain("PayPal hasn't finished this refund yet.");
+      expect(read.exceptions).not.toContain("No clear answer from PayPal yet. Check it before trying again.");
+      expect((await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later })).ledger.status).toBe("pending");
+    });
+
     it("the update is a separate, deliberate step", async () => {
       const m = await setUp();
       const a = await approve(m.id);
@@ -1950,6 +1966,8 @@ describe("refunds", () => {
       const pp = fakePayPal({ refundStatus: "PENDING" });
       const r = await execute(a.approvalId, pp.client);
       await agedFromNow(r.refundId);
+      // No answer: PayPal's refund can't be read here any more (its id went with the 46-hour purge).
+      await db.query("delete from paypal_refund_refs where refund_row_id = $1", [r.refundId]);
       const later = new Date(NOW.getTime() + 11 * 60_000);
       const rec = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
       expect(rec.ledger.status).toBe("unconfirmed");
