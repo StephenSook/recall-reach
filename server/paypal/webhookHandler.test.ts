@@ -45,15 +45,25 @@ describe("handleWebhookDelivery", () => {
       );
     });
 
-    it("reads PayPal's item status once the signature is verified", async () => {
+    const deliverItem = (raw: Uint8Array, headers: Headers, onPayoutItem?: (resource: unknown, recordKey: typeof key) => Promise<unknown>) =>
+      handleWebhookDelivery({ rawBody: raw, headers, webhookId: WEBHOOK_ID, db, recordKey: key, fetchCert: fetchTestCert, onPayoutItem });
+
+    it("passes a verified item event on, with the record key, and never acts on its body itself", async () => {
       const raw = item("SUCCESS");
-      await deliver(raw, paypalHeaders(raw, WEBHOOK_ID));
-      expect(await statusNow()).toBe("paid");
+      const passed = vi.fn(async () => undefined);
+      expect((await deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), passed)).status).toBe(200);
+      expect(passed).toHaveBeenCalledWith({ payout_batch_id: "BATCH-1", transaction_status: "SUCCESS" }, key);
+      expect(await statusNow()).toBe("unconfirmed");
+      const again = item("FAILED");
+      expect((await deliverItem(again, paypalHeaders(again, WEBHOOK_ID, "t-2"))).status).toBe(200);
+      expect(await statusNow()).toBe("unconfirmed");
     });
 
     it("ignores one whose signature fails", async () => {
-      const res = await deliver(item("SUCCESS"), paypalHeaders(item("FAILED"), WEBHOOK_ID));
+      const passed = vi.fn(async () => undefined);
+      const res = await deliverItem(item("SUCCESS"), paypalHeaders(item("FAILED"), WEBHOOK_ID), passed);
       expect(res.status).toBe(401);
+      expect(passed).not.toHaveBeenCalled();
       expect(await statusNow()).toBe("unconfirmed");
     });
   });

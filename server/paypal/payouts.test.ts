@@ -228,8 +228,46 @@ describe("a payment past the refund window", () => {
   });
 
   describe("PayPal's item webhook", () => {
-    const hook = (status: string) => recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: status });
+    /** PayPal's own read of the batch. The event's body is never what moves the status. */
+    const says = (status: string | null) => async () => status;
+    const hook = (status: string) => recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: status }, says(status));
     const statusOf = async (id: string) => (await db.query<{ status: string }>("select status from payouts where id = $1", [id])).rows[0].status;
+
+    it("takes the status from PayPal's own read of the batch, not from the event's body", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      const asked: string[] = [];
+      const event = { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS" };
+      expect(await recordPayoutItemEvent(db, key, event, async (batchId) => (asked.push(batchId), "PENDING"))).toBe(true);
+      expect(asked).toEqual(["RAWBATCH1"]);
+      expect(await statusOf(id)).toBe("unconfirmed");
+      await recordPayoutItemEvent(db, key, event, says("FAILED"));
+      expect(await statusOf(id)).toBe("failed");
+    });
+
+    it("moves nothing when PayPal's read names no status", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS" }, says(null))).toBe(true);
+      expect(await statusOf(id)).toBe("unconfirmed");
+    });
+
+    it("lets a failed read fail the delivery, so PayPal sends it again, and still keeps the batch it named", async () => {
+      const lost = fakePayPal({
+        post: () => {
+          throw new Error("PayPal gave no answer");
+        },
+      });
+      const { id } = await review();
+      await send(id, lost.client);
+      const approval = await approvalOf(id);
+      const down = async (): Promise<string | null> => {
+        throw new Error("PayPal is down");
+      };
+      await expect(recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval } }, down)).rejects.toThrow("PayPal is down");
+      expect(await statusOf(id)).toBe("unconfirmed");
+      expect((await db.query("select batch_id from paypal_payout_refs where payout_row_id = $1", [id])).rows).toEqual([{ batch_id: "RAWBATCH1" }]);
+    });
 
     it("reads a final answer", async () => {
       const { id } = await review();
@@ -284,7 +322,7 @@ describe("a payment past the refund window", () => {
         request: (async (method: string, path: string, opts: unknown) => {
           const answer = await fakePayPal({ post: batch("OLDBATCH") }).client.request(method as "POST", path, opts as never);
           if (method === "POST") {
-            await recordPayoutItemEvent(db, key, { payout_batch_id: "OLDBATCH", transaction_status: "FAILED", payout_item: { sender_item_id: firstApproval } });
+            await recordPayoutItemEvent(db, key, { payout_batch_id: "OLDBATCH", transaction_status: "FAILED", payout_item: { sender_item_id: firstApproval } }, says("FAILED"));
             expect(await statusOf(id)).toBe("failed");
             await review();
             await send(id, fakePayPal({ post: batch("NEWBATCH") }).client);
@@ -327,7 +365,7 @@ describe("a payment past the refund window", () => {
           return answer;
         },
       };
-      await recordPayoutItemEvent(racing as never, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval } });
+      await recordPayoutItemEvent(racing as never, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval } }, says("SUCCESS"));
       expect(reviewed).toBe(true);
       expect(await statusOf(id)).toBe("reviewed");
       expect((await db.query("select batch_id from paypal_payout_refs where payout_row_id = $1", [id])).rows).toEqual([]);
@@ -343,7 +381,7 @@ describe("a payment past the refund window", () => {
       const { id } = await review();
       await send(id, lost.client);
       const approval = lost.calls[0].opts as { body: { items: { sender_item_id: string }[] } };
-      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval.body.items[0].sender_item_id } })).toBe(true);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval.body.items[0].sender_item_id } }, says("SUCCESS"))).toBe(true);
       expect(await statusOf(id)).toBe("paid");
       expect((await db.query<{ batch_id: string }>("select batch_id from paypal_payout_refs")).rows[0].batch_id).toBe("RAWBATCH1");
       const again = fakePayPal({ itemStatus: "SUCCESS" });
@@ -353,7 +391,7 @@ describe("a payment past the refund window", () => {
     it("an event carrying another shop's approval or an unknown one changes nothing", async () => {
       const { id } = await review();
       await send(id, fakePayPal().client);
-      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "OTHER", transaction_status: "SUCCESS", payout_item: { sender_item_id: "00000000-0000-4000-8000-000000000009" } })).toBe(false);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "OTHER", transaction_status: "SUCCESS", payout_item: { sender_item_id: "00000000-0000-4000-8000-000000000009" } }, says("SUCCESS"))).toBe(false);
       expect(await statusOf(id)).toBe("unconfirmed");
     });
 
@@ -380,7 +418,7 @@ describe("a payment past the refund window", () => {
           return answer;
         },
       };
-      await recordPayoutItemEvent(racing as never, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS" });
+      await recordPayoutItemEvent(racing as never, key, { payout_batch_id: "RAWBATCH1", transaction_status: "SUCCESS" }, says("SUCCESS"));
       expect(await statusOf(id)).toBe("reviewed");
       expect((await db.query<{ batch_ref_hmac: string | null }>("select batch_ref_hmac from payouts where id = $1", [id])).rows[0].batch_ref_hmac).toBeNull();
     });

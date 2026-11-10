@@ -172,22 +172,31 @@ export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, 
   if (!rows[0]) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
   if (!rows[0].batch_id && !rows[0].batch_ref_hmac) throw new PayoutRefused("NO_ANSWER", "PayPal gave no clear answer to this payment, and it wasn't sent again. Check the shop's PayPal activity.");
   if (!rows[0].batch_id) throw new PayoutRefused("AGED_OUT", "PayPal's record of this payment is no longer held here. Check PayPal directly.");
-  const { data } = await client.request<{ items?: { transaction_status?: string }[] }>("GET", `/v1/payments/payouts/${encodeURIComponent(rows[0].batch_id)}`);
-  const paypalStatus = data.items?.[0]?.transaction_status ?? null;
+  const paypalStatus = await payoutItemStatus(client)(rows[0].batch_id);
   const status = paypalStatus ? fromItemStatus(paypalStatus) : "unconfirmed";
   // Only for the approval this read began with: the owner may have reviewed a new payment since.
   await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return currentStatus(db, rows[0].id);
 }
 
+/** PayPal's own answer for a batch's one item: its transaction_status, or null when it names none. */
+export function payoutItemStatus(client: PayPalClient): (batchId: string) => Promise<string | null> {
+  return async (batchId) => {
+    const { data } = await client.request<{ items?: { transaction_status?: string }[] }>("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
+    return data.items?.[0]?.transaction_status ?? null;
+  };
+}
+
 /**
  * PayPal's item webhook, once its signature is verified. Found by the batch's keyed hash, or by the approval the item carries
- * when the send's own answer was lost, in which case this is the first we hear of the batch.
+ * when the send's own answer was lost, in which case this is the first we hear of the batch. The status comes from PayPal's own
+ * read of the batch, never from the event's body. If that read fails it throws, the delivery fails, and PayPal sends it again.
  */
 export async function recordPayoutItemEvent(
   db: Queryable,
   recordKey: RecordKey,
   resource: { payout_batch_id?: unknown; transaction_status?: unknown; payout_item?: { sender_item_id?: unknown } },
+  readStatus: (batchId: string) => Promise<string | null>,
 ): Promise<boolean> {
   if (typeof resource.payout_batch_id !== "string" || typeof resource.transaction_status !== "string") return false;
   const batchHash = recordKey("paypal-resource", resource.payout_batch_id);
@@ -197,7 +206,8 @@ export async function recordPayoutItemEvent(
   if (!rows[0]) return false;
   // Each step is for the approval found above: the owner may review a new payment while this runs.
   await recordBatch(db, { id: rows[0].id, approval: rows[0].request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
-  await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
+  const paypalStatus = await readStatus(resource.payout_batch_id);
+  if (paypalStatus) await moveStatus(db, fromItemStatus(paypalStatus), paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return true;
 }
 
