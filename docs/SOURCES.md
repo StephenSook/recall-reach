@@ -1,6 +1,6 @@
 # Where each number comes from
 
-Every number in the write-up, with the run or dated source behind it, so it can be checked without asking us. CPSC's numbers change as recalls arrive. Everything here is sandbox unless it says otherwise.
+Numbers in the write-up and on the site, each with the run or dated source behind it, so it can be checked without asking us. A number that isn't listed here has no committed record yet. CPSC's numbers change as recalls arrive. Everything here is sandbox unless it says otherwise.
 
 ## Recall Replay
 
@@ -40,6 +40,7 @@ One read each unless it says otherwise, so they show what happened, not what alw
 |---|---|---|
 | 6.11 hours | A repeat of the same request id still returned the first refund, and the total refunded didn't move | Nov 6, 2026 |
 | 213 minutes | A new sale wasn't in Transaction Search at first, and was there this long after | Nov 5, 2026 |
+| About 3 minutes | On the deployed site (build 04ed5dc), a sandbox buyer filed a dispute on an 18.00 USD sale at 9:11 PM ET. PayPal's Disputes API listed it, and held the payment for the buyer's complaint, by 9:14 PM. Review refund then answered "PayPal shows a dispute on this payment. Check it in PayPal first." The database showed 0 approvals and 0 refunds for that demo shop, and PayPal still showed the payment held, with no refund. `server/paypal/refunds.test.ts` pins the message | Nov 9, 2026 |
 
 ## Rules this app holds to
 
@@ -65,4 +66,6 @@ Each one says only what's quoted or stated here.
 | "In resale, the rule is simple. Car seats should never be resold. Period." And its Hard Line List, "items that should never be taken in resale, recalled or not". `/check` quotes it when these words are typed | [NARTS, Product Safety & Recalls](https://www.narts.org/product-safety-in-resale) | Read Nov 7, 2026 |
 | CPSC's Spanish site, and its phone number 800-638-2772 | [cpsc.gov/es](https://www.cpsc.gov/es), in its footer | Read Nov 7, 2026 |
 | 18,640 used merchandise stores in 2021, and NARTS's more than 25,000 resale, consignment and nonprofit resale shops. Neither counts only kids' shops | [Census Bureau](https://www.census.gov/newsroom/stories/thrift-store-day.html) | Aug 17, 2023 |
+| 44.5%: CPSC's recall response rate for all consumer product recalls in fiscal year 2025, key measure 2025KM2.3.1, against a 43% target. The report's text gives it as 44.55% | [CPSC FY 2025 Agency Performance Report](https://www.cpsc.gov/s3fs-public/FY25-APR.pdf) | Apr 2026 |
+| CPSC visited 301 randomly selected thrift stores across the country, and 69 percent had at least one hazardous product. Field work ran from May through September 1999 | [CPSC Study of Hazardous Products in Thrift Stores](https://www.cpsc.gov/Media/Documents/Research--Statistics/Technical-Reports/General-Information/Other-Technical-Reports-/CPSC-Study-of-Hazardous-Products-in-Thrift-Stores) | 1999 study, read Nov 10, 2026 |
 | About 37% of cribs and 27% of strollers are handed down or bought secondhand, a 2010 estimate. Recalls of 32 cribs and strollers reached a 15% correction rate, 20% adjusted | [CPSC staff report to Congress](https://www.cpsc.gov/s3fs-public/pdfs/blk_pdf_ReporttoCongressPursuantSection104%28e%29RecallNotificationEffectiveness.pdf) | Mar 30, 2012 |
