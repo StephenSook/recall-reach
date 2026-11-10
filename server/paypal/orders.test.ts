@@ -65,7 +65,7 @@ describe("getOrder", () => {
         { name: "Stroller", sku: "SKU-1", quantity: 2, unitCents: 1500 },
         { name: "No SKU item", sku: null, quantity: 1, unitCents: 550 },
       ],
-      capture: { id: "CAP-1", status: "COMPLETED", createTime: "2026-11-05T21:22:38Z", amountCents: 3550, currency: "USD" },
+      capture: { id: "CAP-1", status: "COMPLETED", statusReason: null, createTime: "2026-11-05T21:22:38Z", amountCents: 3550, currency: "USD" },
     });
     expect(calls[0]).toMatchObject({ method: "GET", path: "/v2/checkout/orders/ORDER-1" });
   });
@@ -212,7 +212,19 @@ describe("getCapture", () => {
       createTime: "2026-11-05T21:22:38Z",
       amountCents: 3550,
       currency: "USD",
+      statusReason: null,
     });
     expect(calls[0].path).toBe("/v2/payments/captures/CAP-1");
+  });
+
+  it("reads why PayPal holds a capture, from its status details", async () => {
+    const { client } = fakeClient(() => ({
+      id: "CAP-2",
+      status: "PENDING",
+      status_details: { reason: "BUYER_COMPLAINT" },
+      create_time: "2026-11-10T00:32:13Z",
+      amount: { currency_code: "USD", value: "18.00" },
+    }));
+    expect(await getCapture(client, "CAP-2")).toMatchObject({ status: "PENDING", statusReason: "BUYER_COMPLAINT" });
   });
 });

@@ -418,7 +418,7 @@ async function refusePayPalFacts(
   if (capture.currency !== facts.currency) throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's currency differs from the approved one. Check the payment in PayPal.");
   if (capture.status === "REFUNDED") throw new RefundRefused("NOTHING_LEFT_TO_REFUND", "PayPal says this payment is already fully refunded. You can still send the notice.");
   if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") {
-    throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
+    await refuseHeld(client, captureId, capture);
   }
   refusePaymentDates(capture, facts.recallDate, facts.now);
   await refuseDisputed(client, captureId);
@@ -513,8 +513,22 @@ async function sendRefund(
 /** A disputed payment could be paid back twice. A stalled refund can be retried, and a second payout can't be taken back. */
 async function refuseDisputed(client: PayPalClient, captureId: string): Promise<void> {
   const dispute = await disputeOnCapture(client, captureId);
-  if (dispute === "DISPUTED") throw new RefundRefused("PAYMENT_DISPUTED", "PayPal shows a dispute on this payment. Check it in PayPal first.");
+  if (dispute === "DISPUTED") throw new RefundRefused("PAYMENT_DISPUTED", DISPUTED_MESSAGE);
   if (dispute === "UNREADABLE") throw new RefundRefused("DISPUTES_UNREADABLE", "PayPal's disputes could not be read, so nothing was refunded. Please try again.");
+}
+
+const DISPUTED_MESSAGE = "PayPal shows a dispute on this payment. Check it in PayPal first.";
+
+/**
+ * A payment PayPal won't refund as it stands. If the reason is a dispute, say so. A payment PayPal holds for
+ * the buyer's complaint (PENDING, BUYER_COMPLAINT) names it alone, without waiting on the Disputes API.
+ */
+async function refuseHeld(client: PayPalClient, captureId: string, capture: CaptureFacts): Promise<never> {
+  const disputed = new RefundRefused("PAYMENT_DISPUTED", DISPUTED_MESSAGE);
+  if (capture.status === "PENDING" && capture.statusReason === "BUYER_COMPLAINT") throw disputed;
+  // Unreadable disputes change nothing here: the status already refuses.
+  if ((await disputeOnCapture(client, captureId)) === "DISPUTED") throw disputed;
+  throw new RefundRefused("PAYPAL_FACTS_CHANGED", "PayPal's status for this payment does not allow a refund. Check the payment in PayPal.");
 }
 
 export async function askPayPalAgain(

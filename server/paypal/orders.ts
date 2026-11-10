@@ -34,11 +34,20 @@ const orderSchema = z.object({
     .min(1),
 });
 
-const captureSchema = z.object({ id: z.string(), status: z.string(), create_time: z.string().optional(), amount: money });
+const captureSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  // Why PayPal holds a PENDING capture, e.g. BUYER_COMPLAINT or ECHECK.
+  status_details: z.object({ reason: z.string().optional() }).optional(),
+  create_time: z.string().optional(),
+  amount: money,
+});
 
 export interface CaptureFacts {
   id: string;
   status: string;
+  /** PayPal's reason for the status, when it gives one. */
+  statusReason: string | null;
   createTime: string | null;
   amountCents: number;
   currency: string;
@@ -79,6 +88,7 @@ function toCapture(c: z.infer<typeof captureSchema>): CaptureFacts {
   return {
     id: c.id,
     status: c.status,
+    statusReason: c.status_details?.reason ?? null,
     createTime: c.create_time ?? null,
     amountCents: valueToCents(c.amount.value),
     currency: c.amount.currency_code,

@@ -49,6 +49,8 @@ type RefundStep = "land" | "lost" | "down" | number;
 function fakePayPal(
   over: {
     status?: string;
+    /** PayPal's status_details.reason on the capture, as it gives one for a held (PENDING) payment. */
+    reason?: string;
     amountCents?: number;
     createTime?: string;
     currency?: string;
@@ -98,6 +100,7 @@ function fakePayPal(
       return Response.json({
         id: capture[1],
         status: statusOf.get(capture[1]) ?? over.status ?? "COMPLETED",
+        ...(over.reason ? { status_details: { reason: over.reason } } : {}),
         create_time: over.createTime ?? "2026-11-06T14:00:00Z",
         amount: { currency_code: currency, value: value(amount) },
       });
@@ -848,6 +851,55 @@ describe("refunds", () => {
       await execute(approval.approvalId, pp.client);
       expect(disputeCalls(pp.calls)).toHaveLength(2);
       expect(disputeCalls(pp.calls)[0].path).toBe("/v1/customer/disputes");
+    });
+
+    const DISPUTED = { code: "PAYMENT_DISPUTED", message: "PayPal shows a dispute on this payment. Check it in PayPal first." };
+    const HELD = { code: "PAYPAL_FACTS_CHANGED", message: "PayPal's status for this payment does not allow a refund. Check the payment in PayPal." };
+
+    it("names the dispute when PayPal holds the payment for the buyer's complaint, as it does once an inquiry opens", async () => {
+      // Measured on the sandbox, Nov 10 2026: opening an inquiry moved the capture from COMPLETED to PENDING (BUYER_COMPLAINT).
+      const { id: matchId } = await setUp();
+      const held = fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
+      await expect(approve(matchId, SESSION, NOW, held.client)).rejects.toMatchObject(DISPUTED);
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("names the dispute from the hold alone, with no dispute listed", async () => {
+      const { id: matchId } = await setUp();
+      const held = fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: [] });
+      await expect(approve(matchId, SESSION, NOW, held.client)).rejects.toMatchObject(DISPUTED);
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("names the dispute on a held payment when the Disputes API lists one, whatever the hold's reason", async () => {
+      const { id: matchId } = await setUp();
+      const held = fakePayPal({ status: "PENDING", disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] });
+      await expect(approve(matchId, SESSION, NOW, held.client)).rejects.toMatchObject(DISPUTED);
+    });
+
+    it("keeps the status sentence for a payment held for another reason, such as an eCheck still clearing", async () => {
+      const { id: matchId } = await setUp();
+      await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "PENDING", reason: "ECHECK", disputes: [] }).client)).rejects.toMatchObject(HELD);
+      expect((await db.query("select 1 from approvals")).rows).toEqual([]);
+    });
+
+    it("still refuses a held payment by its status when the disputes can't be read", async () => {
+      const { id: matchId } = await setUp();
+      await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "PENDING", reason: "ECHECK", disputes: "down" }).client)).rejects.toMatchObject(HELD);
+    });
+
+    it("names the dispute on a completed payment the Disputes API lists", async () => {
+      const { id: matchId } = await setUp();
+      await expect(approve(matchId, SESSION, NOW, fakePayPal({ status: "COMPLETED", disputes: [{ status: "WAITING_FOR_SELLER_RESPONSE" }] }).client)).rejects.toMatchObject(DISPUTED);
+    });
+
+    it("sends nothing if PayPal holds the payment for a complaint after the approval, and leaves the approval unspent", async () => {
+      const { id: matchId } = await setUp();
+      const { approvalId } = await approve(matchId, SESSION, NOW, fakePayPal().client);
+      const held = fakePayPal({ status: "PENDING", reason: "BUYER_COMPLAINT", disputes: [] });
+      await expect(execute(approvalId, held.client)).rejects.toMatchObject(DISPUTED);
+      expect(held.calls.filter((c) => c.method === "POST")).toEqual([]);
+      expect((await db.query<{ consumed_at: unknown }>("select consumed_at from approvals where id = $1", [approvalId])).rows[0].consumed_at).toBeNull();
     });
 
     it("won't offer a refund on a payment with an open dispute", async () => {
