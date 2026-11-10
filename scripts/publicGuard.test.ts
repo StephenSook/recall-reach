@@ -33,6 +33,13 @@ describe("findViolations", () => {
     ["a research folder with a space, in quotes", 'See "research/market analysis/results.json"'],
     ["a relative research path with a space, in backticks", "See `../research/Market analysis.md`"],
     ["a relative research path with a space, in quotes", 'See "./research/Market analysis.md"'],
+    ["a research path in bold", "See **research/PLAN.md** for the plan"],
+    ["a research path in brackets", "[research/G1-SANDBOX-CHECKS.md]"],
+    ["a research path in a tight table cell", "|research/PLAN.md|"],
+    ["a research path after a flag", "--pairs=research/eval-labels/pairs.csv"],
+    ["a research path as an autolink", "<research/PLAN.md>"],
+    ["the research folder itself, one level up", "The plan lives in ../research/ next to this repo."],
+    ["the research folder itself, in backticks", "See `./research/` for the briefs."],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
@@ -48,6 +55,10 @@ describe("findViolations", () => {
     expect(findViolations([file("server/a.ts", "That took research/review.")])).toEqual([]);
     expect(findViolations([file("server/a.ts", 'That took "research/review".')])).toEqual([]);
     expect(findViolations([file("server/a.ts", "That took `research/review`.")])).toEqual([]);
+  });
+
+  it("leaves a web address alone, even one with a research folder in it", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/research/report.pdf and https://example.org/research/recalled-products/")])).toEqual([]);
   });
 
   it("lets .gitignore name what it keeps out", () => {

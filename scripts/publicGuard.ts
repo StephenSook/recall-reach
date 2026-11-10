@@ -8,7 +8,10 @@ import { readFileSync } from "node:fs";
 export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
-const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, /(?:^|[\s("'`./])research\/(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
+const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address.
+  /(?<!:\/\/\S*)(?<![\w-])research\/(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
+  // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.
+  /(?<!:\/\/\S*)(?<![\w.-])\.{1,2}\/research\/(?![\w.-])/,
   // Inside backticks or quotes a path can hold spaces: "research/Market analysis.md". It still needs a path's shape, a file
   // extension or a second folder, so quoted prose like "research/review" passes.
   /[`"'](?:\.{1,2}\/)*research\/[^`"'\n/]*?(?:\/[^`"'\n]*|\.\w+)[`"']/, /Obsidian (?:vault|note)/i, /\.claude\//];
