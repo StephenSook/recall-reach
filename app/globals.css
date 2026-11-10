@@ -666,6 +666,15 @@ pre {
 .studio-frame .ag-studio-ai-step-subline {
   display: none;
 }
+/* AG Studio is laid out for a wide screen. On a phone it scrolls sideways inside its frame instead of losing its left edge. */
+@media (max-width: 640px) {
+  .studio-frame {
+    overflow-x: auto;
+  }
+  .studio-frame > * {
+    min-width: 900px;
+  }
+}
 
 .studio-to-read {
   height: 100%;
