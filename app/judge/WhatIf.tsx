@@ -21,7 +21,7 @@ export function WhatIf({ soldOn, recallDate }: { soldOn: string; recallDate: str
           If it sold on <input type="date" value={movedTo} max={soldOn} onChange={(e) => setMovedTo(e.target.value)} />
         </label>
         :{" "}
-        <span aria-live="polite">{moved ? <span className={chipClass(PATH_CHIP[moved])}>{PATH_CHIP[moved]}</span> : "Pick a date"}</span>
+        <span aria-live="polite">{moved ? <span className={chipClass(PATH_CHIP[moved])}>{PATH_CHIP[moved]}</span> : "Pick a date up to today"}</span>
       </p>
     </div>
   );

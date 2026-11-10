@@ -9,9 +9,13 @@ export function isCalendarDate(day: string): boolean {
   return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
 }
 
-/** moved is null until the tried date is a whole calendar date, so a cleared or half-typed field shows no verdict. */
+/**
+ * moved is null until the tried date is a whole calendar date no later than today, so a cleared, half-typed or future date
+ * shows no verdict. The input's max only limits its picker: a typed date can pass it.
+ */
 export function whatIfPaths(soldOn: string, movedTo: string, recallDate: string): { original: SalePath; moved: SalePath | null } {
-  return { original: salePath(soldOn, recallDate), moved: isCalendarDate(movedTo) ? salePath(movedTo, recallDate) : null };
+  const tried = isCalendarDate(movedTo) && movedTo <= soldOn;
+  return { original: salePath(soldOn, recallDate), moved: tried ? salePath(movedTo, recallDate) : null };
 }
 
 /** The calendar day before a YYYY-MM-DD date, in UTC so no local clock can shift it. */
