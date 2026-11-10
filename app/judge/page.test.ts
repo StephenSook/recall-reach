@@ -74,9 +74,13 @@ describe("the judge's door", () => {
     it("shows the bedside sleeper's verdict as sold beside the verdict for a date before the recall, from the queue's rule", () => {
       const box = whatIf(html);
       expect(html).toContain('data-testid="what-if"');
+      expect(box).toContain("If it sold today, 2026-11-10");
+      expect(box).toContain("If it sold on");
+      expect(box).not.toContain("As sold");
       expect(box).toContain("2026-11-10");
       expect(box).toContain("Refund eligible");
       expect(box).toContain('value="2026-11-04"');
+      expect(box).toContain('max="2026-11-10"');
       expect(box).toContain("Notice only");
       expect(box).toContain("Nothing is saved");
     });

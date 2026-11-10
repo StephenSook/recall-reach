@@ -22,6 +22,11 @@ describe("one changed fact: the sale date", () => {
     for (const day of ["2026-11-04", RECALL, "2026-11-06"]) expect(whatIfPaths(SOLD, day, RECALL).moved).toBe(salePath(day, RECALL));
   });
 
+  it("gives no verdict for a date that isn't a whole calendar date, as while the field is cleared or half typed", () => {
+    for (const movedTo of ["", "2026-1", "2026-11-0", "2026-02-30", "2026-13-01", "not a date"]) expect(whatIfPaths(SOLD, movedTo, RECALL).moved).toBeNull();
+    expect(whatIfPaths(SOLD, "2028-02-29", RECALL).moved).toBe("REFUND_ELIGIBLE");
+  });
+
   it("starts the tried date on the day before the recall, across a month and a year", () => {
     expect(dayBefore(RECALL)).toBe("2026-11-04");
     expect(dayBefore("2026-03-01")).toBe("2026-02-28");

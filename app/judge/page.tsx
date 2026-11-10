@@ -117,9 +117,9 @@ export default async function JudgeDoor() {
           </li>
           {recallDate ? (
             <li>
-              <strong>Change one fact.</strong> Move the bedside sleeper&apos;s sale date before recall 27027.
+              <strong>Change one fact.</strong> Try a sale of the bedside sleeper on a date before recall 27027.
               <WhatIf soldOn={businessDay()} recallDate={recallDate} />
-              <span className="quiet">Look for the verdict changing beside the original, by the queue&apos;s own date rule. Nothing is saved.</span>
+              <span className="quiet">Look for the verdict changing with the date, by the queue&apos;s own date rule. Nothing is saved.</span>
             </li>
           ) : null}
         </ol>

@@ -4,21 +4,24 @@ import { useState } from "react";
 import { PATH_CHIP, chipClass } from "../queue/labels";
 import { dayBefore, whatIfPaths } from "./whatIfRule";
 
-/** The demo's bedside sleeper, sold after its recall, beside the same sale on a date the judge picks. Nothing is saved. */
+/**
+ * Two hypothetical sales of the bedside sleeper: one today, one on a date the judge picks. Only the date rule is shown, not the
+ * demo sale's own state (it may already be refunded). Nothing is saved.
+ */
 export function WhatIf({ soldOn, recallDate }: { soldOn: string; recallDate: string }) {
   const [movedTo, setMovedTo] = useState(dayBefore(recallDate));
-  const valid = /^\d{4}-\d{2}-\d{2}$/.test(movedTo);
-  const { original, moved } = whatIfPaths(soldOn, valid ? movedTo : soldOn, recallDate);
+  const { original, moved } = whatIfPaths(soldOn, movedTo, recallDate);
   return (
     <div className="what-if" data-testid="what-if">
       <p>
-        As sold, {soldOn}: <span className={chipClass(PATH_CHIP[original])}>{PATH_CHIP[original]}</span>
+        If it sold today, {soldOn}: <span className={chipClass(PATH_CHIP[original])}>{PATH_CHIP[original]}</span>
       </p>
       <p>
         <label>
-          What if it sold on <input type="date" value={movedTo} onChange={(e) => setMovedTo(e.target.value)} />
+          If it sold on <input type="date" value={movedTo} max={soldOn} onChange={(e) => setMovedTo(e.target.value)} />
         </label>
-        : <span className={chipClass(PATH_CHIP[moved])} aria-live="polite">{PATH_CHIP[moved]}</span>
+        :{" "}
+        <span aria-live="polite">{moved ? <span className={chipClass(PATH_CHIP[moved])}>{PATH_CHIP[moved]}</span> : "Pick a date"}</span>
       </p>
     </div>
   );
