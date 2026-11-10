@@ -13,6 +13,8 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 [![CI](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/ci.yml) [![Newman against the live site](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml/badge.svg)](https://github.com/StephenSook/recall-reach/actions/workflows/newman.yml)
 
+To report a security problem, and to see who can move money, read [SECURITY.md](SECURITY.md).
+
 ![The demo shop's queue on the deployed site: 1,855 recalls checked, 4 matched, 5 can't tell yet, 24 cleared, with each sale's state and why it came up](docs/images/queue.png)
 
 Why a resale shop: I went to Kid to Kid in Kennesaw and talked with two people who work there (not the owner). Before they take anything in, they check "a website called cpsc.gov/recalls". Asked what they'd do if something they had already sold got recalled, they said they'd "call them and let them know and tell them it's unsafe to use." Recall Reach tells them which family to call.
