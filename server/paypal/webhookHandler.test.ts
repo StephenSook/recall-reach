@@ -65,7 +65,7 @@ describe("handleWebhookDelivery", () => {
       const approval = (await db.query<{ request_id: string }>("select request_id from payouts")).rows[0].request_id;
       const answers: (string | null)[] = [null, "SUCCESS"];
       const onPayoutItem = (resource: unknown, k: typeof key) =>
-        recordPayoutItemEvent(db, k, resource as never, async () => ({ status: answers.shift() ?? null, senderBatchId: approval, senderItemId: approval }));
+        recordPayoutItemEvent(db, k, resource as never, async () => ({ status: answers.shift() ?? null, batchStatus: null, senderBatchId: approval, senderItemId: approval }));
       const raw = item("SUCCESS");
       await expect(deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).rejects.toThrow(/no status/);
       expect(await statusNow()).toBe("unconfirmed");

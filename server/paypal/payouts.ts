@@ -174,28 +174,43 @@ export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, 
   if (!rows[0]) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
   if (!rows[0].batch_id && !rows[0].batch_ref_hmac) throw new PayoutRefused("NO_ANSWER", "PayPal gave no clear answer to this payment, and it wasn't sent again. Check the shop's PayPal activity.");
   if (!rows[0].batch_id) throw new PayoutRefused("AGED_OUT", "PayPal's record of this payment is no longer held here. Check PayPal directly.");
-  const paypalStatus = (await readPayoutBatch(client)(rows[0].batch_id)).status;
+  const paypalStatus = settledBy(await readPayoutBatch(client)(rows[0].batch_id));
   const status = paypalStatus ? fromItemStatus(paypalStatus) : "unconfirmed";
   // Only for the approval this read began with: the owner may have reviewed a new payment since.
   await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return currentStatus(db, rows[0].id);
 }
 
-/** PayPal's read of a batch: its one item's status, and who sent it. A send sets both sender ids to its approval's request id. */
+/** PayPal's read of a batch: its one item's status, the batch's, and who sent it. A send sets both sender ids to its approval's request id. */
 export interface PayoutBatchRead {
   status: string | null;
+  batchStatus: string | null;
   senderBatchId: string | null;
   senderItemId: string | null;
+}
+
+/**
+ * The answer a read settles on: the item's status, or DENIED for a batch PayPal denied with no item in it. PayPal's batch
+ * statuses say a denied batch was not processed, so no money moved, and it reads as failed. Anything else is no answer yet.
+ */
+function settledBy(read: PayoutBatchRead): string | null {
+  if (read.status) return read.status;
+  return read.batchStatus === "DENIED" ? "DENIED" : null;
 }
 
 export function readPayoutBatch(client: PayPalClient): (batchId: string) => Promise<PayoutBatchRead> {
   return async (batchId) => {
     const { data } = await client.request<{
-      batch_header?: { sender_batch_header?: { sender_batch_id?: string } };
+      batch_header?: { batch_status?: string; sender_batch_header?: { sender_batch_id?: string } };
       items?: { transaction_status?: string; payout_item?: { sender_item_id?: string } }[];
     }>("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
     const item = data.items?.[0];
-    return { status: item?.transaction_status ?? null, senderBatchId: data.batch_header?.sender_batch_header?.sender_batch_id ?? null, senderItemId: item?.payout_item?.sender_item_id ?? null };
+    return {
+      status: item?.transaction_status ?? null,
+      batchStatus: data.batch_header?.batch_status ?? null,
+      senderBatchId: data.batch_header?.sender_batch_header?.sender_batch_id ?? null,
+      senderItemId: item?.payout_item?.sender_item_id ?? null,
+    };
   };
 }
 
@@ -228,11 +243,14 @@ export async function recordPayoutItemEvent(
   const read = await readBatch(resource.payout_batch_id);
   // A sender PayPal names that isn't this approval makes the batch someone else's, whatever the event paired it with.
   if ((read.senderBatchId !== null && read.senderBatchId !== row.request_id) || (read.senderItemId !== null && read.senderItemId !== row.request_id)) return false;
-  // A read missing its item, a sender or a status settles nothing yet: fail the delivery, so PayPal sends it again.
-  if (read.senderBatchId === null || read.senderItemId === null || !read.status) throw new Error("PayPal's read of the payout batch named no status or sender yet");
+  const paypalStatus = settledBy(read);
+  // A denied batch has no item to name its sender, so the batch's own sender has to be this approval.
+  const denied = !read.status && paypalStatus === "DENIED" && read.senderBatchId === row.request_id;
+  // Otherwise a read missing its item, a sender or a status settles nothing yet: fail the delivery, so PayPal sends it again.
+  if (!paypalStatus || (!denied && (read.senderBatchId === null || read.senderItemId === null))) throw new Error("PayPal's read of the payout batch named no status or sender yet");
   // Each step is for the approval found above: the owner may review a new payment while this runs.
   await recordBatch(db, { id: row.id, approval: row.request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
-  await moveStatus(db, fromItemStatus(read.status), read.status, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
+  await moveStatus(db, fromItemStatus(paypalStatus), paypalStatus, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
   return true;
 }
 

@@ -14,7 +14,7 @@ const key = createRecordKey("r".repeat(32));
 const SESSION = "session-1";
 const RECEIVER = "sb-abc@personal.example.com";
 
-function fakePayPal(over: { post?: () => unknown; itemStatus?: string; batchStatus?: string } = {}) {
+function fakePayPal(over: { post?: () => unknown; itemStatus?: string; batchStatus?: string; noItems?: boolean } = {}) {
   const calls: { method: Method; path: string; opts: RequestOptions }[] = [];
   const client: PayPalClient = {
     request: (async (method: Method, path: string, opts: RequestOptions = {}) => {
@@ -23,7 +23,7 @@ function fakePayPal(over: { post?: () => unknown; itemStatus?: string; batchStat
         if (over.post) return over.post();
         return { status: 201, data: { batch_header: { payout_batch_id: "RAWBATCH1", batch_status: "PENDING" } } };
       }
-      return { status: 200, data: { batch_header: { batch_status: over.batchStatus ?? "SUCCESS" }, items: [{ transaction_status: over.itemStatus ?? "SUCCESS" }] } };
+      return { status: 200, data: { batch_header: { batch_status: over.batchStatus ?? "SUCCESS" }, items: over.noItems ? [] : [{ transaction_status: over.itemStatus ?? "SUCCESS" }] } };
     }) as PayPalClient["request"],
   };
   return { client, calls };
@@ -184,6 +184,24 @@ describe("a payment past the refund window", () => {
     });
   });
 
+  describe("a batch PayPal denied, with no item in it", () => {
+    it("reads as failed, so the owner can review a new payment", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      const denied = fakePayPal({ batchStatus: "DENIED", noItems: true });
+      expect(await readPayoutFromPayPal(db, denied.client, { shopId, payoutId: id, now: NOW })).toMatchObject({ status: "failed", paypalStatus: "DENIED" });
+      expect(await code(review())).toBe("no refusal");
+    });
+
+    it("still waits on a batch with no item that PayPal hasn't decided yet", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      const pending = fakePayPal({ batchStatus: "PENDING", noItems: true });
+      expect(await readPayoutFromPayPal(db, pending.client, { shopId, payoutId: id, now: NOW })).toMatchObject({ status: "unconfirmed" });
+      expect(await code(review())).toBe("ALREADY_SENT");
+    });
+  });
+
   describe("reading it back", () => {
     const sent = async (itemStatus: string) => {
       const pp = fakePayPal({ itemStatus });
@@ -233,8 +251,10 @@ describe("a payment past the refund window", () => {
     const current = async () => (await db.query<{ request_id: string }>("select request_id from payouts")).rows[0].request_id;
     const mine = (status: string | null) => async (): Promise<PayoutBatchRead> => {
       const approval = await current();
-      return { status, senderBatchId: approval, senderItemId: approval };
+      return { status, batchStatus: null, senderBatchId: approval, senderItemId: approval };
     };
+    /** A batch PayPal decided with no item in it, sent by this approval unless told otherwise. */
+    const emptyBatch = (batchStatus: string, sender?: string) => async (): Promise<PayoutBatchRead> => ({ status: null, batchStatus, senderBatchId: sender ?? (await current()), senderItemId: null });
     const hook = (status: string) => recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: status }, mine(status));
     const statusOf = async (id: string) => (await db.query<{ status: string }>("select status from payouts where id = $1", [id])).rows[0].status;
 
@@ -248,6 +268,27 @@ describe("a payment past the refund window", () => {
       expect(await statusOf(id)).toBe("unconfirmed");
       await recordPayoutItemEvent(db, key, event, mine("FAILED"));
       expect(await statusOf(id)).toBe("failed");
+    });
+
+    it("settles a denied batch with no item as failed, once PayPal names this approval as its sender", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "DENIED" }, emptyBatch("DENIED"))).toBe(true);
+      expect(await statusOf(id)).toBe("failed");
+    });
+
+    it("won't settle a denied batch PayPal says another approval sent", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "DENIED" }, emptyBatch("DENIED", "00000000-0000-4000-8000-000000000009"))).toBe(false);
+      expect(await statusOf(id)).toBe("unconfirmed");
+    });
+
+    it("still retries an empty batch PayPal hasn't decided", async () => {
+      const { id } = await review();
+      await send(id, fakePayPal().client);
+      await expect(recordPayoutItemEvent(db, key, { payout_batch_id: "RAWBATCH1", transaction_status: "PENDING" }, emptyBatch("PENDING"))).rejects.toThrow(/no status/);
+      expect(await statusOf(id)).toBe("unconfirmed");
     });
 
     it("fails the delivery when PayPal's read names no status yet, so PayPal sends it again, and moves nothing", async () => {
@@ -264,7 +305,7 @@ describe("a payment past the refund window", () => {
       await send(id, fakePayPal().client);
       const approval = await approvalOf(id);
       // An event pairing this approval with a batch PayPal says another approval sent.
-      const someoneElses = async (): Promise<PayoutBatchRead> => ({ status: "FAILED", senderBatchId: "00000000-0000-4000-8000-000000000009", senderItemId: "00000000-0000-4000-8000-000000000009" });
+      const someoneElses = async (): Promise<PayoutBatchRead> => ({ status: "FAILED", batchStatus: null, senderBatchId: "00000000-0000-4000-8000-000000000009", senderItemId: "00000000-0000-4000-8000-000000000009" });
       expect(await recordPayoutItemEvent(db, key, { payout_batch_id: "OTHERBATCH", transaction_status: "FAILED", payout_item: { sender_item_id: approval } }, someoneElses)).toBe(false);
       expect(await statusOf(id)).toBe("unconfirmed");
       expect((await db.query<{ batch_ref_hmac: string }>("select batch_ref_hmac from payouts where id = $1", [id])).rows[0].batch_ref_hmac).toBe(key("paypal-resource", "RAWBATCH1"));
