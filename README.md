@@ -296,6 +296,8 @@ An axe-core pass, `e2e/local/axe.spec.ts`, checks 13 public pages a judge is sen
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/StephenSook/recall-reach)
 
+On a fresh deploy, first change the four `fromService` names in `render.yaml` (lines 62, 67, 72 and 77) to `recall-reach-web`. They name the live service, which Render created as `recall-reach-web-e022`.
+
 `render.yaml` defines the service. Migrations run during the build, a deploy waits for CI on its commit, and Render's health check uses `/api/live`. Past recall years load on the first tick after a deploy and retry hourly.
 
 Render asks for `DATABASE_URL` (Postgres) and your sandbox app's `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYPAL_WEBHOOK_ID`, with the webhook pointed at `/api/paypal/webhook`. `ANTHROPIC_API_KEY` is optional: without it the queue says the Claude check is unavailable. `DEMO_BUYER_EMAIL` is an optional test inbox for the demo notice. Render generates the other secrets.
