@@ -28,6 +28,8 @@ describe("the judge's door", () => {
 
   it("says what to do for the time you have", () => {
     for (const row of ["30 seconds", "3 minutes", "10 minutes"]) expect(html).toContain(`<td>${row}</td>`);
+    // globals.css keeps each duration whole on a phone through this class.
+    expect(html).toContain('class="ledger time-table"');
   });
 
   const listAt = (testId: string) => {

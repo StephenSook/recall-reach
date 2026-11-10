@@ -41,7 +41,7 @@ export default async function JudgeDoor() {
         What the demo changes: a shop of its own, with its own sandbox sales, notices and refunds, all deleted after 48 hours. It emails nobody. Refunds use PayPal sandbox test money. No real money moves.
       </p>
       <div className="window table-window">
-        <table className="ledger" data-testid="time-table">
+        <table className="ledger time-table" data-testid="time-table">
           <thead>
             <tr>
               <th>If you have</th>
