@@ -9,8 +9,8 @@ export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
 // Anyone's home directory, with or without a path after it, written with /, \ or JSON's \/. A local path shouldn't ship,
-// and naming one account here would ship that name.
-const PRIVATE_WORDS = [/(?:\\|\\?\/)(?:Users|home)(?:\\|\\?\/)[\w.-]+/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
+// and naming one account here would ship that name. Not inside a web address, as for the research rules below.
+const PRIVATE_WORDS = [/(?<!:\/\/[^\s)\]|>"'`]*)(?:\\|\\?\/)(?:Users|home)(?:\\|\\?\/)[\w.-]+/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
   // "./" and "../" segments after the folder still lead into it: "research/./PLAN.md".
   /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.{1,2}\/)*(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
   // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.

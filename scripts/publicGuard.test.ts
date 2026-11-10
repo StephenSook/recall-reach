@@ -71,6 +71,15 @@ describe("findViolations", () => {
     expect(findViolations([file("docs/a.md", "See https://example.org/research/report.pdf and https://example.org/research/recalled-products/")])).toEqual([]);
   });
 
+  it("leaves a web address alone, even one with a home folder in it", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/home/someone and [a guide](https://example.org/Users/someone/notes)")])).toEqual([]);
+  });
+
+  it("still catches a home directory written next to a web address", () => {
+    expect(findViolations([file("docs/a.md", "See https://example.org/docs and /Users/someone/notes")])).toHaveLength(1);
+    expect(findViolations([file("docs/a.md", "|[link](https://example.org/)|/home/someone|")])).toHaveLength(1);
+  });
+
   it("lets .gitignore name what it keeps out", () => {
     expect(findViolations([file(".gitignore", "CLAUDE.local.md\nBUILD-BRIEF*.md\n.claude/skills/\n")])).toEqual([]);
   });
