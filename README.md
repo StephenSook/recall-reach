@@ -145,7 +145,7 @@ Real shops can optionally subscribe to "Recall Reach for shops" through PayPal S
 | `POST /v2/checkout/orders`, then capture and `GET` (Orders v2) | Makes the demo shop's sandbox sales and reads them back | `server/paypal/orders.ts` |
 | `GET /v2/payments/captures/{id}` (Payments) | Reads a payment before anything is refunded | `server/paypal/orders.ts` |
 | `GET /v1/customer/disputes` (Customer Disputes) | Holds a refund if the payment has a dispute | `server/paypal/disputes.ts` |
-| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved for the demo shop, from the app's own code. A connected shop's refund is the same call through our own client with PayPal-Auth-Assertion, which neither the Toolkit nor the Server SDK sends | `server/paypal/toolkitRefund.ts` |
+| `create_refund` (Agent Toolkit), which calls `POST /v2/payments/captures/{id}/refund` | Sends a refund the owner approved for the demo shop, from the app's own code. Claude never holds this tool. A connected shop's refund is the same call through our own client with PayPal-Auth-Assertion, which neither the Toolkit nor the Server SDK sends | `server/paypal/toolkitRefund.ts` |
 | `GET /v2/payments/refunds/{id}` (Server SDK `getRefund`) | Reads the refund back so the records can be compared | `server/paypal/sdkRefundRead.ts` |
 | `PAYMENT.CAPTURE.COMPLETED` (webhook) | Tells the queue a sale happened, once its signature is checked against a certificate fetched only from PayPal's sandbox certificate host | `server/paypal/webhookHandler.ts` |
 
