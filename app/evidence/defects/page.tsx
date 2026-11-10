@@ -10,7 +10,7 @@ export default function DefectsPage() {
       </header>
       <p>Defects we found in our own work, what we changed, and how we checked it again.</p>
       {DEFECTS.map((d) => (
-        <section key={d.title} className="window" data-testid="defect">
+        <section key={d.title} className="window defect-card" data-testid="defect">
           <h2 className="section-title">{d.title}</h2>
           <p>
             <strong>Found:</strong> {d.found}

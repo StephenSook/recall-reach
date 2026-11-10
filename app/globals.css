@@ -914,6 +914,14 @@ pre {
   }
 }
 
+/* A defect on /evidence/defects: its text sits inside the card, not on its border. */
+.defect-card {
+  padding: 14px 16px;
+}
+.defect-card > .section-title {
+  margin-top: 0;
+}
+
 /* The family's page: one quiet column, nothing but what they need. */
 .family {
   min-height: 100vh;
