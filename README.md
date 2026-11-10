@@ -29,7 +29,7 @@ Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC reco
 | Potential Impact | [/replay](https://recall-reach-web-e022.onrender.com/replay) | Real CPSC recalls checked against the demo shop, with a recount. | [app/replay/page.tsx](app/replay/page.tsx), [server/replay/replay.ts](server/replay/replay.ts) |
 | Potential Impact | [server/paypal/refunds.test.ts](server/paypal/refunds.test.ts) | On the live sandbox on Nov 9, 2026, a buyer's dispute held the payment, and Review refund answered "PayPal shows a dispute on this payment. Check it in PayPal first." No refund was created. | [server/paypal/refunds.ts](server/paypal/refunds.ts) |
 | Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | A shopping agent checks listings against recalls before offering one. | [server/agent/shopper.ts](server/agent/shopper.ts), [app/shopper/ShopperForm.tsx](app/shopper/ShopperForm.tsx) |
-| Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | WebMCP: the page registers search_listings, check_recall and start_checkout for an agent in the browser, and the buyer still approves on PayPal. | [app/shopper/webmcp.ts](app/shopper/webmcp.ts) |
+| Innovation/Idea | [/shopper](https://recall-reach-web-e022.onrender.com/shopper) | WebMCP: the page registers search_listings, check_recall and start_checkout for an agent in the browser, and the buyer still approves on PayPal. On Nov 9 ChatGPT's desktop app used them on the live page and stopped at PayPal's approval page. | [app/shopper/webmcp.ts](app/shopper/webmcp.ts) |
 | Innovation/Idea | [/judge](https://recall-reach-web-e022.onrender.com/judge) | Start a demo shop from step 1. The queue starts from the shop's own sale, Claude's questions rest on CPSC's words, and the owner approves before sending. | [server/agent/recallQuestion.ts](server/agent/recallQuestion.ts), [server/notice/compose.ts](server/notice/compose.ts) |
 | Presentation | [/judge](https://recall-reach-web-e022.onrender.com/judge) | A guide through notices, refunds and a sale reaching the demo queue. | [app/judge/page.tsx](app/judge/page.tsx) |
 | Presentation | [/evidence/defects](https://recall-reach-web-e022.onrender.com/evidence/defects) | Defects we found, what changed, and how we checked again. | [app/evidence/defects/page.tsx](app/evidence/defects/page.tsx), [app/evidence/defects/defects.ts](app/evidence/defects/defects.ts) |
@@ -226,7 +226,7 @@ To enable an origin trial, register the exact origin
 returned token as the server environment variable `WEBMCP_ORIGIN_TRIAL_TOKEN` on the
 Render web service, then redeploy. Only `/shopper` emits the origin-trial meta tag, and
 only when this variable is set. Never commit the token. A different origin needs its
-own registration. Trial enrollment and browser support still need live verification.
+own registration. On Nov 9 the trial token was live on the deployed site: Chrome 156 listed all three tools there.
 
 For ChatGPT desktop, open Settings > Browser > Enable site tools, switch to Work mode (Chat mode can't use site
 tools), then open `/shopper` in its browser. If the browser blocks the new tab, the tool answers that PayPal's page is opening in this tab, and
@@ -243,8 +243,10 @@ and [Chrome's imperative API guide](https://developer.chrome.com/docs/modern-web
 `execute(input, { signal })`, and cleanup by aborting the registration signal.
 `provideContext()` is removed; Chrome's guide records `navigator.modelContext` as
 deprecated in Chromium 150. This implementation tries the current document API first,
-and falls back to `navigator.modelContext` with the same call shape. Mocked registration tests do not establish native
-Chrome 149 or ChatGPT desktop compatibility. Run the tools there before claiming it.
+and falls back to `navigator.modelContext` with the same call shape. Mocked registration tests don't prove a client
+works on their own. The live evidence is the Nov 9 run: ChatGPT's desktop app (Work mode) found the three tools on the
+deployed `/shopper`, searched for a bath seat under $50, ran `check_recall`, started checkout, and stopped on PayPal's
+sandbox page. Other browsers and Chrome versions before 156 are untested.
 
 ## Run it locally
 
