@@ -94,6 +94,9 @@ export default async function JudgeDoor() {
         <li>
           <strong>See it stay quiet.</strong> <Link href="/replay">Recall Replay</Link> runs every recall from 2025 on, and you can recount it. <Link href="/eval">The eval</Link> has held-out numbers beside a word-match baseline.
           <span className="quiet">Look for how many recalls had nothing near them, and where the eval says it falls short.</span>
+          <span className="quiet" data-testid="grid-watermark">
+            After Dec 9, the queue and Recall Replay tables may show AG Grid&apos;s trial watermark. AG Grid&apos;s team said in the PayPal Developer Discord that this is fine for the hackathon.
+          </span>
         </li>
       </ol>
       <details className="window">

@@ -131,4 +131,13 @@ describe("the judge's door", () => {
   it("doesn't promise the shopping agent will stop a listing", () => {
     expect(html).toContain("it may not stop any");
   });
+
+  it("tells a judge, at the Replay step, why the two Enterprise tables may show AG Grid's watermark after the trial key ends", () => {
+    const step = listAt("itinerary").find((s) => s.includes("See it stay quiet")) ?? "";
+    expect(step).toContain('data-testid="grid-watermark"');
+    // Only the queue and Replay import gridEnterprise.ts; AG Studio has its own key.
+    expect(step).toContain("After Dec 9, the queue and Recall Replay tables may show AG Grid&#x27;s trial watermark.");
+    expect(step).toContain("AG Grid&#x27;s team said in the PayPal Developer Discord that this is fine for the hackathon.");
+    expect(step).not.toContain("Studio");
+  });
 });
