@@ -9,7 +9,8 @@ export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
 const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
-  /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
+  // "./" and "../" segments after the folder still lead into it: "research/./PLAN.md".
+  /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.{1,2}\/)*(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
   // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.
   /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w.-])\.{1,2}\/research\/(?![\w.-])/,
   // Inside backticks or quotes a path can hold spaces: "research/Market analysis.md". It still needs a path's shape, a file
