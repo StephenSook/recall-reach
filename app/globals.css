@@ -231,6 +231,14 @@ small,
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+/* On a phone the nav wraps: a hidden scroll cut the last link off mid-word with no sign there was more. */
+@media (max-width: 640px) {
+  .site-nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: 2px 16px;
+  }
+}
 .page {
   width: 100%;
   max-width: 1120px;
