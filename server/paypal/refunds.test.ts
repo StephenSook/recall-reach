@@ -1796,6 +1796,28 @@ describe("refunds", () => {
       await db.query("update paypal_payments set amount_cents = 9000");
       expect(await fullyRefundedCaptures(db)).toEqual(["CAP-1"]);
     });
+
+    it("judges a refund by its own shop's payment, not another shop's row for the same capture", async () => {
+      const partial = await setUp(line(), { amountCents: 11000 });
+      const a = await approve(partial.id);
+      await execute(a.approvalId, fakePayPal().client);
+      const other = await createShop(db, { name: "OTHER", kind: "DEMO" });
+      await db.query(
+        `insert into paypal_payments (shop_id, order_id, order_number, capture_id, capture_status, captured_at, amount_cents, currency)
+         values ($1, 'ORDER-9', '#X', 'CAP-1', 'COMPLETED', '2026-11-06T14:00:00Z', 9000, 'USD')`,
+        [other],
+      );
+      expect(await fullyRefundedCaptures(db)).toEqual([]);
+    });
+
+    it("leaves out a refund whose payment row the purge already took", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      await execute(a.approvalId, fakePayPal().client);
+      expect(await fullyRefundedCaptures(db)).toEqual(["CAP-1"]);
+      await db.query("delete from paypal_payments");
+      expect(await fullyRefundedCaptures(db)).toEqual([]);
+    });
   });
 
   describe("reading a refund, which is what opening the page does", () => {
@@ -1829,6 +1851,23 @@ describe("refunds", () => {
       expect(read.exceptions).toContain("PayPal hasn't finished this refund yet.");
       expect(read.exceptions).not.toContain("No clear answer from PayPal yet. Check it before trying again.");
       expect((await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later })).ledger.status).toBe("pending");
+    });
+
+    it("brings back to pending a refund the old ten-minute rule marked unconfirmed, once PayPal reads it as PENDING", async () => {
+      const m = await setUp();
+      const a = await approve(m.id);
+      const pp = fakePayPal({ refundStatus: "PENDING" });
+      const r = await execute(a.approvalId, pp.client);
+      await agedFromNow(r.refundId);
+      await db.query("update refunds set status = 'unconfirmed' where id = $1", [r.refundId]);
+      const later = new Date(NOW.getTime() + 15 * 60_000);
+      const read = await readRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(read.newerAnswer).toBe("pending");
+      expect(read.exceptions).toContain("PayPal's answer is newer than our ledger. Update it below.");
+      const updated = await reconcileRefund(db, pp.client, { shopId, refundId: r.refundId, recordKey: key, now: later });
+      expect(updated.ledger.status).toBe("pending");
+      expect(updated.exceptions).not.toContain("No clear answer from PayPal yet. Check it before trying again.");
+      expect(updated.exceptions).toContain("PayPal hasn't finished this refund yet.");
     });
 
     it("the update is a separate, deliberate step", async () => {
