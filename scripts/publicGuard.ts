@@ -9,8 +9,10 @@ export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
 // Anyone's home directory, with or without a path after it, written with /, \ or JSON's \/. A local path shouldn't ship,
-// and naming one account here would ship that name. Not inside an http(s) web address, but a file:// link still counts.
-const PRIVATE_WORDS = [/(?<!https?:\/\/[^\s)\]|>"'`]*)(?:\\|\\?\/)(?:Users|home)(?:\\|\\?\/)[\w.-]+/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
+// and naming one account here would ship that name. Not inside an http(s) web address, which ends at a space, ) ] | > a quote,
+// or a shell's ; or &, but a file:// link still counts. Backslashes may be doubled, as JSON writes them, and a name may be
+// percent-encoded, as in a file URL.
+const PRIVATE_WORDS = [/(?<!https?:\/\/[^\s)\]|>"'`;&]*)(?:\\{1,2}|\\?\/)(?:Users|home)(?:\\{1,2}|\\?\/)[\w.%-]+/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
   // "./" and "../" segments after the folder still lead into it: "research/./PLAN.md".
   /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.{1,2}\/)*(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
   // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.
