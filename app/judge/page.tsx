@@ -11,6 +11,16 @@ import { WhatIf } from "./WhatIf";
 
 export const dynamic = "force-dynamic";
 
+// Each recall named on this page links to its CPSC notice (URLs from the app's own record; each answered 200 on Nov 10).
+const CPSC = {
+  "27072": "https://www.cpsc.gov/Recalls/2027/Baby-Brezza-Enterprises-Recalls-SuperFast-Sterilizer-Dryers-Due-to-Overheating-and-Burn-Hazards",
+  "27027":
+    "https://cpsc.gov/Recalls/2027/Papablic-of-USA-Recalls-Convertible-Bedside-Sleepers-Due-to-Risk-of-Serious-Injury-or-Death-from-Entrapment-Suffocation-and-Fall-Hazards-Violate-Mandatory-Standard-for-Play-Yards",
+  "27040":
+    "https://www.cpsc.gov/Recalls/2027/Costway-Recalls-Convertible-High-Chairs-Due-to-Risk-of-Serious-Injury-or-Death-from-Entrapment-and-Fall-Hazards-Violate-Mandatory-Standard-for-High-Chairs",
+} as const;
+const Recall = ({ n }: { n: keyof typeof CPSC }) => <a href={CPSC[n]}>{n}</a>;
+
 /** The demo's bedside sleeper is sold today, after recall 27027. Its date, or null if it isn't held or takes too long. */
 async function whatIfRecallDate(deadlineMs = 1000): Promise<string | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -76,11 +86,11 @@ export default async function JudgeDoor() {
       </div>
       <ol className="window cleared-list numbered-steps" data-testid="itinerary">
         <li>
-          <strong>Tell a family.</strong> Open the card for recall 27072, press Approve this notice, then open it in mail and follow its link to the family&apos;s page. No mail app? Read the message shows its text and the link.
+          <strong>Tell a family.</strong> Open the card for recall <Recall n="27072" />, press Approve this notice, then open it in mail and follow its link to the family&apos;s page. No mail app? Read the message shows its text and the link.
           <span className="quiet">Look for CPSC&apos;s own words in the message, and that it opens in your mail, not ours.</span>
         </li>
         <li>
-          <strong>Refund a sale made after a recall.</strong> On the card for recall 27027 with the bedside sleeper in gray stars and moon (not the &quot;like new&quot; one), press Review refund, then Refund 90.00 USD, then Check it against PayPal.
+          <strong>Refund a sale made after a recall.</strong> On the card for recall <Recall n="27027" /> with the bedside sleeper in gray stars and moon (not the &quot;like new&quot; one), press Review refund, then Refund 90.00 USD, then Check it against PayPal.
           <span className="quiet">Look for five records side by side, and whether they agree, with PayPal&apos;s own check of its webhook beside ours. If PayPal hasn&apos;t finished the refund, the page says so.</span>
           <span className="quiet" data-testid="refund-tool">
             Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.
@@ -110,7 +120,7 @@ export default async function JudgeDoor() {
             <span className="quiet">Look for each sale&apos;s 180 days as a bar, with a line at the recall date and one at today.</span>
           </li>
           <li>
-            <strong>Ask what a recall needs.</strong> On the card for recall 27040, press Approve this check request and answer on the family&apos;s page.
+            <strong>Ask what a recall needs.</strong> On the card for recall <Recall n="27040" />, press Approve this check request and answer on the family&apos;s page.
             <span className="quiet">Look for the answer changing the seller&apos;s card, with no money moved.</span>
           </li>
           <li>
@@ -123,7 +133,7 @@ export default async function JudgeDoor() {
           </li>
           {recallDate ? (
             <li>
-              <strong>Change one fact.</strong> Try a sale of the bedside sleeper on a date before recall 27027.
+              <strong>Change one fact.</strong> Try a sale of the bedside sleeper on a date before recall <Recall n="27027" />.
               <WhatIf soldOn={businessDay()} recallDate={recallDate} />
               <span className="quiet">Look for the verdict changing with the date, by the queue&apos;s own date rule. Nothing is saved.</span>
             </li>

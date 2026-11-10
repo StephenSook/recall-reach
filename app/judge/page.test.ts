@@ -147,4 +147,10 @@ describe("the judge's door", () => {
     // server/paypal/toolkitRefund.ts:1-2; nothing under server/agent names create_refund.
     expect(step).toContain("Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.");
   });
+
+  it("links every recall it names to its CPSC notice", () => {
+    const steps = [...listAt("itinerary"), ...listAt("itinerary-more")].join("");
+    expect(steps).not.toMatch(/recall \d{5}/);
+    for (const n of ["27072", "27027", "27040"]) expect(steps).toMatch(new RegExp(`recall <a href="https://(www\\.)?cpsc\\.gov/Recalls/2027/[^"]+">${n}</a>`));
+  });
 });
