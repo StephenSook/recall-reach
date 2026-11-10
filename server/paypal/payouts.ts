@@ -1,9 +1,11 @@
 // A separate sandbox payment for a sale past PayPal's 180-day refund window. A refund can't reach it, so an owner can choose to
-// send one. Approved twice, for one exact amount, only to an email the owner typed, never PayPal's payer email. It never reads
+// send one. Approved twice, for one exact amount, only to the demo's own sandbox buyer (DEMO_PAYOUT_RECEIVER, set on the server;
+// nobody types an address), never PayPal's payer email. It never reads
 // as paid until PayPal's item says so. Demo shops only: the sandbox app is shared, so no other shop may spend from it.
 import type { Queryable } from "../db/types";
 import type { ContactCipher } from "../privacy/contactCipher";
 import type { RecordKey } from "../privacy/recordKey";
+import { callsBelongTo } from "./callLog";
 import { PayPalApiError, type PayPalClient } from "./client";
 import { centsToValue } from "./orders";
 
@@ -53,7 +55,7 @@ export async function reviewPayout(
     throw new PayoutRefused("BAD_AMOUNT", `Enter an amount up to ${centsToValue(PAST_WINDOW_SAMPLE.priceCents)} ${PAST_WINDOW_SAMPLE.currency}, what this sale was paid.`);
   }
   const email = input.email.trim();
-  if (!EMAIL.test(email)) throw new PayoutRefused("BAD_EMAIL", "Enter the email the shop collected for this buyer.");
+  if (!EMAIL.test(email)) throw new PayoutRefused("BAD_EMAIL", "This demo's sandbox buyer email isn't valid, so nothing was set up to send.");
   // One statement. A new approval is a new payment, so what PayPal said about the old batch goes with it, and no send can fall between.
   const { rows } = await db.query<{ id: string }>(
     `with up as (
@@ -107,8 +109,10 @@ export async function sendPayout(
     if (found[0] && found[0].status !== "reviewed" && found[0].status !== "failed") throw new PayoutRefused("ALREADY_SENT", "This payment has already gone to PayPal. Check it against PayPal.");
     throw invalid();
   }
+  // Every write after the send is for this approval only. While PayPal answers, its failure webhook can free the row,
+  // and the owner can review and send a new payment. This answer must not touch that one.
   const settle = async (status: PayoutStatus, paypalStatus: string | null) => {
-    await moveStatus(db, status, paypalStatus, "id = $4", [row.id]);
+    await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
     return { id: row.id, ...(await currentStatus(db, row.id)) };
   };
   try {
@@ -129,13 +133,28 @@ export async function sendPayout(
       },
     });
     const batchId = data.batch_header.payout_batch_id;
-    await db.query("update payouts set batch_ref_hmac = $2 where id = $1", [row.id, input.recordKey("paypal-resource", batchId)]);
-    await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do update set batch_id = excluded.batch_id", [row.id, batchId]);
+    await recordBatch(db, { id: row.id, approval: row.request_id, batchId, batchHash: input.recordKey("paypal-resource", batchId), replace: true });
     return await settle("unconfirmed", data.batch_header.batch_status);
   } catch (err) {
     if (clearlyRefused(err)) return settle("failed", err.issue ?? `HTTP ${err.status}`);
     return settle("unconfirmed", null);
   }
+}
+
+/**
+ * Keeps a batch's keyed hash and its PayPal id, in one statement, only while this approval is still the row's. A new review
+ * deletes the refs and changes the approval, so either it comes first and nothing is written, or it comes after and clears this.
+ * replace: the send's own answer overrides; an event fills in only a batch not yet known.
+ */
+async function recordBatch(db: Queryable, b: { id: string; approval: string; batchId: string; batchHash: string; replace: boolean }): Promise<void> {
+  await db.query(
+    `with ours as (
+       update payouts set batch_ref_hmac = $2 where id = $1 and request_id = $3::uuid ${b.replace ? "" : "and batch_ref_hmac is null"} returning id
+     )
+     insert into paypal_payout_refs (payout_row_id, batch_id) select id, $4 from ours
+     on conflict (payout_row_id) do ${b.replace ? "update set batch_id = excluded.batch_id" : "nothing"}`,
+    [b.id, b.batchHash, b.approval, b.batchId],
+  );
 }
 
 /** What PayPal's item status means here. Anything it doesn't know stays unconfirmed, never paid. */
@@ -155,33 +174,83 @@ export async function readPayoutFromPayPal(db: Queryable, client: PayPalClient, 
   if (!rows[0]) throw new PayoutRefused("NO_SUCH_PAYOUT", "No such payment for this shop. Go back to your queue.");
   if (!rows[0].batch_id && !rows[0].batch_ref_hmac) throw new PayoutRefused("NO_ANSWER", "PayPal gave no clear answer to this payment, and it wasn't sent again. Check the shop's PayPal activity.");
   if (!rows[0].batch_id) throw new PayoutRefused("AGED_OUT", "PayPal's record of this payment is no longer held here. Check PayPal directly.");
-  const { data } = await client.request<{ items?: { transaction_status?: string }[] }>("GET", `/v1/payments/payouts/${encodeURIComponent(rows[0].batch_id)}`);
-  const paypalStatus = data.items?.[0]?.transaction_status ?? null;
+  const paypalStatus = settledBy(await readPayoutBatch(client)(rows[0].batch_id));
   const status = paypalStatus ? fromItemStatus(paypalStatus) : "unconfirmed";
   // Only for the approval this read began with: the owner may have reviewed a new payment since.
   await moveStatus(db, status, paypalStatus, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
   return currentStatus(db, rows[0].id);
 }
 
+/** PayPal's read of a batch: its one item's status, the batch's, and who sent it. A send sets both sender ids to its approval's request id. */
+export interface PayoutBatchRead {
+  status: string | null;
+  batchStatus: string | null;
+  senderBatchId: string | null;
+  senderItemId: string | null;
+}
+
+/**
+ * The answer a read settles on: the item's status, or DENIED for a batch PayPal denied with no item in it. PayPal's batch
+ * statuses say a denied batch was not processed, so no money moved, and it reads as failed. Anything else is no answer yet.
+ */
+function settledBy(read: PayoutBatchRead): string | null {
+  if (read.status) return read.status;
+  return read.batchStatus === "DENIED" ? "DENIED" : null;
+}
+
+export function readPayoutBatch(client: PayPalClient): (batchId: string) => Promise<PayoutBatchRead> {
+  return async (batchId) => {
+    const { data } = await client.request<{
+      batch_header?: { batch_status?: string; sender_batch_header?: { sender_batch_id?: string } };
+      items?: { transaction_status?: string; payout_item?: { sender_item_id?: string } }[];
+    }>("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
+    const item = data.items?.[0];
+    return {
+      status: item?.transaction_status ?? null,
+      batchStatus: data.batch_header?.batch_status ?? null,
+      senderBatchId: data.batch_header?.sender_batch_header?.sender_batch_id ?? null,
+      senderItemId: item?.payout_item?.sender_item_id ?? null,
+    };
+  };
+}
+
 /**
  * PayPal's item webhook, once its signature is verified. Found by the batch's keyed hash, or by the approval the item carries
- * when the send's own answer was lost, in which case this is the first we hear of the batch.
+ * when the send's own answer was lost, in which case this is the first we hear of the batch. The event only says which batch to
+ * read: nothing is recorded or moved until PayPal's own read shows this approval sent that batch, and its status comes from that
+ * read. A read that fails, or names no status yet, throws, so the delivery fails and PayPal sends it again.
  */
 export async function recordPayoutItemEvent(
   db: Queryable,
   recordKey: RecordKey,
   resource: { payout_batch_id?: unknown; transaction_status?: unknown; payout_item?: { sender_item_id?: unknown } },
+  readBatch: (batchId: string) => Promise<PayoutBatchRead>,
 ): Promise<boolean> {
   if (typeof resource.payout_batch_id !== "string" || typeof resource.transaction_status !== "string") return false;
   const batchHash = recordKey("paypal-resource", resource.payout_batch_id);
   const carried = resource.payout_item?.sender_item_id;
   const approval = typeof carried === "string" && UUID.test(carried) ? carried : null;
-  const { rows } = await db.query<{ id: string; request_id: string }>("select id, request_id from payouts where batch_ref_hmac = $1 or request_id = $2::uuid", [batchHash, approval]);
-  if (!rows[0]) return false;
+  const { rows } = await db.query<{ id: string; request_id: string; shop_id: string; batch_ref_hmac: string | null }>(
+    "select id, request_id, shop_id, batch_ref_hmac from payouts where batch_ref_hmac = $1 or request_id = $2::uuid",
+    [batchHash, approval],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  // An approval sends one batch. One it already has settles which, so another batch's event is not about it.
+  if (row.batch_ref_hmac !== null && row.batch_ref_hmac !== batchHash) return false;
+  // The webhook didn't know the shop; the read below is kept in this one's call log.
+  callsBelongTo(row.shop_id);
+  const read = await readBatch(resource.payout_batch_id);
+  // A sender PayPal names that isn't this approval makes the batch someone else's, whatever the event paired it with.
+  if ((read.senderBatchId !== null && read.senderBatchId !== row.request_id) || (read.senderItemId !== null && read.senderItemId !== row.request_id)) return false;
+  const paypalStatus = settledBy(read);
+  // A denied batch has no item to name its sender, so the batch's own sender has to be this approval.
+  const denied = !read.status && paypalStatus === "DENIED" && read.senderBatchId === row.request_id;
+  // Otherwise a read missing its item, a sender or a status settles nothing yet: fail the delivery, so PayPal sends it again.
+  if (!paypalStatus || (!denied && (read.senderBatchId === null || read.senderItemId === null))) throw new Error("PayPal's read of the payout batch named no status or sender yet");
   // Each step is for the approval found above: the owner may review a new payment while this runs.
-  const first = await db.query("update payouts set batch_ref_hmac = $2 where id = $1 and request_id = $3::uuid and batch_ref_hmac is null returning id", [rows[0].id, batchHash, rows[0].request_id]);
-  if (first.rows.length > 0) await db.query("insert into paypal_payout_refs (payout_row_id, batch_id) values ($1, $2) on conflict (payout_row_id) do nothing", [rows[0].id, resource.payout_batch_id]);
-  await moveStatus(db, fromItemStatus(resource.transaction_status), resource.transaction_status, "id = $4 and request_id = $5::uuid", [rows[0].id, rows[0].request_id]);
+  await recordBatch(db, { id: row.id, approval: row.request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
+  await moveStatus(db, fromItemStatus(paypalStatus), paypalStatus, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);
   return true;
 }
 
