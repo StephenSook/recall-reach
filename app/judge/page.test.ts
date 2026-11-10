@@ -144,7 +144,7 @@ describe("the judge's door", () => {
   it("says at the refund step that Claude never holds the refund tool", () => {
     const step = listAt("itinerary").find((s) => s.includes("Refund a sale made after a recall")) ?? "";
     expect(step).toContain('data-testid="refund-tool"');
-    // server/paypal/toolkitRefund.ts:1-2; nothing under server/agent names create_refund.
+    // server/paypal/toolkitRefund.ts:1-2; no file under server/agent names the refund call.
     expect(step).toContain("Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.");
   });
 
