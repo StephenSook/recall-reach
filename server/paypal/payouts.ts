@@ -226,9 +226,10 @@ export async function recordPayoutItemEvent(
   // The webhook didn't know the shop; the read below is kept in this one's call log.
   callsBelongTo(row.shop_id);
   const read = await readBatch(resource.payout_batch_id);
-  // PayPal must name this approval as the batch's sender, or the batch is someone else's, whatever the event paired it with.
-  if (read.senderBatchId !== row.request_id || read.senderItemId !== row.request_id) return false;
-  if (!read.status) throw new Error("PayPal's read of the payout batch named no status yet");
+  // A sender PayPal names that isn't this approval makes the batch someone else's, whatever the event paired it with.
+  if ((read.senderBatchId !== null && read.senderBatchId !== row.request_id) || (read.senderItemId !== null && read.senderItemId !== row.request_id)) return false;
+  // A read missing its item, a sender or a status settles nothing yet: fail the delivery, so PayPal sends it again.
+  if (read.senderBatchId === null || read.senderItemId === null || !read.status) throw new Error("PayPal's read of the payout batch named no status or sender yet");
   // Each step is for the approval found above: the owner may review a new payment while this runs.
   await recordBatch(db, { id: row.id, approval: row.request_id, batchId: resource.payout_batch_id, batchHash, replace: false });
   await moveStatus(db, fromItemStatus(read.status), read.status, "id = $4 and request_id = $5::uuid", [row.id, row.request_id]);

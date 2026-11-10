@@ -5,7 +5,8 @@ import { testDb } from "../../test/pglite";
 import { migrate } from "../db/migrate";
 import { createRecordKey } from "../privacy/recordKey";
 import { purgePayPalData } from "../privacy/retention";
-import { recordPayoutItemEvent } from "./payouts";
+import type { PayPalClient } from "./client";
+import { readPayoutBatch, recordPayoutItemEvent } from "./payouts";
 import { handleWebhookDelivery } from "./webhookHandler";
 
 const WEBHOOK_ID = "TEST-WEBHOOK-ID";
@@ -70,6 +71,27 @@ describe("handleWebhookDelivery", () => {
       expect(await statusNow()).toBe("unconfirmed");
       expect((await deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).status).toBe(200);
       expect(await statusNow()).toBe("paid");
+    });
+
+    it.each([
+      ["a batch it already knows", true],
+      ["a send whose answer was lost, found by the approval the item carries", false],
+    ])("fails a delivery while PayPal's batch read lists no item yet, and the redelivery settles it: %s", async (_about, known) => {
+      const approval = (await db.query<{ request_id: string }>("select request_id from payouts")).rows[0].request_id;
+      if (!known) await db.query("update payouts set batch_ref_hmac = null");
+      const header = { sender_batch_header: { sender_batch_id: approval } };
+      const pages = [{ batch_header: header, items: [] }, { batch_header: header, items: [{ transaction_status: "SUCCESS", payout_item: { sender_item_id: approval } }] }];
+      const client = { request: async () => ({ status: 200, data: pages.shift() }) } as unknown as PayPalClient;
+      const onPayoutItem = (resource: unknown, k: typeof key) => recordPayoutItemEvent(db, k, resource as never, readPayoutBatch(client));
+      const raw = Buffer.from(
+        JSON.stringify({ id: "WH-P-LOST", event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", resource_type: "payouts_item", create_time: "2026-11-07T12:00:00.000Z", resource: { payout_batch_id: "BATCH-1", transaction_status: "SUCCESS", payout_item: { sender_item_id: approval } } }),
+      );
+      await expect(deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).rejects.toThrow(/no status/);
+      expect(await statusNow()).toBe("unconfirmed");
+      expect((await deliverItem(raw, paypalHeaders(raw, WEBHOOK_ID), onPayoutItem)).status).toBe(200);
+      expect(await statusNow()).toBe("paid");
+      // A lost send learns its batch here, so the owner can read it back later. A known batch already has its refs from the send.
+      if (!known) expect((await db.query<{ batch_id: string }>("select batch_id from paypal_payout_refs")).rows).toEqual([{ batch_id: "BATCH-1" }]);
     });
 
     it("ignores one whose signature fails", async () => {
