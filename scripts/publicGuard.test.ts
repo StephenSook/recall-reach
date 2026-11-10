@@ -40,6 +40,8 @@ describe("findViolations", () => {
     ["a research path as an autolink", "<research/PLAN.md>"],
     ["the research folder itself, one level up", "The plan lives in ../research/ next to this repo."],
     ["the research folder itself, in backticks", "See `./research/` for the briefs."],
+    ["a research file after a link, in a tight table", "|[CPSC](https://www.cpsc.gov)|[checks](../research/G1-SANDBOX-CHECKS.md)|"],
+    ["the research folder after a link, in a tight table", "|[CPSC](https://www.cpsc.gov)|[briefs](../research/)|"],
     ["a private vault", "in the Obsidian vault"],
     ["assistant config", "from .claude/skills/"],
   ])("catches %s in a file's text", (_about, text) => {
