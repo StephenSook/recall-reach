@@ -17,7 +17,8 @@ describe("findViolations", () => {
   });
 
   it.each([
-    ["a home directory", "see /Users/stephensookra/dev/notes"],
+    ["a home directory", "see /Users/someone/dev/notes"],
+    ["a Linux home directory", "see /home/someone/notes"],
     ["a private brief", "as BUILD-BRIEF-3 says"],
     ["local instructions", "see CLAUDE.local for this"],
     ["the research folder", "wording from research/NOTES.md"],

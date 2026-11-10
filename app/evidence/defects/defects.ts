@@ -52,7 +52,7 @@ export const DEFECTS: Defect[] = [
       "From about Nov 7, 2026, 00:05 UTC, CPSC's API answered HTTP 200 with one fake row, its error in the title. We stored that as a partial read, so /api/health answered 503 and those dates counted as read. The poll starts a day back, so nothing was skipped this time.",
     changed: "That row is now a failed fetch and marks nothing as read. /api/health answers 200, names CPSC and says since when, and 503 stays for this site's own failures.",
     commits: ["9d51025", "6fdda6e"],
-    checked: "During the same outage, on the deployed site: the demo shop's 9 items, Replay's 934 recalls and its recount, the public check and the MCP tool all answered from the recalls held here. CPSC answered again by 01:30 UTC, and the first good read started from Nov 6, before the outage. It failed again from 02:10 UTC, and each read since has said so. Still open until a full day passes with no failed read.",
+    checked: "During the same outage, on the deployed site: the demo shop's 9 items, Replay's 934 recalls and its recount, the public check and the MCP tool all answered from the recalls held here. CPSC answered again by 01:30 UTC, and the first good read started from Nov 6, before the outage. It failed again from 02:10 UTC that day, and those reads said so. On Nov 10, 03:43 UTC, a read succeeded again. Still open until a full day passes with no failed read.",
     open: true,
   },
   {

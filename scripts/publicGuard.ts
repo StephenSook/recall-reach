@@ -4,11 +4,12 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-/** Tracked files today: 318. A walk far below this saw a wrong or shallow checkout, and "clean" would mean nothing. */
+/** Tracked files on Nov 10, 2026: 917. A walk far below this saw a wrong or shallow checkout, and "clean" would mean nothing. */
 export const MIN_FILES = 250;
 
 const SHOULD_NOT_SHIP = [/(^|\/)BUILD-BRIEF/i, /(^|\/)CLAUDE\.local/i, /(^|\/)research\//, /(^|\/)\.claude\//, /(^|\/)\.env(?!\.example$)/, /\.(pem|key|p12)$/, /^test-results\//, /^playwright-report\//, /^\.next\//];
-const PRIVATE_WORDS = [/\/Users\/stephensookra/, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
+// Anyone's home directory: a local path shouldn't ship, and naming one account here would ship that name.
+const PRIVATE_WORDS = [/\/(?:Users|home)\/[\w.-]+\//, /BUILD-BRIEF/, /CLAUDE\.local/, // Not glued to a word before it, and not inside a web address, which ends at a space or at ) ] | > or a quote.
   // "./" and "../" segments after the folder still lead into it: "research/./PLAN.md".
   /(?<!:\/\/[^\s)\]|>"'`]*)(?<![\w-])research\/(?:\.{1,2}\/)*(?:\.?[\w-]+(?:\.[\w-]+)*\/(?:[\w./-]*[\w-])?|\.?[\w-]+\.\w+|\.[\w-]+)/,
   // The folder itself, named as a relative path: "../research/". A bare "research/" is too like prose to count.
