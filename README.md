@@ -6,6 +6,8 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
+If you have 30 seconds: the 30-second row on /judge. 3 minutes: the steps below. 10 minutes: every step on /judge, including More to try.
+
 1. Press **Try it as a demo shop**.
 2. On the bath seat's card, press **Buy this as a family**. It pays with a sandbox test card, so there's no login. In five sandbox runs on Nov 8 and 9 the sale reached the queue in 13 to 99 seconds.
 3. On the card for [recall 27027](https://www.cpsc.gov/Recalls/2027/Papablic-of-USA-Recalls-Convertible-Bedside-Sleepers-Due-to-Risk-of-Serious-Injury-or-Death-from-Entrapment-Suffocation-and-Fall-Hazards-Violate-Mandatory-Standard-for-Play-Yards) with the bedside sleeper in gray stars and moon (not the "like new" one), press **Review refund**, then **Refund 90.00 USD**, then **Check it against PayPal**. The refund page lines up five records and says whether they agree.
