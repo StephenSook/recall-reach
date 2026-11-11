@@ -144,13 +144,26 @@ describe("the judge's door", () => {
   it("says at the refund step that Claude never holds the refund tool", () => {
     const step = listAt("itinerary").find((s) => s.includes("Refund a sale made after a recall")) ?? "";
     expect(step).toContain('data-testid="refund-tool"');
-    // server/paypal/toolkitRefund.ts:1-2; no file under server/agent names the refund call.
+    // The line sits in step 2, the refund step.
     expect(step).toContain("Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.");
   });
 
-  it("links every recall it names to its CPSC notice", () => {
+  it("links each recall it names to that recall's own CPSC notice", () => {
     const steps = [...listAt("itinerary"), ...listAt("itinerary-more")].join("");
-    expect(steps).not.toMatch(/recall \d{5}/);
-    for (const n of ["27072", "27027", "27040"]) expect(steps).toMatch(new RegExp(`recall <a href="https://(www\\.)?cpsc\\.gov/Recalls/2027/[^"]+">${n}</a>`));
+    const notice: Record<string, string> = {
+      "27072": "https://www.cpsc.gov/Recalls/2027/Baby-Brezza-Enterprises-Recalls-SuperFast-Sterilizer-Dryers-Due-to-Overheating-and-Burn-Hazards",
+      "27027":
+        "https://www.cpsc.gov/Recalls/2027/Papablic-of-USA-Recalls-Convertible-Bedside-Sleepers-Due-to-Risk-of-Serious-Injury-or-Death-from-Entrapment-Suffocation-and-Fall-Hazards-Violate-Mandatory-Standard-for-Play-Yards",
+      "27040":
+        "https://www.cpsc.gov/Recalls/2027/Costway-Recalls-Convertible-High-Chairs-Due-to-Risk-of-Serious-Injury-or-Death-from-Entrapment-and-Fall-Hazards-Violate-Mandatory-Standard-for-High-Chairs",
+    };
+    let rest = steps;
+    for (const [n, url] of Object.entries(notice)) {
+      const link = `<a href="${url}">${n}</a>`;
+      expect(steps).toContain(link);
+      rest = rest.split(link).join("");
+    }
+    // With those exact links taken out and every tag stripped, no five-digit number is left.
+    expect(rest.replace(/<[^>]+>/g, " ")).not.toMatch(/\b\d{5}\b/);
   });
 });
