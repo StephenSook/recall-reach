@@ -135,9 +135,9 @@ describe("the judge's door", () => {
   it("tells a judge, at the Replay step, why the two Enterprise tables may show AG Grid's watermark after the trial key ends", () => {
     const step = listAt("itinerary").find((s) => s.includes("See it stay quiet")) ?? "";
     expect(step).toContain('data-testid="grid-watermark"');
-    // Only the queue and Replay import gridEnterprise.ts; AG Studio has its own key.
+    // The note names only the queue and Replay tables, never Studio.
     expect(step).toContain("After Dec 9, the queue and Recall Replay tables may show AG Grid&#x27;s trial watermark.");
-    expect(step).toContain("AG Grid&#x27;s team said in the PayPal Developer Discord that this is fine for the hackathon.");
+    expect(step).toContain("In the #ag-grid channel of the PayPal Developer Discord on Oct 6, 2026, AG Grid&#x27;s team wrote that they &quot;won&#x27;t penalise&quot; the watermark during judging.");
     expect(step).not.toContain("Studio");
   });
 
