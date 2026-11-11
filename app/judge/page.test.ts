@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -146,6 +147,15 @@ describe("the judge's door", () => {
     expect(step).toContain('data-testid="refund-tool"');
     // The line sits in step 2, the refund step.
     expect(step).toContain("Claude never holds the refund tool. Only our own server code calls it, after a person approves the amount.");
+  });
+
+  it("links the demo film above the steps, and the README's top block links the same one", () => {
+    const film = "https://www.youtube.com/watch?v=SJHaOFci2Fk";
+    expect(html).toContain(`<a href="${film}">Demo film (2:58)</a>`);
+    expect(html.indexOf(film)).toBeLessThan(html.indexOf('data-testid="itinerary"'));
+    // The top block is everything before the README's first section heading.
+    const readme = readFileSync("README.md", "utf8");
+    expect(readme.slice(0, readme.indexOf("\n## "))).toContain(`**Demo film (2:58):** ${film}`);
   });
 
   it("links each recall it names to that recall's own CPSC notice", () => {

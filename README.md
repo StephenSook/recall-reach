@@ -2,6 +2,8 @@
 
 When a baby product gets recalled after a small resale shop sold it, Recall Reach finds the order, helps the shop reach the family, and refunds the sale through PayPal when the sale came after the recall.
 
+**Demo film (2:58):** https://www.youtube.com/watch?v=SJHaOFci2Fk
+
 **Who it's for:** the owner of a small kids' resale or consignment shop, who has the sale record, and the family who bought the item, who never heard about the recall.
 
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
