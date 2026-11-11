@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { parseRecalls } from "../cpsc/schema";
@@ -212,20 +213,29 @@ describe("the eval on the real labels", () => {
     const numbers = Object.fromEntries(Object.entries(heldOut).map(([side, v]) => [side, Object.fromEntries(Object.entries(v).filter(([f]) => f !== "reachFamilyPairs"))]));
     expect(createHash("sha256").update(stable(numbers)).digest("hex")).toBe("b3cc35db05f34c5c6308832f7ed57b57038879c2f394783af3ad5294e1f1e238");
     const heldOutRecalls = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
-    // A held-out recall counts as used when its number appears, or when one of its sentences (40 characters or more,
-    // from CPSC's description and title) is copied in without the number.
-    const flat = (s: string) => s.replace(/\s+/g, " ");
-    const sentences = (JSON.parse(load("recalls.json")) as { RecallNumber: string; Description: string | null; Title: string | null }[])
+    // A held-out recall counts as used when its number appears, or when one of its own sentences (40 characters or more,
+    // from CPSC's description or title, each split on its own) is copied in without the number. Wording CPSC repeats in
+    // a recall outside the held-out set, such as a battery disposal note, isn't one recall's own, so it doesn't count.
+    type Cpsc = { RecallNumber: string; Description: string | null; Title: string | null };
+    const flat = (s: string | null) => (s ?? "").replace(/\s+/g, " ");
+    const split = (s: string | null) => flat(s).split(/(?<=[.!?])\s/).filter((t) => t.length >= 40);
+    const recalls = JSON.parse(load("recalls.json")) as Cpsc[];
+    const saved = JSON.parse(gunzipSync(readFileSync("test/fixtures/cpsc/saved_records_2022_to_2026-11-05.json.gz")).toString("utf8")) as Cpsc[];
+    const elsewhere = [...saved, ...recalls].filter((r) => !heldOutRecalls.includes(r.RecallNumber)).flatMap((r) => [flat(r.Description), flat(r.Title)]).join("\n");
+    const sentences = recalls
       .filter((r) => heldOutRecalls.includes(r.RecallNumber))
-      .flatMap((r) => flat(`${r.Description ?? ""} ${r.Title ?? ""}`).split(/(?<=[.!?])\s/).filter((s) => s.length >= 40).map((s) => ({ n: r.RecallNumber, s })));
-    expect(sentences.length).toBeGreaterThan(100); // 119 on Nov 10; a check of none would pass
+      .flatMap((r) => [...split(r.Description), ...split(r.Title)].map((s) => ({ n: r.RecallNumber, s })))
+      .filter(({ s }) => !elsewhere.includes(s));
+    expect(sentences.length).toBeGreaterThan(100); // 111 on Nov 10; a check of none would pass
     const named = new Set<string>();
     const copied = new Set<string>();
     for (const dir of ["server/match", "server/agent"]) {
       for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))) {
         const text = readFileSync(`${dir}/${file}`, "utf8");
         for (const n of heldOutRecalls) if (new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text)) named.add(`${n} ${dir}/${file}`);
-        for (const { n, s } of sentences) if (flat(text).includes(s)) copied.add(`${n} ${dir}/${file}`);
+        // Read as the strings print: \" inside a quoted literal is the quote mark CPSC wrote.
+        const source = flat(text.replace(/\\(["'`\\])/g, "$1"));
+        for (const { n, s } of sentences) if (source.includes(s)) copied.add(`${n} ${dir}/${file}`);
       }
     }
     expect([...named]).toEqual(["26054 server/match/verdict.test.ts"]);
