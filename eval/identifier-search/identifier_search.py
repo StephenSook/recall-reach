@@ -22,7 +22,7 @@ import sys
 TOKEN_RX = re.compile(r"(?<![\w-])(?=[A-Z0-9_./-]*\d)(?=[A-Z0-9_./-]*[A-Z])[A-Z0-9][A-Z0-9_./-]{2,}[A-Z0-9](?![\w-])")
 UNIT_TOKEN = re.compile(r"^\d+(?:\.\d+)?(?:V|W|MAH|OZ|FT|IN|MM|CM|ML|L|GB|TB|HZ|LB|LBS|PCS|PC|PK|X|D|K|AH|A|QT|CC|HP|G)$")
 
-# (b) An identifier keyword, followed within 30 characters, before the next period and space, by a
+# (b) An identifier keyword, followed within 30 characters, before the next period and whitespace, by a
 # token of 2 or more characters that has a digit (not a bare year) or is an upper-case dashed code
 # such as BBL-MM-LAMP.
 ID_KW_RX = re.compile(
