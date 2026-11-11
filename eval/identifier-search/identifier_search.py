@@ -23,8 +23,8 @@ TOKEN_RX = re.compile(r"(?<![\w-])(?=[A-Z0-9_./-]*\d)(?=[A-Z0-9_./-]*[A-Z])[A-Z0
 UNIT_TOKEN = re.compile(r"^\d+(?:\.\d+)?(?:V|W|MAH|OZ|FT|IN|MM|CM|ML|L|GB|TB|HZ|LB|LBS|PCS|PC|PK|X|D|K|AH|A|QT|CC|HP|G)$")
 
 # (b) An identifier keyword, followed within 30 characters, before the next period and whitespace, by a
-# token of 2 or more characters that has a digit (not a bare year) or is an upper-case dashed code
-# such as BBL-MM-LAMP.
+# token of 2 or more characters that has a digit after its first character (not a bare year) or is an
+# upper-case dashed code such as BBL-MM-LAMP.
 ID_KW_RX = re.compile(
     r"\b(model|models|item|style|sku|skus|part|catalog|serial|lot|lots|batch|upc|date codes?|"
     r"product codes?|reference|ref|fcc id|rn|asin)\b\s*(?:numbers?|nos?\.?|#|codes?|ids?)?",

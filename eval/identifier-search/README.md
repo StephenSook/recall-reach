@@ -28,7 +28,7 @@ A record has an identifier if any of these holds:
 
 - its `ProductUPCs` has a value (28 of the 934 do),
 - one of its products has a `Model` value (none of the 934 do),
-- its `Description` has (a) an upper-case token with a digit and a letter, 4 or more characters, that isn't a unit such as "20V", or (b) an identifier word (model, item, style, SKU, part, catalog, serial, lot, batch, UPC, date code, product code, reference or ref, FCC ID, RN, ASIN) followed within 30 characters, before the next period followed by a space or line break, by a token of 2 or more characters with a digit (not a bare year) or an upper-case dashed code such as `BBL-MM-LAMP`.
+- its `Description` has (a) an upper-case token with a digit and a letter, 4 or more characters, that isn't a unit such as "20V", or (b) an identifier word (model, item, style, SKU, part, catalog, serial, lot, batch, UPC, date code, product code, reference or ref, FCC ID, RN, ASIN) followed within 30 characters, before the next period followed by a space or line break, by a token of 2 or more characters with a digit after its first character (not a bare year) or an upper-case dashed code such as `BBL-MM-LAMP`.
 
 ## How far to trust it
 
