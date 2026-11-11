@@ -22,7 +22,7 @@ PayPal and the model are stand-ins there, so a run never moves sandbox money. Ea
 
 ## What stays where
 
-- Nothing PayPal returns goes to Claude or any other third party. Tests plant PayPal values in the database and check they are in no request Claude would receive.
+- Nothing PayPal returns goes to Claude or Channel3. Tests plant PayPal values in the database and check they are in no request Claude would receive, and in none of the market searches the recall sweep sends to Channel3.
 - Built to follow PayPal's 48-hour deletion rule: PayPal-sourced rows are purged hourly at 46 hours, and a test fails if a PayPal-sourced table isn't on that list.
 - The app never emails anyone. Messages open in the shop's own mail.
 
