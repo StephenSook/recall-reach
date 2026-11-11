@@ -1,6 +1,6 @@
 # Identifier search: 292 of 934
 
-Our identifier search found no model number or code in 292 of 934 CPSC API records (recall dates 2025-01-01 to 2026-11-05). This is the output of a regex rule, not proof that those records contain no identifier.
+Our identifier search found no model number or code in 292 of 934 CPSC API records (recall dates 2025-01-02 to 2026-11-05). This is the output of a regex rule, not proof that those records contain no identifier.
 
 ## Run it
 

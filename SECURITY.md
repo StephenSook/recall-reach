@@ -12,7 +12,7 @@ A refund needs the shop owner to review it and confirm its exact amount, for a s
 
 [/safety](https://recall-reach-web-e022.onrender.com/safety) tries five things that must be refused, through the real code on throwaway shops that are deleted afterwards:
 
-1. A listing whose title gives orders.
+1. A listing that gives orders.
 2. A forged PayPal webhook.
 3. A refund sent twice.
 4. A refund past PayPal's 180 days.

@@ -8,7 +8,7 @@ When a baby product gets recalled after a small resale shop sold it, Recall Reac
 
 **Try it, no login:** https://recall-reach-web-e022.onrender.com/judge
 
-If you have 30 seconds: the 30-second row on /judge. 3 minutes: the steps below. 10 minutes: every step on /judge, including More to try.
+If you have 30 seconds: the 30-second row on /judge. 3 minutes: the steps below, or steps 1 to 3 on /judge. 10 minutes: every step on /judge, including More to try.
 
 1. Press **Try it as a demo shop**.
 2. On the bath seat's card, press **Buy this as a family**. It pays with a sandbox test card, so there's no login. In five sandbox runs on Nov 8 and 9 the sale reached the queue in 13 to 99 seconds.
@@ -25,7 +25,7 @@ Why a resale shop: I went to Kid to Kid in Kennesaw and talked with two people w
 
 There are more than 25,000 resale, consignment and nonprofit resale shops in the US (NARTS, via the [Census Bureau](https://www.census.gov/newsroom/stories/thrift-store-day.html); see [docs/SOURCES.md](docs/SOURCES.md)).
 
-MEASURED: our identifier search found no model number or code in 292 of 934 CPSC API records (recall dates 2025-01-01 to 2026-11-05). This is the output of a regex rule, not proof that those records contain no identifier. The rule, the records and a one-line way to rerun it are in [eval/identifier-search](eval/identifier-search/).
+MEASURED: our identifier search found no model number or code in 292 of 934 CPSC API records (recall dates 2025-01-02 to 2026-11-05). This is the output of a regex rule, not proof that those records contain no identifier. The rule, the records and a one-line way to rerun it are in [eval/identifier-search](eval/identifier-search/).
 
 Built for the PayPal AI Hackathon, November 2026. The recalls are real CPSC records. The shop is a demo, labelled as one, and its payments are real PayPal sandbox payments. No real shop or family has used this yet. Built during the submission period: first commit 2bbb324, Nov 5, 2026 ([docs/BUILT-DURING.md](docs/BUILT-DURING.md)).
 
