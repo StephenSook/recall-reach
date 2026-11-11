@@ -165,7 +165,7 @@ The demo shelf also has PayPal's JS SDK v6 button, wired to `/api/demo/buy/paypa
 | Who | What they can do |
 |---|---|
 | The owner | Review a refund, then confirm its exact amount: two clicks, for a sale after the recall date and inside 180 days |
-| Claude | Move no money. It reads recall text, the shop's own titles, on `/shopper` public listing titles, and on `/studio` Recall Replay's rows (CPSC's records and the demo shop's item titles). A test fails if any tool it's offered has a field for an amount, currency, capture, refund or payee |
+| Claude | Move no money. It reads recall text, the shop's own titles, on `/shopper` public listing titles, and on `/studio` Recall Replay's rows (CPSC's records and the demo shop's item titles). A test fails if any tool our own code offers it has a field for an amount, currency, capture, refund or payee. On `/studio`, AG Studio's tools that name money are dropped, and the answer format AG Studio asks for is passed on as it is |
 | A person on `/shopper` | Approve one sandbox test order on PayPal's page, at the price the server read from the listing. Nothing ships and no store is paid |
 | A family | Answer on their phone page. That changes the seller's card, and moves no money |
 

@@ -6,7 +6,7 @@ Please report a security problem privately, through GitHub's private vulnerabili
 
 ## Who can move money
 
-A refund needs the shop owner to review it and confirm its exact amount, for a sale after the recall date and inside 180 days. Only the app's own server code calls the refund, never Claude. No tool offered to Claude has a field for an amount, currency, capture, refund or payee, and [a test](server/agent/moneyFields.test.ts) fails if one does. More in the README: [Who can move money](README.md#who-can-move-money).
+A refund needs the shop owner to review it and confirm its exact amount, for a sale after the recall date and inside 180 days. Only the app's own server code calls the refund, never Claude. None of the tools our own code offers Claude has a field for an amount, currency, capture, refund or payee, and [a test](server/agent/moneyFields.test.ts) fails if one does. On /studio, any of AG Studio's own tools that names money is dropped before Claude sees it, and the same test checks that. The answer format AG Studio asks for is passed on as it is, and Claude's answer in it goes back to the page as text. More in the README: [Who can move money](README.md#who-can-move-money).
 
 ## Attacks tried against the code
 
