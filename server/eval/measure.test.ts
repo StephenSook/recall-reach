@@ -212,14 +212,24 @@ describe("the eval on the real labels", () => {
     const numbers = Object.fromEntries(Object.entries(heldOut).map(([side, v]) => [side, Object.fromEntries(Object.entries(v).filter(([f]) => f !== "reachFamilyPairs"))]));
     expect(createHash("sha256").update(stable(numbers)).digest("hex")).toBe("b3cc35db05f34c5c6308832f7ed57b57038879c2f394783af3ad5294e1f1e238");
     const heldOutRecalls = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
+    // A held-out recall counts as used when its number appears, or when one of its sentences (40 characters or more,
+    // from CPSC's description and title) is copied in without the number.
+    const flat = (s: string) => s.replace(/\s+/g, " ");
+    const sentences = (JSON.parse(load("recalls.json")) as { RecallNumber: string; Description: string | null; Title: string | null }[])
+      .filter((r) => heldOutRecalls.includes(r.RecallNumber))
+      .flatMap((r) => flat(`${r.Description ?? ""} ${r.Title ?? ""}`).split(/(?<=[.!?])\s/).filter((s) => s.length >= 40).map((s) => ({ n: r.RecallNumber, s })));
+    expect(sentences.length).toBeGreaterThan(100); // 119 on Nov 10; a check of none would pass
     const named = new Set<string>();
+    const copied = new Set<string>();
     for (const dir of ["server/match", "server/agent"]) {
       for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))) {
         const text = readFileSync(`${dir}/${file}`, "utf8");
         for (const n of heldOutRecalls) if (new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text)) named.add(`${n} ${dir}/${file}`);
+        for (const { n, s } of sentences) if (flat(text).includes(s)) copied.add(`${n} ${dir}/${file}`);
       }
     }
     expect([...named]).toEqual(["26054 server/match/verdict.test.ts"]);
+    expect([...copied]).toEqual(["26054 server/match/verdict.test.ts"]);
   });
 
   it("the committed Claude summary is what its cached findings say, so CI checks it without spending anything", () => {
