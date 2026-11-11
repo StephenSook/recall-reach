@@ -114,18 +114,22 @@ describe("the eval on the real labels", () => {
 
   type Cpsc = { RecallNumber: string; Description: string | null; Title: string | null };
   const flat = (s: string | null) => (s ?? "").replace(/\s+/g, " ");
+  // Curly and straight quotes count as the same mark, so a sentence retyped with ' still matches CPSC's \u2019.
+  const straight = (s: string) => s.replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"');
   // A sentence ends at . ! or ?, and any closing quote or bracket after it, then a space.
   const split = (s: string | null) => flat(s).split(/(?<=[.!?]["'\u201d\u2019)]*)\s/).filter((t) => t.length >= 40);
-  // A source file read as its strings print: \u2019 is the apostrophe CPSC wrote, \" its quote mark and \n a line break.
-  // A comment wrapped over lines reads as one sentence once its // or * markers are gone.
+  // A source file read as its strings print: \u2019 is the apostrophe CPSC wrote, \" its quote mark and \n a line break,
+  // and a backslash at a line's end carries the string on. A comment wrapped over lines reads as one sentence once its
+  // // or * markers are gone.
   const decoded = (text: string) =>
-    flat(
+    straight(flat(
       text
+        .replace(/\\\r?\n/g, "")
         .replace(/\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g, (_, a?: string, b?: string) => String.fromCodePoint(parseInt(a ?? b ?? "", 16)))
         .replace(/\\[ntr]/g, " ")
         .replace(/\\(["'`\\])/g, "$1")
         .replace(/^[ \t]*(?:\/\/+|\/\*+|\*+\/?)[ \t]?/gm, ""),
-    );
+    ));
   /**
    * The held-out recalls, each one's own sentences (40 characters or more, from CPSC's description or title, each split
    * on its own), and which of them a file's text uses: by number, or by a sentence copied in without it. Wording CPSC
@@ -135,10 +139,10 @@ describe("the eval on the real labels", () => {
     const recalls = JSON.parse(load("recalls.json")) as Cpsc[];
     const numbers = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
     const saved = JSON.parse(gunzipSync(readFileSync("test/fixtures/cpsc/saved_records_2022_to_2026-11-05.json.gz")).toString("utf8")) as Cpsc[];
-    const elsewhere = [...saved, ...recalls].filter((r) => !numbers.includes(r.RecallNumber)).flatMap((r) => [flat(r.Description), flat(r.Title)]).join("\n");
+    const elsewhere = [...saved, ...recalls].filter((r) => !numbers.includes(r.RecallNumber)).flatMap((r) => [flat(r.Description), flat(r.Title)]).join("\n").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"');
     const sentences = recalls
       .filter((r) => numbers.includes(r.RecallNumber))
-      .flatMap((r) => [...split(r.Description), ...split(r.Title)].map((s) => ({ n: r.RecallNumber, s })))
+      .flatMap((r) => [...split(r.Description), ...split(r.Title)].map((s) => ({ n: r.RecallNumber, s: straight(s) })))
       .filter(({ s }) => !elsewhere.includes(s));
     const usedIn = (text: string) => {
       const source = decoded(text);
@@ -278,6 +282,8 @@ describe("the eval on the real labels", () => {
     expect(usedIn(`const x = ${JSON.stringify(sentence("25127", '"'))};`).copied).toEqual(["25127"]);
     // With \u2019 for the apostrophe.
     expect(usedIn(sentence("27060", "\u2019").replace(/\u2019/g, "\\u2019")).copied).toEqual(["27060"]);
+    // Retyped with straight apostrophes.
+    expect(usedIn(sentence("27060", "\u2019").replace(/\u2019/g, "'")).copied).toEqual(["27060"]);
     // A sentence that ends inside a closing quote, copied alone, then broken over two lines three ways.
     const quoted = sentence("25220", 'Bebamour."');
     expect(usedIn(quoted).copied).toEqual(["25220"]);
@@ -286,6 +292,10 @@ describe("the eval on the real labels", () => {
     expect(usedIn(`const x = ${JSON.stringify(`${first}\n${second}`)};`).copied).toEqual(["25220"]);
     expect(usedIn(`// ${first}\n// ${second}\n`).copied).toEqual(["25220"]);
     expect(usedIn(`/**\n * ${first}\n * ${second}\n */\n`).copied).toEqual(["25220"]);
+    // Carried onto the next line by a backslash inside the string.
+    const literal = JSON.stringify(quoted);
+    const at = literal.indexOf(" ", 20) + 1;
+    expect(usedIn(`const x = ${literal.slice(0, at)}\\\n${literal.slice(at)};`).copied).toEqual(["25220"]);
     // A title alone.
     expect(usedIn(flat(record("25345").Title)).copied).toEqual(["25345"]);
     // CPSC's battery disposal note, which recalls outside the held-out set carry too.
