@@ -139,6 +139,9 @@ export default function EvalPage() {
         </table>
       </div>
       <p className="note">Ranges are 95% Wilson intervals. Word match flags whatever the search finds, with no way to abstain.</p>
+      <p className="note" data-testid="eval-first-run">
+        These are first-run numbers. We set the held-out recalls aside on Nov 5, and later rule changes left these numbers the same. One held-out recall&apos;s CPSC sentence (26054) is used as an example in one rule&apos;s test.
+      </p>
 
       <h2 className="section-title">Where it was wrong</h2>
       <WrongPairsLoader rows={wrongPairs(parsePairs(read("pairs.csv")), matcher, JSON.parse(read("recalls.json")))} />

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { testDb } from "../../test/pglite";
 import { parseRecalls } from "../cpsc/schema";
@@ -193,6 +194,32 @@ describe("the eval on the real labels", () => {
     const page = readFileSync("app/eval/page.tsx", "utf8");
     const earlier = Number(/const EARLIER_CONFIRMED = (\d+);/.exec(page)?.[1]);
     expect(earlier - statedModels.matcher.confirmed.k).toBe(statedModels.matcher.limitedAsks);
+  });
+
+  it("the card's first-run line holds: held-out numbers as first measured, and 26054 the one held-out recall in a rule's test", () => {
+    const page = readFileSync("app/eval/page.tsx", "utf8");
+    expect(page).toContain(
+      "These are first-run numbers. We set the held-out recalls aside on Nov 5, and later rule changes left these numbers the same. One held-out recall&apos;s CPSC sentence (26054) is used as an example in one rule&apos;s test.",
+    );
+    // The held-out numbers from `git show 8933eb0:eval/results.json` (Nov 5), less the two lists of pair names added after it.
+    const stable = (v: unknown): string =>
+      Array.isArray(v)
+        ? `[${v.map(stable).join(",")}]`
+        : v && typeof v === "object"
+          ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}`
+          : JSON.stringify(v);
+    const { heldOut } = JSON.parse(load("results.json")) as { heldOut: Record<string, Record<string, unknown>> };
+    const numbers = Object.fromEntries(Object.entries(heldOut).map(([side, v]) => [side, Object.fromEntries(Object.entries(v).filter(([f]) => f !== "reachFamilyPairs"))]));
+    expect(createHash("sha256").update(stable(numbers)).digest("hex")).toBe("b3cc35db05f34c5c6308832f7ed57b57038879c2f394783af3ad5294e1f1e238");
+    const heldOutRecalls = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
+    const named = new Set<string>();
+    for (const dir of ["server/match", "server/agent"]) {
+      for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))) {
+        const text = readFileSync(`${dir}/${file}`, "utf8");
+        for (const n of heldOutRecalls) if (new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text)) named.add(`${n} ${dir}/${file}`);
+      }
+    }
+    expect([...named]).toEqual(["26054 server/match/verdict.test.ts"]);
   });
 
   it("the committed Claude summary is what its cached findings say, so CI checks it without spending anything", () => {
