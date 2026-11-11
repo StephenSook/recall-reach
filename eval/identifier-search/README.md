@@ -20,7 +20,7 @@ Add `--list` to print the 292 recall numbers. It needs Python 3 and nothing else
 
 `records.csv` holds one row per recall, from CPSC's Recalls API (saferproducts.gov RestWebServices/Recall): the 2025 records, and `RecallDateStart=2026-01-01&RecallDateEnd=2026-11-05`, pulled on Nov 5, 2026. The earliest recall date in the range is Jan 2, 2025.
 
-Its columns are copied from the API record: `RecallNumber`, `RecallDate` (the date part), `Description`, `ProductUPCs` (the UPC values) and `ProductModels` (each product's Model, where filled). Multiple values are joined with ` | `. Nine email addresses in two descriptions (recalls 25280 and 25286) are replaced with `[email]`. The count is the same with or without them. Nothing in it comes from a shop, an order or PayPal.
+Its columns are copied from the API record: `RecallNumber`, `RecallDate` (the date part), `Description`, `ProductUPCs` (the UPC values) and `ProductModels` (each product's Model, where filled). Multiple values are joined with ` | `. Nine email addresses in two descriptions (recalls 25280 and 25286) are replaced with `[email]`, and two business addresses copied from product labels (recalls 25231 and 25337) with `[address]`. The count is the same with or without them. Nothing in it comes from a shop, an order or PayPal.
 
 ## The rule
 
