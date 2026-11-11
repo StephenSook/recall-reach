@@ -11,6 +11,12 @@ describe("the sandbox disclosure", () => {
     expect(readme).toContain("All money: sandbox only, nothing real moves");
   });
 
+  it("says the saved CPSC captures keep CPSC's text as published, firms' recall contacts included, and that no buyer data is here", () => {
+    expect(read("README.md")).toContain(
+      "The recalls are real CPSC records. The saved CPSC captures keep CPSC's text exactly as published, including the recall contacts firms list for consumers. The repo holds no buyer data.",
+    );
+  });
+
   it("is on the home page, beside the demo button", () => {
     expect(read("app/page.tsx")).toContain("Real CPSC recalls. Sandbox PayPal. Demo shop data is labelled.");
   });
