@@ -112,6 +112,37 @@ describe("parsePairs", () => {
 describe("the eval on the real labels", () => {
   const load = (name: string) => readFileSync(new URL(`../../eval/${name}`, import.meta.url), "utf8");
 
+  type Cpsc = { RecallNumber: string; Description: string | null; Title: string | null };
+  const flat = (s: string | null) => (s ?? "").replace(/\s+/g, " ");
+  // A sentence ends at . ! or ?, and any closing quote or bracket after it, then a space.
+  const split = (s: string | null) => flat(s).split(/(?<=[.!?]["'\u201d\u2019)]*)\s/).filter((t) => t.length >= 40);
+  // A source file read as its strings print: \u2019 is the apostrophe CPSC wrote, and \" its quote mark.
+  const decoded = (text: string) =>
+    flat(text.replace(/\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g, (_, a?: string, b?: string) => String.fromCodePoint(parseInt(a ?? b ?? "", 16))).replace(/\\(["'`\\])/g, "$1"));
+  /**
+   * The held-out recalls, each one's own sentences (40 characters or more, from CPSC's description or title, each split
+   * on its own), and which of them a file's text uses: by number, or by a sentence copied in without it. Wording CPSC
+   * repeats in a recall outside the held-out set, such as a battery disposal note, isn't one recall's own, so it doesn't count.
+   */
+  const heldOutText = () => {
+    const recalls = JSON.parse(load("recalls.json")) as Cpsc[];
+    const numbers = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
+    const saved = JSON.parse(gunzipSync(readFileSync("test/fixtures/cpsc/saved_records_2022_to_2026-11-05.json.gz")).toString("utf8")) as Cpsc[];
+    const elsewhere = [...saved, ...recalls].filter((r) => !numbers.includes(r.RecallNumber)).flatMap((r) => [flat(r.Description), flat(r.Title)]).join("\n");
+    const sentences = recalls
+      .filter((r) => numbers.includes(r.RecallNumber))
+      .flatMap((r) => [...split(r.Description), ...split(r.Title)].map((s) => ({ n: r.RecallNumber, s })))
+      .filter(({ s }) => !elsewhere.includes(s));
+    const usedIn = (text: string) => {
+      const source = decoded(text);
+      return {
+        named: numbers.filter((n) => new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text)),
+        copied: [...new Set(sentences.filter(({ s }) => source.includes(s)).map(({ n }) => n))],
+      };
+    };
+    return { recalls, sentences, usedIn };
+  };
+
   it("has the published counts, with no recall on both sides of the split", () => {
     const pairs = parsePairs(load("pairs.csv"));
     expect(pairs).toHaveLength(285);
@@ -212,34 +243,35 @@ describe("the eval on the real labels", () => {
     const { heldOut } = JSON.parse(load("results.json")) as { heldOut: Record<string, Record<string, unknown>> };
     const numbers = Object.fromEntries(Object.entries(heldOut).map(([side, v]) => [side, Object.fromEntries(Object.entries(v).filter(([f]) => f !== "reachFamilyPairs"))]));
     expect(createHash("sha256").update(stable(numbers)).digest("hex")).toBe("b3cc35db05f34c5c6308832f7ed57b57038879c2f394783af3ad5294e1f1e238");
-    const heldOutRecalls = [...new Set(parsePairs(load("pairs.csv")).filter((p) => p.split === "held_out").map((p) => p.recallNumber))];
-    // A held-out recall counts as used when its number appears, or when one of its own sentences (40 characters or more,
-    // from CPSC's description or title, each split on its own) is copied in without the number. Wording CPSC repeats in
-    // a recall outside the held-out set, such as a battery disposal note, isn't one recall's own, so it doesn't count.
-    type Cpsc = { RecallNumber: string; Description: string | null; Title: string | null };
-    const flat = (s: string | null) => (s ?? "").replace(/\s+/g, " ");
-    const split = (s: string | null) => flat(s).split(/(?<=[.!?])\s/).filter((t) => t.length >= 40);
-    const recalls = JSON.parse(load("recalls.json")) as Cpsc[];
-    const saved = JSON.parse(gunzipSync(readFileSync("test/fixtures/cpsc/saved_records_2022_to_2026-11-05.json.gz")).toString("utf8")) as Cpsc[];
-    const elsewhere = [...saved, ...recalls].filter((r) => !heldOutRecalls.includes(r.RecallNumber)).flatMap((r) => [flat(r.Description), flat(r.Title)]).join("\n");
-    const sentences = recalls
-      .filter((r) => heldOutRecalls.includes(r.RecallNumber))
-      .flatMap((r) => [...split(r.Description), ...split(r.Title)].map((s) => ({ n: r.RecallNumber, s })))
-      .filter(({ s }) => !elsewhere.includes(s));
+    const { sentences, usedIn } = heldOutText();
     expect(sentences.length).toBeGreaterThan(100); // 111 on Nov 10; a check of none would pass
     const named = new Set<string>();
     const copied = new Set<string>();
     for (const dir of ["server/match", "server/agent"]) {
       for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))) {
-        const text = readFileSync(`${dir}/${file}`, "utf8");
-        for (const n of heldOutRecalls) if (new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text)) named.add(`${n} ${dir}/${file}`);
-        // Read as the strings print: \" inside a quoted literal is the quote mark CPSC wrote.
-        const source = flat(text.replace(/\\(["'`\\])/g, "$1"));
-        for (const { n, s } of sentences) if (source.includes(s)) copied.add(`${n} ${dir}/${file}`);
+        const use = usedIn(readFileSync(`${dir}/${file}`, "utf8"));
+        for (const n of use.named) named.add(`${n} ${dir}/${file}`);
+        for (const n of use.copied) copied.add(`${n} ${dir}/${file}`);
       }
     }
     expect([...named]).toEqual(["26054 server/match/verdict.test.ts"]);
     expect([...copied]).toEqual(["26054 server/match/verdict.test.ts"]);
+  });
+
+  it("the held-out check finds a recall's own sentence however a file writes it, and not wording other recalls share", () => {
+    const { recalls, usedIn } = heldOutText();
+    const record = (n: string) => recalls.find((r) => r.RecallNumber === n) as Cpsc;
+    const sentence = (n: string, has: string) => split(record(n).Description).find((s) => s.includes(has)) ?? "";
+    // In a double-quoted literal, as JSON or TypeScript writes it: \" for the quote mark.
+    expect(usedIn(`const x = ${JSON.stringify(sentence("25127", '"'))};`).copied).toEqual(["25127"]);
+    // With \u2019 for the apostrophe.
+    expect(usedIn(sentence("27060", "\u2019").replace(/\u2019/g, "\\u2019")).copied).toEqual(["27060"]);
+    // A sentence that ends inside a closing quote, copied alone.
+    expect(usedIn(/[^.]*Bebamour\."/.exec(flat(record("25220").Description))?.[0].trim() ?? "").copied).toEqual(["25220"]);
+    // A title alone.
+    expect(usedIn(flat(record("25345").Title)).copied).toEqual(["25345"]);
+    // CPSC's battery disposal note, which recalls outside the held-out set carry too.
+    expect(usedIn(sentence("25248", "Recalled lithium-ion")).copied).toEqual([]);
   });
 
   it("the committed Claude summary is what its cached findings say, so CI checks it without spending anything", () => {
